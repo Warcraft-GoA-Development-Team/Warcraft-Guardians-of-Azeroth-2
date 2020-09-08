@@ -1,0 +1,3403 @@
+﻿
+namespace = yearly
+
+
+#######################
+# Dedication to Loyalty
+# 3001-3005
+# by Petter Vilberg
+#######################
+
+#Find a vassal who isn't entirely loyal
+scripted_trigger yearly_3001_vassal_trigger = {
+	highest_held_title_tier >= tier_county
+	OR = {
+		any_scheme = {
+			hostile_scheme_trigger = yes
+			scheme_target = root
+		}
+		is_a_faction_member = yes
+		OR = {
+			opinion = {
+				target = root
+				value < 10
+			}
+			has_trait = deceitful
+			has_trait = fickle
+			has_trait = ambitious
+		}
+	}
+	is_imprisoned = no
+	NOT = { has_trait = content }
+	NOT = { is_heir_of = root }
+	NOT = {
+		has_character_modifier = liege_looking_away_modifier
+	}
+	is_ai = yes
+}
+
+scripted_trigger yearly_3001_possibly_lying_trigger = {
+	NOT = { has_trait = honest }
+	NOT = { has_trait = just }
+}
+
+scripted_trigger yearly_3001_possibly_truthful_trigger = {
+	NOT = { has_trait = deceitful }
+	OR = {
+		has_trait = honest
+		opinion = {
+			target = root
+			value >= 0
+		}
+		scope:vassal = {
+			OR = {
+				any_scheme = {
+					hostile_scheme_trigger = yes
+					scheme_target = root
+				}
+				is_a_faction_member = yes
+			}
+		}
+	}
+}
+
+scripted_trigger yearly_3001_neighbor_trigger = {
+	OR = {
+		yearly_3001_possibly_lying_trigger = yes
+		yearly_3001_possibly_truthful_trigger = yes
+	}
+	NOT = { has_relation_friend = root }
+	NOT = { has_relation_friend = scope:vassal }
+	basic_is_available_ai = yes
+	#The neighboring ruler has to be within one tier rank of you
+	save_temporary_scope_value_as = {
+		name = max_tier
+		value = { value = root.highest_held_title_tier add = 1 }
+	}
+	save_temporary_scope_value_as = {
+		name = min_tier
+		value = { value = root.highest_held_title_tier subtract = 1}
+	}
+	highest_held_title_tier <= scope:max_tier
+	highest_held_title_tier >= scope:min_tier
+}
+
+scripted_trigger yearly_3001_vassal_still_available_trigger = {
+	scope:vassal = {
+		basic_is_available_ai = yes
+		is_vassal_of = root
+		is_ruler = yes
+	}
+}
+
+#A message from a neighbor
+yearly.3001 = {
+	type = character_event
+	title = yearly.3001.t
+	desc = {
+		desc = yearly.3001.desc
+		triggered_desc = {
+			trigger = {
+				exists = scope:friend
+				always = scope:friend_guess_truth
+			}
+			desc = yearly.3001.friend_backs_neighbor
+		}
+		triggered_desc = {
+			trigger = {
+				exists = scope:friend
+				NOT = { always = scope:friend_guess_truth }
+			}
+			desc = yearly.3001.friend_backs_vassal
+		}
+	}
+	theme = intrigue
+	left_portrait = scope:neighbor
+	lower_left_portrait = scope:friend_backing_neighbor
+	right_portrait = scope:vassal
+	lower_right_portrait = scope:friend_backing_vassal
+	
+	trigger = {
+		NOT = { has_character_flag = had_event_yearly_3001 }
+		is_landed = yes # Requires map location checks
+		#Find a suitable vassal
+		any_vassal = {
+			yearly_3001_vassal_trigger = yes
+			save_temporary_scope_as = vassal
+		}
+		#Find either another vassal of the same rank within the same realm as you, or a foreign character of the same rank, or any independent neighbor if you are independent
+		trigger_if = {
+			limit = {
+				is_independent_ruler = no	
+			}
+			any_neighboring_realm_same_rank_owner = {
+				yearly_3001_neighbor_trigger = yes
+			}
+		}
+		trigger_else = {
+			any_neighboring_top_liege_realm_owner = {
+				yearly_3001_neighbor_trigger = yes
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+
+	}
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_3001
+			years = 10
+		}
+		random_vassal = {
+			limit = {
+				yearly_3001_vassal_trigger = yes
+			}
+			save_scope_as = vassal
+		}
+		if = {
+			limit = { is_independent_ruler = no }
+			every_neighboring_realm_same_rank_owner = {
+				limit = {
+					yearly_3001_neighbor_trigger = yes
+				}
+				add_to_temporary_list = potential_neighbors
+			}
+		}
+		else = {
+			every_neighboring_top_liege_realm_owner = {
+				limit = {
+					yearly_3001_neighbor_trigger = yes
+				}
+				add_to_temporary_list = potential_neighbors
+			}
+		}
+		random_in_list = {
+			list = potential_neighbors
+			save_scope_as = neighbor
+		}
+
+		#Set whether the neighbor is telling the truth or not
+		random_list = {
+			50 = {
+				trigger = {
+					scope:neighbor = {
+						yearly_3001_possibly_truthful_trigger = yes
+					}
+				}
+				save_scope_value_as = {
+					name = telling_truth
+					value = yes
+				}
+			}
+			50 = {
+				trigger = {
+					scope:neighbor = {
+						yearly_3001_possibly_lying_trigger = yes
+					}
+				}
+				save_scope_value_as = {
+					name = telling_truth
+					value = no
+				}
+			}
+		}
+
+		#Let a Friend reccomend a course of action
+		if = {
+			limit = {
+				any_relation = {
+					type = best_friend
+					NOT = { this = scope:vassal }
+				}
+			}
+			random_relation = {
+				type = best_friend
+				save_scope_as = friend
+				random_list = {
+					10 = {
+						#Friend backs neighbor
+						modifier = {
+							add = 50
+							always = scope:telling_truth
+						}
+						modifier = {
+							add = 50
+							has_relation_rival = scope:vassal
+						}
+						modifier = {
+							add = 50
+							always = scope:telling_truth
+							has_trait = intellect_good
+						}
+						save_scope_value_as = {
+							name = friend_guess_truth
+							value = yes
+						}
+						save_scope_as = friend_backing_neighbor
+					}
+					10 = {
+						#Friend backs vassal
+						modifier = {
+							add = 50
+							always = scope:telling_truth
+						}
+						modifier = {
+							add = 50
+							has_relation_friend = scope:vassal
+						}
+						modifier = {
+							add = 50
+							has_relation_rival = scope:neighbor
+						}
+						modifier = {
+							add = 50
+							NOT = { always = scope:telling_truth }
+							has_trait = intellect_good
+						}
+						save_scope_value_as = {
+							name = friend_guess_truth
+							value = no
+						}
+						save_scope_as = friend_backing_vassal
+					}
+				}
+			}
+		}
+
+		# For attempted executions triggering wars:
+		save_scope_as = actor
+		scope:vassal = {
+			save_scope_as = recipient
+		}
+	}
+
+	#Confront the vassal in private
+	option = {
+		trigger = {
+			can_add_hook = {
+				type = threat_hook
+				target = scope:vassal
+			}
+		}
+		name = yearly.3001.a
+		show_as_tooltip = {
+			random_list = {
+				1 = {
+					desc = yearly.3001.true_tt
+					show_chance = no
+					add_hook = {
+						type = threat_hook
+						target = scope:vassal
+					}
+				}
+				1 = {
+					desc = yearly.3001.false_tt
+					show_chance = no
+					custom_tooltip = yearly.3001.false_use_tt
+				}
+			}
+		}
+		hidden_effect = {
+			if = {
+				limit = {
+					always = scope:telling_truth
+				}
+				trigger_event = {
+					id = yearly.3002
+					days = { 5 10 }
+				}
+			}
+			else = {
+				trigger_event = {
+					id = yearly.3003
+					days = { 5 10 }
+				}
+			}
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = -0.5
+				ai_rationality = 0.5
+				ai_compassion = 0.5
+			}
+			modifier = {
+				add = 200
+				has_trait = shy
+			}
+		}
+
+		stress_impact = {
+			paranoid = medium_stress_impact_gain
+		}
+	}
+
+	#Immediately accuse the vassal
+	option = {
+		name = yearly.3001.b
+		show_as_tooltip = {
+			random_list = {
+				1 = {
+					desc = yearly.3001.true_tt
+					show_chance = no
+					add_opinion = {
+						target = scope:vassal
+						modifier = plotting_against_liege_opinion
+					}
+				}
+				1 = {
+					desc = yearly.3001.false_tt
+					show_chance = no
+					add_prestige = major_prestige_loss
+				}
+			}
+		}
+		hidden_effect = {
+			if = {
+				limit = {
+					always = scope:telling_truth
+				}
+				trigger_event = {
+					id = yearly.3004
+					days = { 5 10 }
+				}
+			}
+			else = {
+				trigger_event = {
+					id = yearly.3005
+					days = { 5 10 }
+				}
+			}
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = 0.5
+				ai_zeal = 0.5
+				ai_vengefulness = 0.5
+				ai_honor = 0.5
+			}
+			opinion_modifier = {
+				opinion_target = scope:vassal
+				multiplier = -1
+			}
+			modifier = {
+				add = 100
+				always = scope:telling_truth
+			}
+		}
+
+		stress_impact = {
+			shy = medium_stress_impact_gain
+		}
+	}
+	
+	#Denounce the foreign neighbor
+	# Could give your vassal a boost if the neighbor is telling the truth
+	option = {
+		name = yearly.3001.c
+		add_character_modifier = {
+			modifier = protected_vassals_honor_modifier
+			years = 10
+		}
+		scope:neighbor = {
+			add_opinion = {
+				target = root
+				modifier = insult_opinion
+				opinion = -30
+			}
+		}
+		#Tooltip informs the player of possible bad outcome
+		show_as_tooltip = {
+			random_list = {
+				1 = {
+					desc = yearly.3001.c.if_right
+					show_chance = no
+				}
+				1 = {
+					desc = yearly.3001.c.if_wrong_tt
+					show_chance = no
+					scope:vassal = {
+						if = {
+							limit = {
+								is_a_faction_member = yes
+							}
+							joined_faction = {
+								add_faction_discontent = 20
+							}
+						}
+						add_character_modifier = {
+							modifier = liege_looking_away_modifier
+							years = 5
+						}
+					}
+				}
+			}
+		}
+		hidden_effect = {
+			if = {
+				limit = {
+					always = scope:telling_truth
+				}
+				send_interface_toast = {
+					title = yearly.3001.vassal_gains_strength
+					left_icon = scope:vassal
+					
+					scope:vassal = {
+						if = {
+							limit = {
+								is_a_faction_member = yes
+							}
+							joined_faction = {
+								add_faction_discontent = 20
+							}
+						}
+						add_character_modifier = {
+							modifier = liege_looking_away_modifier
+							years = 5
+						}
+					}
+				}
+			}
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_zeal = 0.5
+				ai_honor = 1
+				ai_rationality = 0.5
+			}
+			opinion_modifier = {
+				opinion_target = scope:vassal
+			}
+			opinion_modifier = {
+				opinion_target = scope:neighbor
+				multiplier = -0.5
+			}
+			modifier = {
+				add = -100
+				ai_diplomacy_stance = {
+					target = scope:neighbor
+					stance = threat
+				}
+			}
+			modifier = {
+				add = -200
+				ai_diplomacy_stance = {
+					target = scope:neighbor
+					stance = friend
+				}
+			}
+			modifier = {
+				add = 200
+				ai_diplomacy_stance = {
+					target = scope:neighbor
+					stance = enemy
+				}
+			}
+		}
+	}
+
+	#Kill the vassal right away
+	option = {
+		name = yearly.3001.d
+		trigger = {
+			has_trait = paranoid
+		}
+		trait = paranoid
+		add_internal_flag = dangerous
+		duel = {
+			target = scope:vassal
+			skill = intrigue
+			10 = {
+				compare_modifier = {
+					value = scope:duel_value
+				}
+				add_dread = major_dread_gain
+				imprison_character_effect = {
+					TARGET = scope:vassal
+					IMPRISONER = root
+				}
+			}
+			10 = {
+				scope:vassal = {
+					#If target is count or higher, start war.
+					if = {
+						limit = {
+							is_landed = yes
+							primary_title.tier > tier_barony
+						}
+						if = {
+							limit = {
+								is_a_faction_member = yes
+								liege = scope:actor
+								joined_faction = {
+									faction_target = scope:actor
+									NOT = { faction_is_type = populist_faction }
+								}
+							}
+							joined_faction = {
+								save_scope_as = retaliating_faction # For loc
+								imprisonment_retribution_start_faction_war_if_valid = yes
+							}
+						}
+						else = {
+							war_for_imprison_effect = yes
+						}
+					}
+					#If target is a baron or unlanded, have them escape.
+					else = {
+						if = {
+							limit = {
+								is_landed = yes
+							}
+							depose = yes
+						}
+						move_to_pool = yes
+					}
+				}
+			}
+		}	
+
+		stress_impact = {
+			compassionate = major_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 20
+			modifier = {
+				add = 50
+				ai_diplomacy_stance = {
+					target = scope:vassal
+					stance = threat
+				}
+			}
+			ai_value_modifier = {
+				ai_vengefulness = 1
+				ai_boldness = 1
+			}
+		}
+	}
+}
+
+
+#Confront the Vassal - they admit wrongdoing
+yearly.3002 = {
+	type = character_event
+	title = yearly.3002.t
+	desc = yearly.3002.desc
+	theme = vassal
+	left_portrait = {
+		character = scope:vassal
+		animation = shame
+	}
+	
+	trigger = {
+		yearly_3001_vassal_still_available_trigger = yes
+	}
+
+	immediate = {
+		scope:vassal = {
+			assign_quirk_effect = yes
+		}
+	}
+
+	#You better do as I say from now on
+	option = {
+		name = yearly.3002.a
+		if = {
+			limit = {
+				can_add_hook = {
+					target = scope:vassal
+					type = threat_hook
+				}
+			}
+			add_hook = {
+				target = scope:vassal
+				type = threat_hook
+			}
+		}
+		else = {
+			add_prestige = medium_prestige_gain
+		}
+
+		stress_impact = {
+			forgiving = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 1
+				ai_compassion = 0.5
+			}
+		}
+	}
+
+	#Make sure everyone knows how forgiving and benevolent I am
+	option = {
+		name = yearly.3002.b
+		add_character_modifier = {
+			modifier = yearly_benevolent_forgiveness_modifier
+			years = 10
+		}
+		if = {
+			limit = {
+				tyranny > 0		
+			}
+			add_tyranny = -10
+		}
+		scope:vassal = {
+			add_character_modifier = {
+				modifier = yearly_close_watch_modifier
+				years = 5
+			}
+		}
+
+		stress_impact = {
+			deceitful = minor_stress_impact_gain
+			callous = medium_stress_impact_gain
+			vengeful = major_stress_impact_gain
+			greedy = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_rationality = 0.5
+				ai_honor = 1
+			}
+		}
+	}
+}
+
+#Confront the Vassal - they have done nothing
+yearly.3003 = {
+	type = character_event
+	title = yearly.3003.t
+	desc = {
+		desc = yearly.3003.desc
+		triggered_desc = {
+			trigger = {
+				exists = scope:friend
+				scope:friend.diplomacy >= decent_skill_rating
+			}
+			desc = yearly.3003.friend
+		}
+	}
+	left_portrait = {
+		character = scope:vassal
+		animation = anger
+	}
+	right_portrait = scope:friend
+	theme = vassal
+	
+	trigger = {
+		yearly_3001_vassal_still_available_trigger = yes
+	}
+	
+	option = {
+		name = yearly.3003.a
+		if = {
+			limit = {
+				scope:vassal = {
+					vassal_contract_can_be_modified_trigger = yes
+					vassal_contract_obligation_level_can_be_decreased = feudal_government_taxes 
+				}
+			}
+			scope:vassal = { vassal_contract_decrease_obligation_level = feudal_government_taxes }
+		}
+		else = {
+			pay_short_term_gold = {
+				target = scope:vassal
+				gold = root.major_gold_value
+			}
+		}
+		stress_impact = {
+			greedy = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = -0.5
+				ai_honor = 1
+			}
+		}
+	}
+
+	option = {
+		name = yearly.3003.b
+		scope:vassal = {
+			add_opinion = {
+				target = root
+				modifier = insult_opinion
+				opinion = -20
+			}
+		}
+		duel = {
+			target = scope:vassal
+			skill = diplomacy
+			10 = {
+				desc = yearly.3003.public_expression_of_gratitude
+
+				send_interface_toast = {
+					title = yearly.3003.public_expression_of_gratitude
+					left_icon = scope:vassal
+
+					add_prestige = medium_prestige_loss
+				}
+			}
+			5 = {
+				desc = yearly.3003.vassal_loss_of_faith
+				send_interface_toast = {
+					title = yearly.3003.vassal_loss_of_faith
+					left_icon = scope:vassal
+
+					add_character_modifier = {
+						modifier = vassal_distrust_modifier
+						years = 10
+					}
+				}
+			}
+		}
+
+		stress_impact = {
+			arrogant = major_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 1
+			}
+		}
+	}
+
+	option = {
+		name = yearly.3003.c
+		trigger = {
+			exists = scope:friend
+		}
+		custom_tooltip = yearly.3003.c.enable
+		reverse_add_opinion = {
+			target = scope:vassal
+			modifier = grateful_opinion
+			opinion = 15
+		}
+		add_prestige = minor_prestige_gain
+
+		ai_chance = {
+			base = 500
+		}
+	}
+}
+
+#Expose the Vassal - they admit wrongdoing
+yearly.3004 = {
+	type = character_event
+	title = yearly.3004.t
+	desc = yearly.3004.desc
+	theme = vassal
+	left_portrait = {
+		character = scope:vassal
+		animation = shame
+	}
+	
+	trigger = {
+		yearly_3001_vassal_still_available_trigger = yes
+	}
+
+	immediate = {
+		hidden_effect = {
+			add_opinion = {
+				target = scope:vassal
+				modifier = plotting_against_liege_opinion
+			}
+		}
+	}
+
+	#A measure of forgiveness
+	option = {
+		name = yearly.3004.a
+		add_prestige = medium_prestige_gain
+		scope:vassal = {
+			if = {
+				limit = {
+					vassal_contract_obligation_level_can_be_increased = feudal_government_taxes
+				}
+				vassal_contract_increase_obligation_level = feudal_government_taxes
+			}
+		}
+		if = {
+			limit = {
+				can_add_hook = {
+					target = scope:vassal
+					type = loyalty_hook
+				}
+			}
+			add_hook = {
+				target = scope:vassal
+				type = loyalty_hook
+			}
+		}
+
+		reverse_add_opinion = {
+			target = scope:vassal
+			modifier = grateful_opinion
+			opinion = 20
+		}
+		hidden_effect = {
+			remove_opinion = {
+				target = scope:vassal
+				modifier = plotting_against_liege_opinion
+			}
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_honor = 0.5
+				ai_compassion = 1
+			}
+		}
+
+		stress_impact = {
+			vengeful = major_stress_impact_gain
+			paranoid = medium_stress_impact_gain
+			sadistic = medium_stress_impact_gain
+		}
+	}
+
+	#Imprison them
+	option = {
+		name = yearly.3004.b
+		imprison_character_effect = {
+			TARGET = scope:vassal
+			IMPRISONER = root
+		}
+		add_prestige = minor_prestige_gain
+
+		stress_impact = {
+			forgiving = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_honor = 1
+				ai_rationality = 0.5
+			}
+		}
+	}
+
+	#Execute them
+	option = {
+		name = yearly.3004.c
+		execute_prisoner_effect = {
+			VICTIM = scope:vassal
+			EXECUTIONER = root
+		}
+
+		stress_impact = {
+			compassionate = major_stress_impact_gain
+			forgiving = major_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_vengefulness = 1
+			}
+			modifier = {
+				add = 100
+				has_trait = paranoid
+			}
+		}
+	}
+}
+
+#Expose the Vassal - they have done nothing
+yearly.3005 = {
+	type = character_event
+	title = yearly.3004.t
+	desc = yearly.3005.desc
+	theme = vassal
+	left_portrait = {
+		character = scope:vassal
+		animation = anger
+	}
+	
+	trigger = {
+		yearly_3001_vassal_still_available_trigger = yes
+	}
+
+	#Prestige loss
+	option = {
+		name = yearly.3005.a
+		duel = {
+			skill = diplomacy
+			value = 10
+			10 = {
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = 0.5
+				}
+				desc = yearly.3005.a.rousing_speech
+				send_interface_toast = {
+					title = yearly.3005.a.rousing_speech
+					left_icon = scope:vassal
+				
+					add_prestige = minor_prestige_loss
+					reverse_add_opinion = {
+						target = scope:vassal
+						modifier = insult_opinion
+						opinion = -10
+					}
+				}
+			}
+			5 = {
+				desc = yearly.3005.a.stumbling_apology
+				send_interface_toast = {
+					title = yearly.3005.a.stumbling_apology
+					left_icon = scope:vassal
+				
+					add_prestige = major_prestige_loss
+					reverse_add_opinion = {
+						target = scope:vassal
+						modifier = insult_opinion
+						opinion = -20
+					}
+				}
+			}
+		}
+
+		stress_impact = {
+			callous = medium_stress_impact_gain
+			sadistic = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 200
+		}
+	}
+
+	#Imprison them anyways
+	option = {
+		name = yearly.3005.b
+		add_dread = medium_dread_gain
+		imprison_character_effect_ignore_reason = {
+			TARGET = scope:vassal
+			IMPRISONER = root
+		}
+
+		stress_impact = {
+			forgiving = major_stress_impact_gain
+			just = major_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_boldness = 1
+				ai_vengefulness = 0.5
+			}
+			modifier = {
+				add = 100
+				has_trait = paranoid
+			}
+		}
+	}
+}
+
+
+
+
+#############################
+# An Impression Twice Made
+#
+# by Petter Vilberg
+#############################
+
+scripted_trigger yearly_3011_fellow_vassal_trigger = {
+	is_available_ai_adult = yes
+	NOT = { this = root }
+	NOR = {
+		has_relation_rival = liege
+		has_relation_rival = root
+		has_relation_friend = liege
+		has_relation_friend = root
+	}
+	liege = {
+		opinion = {
+			target = prev
+			value < 10
+		}
+	}
+}
+
+scripted_trigger yearly_3011_liege_trigger = {
+	is_available_ai_adult = yes
+	opinion = {
+		target = root
+		value < 10
+	}
+	any_vassal = {
+		yearly_3011_fellow_vassal_trigger = yes
+	}
+}
+
+scripted_trigger yearly_3011_nemesis_trigger = {
+	is_available_ai_adult = yes
+}
+
+#A fellow vassal comes with a suggestion
+yearly.3011 = {
+	type = character_event
+	title = yearly.3011.t
+	desc = yearly.3011.desc
+	left_portrait = scope:vassal
+	right_portrait = scope:liege
+	theme = diplomacy
+	
+	trigger = {
+		NOT = { has_character_flag = had_event_yearly_3011 }
+		is_independent_ruler = no
+		liege = {
+			yearly_3011_liege_trigger = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_3011
+			years = 10
+		}
+		liege = {
+			save_scope_as = liege
+			random_vassal = {
+				limit = {
+					yearly_3011_fellow_vassal_trigger = yes
+				}
+				weight = {
+					base = 1
+					modifier = {
+						add = 3
+						has_relation_potential_friend = root
+					}
+					modifier = {
+						add = 1
+						has_relation_friend = root
+					}
+				}
+				save_scope_as = vassal
+			}
+		}
+		if = {
+			limit = {
+				any_relation = {
+					type = nemesis
+					yearly_3011_nemesis_trigger = yes
+				}
+			}
+			random_relation = {
+				type = nemesis
+				limit = {
+					yearly_3011_nemesis_trigger = yes
+				}
+				save_scope_as = nemesis
+			}
+		}
+	}
+
+	#I will provide the gold
+	option = {
+		name = yearly.3011.a
+		trigger = {
+			gold > 0
+		}
+		remove_short_term_gold = medium_gold_value
+		show_as_tooltip = {
+			duel = {
+				skill = stewardship
+				value = 10
+				10 = {
+					desc = yearly.3011.a.success
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = 0.5
+					}
+					scope:liege = {
+						add_opinion = {
+							target = root
+							modifier = impressed_opinion
+							opinion = 30
+						}
+					}
+				}
+				10 = {
+					desc = yearly.3011.a.failure
+					scope:liege = {
+						add_opinion = {
+							target = root
+							modifier = pleased_opinion
+							opinion = 15
+						}
+					}
+				}
+			}
+		}
+		hidden_effect = {
+			duel = {
+				skill = stewardship
+				value = 10
+				10 = { #Success
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = 0.5
+					}
+					trigger_event = {
+						id = yearly.3012
+						days = { 5 10 }
+					}
+				}
+				10 = { #Relative Failure
+					trigger_event = {
+						id = yearly.3013
+						days = { 5 10 }
+					}
+				}
+				7 = { #Nemesis-engineered failure
+					trigger = {
+						exists = scope:nemesis
+					}
+					trigger_event = {
+						id = yearly.3014
+						days = { 5 10 }
+					}
+				}
+			}
+		}
+
+		stress_impact = {
+			greedy = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			compare_modifier = {
+				value = gold
+				offset = medium_gold_value
+			}
+			ai_value_modifier = {
+				ai_greed = -1
+			}
+		}
+	}
+
+	#I will find the entertainment
+	option = {
+		name = yearly.3011.b
+		add_prestige = medium_prestige_loss
+		show_as_tooltip = {
+			duel = {
+				skill = diplomacy
+				value = 10
+				10 = {
+					desc = yearly.3011.a.success
+					compare_modifier = {
+						value = scope:duel_value
+					}
+					scope:liege = {
+						add_opinion = {
+							target = root
+							modifier = impressed_opinion
+							opinion = 30
+						}
+					}
+				}
+				10 = {
+					desc = yearly.3011.a.failure
+					scope:liege = {
+						add_opinion = {
+							target = root
+							modifier = pleased_opinion
+							opinion = 15
+						}
+					}
+				}
+			}
+		}
+		hidden_effect = {
+			duel = {
+				skill = diplomacy
+				value = 10
+				10 = { #Success
+					compare_modifier = {
+						value = scope:duel_value
+					}
+					trigger_event = {
+						id = yearly.3012
+						days = { 5 10 }
+					}
+				}
+				10 = { #Relative Failure
+					trigger_event = {
+						id = yearly.3013
+						days = { 5 10 }
+					}
+				}
+				7 = { #Nemesis-engineered failure
+					trigger = {
+						exists = scope:nemesis
+					}
+					trigger_event = {
+						id = yearly.3014
+						days = { 5 10 }
+					}
+				}
+			}
+		}
+
+		stress_impact = {
+			shy = minor_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			compare_modifier = {
+				value = prestige
+				offset = medium_prestige_value
+			}
+		}
+	}
+	
+	#Opt out
+	option = {
+		name = yearly.3011.c
+		add_character_modifier = {
+			modifier = yearly_improved_impressions_modifier
+			years = 5
+		}
+		ai_chance = {
+			base = 25
+		}
+	}
+	
+	#We don't need much
+	option = {
+		name = yearly.3011.d
+		trigger = {
+			OR = {
+				has_trait = gregarious
+				has_trait = reveler_3
+			}
+		}
+		trait = gregarious
+		trait = reveler_3
+		show_as_tooltip = {
+			duel = {
+				skill = stewardship
+				value = 10
+				12 = {
+					desc = yearly.3011.a.success
+					scope:liege = {
+						add_opinion = {
+							target = root
+							modifier = impressed_opinion
+							opinion = 30
+						}
+					}
+				}
+				8 = {
+					desc = yearly.3011.a.failure
+					scope:liege = {
+						add_opinion = {
+							target = root
+							modifier = pleased_opinion
+							opinion = 15
+						}
+					}
+				}
+			}
+		}
+		hidden_effect = {
+			duel = {
+				skill = stewardship
+				value = 10
+				12 = { #Success
+					compare_modifier = {
+						value = stewardship
+						offset = average_skill_rating
+					}
+					trigger_event = {
+						id = yearly.3012
+						days = { 5 10 }
+					}
+				}
+				8 = { #Relative Failure
+					trigger_event = {
+						id = yearly.3013
+						days = { 5 10 }
+					}
+				}
+				5 = { #Nemesis-engineered failure
+					trigger = {
+						exists = scope:nemesis
+					}
+					trigger_event = {
+						id = yearly.3014
+						days = { 5 10 }
+					}
+				}
+			}
+		}
+		add_character_modifier = {
+			modifier = yearly_improved_impressions_modifier
+			years = 3
+		}
+
+		ai_chance = {
+			base = 500
+		}
+	}
+}
+
+
+
+#Success
+yearly.3012 = {
+	type = character_event
+	title = yearly.3011.t
+	desc = yearly.3012.desc
+	theme = diplomacy
+	left_portrait = {
+		character = scope:liege
+		animation = happiness
+	}
+	right_portrait = scope:vassal
+	
+	trigger = {
+		scope:liege = {
+			basic_is_available_ai = yes
+		}
+	}
+
+	immediate = {
+		hidden_effect = {
+			if = {
+				limit = {
+					NOT = {
+						has_relation_friend = scope:vassal
+					}
+				}
+				if = {
+					limit = {
+						has_relation_potential_friend = scope:vassal
+					}
+					random = {
+						chance = 50
+						save_scope_value_as = {
+							name = gain_friendship
+							value = yes
+						}
+					}
+				}
+				else = {
+					set_relation_potential_friend = scope:vassal
+					random = {
+						#Tiny chance that it jumps straight into friendship
+						chance = 10
+						save_scope_value_as = {
+							name = gain_friendship
+							value = yes
+						}
+					}
+				}
+			}
+		}
+	}
+
+	option = {
+		name = yearly.3012.a
+		trigger = {
+			exists = scope:gain_friendship
+		}
+		exclusive = yes
+		scope:liege = {
+			add_opinion = {
+				target = root
+				modifier = impressed_opinion
+				opinion = 30
+			}
+			add_opinion = {
+				target = scope:vassal
+				modifier = impressed_opinion
+				opinion = 30
+			}
+		}
+		set_relation_friend = scope:vassal
+	}
+
+	option = {
+		name = yearly.3012.b
+		scope:liege = {
+			add_opinion = {
+				target = root
+				modifier = impressed_opinion
+				opinion = 30
+			}
+			add_opinion = {
+				target = scope:vassal
+				modifier = impressed_opinion
+				opinion = 30
+			}
+		}
+		reverse_add_opinion = {
+			target = scope:vassal
+			modifier = friendliness_opinion
+			opinion = 15
+		}
+		hidden_effect = {
+			add_opinion = {
+				target = scope:vassal
+				modifier = friendliness_opinion
+				opinion = 15
+			}
+		}
+	}
+}
+
+
+#Limited Success
+yearly.3013 = {
+	type = character_event
+	title = yearly.3011.t
+	desc = yearly.3013.desc
+	left_portrait = scope:liege
+	right_portrait = scope:vassal
+	theme = diplomacy
+	
+	trigger = {
+		scope:liege = {
+			basic_is_available_ai = yes
+		}
+	}
+
+	immediate = {
+		hidden_effect = {
+			if = {
+				limit = {
+					NOT = {
+						has_relation_friend = scope:vassal
+					}
+				}
+				if = {
+					limit = {
+						has_relation_potential_friend = scope:vassal
+					}
+					random = {
+						chance = 30
+						save_scope_value_as = {
+							name = gain_friendship
+							value = yes
+						}
+					}
+				}
+				else = {
+					set_relation_potential_friend = scope:vassal
+					random = {
+						chance = 5
+						save_scope_value_as = {
+							name = gain_friendship
+							value = yes
+						}
+					}
+				}
+			}
+		}
+	}
+
+	option = {
+		name = yearly.3013.a
+		trigger = {
+			exists = scope:gain_friendship
+		}
+		exclusive = yes
+		scope:liege = {
+			add_opinion = {
+				target = root
+				modifier = pleased_opinion
+				opinion = 15
+			}
+			add_opinion = {
+				target = scope:vassal
+				modifier = pleased_opinion
+				opinion = 15
+			}
+		}
+		set_relation_friend = scope:vassal
+	}
+
+	option = {
+		name = yearly.3013.b
+		scope:liege = {
+			add_opinion = {
+				target = root
+				modifier = pleased_opinion
+				opinion = 15
+			}
+			add_opinion = {
+				target = scope:vassal
+				modifier = pleased_opinion
+				opinion = 15
+			}
+		}
+		reverse_add_opinion = {
+			target = scope:vassal
+			modifier = friendliness_opinion
+			opinion = 10
+		}
+		hidden_effect = {
+			add_opinion = {
+				target = scope:vassal
+				modifier = friendliness_opinion
+				opinion = 10
+			}
+		}
+	}
+}
+
+
+#Failure!
+yearly.3014 = {
+	type = character_event
+	title = yearly.3011.t
+	desc = yearly.3014.desc
+	left_portrait = {
+		character = scope:liege
+		animation = dismissal
+	}
+	right_portrait = scope:vassal
+	lower_left_portrait = scope:nemesis
+	theme = diplomacy
+	
+	trigger = {
+		scope:liege = {
+			basic_is_available_ai = yes
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				NOT = {
+					has_relation_friend = scope:vassal
+				}
+			}
+			if = {
+				limit = {
+					has_relation_potential_friend = scope:vassal
+				}
+				random = {
+					chance = 10
+					save_scope_value_as = {
+						name = gain_friendship
+						value = yes
+					}
+				}
+			}
+			else = {
+				hidden_effect = {
+					set_relation_potential_friend = scope:vassal
+				}
+			}
+		}
+	}
+
+	option = {
+		name = yearly.3014.a
+		trigger = {
+			exists = scope:gain_friendship
+		}
+		exclusive = yes
+		scope:liege = {
+			add_opinion = {
+				target = root
+				modifier = disappointed_opinion
+				opinion = -10
+			}
+			add_opinion = {
+				target = scope:vassal
+				modifier = disappointed_opinion
+				opinion = -10
+			}
+		}
+		set_relation_friend = scope:vassal
+	}
+
+	option = {
+		name = yearly.3014.b
+		scope:liege = {
+			add_opinion = {
+				target = root
+				modifier = disappointed_opinion
+				opinion = -10
+			}
+			add_opinion = {
+				target = scope:vassal
+				modifier = disappointed_opinion
+				opinion = -10
+			}
+		}
+		reverse_add_opinion = {
+			target = scope:vassal
+			modifier = friendliness_opinion
+			opinion = 5
+		}
+		hidden_effect = {
+			add_opinion = {
+				target = scope:vassal
+				modifier = friendliness_opinion
+				opinion = 5
+			}
+		}
+	}
+}
+
+
+
+####################
+# On Their Deathbed
+# by Petter Vilberg
+####################
+
+scripted_trigger yearly_3021_deathbed_trigger = {
+	is_ai = yes
+	health <= death_chance_dying_health
+	age >= 45
+	is_imprisoned = no
+	OR = {
+		has_relation_friend = root
+		court_owner = root
+		is_close_or_extended_family_of = root
+	}
+	reverse_opinion = {
+		target = root
+		value > 0
+	}
+	opinion = {
+		target = root
+		value > 20
+	}
+}
+
+
+yearly.3021 = {
+	type = character_event
+	title = yearly.3021.t
+	desc = yearly.3021.desc
+	theme = death
+	left_portrait = {
+		character = scope:deathbed_character
+		animation = personality_compassionate
+	}
+	
+	trigger = {
+		is_ai = no
+		get_characters_of_interest_trigger = {
+			LISTNAME = characters
+		}
+		any_in_list = {
+			list = characters
+			yearly_3021_deathbed_trigger = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			add = 1
+			any_consort = {
+				yearly_3021_deathbed_trigger = yes
+			}
+		}
+		modifier = {
+			add = 1
+			any_child = {
+				yearly_3021_deathbed_trigger = yes	
+			}
+		}
+	}
+
+	immediate = {
+		get_characters_of_interest_effect = {
+			LISTNAME = potential_characters
+		}
+		random_in_list = {
+			list = potential_characters
+			limit = {
+				yearly_3021_deathbed_trigger = yes
+			}
+			weight = {
+				base = 1
+				modifier = {
+					add = 2
+					is_consort_of = root
+				}
+				modifier = {
+					add = 2
+					is_child_of = root
+				}
+			}
+			save_scope_as = deathbed_character
+		}
+		play_music_cue = "mx_cue_death"
+	}
+
+	option = {
+		name = yearly.3021.a
+		add_character_flag = {
+			flag = knows_of_spouse_death_flag
+			days = 5
+		}
+		scope:deathbed_character = {
+			death = natural
+		}
+		stress_impact = {
+			base = medium_stress_loss
+		}
+		add_piety = medium_piety_gain
+	}
+}
+
+
+###################
+# Getting Ahead
+# by Petter Vilberg
+###################
+
+scripted_trigger yearly_3031_vassal_trigger = {
+	is_ai = yes
+	NOT = { this = root }
+	highest_held_title_tier = root.highest_held_title_tier
+	NOR = {
+		has_relation_rival = root
+		has_relation_friend = root
+		has_relation_lover = root
+	}
+}
+
+scripted_trigger yearly_3031_liege_trigger = {
+	is_ai = yes
+	any_vassal = {
+		yearly_3031_vassal_trigger = yes
+	}
+}
+
+yearly.3031 = {
+	type = character_event
+	title = yearly.3031.t
+	desc = {
+		desc = yearly.3031.desc
+		triggered_desc = {
+			trigger = { exists = scope:best_friend }
+			desc = yearly.3031.friend
+		}
+		triggered_desc = {
+			trigger = { exists = scope:nemesis }
+			desc = yearly.3031.rival
+		}
+	}
+	left_portrait = liege
+	lower_left_portrait = scope:best_friend
+	right_portrait = scope:fellow_vassal
+	lower_right_portrait = scope:nemesis
+	theme = intrigue
+	
+	trigger = {
+		is_independent_ruler = no
+		NOT = { has_character_flag = had_event_yearly_3031 }
+		NOR = {
+			has_trait = generous
+			has_trait = content
+		}
+		liege = {
+			yearly_3031_liege_trigger = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			factor = 2
+			has_trait = ambitious
+		}
+		nemesis_event_weight_modifier = yes
+		best_friend_event_weight_modifier = yes
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_3031
+			years = 10
+		}
+		liege = {
+			random_vassal = {
+				limit = {
+					yearly_3031_vassal_trigger = yes
+				}
+				weight = {
+					base = 1
+					modifier = {
+						add = 3
+						has_relation_potential_rival = root
+					}
+				}
+				save_scope_as = fellow_vassal
+			}
+
+			capital_barony = {
+				save_scope_as = capital
+			}
+			save_scope_as = liege
+		}
+
+		if = {
+			limit = {
+				has_relation_potential_rival = scope:fellow_vassal
+			}
+			save_scope_value_as = {
+				name = gain_rival
+				value = yes
+			}
+		}
+		else = {
+			hidden_effect = {
+				random = {
+					chance = 25
+					opinion_modifier = {
+						who = scope:fellow_vassal
+						opinion_target = root
+						multiplier = -0.5
+					}
+
+					save_scope_value_as = {
+						name = gain_rival
+						value = yes
+					}
+				}
+			}
+		}
+
+		if = {
+			limit = {
+				any_relation = {
+					type = friend
+					exists = liege
+					liege = root.liege
+					is_available_ai_adult = yes
+				}
+			}
+			random_relation = {
+				type = friend
+				limit = {
+					exists = liege
+					liege = root.liege
+					is_available_ai_adult = yes
+				}
+				save_scope_as = best_friend
+			}
+		}
+		if = {
+			limit = {
+				any_relation = {
+					type = rival
+					exists = liege
+					liege = root.liege
+					is_available_ai_adult = yes
+				}
+			}
+			random_relation = {
+				type = rival
+				limit = {
+					exists = liege
+					liege = root.liege
+					is_available_ai_adult = yes
+				}
+				save_scope_as = nemesis
+			}
+		}
+	}
+
+	#Charm liege's pants off
+	option = {
+		name = yearly.3031.a
+		duel = {
+			target = scope:fellow_vassal
+			skill = diplomacy
+			5 = {
+				desc = yearly.3031.a.best_friend_success
+				trigger = {
+					exists = scope:best_friend
+				}
+				compare_modifier = {
+					target = scope:best_friend
+					value = diplomacy
+					multiplier = 0.25
+				}
+
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = 30
+					}
+
+					if = {
+						limit = {
+							can_add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+						add_hook = {
+							type = favor_hook
+							target = liege
+						}
+					}
+
+					add_prestige = medium_prestige_gain
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.a.best_friend_success
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = 30
+						}
+
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+
+						add_prestige = medium_prestige_gain
+
+						scope:fellow_vassal = {
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = -15
+							}
+
+							stress_impact = {
+								base = minor_stress_gain
+							}
+						}
+					}
+				}
+			}
+			10 = {
+				desc = yearly.3031.a.success
+				compare_modifier = {
+					value = scope:duel_value
+				}
+
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = 30
+					}
+
+					if = {
+						limit = {
+							can_add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+						add_hook = {
+							type = favor_hook
+							target = liege
+						}
+					}
+
+					add_prestige = medium_prestige_gain
+
+					scope:fellow_vassal = {
+						add_opinion = {
+							target = root
+							modifier = angry_opinion
+							opinion = -30
+						}
+					}
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.a.success
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = 30
+						}
+
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+
+						add_prestige = medium_prestige_gain
+
+						scope:fellow_vassal = {
+							add_opinion = {
+								target = root
+								modifier = angry_opinion
+								opinion = -30
+							}
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = -15
+							}
+						}
+
+						if = {
+							limit = {
+								exists = scope:gain_rival
+							}
+							progress_towards_rival_effect = {
+								CHARACTER = scope:fellow_vassal
+								OPINION = no
+							}
+						}
+						else = {
+							random = {
+								chance = 60
+								if = {
+									limit = {
+										can_set_relation_potential_rival_trigger = { CHARACTER = scope:fellow_vassal }
+									}
+									set_relation_potential_rival = scope:fellow_vassal
+								}
+							}
+						}
+					}
+				}
+			}
+			10 = {
+				desc = yearly.3031.a.failure
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = -15
+					}
+
+					scope:fellow_vassal = {
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+					}
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.a.failure
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = -15
+						}
+
+						scope:fellow_vassal = {
+							if = {
+								limit = {
+									can_add_hook = {
+										type = favor_hook
+										target = liege
+									}
+								}
+								add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_opinion = {
+								target = root
+								modifier = respect_opinion
+								opinion = -15
+							}
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = 30
+							}
+						}
+
+						if = {
+							limit = {
+								exists = scope:gain_rival
+							}
+							progress_towards_rival_effect = {
+								CHARACTER = scope:fellow_vassal
+								OPINION = no
+							}
+						}
+						else = {
+							random = {
+								chance = 60
+								if = {
+									limit = {
+										can_set_relation_potential_rival_trigger = { CHARACTER = scope:fellow_vassal }
+									}
+									set_relation_potential_rival = scope:fellow_vassal
+								}
+							}
+						}
+					}
+				}
+			}
+
+			5 = {
+				desc = yearly.3031.a.nemesis_failure
+				trigger = {
+					exists = scope:nemesis
+				}
+				compare_modifier = {
+					target = scope:nemesis
+					value = diplomacy
+					multiplier = 0.25
+				}
+
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = -20
+					}
+
+					scope:fellow_vassal = {
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+					}
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.a.nemesis_failure
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = -20
+						}
+
+						scope:fellow_vassal = {
+							if = {
+								limit = {
+									can_add_hook = {
+										type = favor_hook
+										target = liege
+									}
+								}
+								add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_opinion = {
+								target = root
+								modifier = respect_opinion
+								opinion = -15
+							}
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = 30
+							}
+						}
+
+						if = {
+							limit = {
+								exists = scope:gain_rival
+							}
+							progress_towards_rival_effect = {
+								CHARACTER = scope:fellow_vassal
+								OPINION = no
+							}
+						}
+						else = {
+							random = {
+								chance = 60
+								if = {
+									limit = {
+										can_set_relation_potential_rival_trigger = { CHARACTER = scope:fellow_vassal }
+									}
+									set_relation_potential_rival = scope:fellow_vassal
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	#Show that you're more pious
+	option = {
+		name = yearly.3031.b
+		duel = {
+			target = scope:fellow_vassal
+			skill = learning
+			5 = {
+				desc = yearly.3031.a.best_friend_success
+				trigger = {
+					exists = scope:best_friend
+				}
+				compare_modifier = {
+					target = scope:best_friend
+					value = learning
+					multiplier = 0.25
+				}
+
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = 30
+					}
+
+					if = {
+						limit = {
+							can_add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+						add_hook = {
+							type = favor_hook
+							target = liege
+						}
+					}
+
+					add_piety = medium_piety_gain
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.a.best_friend_success
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = 30
+						}
+
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+
+						add_piety = medium_piety_gain
+
+						scope:fellow_vassal = {
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = -15
+							}
+
+							stress_impact = {
+								base = minor_stress_gain
+							}
+						}
+					}
+				}
+			}
+			10 = {
+				desc = yearly.3031.b.success
+				compare_modifier = {
+					value = scope:duel_value
+				}
+
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = 30
+					}
+
+					if = {
+						limit = {
+							can_add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+						add_hook = {
+							type = favor_hook
+							target = liege
+						}
+					}
+
+					add_piety = medium_piety_gain
+
+					scope:fellow_vassal = {
+						add_opinion = {
+							target = root
+							modifier = angry_opinion
+							opinion = -30
+						}
+					}
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.b.success
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = 30
+						}
+
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+
+						add_piety = medium_piety_gain
+
+						scope:fellow_vassal = {
+							add_opinion = {
+								target = root
+								modifier = angry_opinion
+								opinion = -30
+							}
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = -15
+							}
+						}
+
+						if = {
+							limit = {
+								exists = scope:gain_rival
+							}
+							progress_towards_rival_effect = {
+								CHARACTER = scope:fellow_vassal
+								OPINION = no
+							}
+						}
+						else = {
+							random = {
+								chance = 60
+								if = {
+									limit = {
+										can_set_relation_potential_rival_trigger = { CHARACTER = scope:fellow_vassal }
+									}
+									set_relation_potential_rival = scope:fellow_vassal
+								}
+							}
+						}
+					}
+				}
+			}
+			10 = {
+				desc = yearly.3031.b.failure
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = -15
+					}
+
+					scope:fellow_vassal = {
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+					}
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.b.failure
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = -15
+						}
+
+						scope:fellow_vassal = {
+							if = {
+								limit = {
+									can_add_hook = {
+										type = favor_hook
+										target = liege
+									}
+								}
+								add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+
+							add_opinion = {
+								target = root
+								modifier = respect_opinion
+								opinion = -15
+							}
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = 30
+							}
+						}
+
+						if = {
+							limit = {
+								exists = scope:gain_rival
+							}
+							progress_towards_rival_effect = {
+								CHARACTER = scope:fellow_vassal
+								OPINION = no
+							}
+						}
+						else = {
+							random = {
+								chance = 60
+								if = {
+									limit = {
+										can_set_relation_potential_rival_trigger = { CHARACTER = scope:fellow_vassal }
+									}
+									set_relation_potential_rival = scope:fellow_vassal
+								}
+							}
+						}
+					}
+				}
+			}
+
+			5 = {
+				desc = yearly.3031.a.nemesis_failure
+				trigger = {
+					exists = scope:nemesis
+				}
+				compare_modifier = {
+					target = scope:nemesis
+					value = learning
+					multiplier = 0.25
+				}
+
+				show_as_tooltip = {
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = -20
+					}
+
+					add_piety = medium_piety_loss
+
+					scope:fellow_vassal = {
+						if = {
+							limit = {
+								can_add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_hook = {
+								type = favor_hook
+								target = liege
+							}
+						}
+					}
+				}
+
+				hidden_effect = {
+					send_interface_toast = {
+						title = yearly.3031.a.nemesis_failure
+						left_icon = liege
+						right_icon = scope:fellow_vassal
+
+						reverse_add_opinion = {
+							target = liege
+							modifier = respect_opinion
+							opinion = -20
+						}
+
+						add_piety = medium_piety_loss
+
+						scope:fellow_vassal = {
+							if = {
+								limit = {
+									can_add_hook = {
+										type = favor_hook
+										target = liege
+									}
+								}
+								add_hook = {
+									type = favor_hook
+									target = liege
+								}
+							}
+							add_opinion = {
+								target = root
+								modifier = respect_opinion
+								opinion = -15
+							}
+							reverse_add_opinion = {
+								target = liege
+								modifier = respect_opinion
+								opinion = 30
+							}
+						}
+
+						if = {
+							limit = {
+								exists = scope:gain_rival
+							}
+							progress_towards_rival_effect = {
+								CHARACTER = scope:gain_rival
+								OPINION = no
+							}
+						}
+						else = {
+							random = {
+								chance = 60
+								if = {
+									limit = {
+										can_set_relation_potential_rival_trigger = { CHARACTER = scope:fellow_vassal }
+									}
+									set_relation_potential_rival = scope:fellow_vassal
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	#Literally charm liege's pants off
+	option = {
+		name = yearly.3031.c
+		trigger = {
+			scope:liege = {
+				is_attracted_to_gender_of = root
+				NOT = {
+					has_trait = chaste
+				}
+			}
+			attraction >= 10
+		}
+		custom_tooltip = yearly.3031.c.unlock_tt
+
+		show_as_tooltip = {
+			if = {
+				limit = {
+					can_add_hook = {
+						type = favor_hook
+						target = liege
+					}
+				}
+				add_hook = {
+					type = favor_hook
+					target = liege
+				}
+			}
+
+			reverse_add_opinion = {
+				target = liege
+				modifier = friendliness_opinion
+				opinion = 20
+			}
+
+			scope:fellow_vassal = {
+				add_opinion = {
+					target = root
+					modifier = respect_opinion
+					opinion = -20
+				}
+			}
+		}
+
+		custom_tooltip = yearly.3031.c.consequence
+
+		hidden_effect = {
+			send_interface_toast = {
+				title = yearly.3031.c.success
+				left_icon = liege
+				right_icon = scope:fellow_vassal
+
+				if = {
+					limit = {
+						can_add_hook = {
+							type = favor_hook
+							target = liege
+						}
+					}
+					add_hook = {
+						type = favor_hook
+						target = liege
+					}
+				}
+
+				reverse_add_opinion = {
+					target = liege
+					modifier = friendliness_opinion
+					opinion = 20
+				}
+
+
+				scope:fellow_vassal = {
+					add_opinion = {
+						target = root
+						modifier = respect_opinion
+						opinion = -20
+					}
+					reverse_add_opinion = {
+						target = liege
+						modifier = respect_opinion
+						opinion = -20
+					}
+				}
+
+				if = {
+					limit = {
+						exists = scope:gain_rival
+					}
+					progress_towards_rival_effect = {
+						CHARACTER = scope:fellow_vassal
+						OPINION = no
+					}
+				}
+				else = {
+					random = {
+						chance = 60
+						if = {
+							limit = {
+								can_set_relation_potential_rival_trigger = { CHARACTER = scope:fellow_vassal }
+							}
+							set_relation_potential_rival = scope:fellow_vassal
+						}
+					}
+				}
+			}
+
+			#Try to set up a seduction scheme towards root
+			liege = {
+				if = {
+					limit = {
+						any_scheme = {
+							scheme_type = seduce
+							NOT = { scheme_target = root }
+						}
+					}
+					random_scheme = {
+						limit = {
+							scheme_type = seduce
+							NOT = { scheme_target = root }	
+						}
+						end_scheme = yes
+					}
+				}
+				if = {
+					limit = {
+						can_start_scheme = {
+							target = root
+							type = seduce
+						}
+					}
+					start_scheme = {
+						target = root
+						type = seduce
+					}
+				}
+			}
+		}
+	}
+	
+	#All vassals should work together
+	option = {
+		name = yearly.3031.d
+		add_character_modifier = {
+			modifier = yearly_befriending_fellow_vassals_modifier
+			years = 5
+		}
+	}
+}
+
+
+
+####################
+# A Good FaithPracticioner
+# by Petter Vilberg
+####################
+
+yearly.3040 = {
+	type = character_event
+	title = yearly.3040.t
+	desc = yearly.3040.desc
+	left_portrait = root
+	right_portrait = scope:religious_head
+	theme = faith
+	
+	trigger = {
+		piety_level >= 2
+		NOT = { has_character_flag = had_event_yearly_3040 }
+	}
+
+	weight_multiplier = {
+		base = 1
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_3040
+			years = 10
+		}
+		if = {
+			limit = {
+				exists = faith.religious_head
+				NOT = { faith.religious_head = root }
+			}
+			faith.religious_head = { save_scope_as = religious_head }
+		}
+		play_music_cue = "mx_cue_general_crusade_event_2"
+	}
+
+	#Spread word of my piety far and wide
+	option = {
+		name = yearly.3040.a
+		add_piety = minor_piety_loss
+		add_prestige = medium_prestige_gain
+	}
+
+	#Maybe I have been a little too lenient on the religious authorities...
+	option = {
+		name = yearly.3040.b
+		add_piety = medium_piety_loss
+		add_gold = medium_gold_value
+	}
+	
+	#The FaithHead must surely appreciate my dedication
+	option = {
+		name = yearly.3040.c
+		trigger = {
+			exists = scope:religious_head
+		}
+		scope:religious_head = {
+			add_opinion = {
+				target = root
+				modifier = pious_opinion
+				opinion = 30
+			}
+		}
+	}
+
+	#My religious vassals must appreciate it
+	option = {
+		name = yearly.3040.d
+		trigger = {
+			NOT = { exists = scope:religious_head }
+		}
+		add_character_modifier = {
+			modifier = yearly_pious_liege_modifier
+			years = 10
+		}
+	}
+}
+
+
+##############################
+# Chafing Under Secular Laws
+# by Petter Vilberg
+##############################
+scripted_trigger yearly_3041_religious_vassal = {
+	is_ai = yes
+	has_government = theocracy_government
+}
+
+#Theocracy vassal requests more lenient contract
+yearly.3041 = {
+	type = letter_event
+	opening = {
+		desc = yearly.3041.opening
+	}
+	desc = yearly.3041.desc
+	sender = scope:vassal
+	
+	trigger = {
+		NOT = { has_character_flag = had_event_yearly_3041 }
+		any_vassal = {
+			yearly_3041_religious_vassal = yes
+		}
+		trigger_if = {
+			limit = { exists = faith.religious_head }
+			NOT = { faith.religious_head = root }
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_3041
+			years = 5
+		}
+		random_vassal = {
+			limit = {
+				yearly_3041_religious_vassal = yes
+			}
+			save_scope_as = vassal
+		}
+		if = {
+			limit = { exists = faith.religious_head }
+			faith.religious_head = { save_scope_as = religious_head }
+		}
+	}
+
+	#Reduce taxes
+	option = {
+		name = yearly.3041.a
+		add_piety = medium_piety_gain
+		add_character_modifier = {
+			modifier = yearly_reduced_theocracy_tax_modifier
+			years = 10
+		}
+		scope:vassal = {
+			add_opinion = {
+				target = root
+				modifier = grateful_opinion
+				opinion = 40
+			}
+		}
+
+		stress_impact = {
+			greedy = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = -1
+			}
+		}
+	}
+
+	#Reduce levies
+	option = {
+		name = yearly.3041.b
+		add_piety = major_piety_gain
+		add_character_modifier = {
+			modifier = yearly_reduced_theocracy_levies_modifier
+			years = 10
+		}
+		scope:vassal = {
+			add_opinion = {
+				target = root
+				modifier = grateful_opinion
+				opinion = 20
+			}
+		}
+
+		stress_impact = {
+			greedy = minor_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = -0.5
+			}
+		}
+	}
+	
+	option = {
+		name = yearly.3041.c
+		scope:vassal = {
+			add_opinion = {
+				target = root
+				modifier = disappointed_opinion
+				opinion = -20
+			}
+		}
+		if = {
+			limit = { exists = scope:religious_head }
+			scope:religious_head = {
+				add_opinion = {
+					target = root
+					modifier = disappointed_opinion
+					opinion = -15
+				}
+			}
+		}
+
+		stress_impact = {
+			zealous = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_zeal = -1
+				ai_rationality = 0.5
+			}
+		}
+	}
+}
+
+
+
+
+####################
+# By Right
+# by Petter Vilberg
+####################
+
+scripted_trigger yearly_3051_county_trigger = {
+	tier = tier_county
+	NOT = { this = holder.primary_title }
+	NOT = {
+		root = {
+			has_claim_on = prev
+		}
+	}
+}
+
+scripted_trigger yearly_3051_vassal_trigger = {
+	opinion = {
+		target = root
+		value < 0
+	}
+	OR = {
+		NOT = { is_close_or_extended_family_of = root }
+		opinion = {
+			target = root
+			value < -40
+		}
+	}
+	any_held_title = {
+		yearly_3051_county_trigger = yes
+	}
+	NOR = {
+		has_relation_friend = root
+		has_relation_lover = root
+	}
+	is_ai = yes
+}
+
+yearly.3051 = {
+	type = character_event
+	title = yearly.3051.t
+	desc = yearly.3051.desc
+	theme = vassal
+	left_portrait = {
+		character = scope:councillor
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:vassal
+		animation = worry
+	}
+	
+	trigger = {
+		NOT = { has_character_flag = had_event_yearly_3051 }
+		any_vassal = {
+			yearly_3051_vassal_trigger = yes
+		}
+		OR = {
+			exists = cp:councillor_steward
+			AND = {
+				exists = cp:councillor_spouse
+				cp:councillor_spouse = {
+					is_performing_council_task = task_manage_domain
+				}
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_3051
+			years = 10
+		}
+		if = {
+			limit = {
+				exists = cp:councillor_spouse
+				cp:councillor_spouse = {
+					is_performing_council_task = task_manage_domain
+				}	
+			}
+			cp:councillor_spouse = {
+				save_scope_as = councillor
+			}
+		}
+		else = {
+			cp:councillor_steward = {
+				save_scope_as = councillor
+			}
+		}
+		random_vassal = {
+			limit = {
+				yearly_3051_vassal_trigger = yes
+			}
+			random_held_title = {
+				limit = {
+					yearly_3051_county_trigger = yes
+				}
+				save_scope_as = county
+			}
+			save_scope_as = vassal
+		}
+		hidden_effect = {
+			if = {
+				limit = {
+					can_set_relation_rival_trigger = { CHARACTER = scope:vassal }
+				}
+				if = {
+					limit = {
+						has_relation_potential_rival = scope:vassal
+					}
+					save_scope_value_as = {
+						name = becoming_rivals
+						value = yes
+					}
+				}
+				else = {
+					random = {
+						chance = 20
+						save_scope_value_as = {
+							name = becoming_rivals
+							value = yes
+						}
+					}
+				}
+			}
+		}
+	}
+
+	option = {
+		name = yearly.3051.a
+		add_unpressed_claim = scope:county
+		reverse_add_opinion = {
+			target = scope:vassal
+			modifier = angry_opinion
+			opinion = -30
+		}
+		if = {
+			limit = {
+				exists = scope:becoming_rivals
+			}
+			set_relation_rival = scope:vassal
+		}
+		else = {
+			hidden_effect = {
+				set_relation_potential_rival = scope:vassal
+			}
+		}
+
+		stress_impact = {
+			generous = medium_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 1
+				ai_boldness = 0.5
+			}
+		}
+	}
+
+	option = {
+		name = yearly.3051.b
+		reverse_add_opinion = {
+			target = scope:vassal
+			modifier = grateful_opinion
+			opinion = 30
+		}
+
+		stress_impact = {
+			greedy = medium_stress_impact_gain
+			ambitious = minor_stress_impact_gain
+		}
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_honor = 1
+				ai_compassion = 0.5
+			}
+		}
+	}
+}
+
+
+
+
+################################
+# Cagots
+# by Petter Vilberg
+################################
+scripted_trigger yearly_3061_county_trigger = {
+	tier = tier_county
+	title_province = {
+		always = no
+	}
+	faith = root.faith
+}
+
+yearly.3061 = {
+	type = character_event
+	title = yearly.3061.t
+	desc = yearly.3061.desc
+	theme = realm
+	override_background = {
+		reference = terrain_scope
+	}
+	left_portrait = {
+		character = root
+		triggered_animation = {
+			trigger = { has_trait = zealous }
+			animation = rage
+		}
+		triggered_animation = {
+			trigger = {
+				OR = {
+					has_trait = paranoid
+					has_trait = craven
+				}
+			}
+			animation = worry
+		}
+		triggered_animation = {
+			trigger = { always = yes }
+			animation = disapproval
+		}
+	}
+	
+	trigger = {
+		is_ai = no
+		NOT = { exists = global_var:had_cagot_event }
+		always = no
+		any_held_title = {
+			yearly_3061_county_trigger = yes
+		}
+	}
+
+	immediate = {
+		set_global_variable = {
+			name = had_cagot_event
+			value = yes
+		}
+		random_held_title = {
+			limit = {
+				yearly_3061_county_trigger = yes
+			}
+			save_scope_as = county
+			title_province = {
+				save_scope_as = background_terrain_scope
+			}
+		}
+	}
+
+	option = { # Levy a tax, but leave them be
+		name = yearly.3061.a
+		trigger = { NOT = { has_trait = lunatic } }
+		show_as_unavailable = { always = yes }
+		add_gold = medium_gold_value
+		add_piety = minor_piety_loss
+		scope:county = {
+			add_county_modifier = {
+				modifier = cagots_left_in_peace_modifier
+				years = 25
+			}
+		}
+	}
+
+	option = { # Separate them out!
+		name = yearly.3061.b
+		flavor = yearly.3061.b.flavor
+		trigger = { NOT = { has_trait = lunatic } }
+		show_as_unavailable = { always = yes }
+		remove_short_term_gold = medium_gold_value
+		add_piety = minor_piety_gain
+		scope:county = {
+			add_county_modifier = {
+				modifier = cagots_separated_modifier
+				years = 100
+			}
+		}
+	}
+	
+	option = { # Perhaps we could try to live side by side with them?
+		name = yearly.3061.c
+		trigger = { has_trait = lunatic }
+		trait = lunatic_1
+		trait = lunatic_genetic
+		add_prestige = minor_prestige_loss
+		add_character_modifier = {
+			modifier = lunatic_accepting_of_others_modifier
+			years = 10
+		}
+	}
+	
+	option = { # Drive them out and seize their possessions!
+		name = yearly.3061.d
+		trigger = { has_trait = zealous }
+		trait = zealous
+		add_gold = major_gold_value
+		scope:county = {
+			change_development_level = -1
+			change_county_control = 50
+		}
+	}
+}
+
+#####################################
+# The Worst Nightmare of Your Life
+# by Petter Vilberg
+#####################################
+yearly.3071 = {
+	type = character_event
+	title = yearly.3071.t
+	desc = yearly.3071.desc
+	theme = mental_health
+	override_background = {
+		reference = corridor_night
+	}
+	left_portrait = {
+		character = root
+		animation = fear
+	}
+	
+	trigger = {
+		is_adult = yes
+		is_ai = no
+		NOR = {
+			exists = global_var:had_yearly_3071_nightmare_event
+			any_secret = {
+				secret_type = secret_cannibal
+			}
+			has_trait = cannibal
+		}
+	}
+
+	immediate = {
+		set_global_variable = {
+			name = had_yearly_3071_nightmare_event
+			value = yes
+		}	
+		play_music_cue = "mx_cue_stress"
+	}
+
+	option = { # Pray the nightmares away
+		name = yearly.3071.a
+		add_piety = medium_piety_gain
+	}
+
+	option = { # The flesh seemed delicious
+		name = yearly.3071.b
+		give_cannibal_secret_or_trait_effect = yes
+	}
+}

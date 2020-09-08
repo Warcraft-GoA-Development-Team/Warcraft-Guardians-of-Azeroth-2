@@ -1,0 +1,250 @@
+﻿#Scripted effects relating to Claim Throne Schemes
+
+#####################################################################
+# EFFECT LIST
+#####################################################################
+# !!! Remember to add all new effects with a short description here !!!
+
+# claim_throne_outcome_roll_setup_effect - Sets up the outcome roll in order to generate accurate tooltips
+# claim_throne_check_target_title_effect - Used to ensure there is an appropriate target, and to set up loc
+# claim_throne_outcome_roll_effect - The actual outcome roll
+# claim_throne_success_effect - Effect run on Success
+# claim_throne_failure_effect - Effect run on Failure
+# successful_claim_throne_event_option_effect - For event options following Success
+
+######################################################################
+# EFFECTS
+######################################################################
+
+#Sets up the Outcome Roll values
+claim_throne_outcome_roll_setup_effect = {
+	# Find appropriate title
+	scope:target = {
+		primary_title = {
+			save_scope_as = target_title
+		}
+	}
+	# Discovery Roll setup
+	save_scope_value_as = {
+		name = discovery_chance
+		value = {
+			value = 100
+			subtract = scope:scheme.scheme_secrecy
+		}
+	}
+}
+
+claim_throne_check_target_title_effect = {
+	# In case something has happened to the target_title, we try to reset it here:
+	if = {
+		limit = {
+			OR = {
+				NOT = { exists = scope:target_title } # The title could somehow disappear
+				NOT = {
+					scope:target_title = { # The title might feasibly pass to someone else
+						AND = {
+							exists = holder
+							holder = scope:target
+						}
+					}
+				}
+			}
+		}
+		scope:target = {
+			primary_title = { # We just assign the target's primary title as the new target title
+				save_scope_as = target_title
+			}
+		}
+	}
+
+	# Rivalry check is done here, since it's run in every outcome
+	if = {
+		limit = {
+			OR = {
+				exists = scope:scheme_successful
+				exists = scope:scheme_discovered
+			}
+			NOT = { has_relation_rival = scope:target }
+		}
+		hidden_effect = {
+			random = {
+				chance = 30
+				modifier = {
+					add = 30
+					has_relation_potential_rival = scope:target
+				}
+				modifier = {
+					exists = scope:scheme_discovered
+					add = 30
+				}
+				modifier = {
+					has_relation_friend = scope:target
+					add = -25
+				}
+
+				save_scope_value_as = {
+					name = set_rivalry
+					value = yes
+				}
+			}
+		}
+	}
+}
+
+#Roll to check whether a Claim Throne Scheme is a success or a failure, and whether the owner is discovered
+claim_throne_outcome_roll_effect = {
+	#SUCCESS ROLL
+	random = {
+		chance = scope:scheme.scheme_success_chance
+		custom_tooltip = claim_throne_successful_roll_tt
+		save_scope_value_as = {
+			name = scheme_successful
+			value = yes
+		}
+	}
+	### End Success roll
+	#DISCOVERY ROLL
+	custom_description_no_bullet = {
+		text = claim_throne_success_discovery_warning_effect
+	}
+	random = {
+		chance = scope:discovery_chance
+		custom_tooltip = claim_throne_become_discovered_roll_tt
+		save_scope_value_as = {
+			name = scheme_discovered
+			value = yes
+		}
+	}
+	### End Discovery roll
+
+	hidden_effect = {
+		#FIRE CORRECT ON ACTIONS
+		if = {
+			limit = {
+				exists = scope:scheme_successful
+			}
+			trigger_event = {
+				on_action = claim_throne_succeeded
+				days = 3
+			}
+		}
+		else = {
+			trigger_event = {
+				on_action = claim_throne_failed
+				days = 3
+			}
+		}
+	}
+}
+
+
+#Used in the immediate of the Scheme Owner's success event
+claim_throne_success_effect = {
+	# Note that the Claim itself is added in successful_claim_throne_outcome_event_option_effect
+
+	if = {
+		limit = {
+			exists = scope:scheme_discovered
+		}
+		# Trigger the response event for the target (actual opinion is set here)
+		scope:target = {
+			trigger_event = claim_throne_outcome.5001
+		}
+		
+		show_as_tooltip = { # Target dislikes you
+			scope:target = {
+				add_opinion = {
+					target = scope:owner
+					modifier = claim_my_throne_success_discovered_opinion
+				}
+			}
+		}
+	}
+	else = {
+		# Trigger the response event for the target (actual opinion is set here)
+		scope:target = {
+			trigger_event = claim_throne_outcome.5002
+		}
+		show_as_tooltip = {
+			scope:target = {
+				add_opinion = {
+					target = scope:owner
+					modifier = claim_my_throne_success_undiscovered_opinion
+					years = 10
+				}
+			}
+		}
+	}
+}
+
+
+claim_throne_failure_effect = {
+	add_prestige = claim_throne_discovered_failure_prestige_loss
+	scope:target = {
+		# Fire notification event for target
+		trigger_event = claim_throne_outcome.5003
+		show_as_tooltip = {
+			add_opinion = {
+				target = scope:owner
+				modifier = claim_my_throne_failure_opinion
+				years = 10
+			}
+			if = {
+				limit = { exists = scope:set_rivalry }
+				set_relation_rival = scope:owner
+			}
+		}
+	}
+}
+
+successful_claim_throne_event_option_effect = {
+	add_pressed_claim = scope:target_title
+
+	if = {
+		limit = {
+			exists = scope:scheme_discovered
+		}
+		add_prestige = claim_throne_discovered_prestige_loss
+	}
+	show_as_tooltip = {
+		scope:target = {
+			if = {
+				limit = { exists = scope:set_rivalry }
+				set_relation_rival = scope:owner
+			}
+			if = {
+				limit = { exists = scope:scheme_discovered }
+				add_opinion = {
+					target = scope:owner
+					modifier = claim_my_throne_success_discovered_opinion
+				}
+			}
+			else = {
+				add_opinion = {
+					target = scope:owner
+					modifier = claim_my_throne_success_undiscovered_opinion
+					years = 10
+				}
+			}
+		}
+	}
+
+	scope:scheme = {
+		end_scheme = yes
+	}
+}
+
+claim_throne_decline_execution_effect = {
+	custom_tooltip = do_not_execute_claim_throne_tooltip
+	hidden_effect = {
+		scope:scheme = { add_scheme_progress = -10 }
+	}
+}
+
+
+claim_throne_set_mythical_founder_variable_effect = {
+	set_variable = {
+		name = mythical_founder
+		value = flag:fallback
+	}
+}
