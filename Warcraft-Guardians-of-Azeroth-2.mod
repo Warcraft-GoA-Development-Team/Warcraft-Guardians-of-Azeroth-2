@@ -24,5 +24,6 @@ tags={
 
 replace_path = "common/culture/cultures"
 replace_path = "common/dynasties"
+replace_path = "common/religion"
 replace_path = "history/characters"
 replace_path = "history/cultures"
