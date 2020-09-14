@@ -22,4 +22,6 @@ tags={
 	"Graphics"
 }
 
+replace_path = "common/culture/cultures"
 replace_path = "history/characters"
+replace_path = "history/cultures"
