@@ -1,3 +1,7 @@
+name="Warcraft: Guardians of Azeroth 2"
+supported_version="1.0.3"
+path="mod/Warcraft-Guardians-of-Azeroth-2"
+
 version="0.0.0"
 tags={
 	"Total Conversion"
@@ -17,6 +21,5 @@ tags={
 	"Warfare"
 	"Graphics"
 }
-name="Warcraft: Guardians of Azeroth 2"
-supported_version="1.0.3"
-path="C:/Users/zumba/Documents/Paradox Interactive/Crusader Kings III/mod/Warcraft-Guardians-of-Azeroth-2"
+
+replace_path = "history/characters"
