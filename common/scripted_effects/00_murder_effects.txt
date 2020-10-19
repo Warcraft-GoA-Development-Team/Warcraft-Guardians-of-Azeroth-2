@@ -1,0 +1,455 @@
+﻿
+
+murder_consequences_known_or_exposed_effect = {
+	$MURDERER$ = {
+		###ADD TRAITS###
+		#Force tooltip is used for everyone but POV to make sure expose secret events looks right for everyone, even though the trait can only be added once. Kinslayer works the same way.
+		add_trait_only_force_tooltip_if_not_pov_effect = { TRAIT = murderer POV = $POV$ }
+		add_kinslayer_trait_or_nothing_effect = { VICTIM = $VICTIM$ }
+		
+		if = { #Add piety penalty if the murder was unjust
+			limit = {
+				NOR = {
+					any_close_family_member = {
+						even_if_dead = yes
+						exists = killer
+						killer = $VICTIM$
+					}
+					any_spouse = {
+						even_if_dead = yes
+						exists = killer
+						killer = $VICTIM$
+					}
+				}
+			}
+			add_piety = medium_piety_loss
+		}
+
+		###OPINION AND DREAD###
+		#Hide this from POV if they're not the murderer
+		if = {
+			limit = { this = $POV$ }
+			add_dread = 15
+			murder_opinion_effect = { VICTIM = $VICTIM$ MURDERER = $MURDERER$ }
+		}
+		else = {
+			hidden_effect = {
+				add_dread = 15
+				murder_opinion_effect = { VICTIM = $VICTIM$ MURDERER = $MURDERER$ }
+			}
+		}
+		# There are some things you just shouldn't do
+		show_as_tooltip = {
+			if = {
+				limit = { $VICTIM$ = { has_character_flag = is_party_baron } }
+				add_character_modifier = {
+					modifier = party_baron_murdered_the_joy_of_life_modifier
+				}
+			}
+		}
+		hidden_effect = {
+			if = {
+				limit = {
+					OR = {
+						exists = local_var:murdered_party_baron
+						exists = scope:secret.var:murdered_party_baron
+					}
+				}
+				add_character_modifier = {
+					modifier = party_baron_murdered_the_joy_of_life_modifier
+				}
+			}
+		}
+	}	
+}
+
+unknown_murder_effect = {
+	# Party Baron handling
+	if = {
+		limit = { $VICTIM$ = { has_character_flag = is_party_baron } }
+		set_local_variable = {
+			name = murdered_party_baron
+			value = yes
+		}
+	}
+	$VICTIM$ = {
+		#Killed by murder: set this up first to keep the killer hidden.
+		death = {
+			killer = $MURDERER$
+			death_reason = $REASON$
+		}
+	}
+	$MURDERER$ = {
+		if = {
+			limit = { is_alive = yes }
+			hidden_effect = {
+				add_secret = {
+					type = secret_murder
+					target = $VICTIM$
+				}
+			}
+			if = {
+				limit = { exists = local_var:murdered_party_baron }
+				random_secret = {
+					limit = {
+						secret_type = secret_murder
+						secret_target = $VICTIM$
+					}
+					set_variable = {
+						name = murdered_party_baron
+						value = yes
+					}
+				}
+			}
+		}
+	}
+}
+
+#If it's a cannibal eating you - so that that fact is saved for future reference
+unknown_cannibal_murder_effect = {
+	$VICTIM$ = {
+		death = {
+			death_reason = death_mysterious
+			killer = $MURDERER$
+		}
+	}
+	$MURDERER$ = {
+		add_secret = {
+			type = secret_murder
+			target = $VICTIM$
+		}
+		random_secret = {
+			limit = {
+				secret_type = secret_murder
+				secret_target = $VICTIM$
+			}
+			set_variable = { #To set the right death reason if the secret is revealed
+				name = was_eaten_by_cannibal
+				value = yes
+			}
+		}
+	}
+}
+
+
+#KNOWN MURDER
+
+# Exposer can be another character, or the murderer themselves if no specific character makes sense
+known_murder_effect = {
+	hidden_effect = {
+		if = {
+			limit = { $VICTIM$ = { has_character_flag = is_party_baron } }
+			set_local_variable = {
+				name = murdered_party_baron
+				value = yes
+			}
+		}
+	}
+	$VICTIM$ = {
+		death = {
+			death_reason = death_murder
+			killer = $MURDERER$
+		}
+		hidden_effect = { set_killer_public = yes }
+	}
+	$MURDERER$ = {
+		hidden_effect = {
+			add_secret = {
+				type = secret_murder
+				target = $VICTIM$
+			}
+			random_secret = {
+				limit = {
+					secret_type = secret_murder
+					secret_target = $VICTIM$
+				}
+
+				set_variable = {
+					name = known_murder
+					value = yes
+				}
+
+				expose_secret = $EXPOSER$
+			}
+		}
+	}
+	show_as_tooltip = {
+		murder_consequences_known_or_exposed_effect = {
+			MURDERER = $MURDERER$
+			VICTIM = $VICTIM$
+			POV = root
+		}
+	}
+}
+
+
+murder_opinion_effect = {
+	$VICTIM$ = {
+		#Victim's family
+		every_spouse = {
+			limit = { NOT = { this = $MURDERER$ } }
+			add_to_temporary_list = close_family_murder_opinion_list
+		}
+		every_close_family_member = {
+			limit = { NOT = { this = $MURDERER$ } }
+			add_to_temporary_list = close_family_murder_opinion_list
+		}
+
+		if = {
+			limit = {
+				any_in_list = {
+					list = close_family_murder_opinion_list
+					always = yes
+				}
+			}
+			every_in_list = {
+				list = close_family_murder_opinion_list
+				custom = all_close_family_and_spouses
+
+				add_opinion = {
+					target = $MURDERER$
+					modifier = murdered_close_family_crime
+				}
+			}
+		}
+		#Victim's friends and lovers
+		every_relation = {
+			type = friend
+			limit = {
+				NOR = {
+					this = $VICTIM$
+					is_in_list = close_family_murder_opinion_list
+				}
+			}
+			add_to_list = victim_close_relations_list
+		}
+		every_relation = {
+			type = lover
+			limit = {
+				NOR = {
+					this = $VICTIM$
+					is_in_list = close_family_murder_opinion_list
+					is_in_list = victim_close_relations_list
+				}
+			}
+			add_to_list = victim_close_relations_list
+		}
+		if = {
+			limit = {
+				any_in_list = {
+					list = victim_close_relations_list
+					always = yes
+				}
+			}
+			every_in_list = {
+				list = victim_close_relations_list
+				custom = all_friends_and_lovers
+				add_opinion = {
+					target = $MURDERER$
+					modifier = executed_close_relation_opinion
+				}
+			}
+		}
+	}
+}
+
+
+attempted_murder_opinion_effect = {
+	$VICTIM$ = {
+		if = {
+			limit = { is_alive = yes }
+			add_opinion = {
+				target = $MURDERER$
+				modifier = attempted_murder_me_crime
+			}
+			hidden_effect = {
+				add_opinion = {
+					target = $MURDERER$
+					modifier = murder_personal_grudge_opinion
+					years = 2
+				}
+			}
+		}
+
+		every_spouse = {
+			limit = { NOT = { this = $MURDERER$ } }
+			add_to_temporary_list = close_family_murder_opinion_list
+		}
+		every_close_family_member = {
+			limit = { NOT = { this = $MURDERER$ } }
+			add_to_temporary_list = close_family_murder_opinion_list
+		}
+
+		if = {
+			limit = {
+				any_in_list = {
+					list = close_family_murder_opinion_list
+					always = yes
+				}
+			}
+			every_in_list = {
+				list = close_family_murder_opinion_list
+				custom = all_close_family_and_spouses
+
+				add_opinion = {
+					target = $MURDERER$
+					modifier = attempted_murder_close_family_crime
+					years = 20
+				}
+			}
+		}
+
+	}
+}
+
+
+
+
+
+#Pick a Local Creepy Crawly
+set_local_venomous_creature_effect = {
+	random_list = {
+		100 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:rare_spider #Anywehere, but rely on high stewardship representing trade
+			}
+			modifier = {
+				factor = 50
+				stewardship <= medium_skill_rating
+			}
+		}
+		500 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:red_scorpion #India, Nepal
+			}
+			modifier = {
+				factor = 0
+				NOT = {
+					location = { geographical_region = world_elam }
+				}
+			}
+		}
+		1000 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:deathstalker #North Africa or Middle East
+			}
+			modifier = {
+				factor = 0
+				location = {
+					OR = {
+						geographical_region = world_greekaegean
+						geographical_region = world_anatolia
+					}
+				}
+			}
+		}
+		500 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:fat_tail #Arabia, Middle East, Egypt
+			}
+			modifier = {
+				factor = 0
+				location = {
+					OR = {
+						geographical_region = world_greekaegean
+						geographical_region = world_anatolia
+					}
+				}
+			}
+		}
+		1000 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:viper #Northern and Eastern Europe
+			}
+			modifier = {
+				factor = 0
+				location = {
+					NOR = {
+						geographical_region = world_greekaegean
+						geographical_region = world_anatolia
+					}
+				}
+			}
+		}
+		500 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:mamba #Sub-saharan Africa
+			}
+			modifier = {
+				factor = 0
+				NOT = {
+					location = { geographical_region = world_nubia }
+				}
+			}
+		}
+		250 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:boomslang #Sub-saharan Africa
+			}
+			modifier = {
+				factor = 0
+				NOT = {
+					location = { geographical_region = world_nubia }
+				}
+			}
+		}
+		250 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:king_cobra #South-east Asia + India
+			}
+			modifier = {
+				factor = 0
+				location = {
+					NOR = {
+						geographical_region = world_elam
+					}
+				}
+			}
+		}
+		1000 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:daboia #India
+			}
+			modifier = {
+				factor = 0
+				NOT = {
+					location = { geographical_region = world_elam }
+				}
+			}
+		}
+		500 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:saw_scale #North Africa, Middle East, Pakistan, India
+			}
+			modifier = {
+				factor = 0
+				location = {
+					OR = {
+						geographical_region = world_greekaegean
+						geographical_region = world_anatolia
+					}
+				}
+			}
+		}
+		1 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:beaked_mammal #Australia
+			}
+			modifier = {
+				factor = 0
+				stewardship <= 35 #Errr, *amazing* trade routes, I guess?
+			}
+		}
+	}
+}

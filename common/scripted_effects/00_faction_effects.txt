@@ -1,0 +1,1052 @@
+﻿
+
+#####################################################################
+# EFFECT LIST
+#####################################################################
+
+# join_faction_with_leave_blocker_effect - make a character join a faction, and prevent them from leaving
+# leave_faction_with_cooldown_effect - makes a character leave a FACTION and not rejoin another faction for YEARS years
+# get_popular_revolt_target_effect - looks for a valid title for a popular revolt to target (may not be the title the revolt gets if successful, just determines the 'region' the revolt is supposed to occur within),
+# successful_popular_revolt_outcome_effect - handles all of the title changes necessary for a successful popular revolt to break away as an independent realm.
+# get_popular_revolt_title_name - Script logic to check what the new name of dynamically-created peasant titles should be (e.g., Kingdom of Isma'ili Arabia).
+
+join_faction_with_leave_blocker_effect = {
+	join_faction = $FACTION$
+	hidden_effect = {
+		save_temporary_scope_value_as = {
+			name = join_faction_with_leave_blocker_effect_number
+			value = flag:$YEARS$
+		}
+		add_character_flag = {
+			flag = leaving_faction_block
+			years = $YEARS$
+		}
+	}
+	if = {
+		limit = { this = root }
+		custom_tooltip = join_faction_with_leave_blocker_effect_first.tt
+	}
+	else = {
+		custom_tooltip = join_faction_with_leave_blocker_effect_third.tt
+	}
+
+	#and to prevent angry error messages :D:D:D:D
+	if = {
+		limit = {
+			scope:join_faction_with_leave_blocker_effect_number = flag:1
+		}
+	}
+}
+
+
+leave_faction_with_cooldown_effect = {
+	leave_faction = $FACTION$
+	hidden_effect = {
+		save_temporary_scope_value_as = {
+			name = leave_faction_with_cooldown_effect_number
+			value = flag:$YEARS$
+		}
+		add_character_flag = {
+			flag = joining_faction_block
+			years = $YEARS$
+		}
+	}
+	if = {
+		limit = { this = root }
+		custom_tooltip = leave_faction_with_cooldown_effect_first.tt
+	}
+	else = {
+		custom_tooltip = leave_faction_with_cooldown_effect_third.tt
+	}
+
+
+
+	#and to prevent angry error messages :D:D:D:D
+	if = {
+		limit = {
+			OR = {
+				#scope:leave_faction_with_cooldown_effect_number = flag:1
+				#scope:leave_faction_with_cooldown_effect_number = flag:5
+				scope:leave_faction_with_cooldown_effect_number = flag:10
+				#scope:leave_faction_with_cooldown_effect_number = flag:15
+				scope:leave_faction_with_cooldown_effect_number = flag:20
+				#scope:leave_faction_with_cooldown_effect_number = flag:25
+				#scope:leave_faction_with_cooldown_effect_number = flag:30
+				#scope:leave_faction_with_cooldown_effect_number = flag:35
+				#scope:leave_faction_with_cooldown_effect_number = flag:40
+				#scope:leave_faction_with_cooldown_effect_number = flag:45
+				#scope:leave_faction_with_cooldown_effect_number = flag:50
+			}
+		}
+	}
+}
+
+imprisonment_retribution_start_faction_war_if_valid = {
+	scope:recipient = {
+		custom_tooltip = FACTION_IMPRISONMENT_RETALIATION_WARNING
+	}
+	hidden_effect = {
+		if = {
+			limit = {
+				faction_power > faction_power_threshold
+				NOT = {	faction_is_type = populist_faction }
+			}
+
+			if = {
+				limit = {
+					faction_is_type = claimant_faction
+				}
+				special_title = {
+					save_scope_as = target_title
+				}
+				faction_start_war = {
+					title = scope:target_title
+				}
+			}
+			else = {
+				faction_start_war = {}
+			}
+			every_faction_member = {
+				trigger_event = faction_demand.9001
+			}
+		}
+	}
+}
+
+# Get the most appropriate 'target title' we can for a popilar revolt (determines the de jure area the war will target, not final titles granted).
+get_popular_revolt_target_effect = {
+	$FACTION$ = {
+		save_scope_as = faction
+		faction_target = {
+			save_scope_as = faction_target
+		}
+
+		# First check if there are any valid kingdoms to target.
+		if = {
+			limit = {
+				# Only large revolts in large realms are eligible to target an entire kingdom.
+				any_faction_county_member = {
+					count >= 11
+				}
+				scope:faction_target.primary_title.tier >= tier_kingdom
+			}
+			every_faction_county_member = {
+				kingdom = {
+					if = {
+						# Do not target titles held by rulers outside of our realm.
+						limit = {
+							NOT = { exists = holder }
+							holder.top_liege = scope:faction_target
+						}
+					}
+					add_to_list = potential_kingdoms
+				}
+			}
+
+			# Out of the valid kingdoms (if any), pick the 'best' one
+			ordered_in_list = {
+				list = potential_kingdoms
+
+				order_by = {
+					# First look at the total number of rebels within the kingdom's de jure territory.
+					value = 0
+					add = {
+						value = 0
+						every_in_de_jure_hierarchy = {
+							limit = {
+								tier = tier_county
+								any_title_joined_faction = {
+									this = $FACTION$
+								}
+							}
+							add = total_county_levies
+						}
+					}
+
+					if = {
+						limit = {
+							exists = holder
+						}
+						if = {
+							# Prefer targeting titles held by the faction target...
+							limit = {
+								NOT = { holder = scope:faction_target }
+							}
+							multiply = 0.5
+						}
+						else_if = {
+							#...but not the target's primary title (we don't want to usurp them if we can help it!)
+							limit = {
+								this = scope:faction_target.primary_title
+							}
+							multiply = 0.5
+						}
+					}
+
+				}
+				save_scope_as = tmp_target_title
+			}
+		}
+
+		# If we were ineligible for kingdom-tier or failed to find a valid one, look for duchies.
+		if = {
+			limit = {
+				NOT = { exists = scope:tmp_target_title}
+
+				# Mid-sized or larger revolts in medium realms are eligible for duchy titles.
+				any_faction_county_member = {
+					count >= 5
+				}
+				faction_target.primary_title.tier >= tier_duchy
+			}
+			every_faction_county_member = {
+				duchy = {
+					if = {
+						# Do not target titles held by rulers outside of our realm.
+						limit = {
+							NOT = { exists = holder }
+							holder.top_liege = scope:faction_target
+						}
+					}
+					add_to_list = potential_duchies
+				}
+			}
+
+			# Out of the valid duchies (if any), pick the 'best' one
+			ordered_in_list = {
+				list = potential_duchies
+
+				order_by = {
+					value = 0
+					# First look at the total number of rebels within the duchy's de jure territory.
+					add = {
+						value = 0
+						every_in_de_jure_hierarchy = {
+							limit = {
+								tier = tier_county
+								any_title_joined_faction = {
+									this = $FACTION$
+								}
+							}
+							add = total_county_levies
+						}
+					}
+
+					if = {
+						limit = {
+							exists = holder
+						}
+						if = {
+							# Prefer targeting titles held by the faction target...
+							limit = {
+								NOT = { holder = scope:faction_target }
+							}
+							multiply = 0.5
+						}
+						else_if = {
+							#...but not the target's primary title (we don't want to usurp them if we can help it!)
+							limit = {
+								this = scope:faction_target.primary_title
+							}
+							multiply = 0.5
+						}
+					}
+				}
+				save_scope_as = tmp_target_title
+			}
+		}
+
+		# If we still don't have a target title, pick the largest county.
+		if = {
+			limit = {
+				NOT = { exists = scope:tmp_target_title}
+			}
+			ordered_faction_county_member = {
+				order_by = total_county_levies
+
+				save_scope_as = tmp_target_title
+			}
+		}
+
+		# Re-save our temporary scope as the 'official' target scope, then clear the temporary scope.
+		if = {
+			limit = {
+				exists = scope:tmp_target_title
+			}
+			scope:tmp_target_title = {
+				save_scope_as = target_title
+			}
+			set_special_title = scope:target_title
+			clear_saved_scope = tmp_target_title
+		}
+	}
+}
+
+add_adjacent_valid_counties_to_list = {
+	every_neighboring_county = {
+		limit = {
+			faith = $FAITH$
+			holder.top_liege = $TOP_LIEGE$
+			NOT = { is_in_list = $LIST$ }
+		}
+		add_to_list = $LIST$
+	}
+}
+
+split_noncontiguous_counties_from_revolt_effect = {
+
+	 # Start off by making a list of all disconnected Counties
+	every_connected_county = {
+		invert = yes
+		max_naval_distance = 2000
+		add_to_list = disconnected_counties
+	}
+
+	# Then release contiguous disconnected areas.
+	every_in_list = {
+		list = disconnected_counties
+
+		if = {
+			limit = {
+				holder.top_liege = $FACTION_LEADER$
+			}
+			save_scope_as = county_of_origin
+			
+			create_character = {
+				location = scope:county_of_origin.title_province
+				culture = scope:county_of_origin.culture
+				faith = scope:county_of_origin.faith
+				gender_female_chance = 50
+				age = 32
+				save_scope_as = new_county_holder
+			}
+				
+			create_title_and_vassal_change = exclave_change
+			every_in_list = {
+				list = disconnected_counties
+				limit = {
+					holder.top_liege = $FACTION_LEADER$
+					is_connected_to = { target = scope:county_of_origin }
+				}
+				scope:exclave_change = {
+					set_title_and_vassal_change_type = independency
+				}
+				change_title_holder = {
+					holder = scope:new_county_holder
+					change = scope:exclave_change
+				}
+			}
+			scope:new_county_holder = {
+				becomes_independent = {
+					change = scope:exclave_change
+				}
+			}
+			resolve_title_and_vassal_change = scope:exclave_change
+			
+			scope:new_county_holder = {
+				if = { # Just in case they need to create a duchy
+					limit = {
+						gold < 500
+					}
+					add_gold = 500
+				}
+			}
+		}
+	}
+}
+
+# Shared effect between the Popular Faction's demand event and victory outcome.
+#
+# Parameters:
+#	$FACTION_LEADER$
+#	$TARGET_TITLE$
+successful_popular_revolt_outcome_effect = {
+	# Save scopes for later usage.
+	$FACTION_LEADER$ = {
+		joined_faction = {
+			save_scope_as = popular_faction
+			every_faction_member = {
+				add_to_list = faction_members
+			}
+			faction_target = {
+				save_scope_as = faction_target
+			}
+		}
+	}
+
+	# Compile a list of all counties belonging to the faction.
+	scope:popular_faction = {
+		every_faction_county_member = {
+			add_to_list = siezed_counties
+		}
+
+	}
+	# Additionally, if we're at war (and not just pressing demands), add all occupied counties and connected counties of the correct culture/faith.
+	if = {
+		limit = {
+			$FACTION_LEADER$ = {
+				is_at_war_with = scope:faction_target
+			}
+		}
+		scope:faction_target = {
+			every_sub_realm_county = {
+				limit = {
+					county_controller = $FACTION_LEADER$
+				}
+				add_to_list = siezed_counties
+			}
+		}
+
+		every_in_list = {
+			list = siezed_counties
+			add_adjacent_valid_counties_to_list = {
+				FAITH = $FACTION_LEADER$.faith
+				TOP_LIEGE = scope:faction_target
+				LIST = siezed_counties
+			}
+		}
+	}
+
+	# Select a 'capital' county for the faction leader, this will be removed from the siezed county list as we will handle it separately.
+	scope:popular_faction = {
+		ordered_faction_county_member = {
+			order_by = {
+				value = total_county_levies
+
+				multiply = {
+					value = 1
+
+					# Up to 50% bonus points for counties of the correct culture/faith.
+					if = {
+						limit = { culture = $FACTION_LEADER$.culture }
+						add = 0.25
+					}
+					if = {
+						limit = { faith = $FACTION_LEADER$.faith }
+						add = 0.25
+					}
+
+					# Additional 50% bonus points for counties located in the de jure area of the liege title we want to sieze.
+					if = {
+						limit = {
+							target_is_de_jure_liege_or_above = $TARGET_TITLE$
+						}
+						add = 0.50
+					}
+				}
+			}
+
+			#remove_from_list = siezed_counties
+			save_scope_as = capital_county
+		}
+	}
+
+	# CHANGE ZERO: Give the leader a county to stop landless characters from screwing up the hierarchy.
+	hidden_effect = {
+		create_title_and_vassal_change = change_zero
+		scope:change_zero = {
+			set_title_and_vassal_change_type = conquest_populist
+			set_add_claim_on_loss = yes
+		}
+		scope:capital_county = {
+			change_title_holder = {
+				holder = $FACTION_LEADER$
+				change = scope:change_zero
+				take_baronies = no
+			}
+		}
+		resolve_title_and_vassal_change = scope:change_zero
+	}
+
+
+	# CHANGE ONE: Give the leader an appropriately-ranked title.
+	create_title_and_vassal_change = change_one
+	if = {
+		# If 11+ counties were taken, give them a Kingdom.
+		limit = {
+			any_in_list = {
+				list = siezed_counties
+				count >= 11
+			}
+		}
+
+		# Check if we can create or usurp a De Jure Kingdom from the map
+		every_in_list = {
+			list = siezed_counties
+			kingdom = {
+				if = {
+					limit = {
+						OR = {
+							NOT = { exists = holder}
+							trigger_if = {
+								limit = { exists = holder}
+								holder.top_liege = scope:faction_target
+
+								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+								trigger_if = {
+									limit = {
+										this = holder.primary_title
+										holder = holder.top_liege
+									}
+									holder = {
+										any_held_title = {
+											tier = tier_kingdom
+											count >= 2
+										}
+									}
+								}
+							}
+						}
+					}
+					add_to_list = potential_kingdoms
+				}
+			}
+		}
+
+		# If we found one or more valid De Jure Kingdoms, pick the best one for us to take.
+		if = {
+			limit = {
+				any_in_list = {
+					list = potential_kingdoms
+					count >= 1
+				}
+			}
+			ordered_in_list = {
+				list = potential_kingdoms
+				limit = {
+				}
+
+				order_by = {
+					value = 1
+					every_in_list = {
+						list = siezed_counties
+						limit = { kingdom = prev }
+						add = 1
+					}
+				}
+
+				if = {
+					limit = {
+						NOT = { exists = holder}
+					}
+					scope:change_one = { set_title_and_vassal_change_type = created	}
+				}
+				else = {
+					scope:change_one = { set_title_and_vassal_change_type = conquest }
+				}
+				change_title_holder = {
+					holder = $FACTION_LEADER$
+					change = scope:change_one
+				}
+			}
+		}
+		# Otherwise, create a new titular Kingdom title.
+		else = {
+			create_popular_revolt_title_effect = {
+				FACTION = scope:popular_faction
+				FACTION_LEADER = $FACTION_LEADER$
+				TIER = kingdom
+			}
+			scope:change_one = {
+				set_title_and_vassal_change_type = created
+			}
+			scope:new_title = {
+				change_title_holder = {
+					holder = $FACTION_LEADER$
+					change = scope:change_one
+				}
+			}
+		}
+	}
+
+	else_if = {
+		# If 5+ counties were taken, give them a Duchy.
+		limit = {
+			any_in_list = {
+				list = siezed_counties
+				count >= 5
+			}
+		}
+
+		# Check if we can create or usurp a De Jure Duchy from the map
+		every_in_list = {
+			list = siezed_counties
+			duchy = {
+				if = {
+					limit = {
+						OR = {
+							NOT = { exists = holder}
+							trigger_if = {
+								limit = { exists = holder}
+								holder.top_liege = scope:faction_target
+
+								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+								trigger_if = {
+									limit = {
+										this = holder.primary_title
+										holder = holder.top_liege
+									}
+									holder = {
+										any_held_title = {
+											tier = tier_duchy
+											count >= 2
+										}
+									}
+								}
+							}
+						}
+					}
+					add_to_list = potential_duchies
+				}
+			}
+		}
+
+		# If we found one or more valid De Jure Duchies, pick the best one for us to take.
+		if = {
+			limit = {
+				any_in_list = {
+					list = potential_duchies
+					count >= 1
+				}
+			}
+			ordered_in_list = {
+				list = potential_duchies
+
+				order_by = {
+					value = 1
+					every_in_list = {
+						list = siezed_counties
+						limit = { duchy = prev }
+						add = 1
+					}
+				}
+
+				if = {
+					limit = {
+						NOT = { exists = holder}
+					}
+					scope:change_one = { set_title_and_vassal_change_type = created	}
+				}
+				else = {
+					scope:change_one = { set_title_and_vassal_change_type = conquest }
+				}
+				change_title_holder = {
+					holder = $FACTION_LEADER$
+					change = scope:change_one
+				}
+			}
+		}
+		# Otherwise, create a new titular Duchy title.
+		else = {
+			create_popular_revolt_title_effect = {
+				FACTION = scope:popular_faction
+				FACTION_LEADER = $FACTION_LEADER$
+				TIER = duchy
+			}
+			scope:change_one = {
+
+				set_title_and_vassal_change_type = created
+			}
+			scope:new_title = {
+				change_title_holder = {
+					holder = $FACTION_LEADER$
+					change = scope:change_one
+				}
+			}
+		}
+	}
+
+	# If 4 or fewer counties were taken, leader only gets the county titles themselves.
+	resolve_title_and_vassal_change = scope:change_one
+
+	# If the title we gave our leader is a new dynamic title, generate a CoA for it.
+	if = {
+		limit = {
+			exists = scope:new_title
+		}
+		scope:new_title = {
+			set_capital_county = scope:capital_county
+			generate_coa = yes
+		}
+	}
+
+	# CHANGE TWO: Transfer the siezed counties to the leader.
+	create_title_and_vassal_change = change_two
+	scope:change_two = {
+		set_title_and_vassal_change_type = conquest
+		set_add_claim_on_loss = yes
+	}
+	every_in_list = {
+		list = siezed_counties
+
+		change_title_holder = {
+			holder = $FACTION_LEADER$
+			change = scope:change_two
+			take_baronies = no
+		}
+	}
+	resolve_title_and_vassal_change = scope:change_two
+
+	# CHANGE THREE: Split the leader off into an independent realm. Then convert all faction members to vassals of the populist leader.
+	create_title_and_vassal_change = change_three
+	scope:change_three = {
+		set_title_and_vassal_change_type = independency
+		set_add_claim_on_loss = yes
+	}
+
+	every_in_list = {
+		list = faction_members
+
+		# Lower-ranked vassals switch lieges to the faction leader.
+		if = {
+			limit = {
+				this.primary_title.tier < $FACTION_LEADER$.primary_title.tier
+				this.primary_title.tier >= tier_county
+				NOT = { this = $FACTION_LEADER$ }
+			}
+			change_liege = {
+				liege = $FACTION_LEADER$
+				change = scope:change_three
+			}
+		}
+	}
+
+	resolve_title_and_vassal_change = scope:change_three
+
+	# CHANGE FOUR: If there are any disconnected counties, split them off via exclave independence rules.
+	scope:capital_county = {
+		split_noncontiguous_counties_from_revolt_effect = {
+			FACTION_LEADER = $FACTION_LEADER$
+		}
+	}
+
+	# If the faction still exists, dissolve it (it's no longer relevant).
+	hidden_effect = {
+		if = {
+			limit = {
+				exists = scope:popular_faction
+			}
+			scope:popular_faction = {
+				destroy_faction = yes
+			}
+		}
+	}
+
+	#Set up government type.
+	hidden_effect = {
+		$FACTION_LEADER$ = {
+			#If sourced from tribal, make tribal.
+			if = {
+				limit = {
+					$SOURCE_GOVERNMENT$ = { has_government = tribal_government }
+				}
+				change_government = tribal_government
+				add_realm_law = tribal_authority_0
+				if = { limit = { has_realm_law = crown_authority_0 } remove_realm_law = crown_authority_0 }
+				if = { limit = { has_realm_law = crown_authority_1 } remove_realm_law = crown_authority_1 }
+				if = { limit = { has_realm_law = crown_authority_2 } remove_realm_law = crown_authority_2 }
+				if = { limit = { has_realm_law = crown_authority_3 } remove_realm_law = crown_authority_3 }
+			}
+			#If sourced from clan, make clan.
+			else_if = {
+				limit = {
+					$SOURCE_GOVERNMENT$ = { has_government = clan_government }
+				}
+				change_government = clan_government
+			}
+			#If sourced from feudal, make feudal.
+			else_if = {
+				limit = {
+					$SOURCE_GOVERNMENT$ = { has_government = feudal_government }
+				}
+				change_government = feudal_government
+			}
+			#If sourced elsewhere, and Islamic, make clan.
+			#If sourced elsewhere, and not Islamic, make feudal.
+			else_if = {
+				limit = {
+					$SOURCE_GOVERNMENT$ = {
+						NOR = {
+							has_government = tribal_government
+							has_government = clan_government
+							has_government = feudal_government
+						}
+					}
+				}
+				change_government = feudal_government
+			}
+		}
+	}
+}
+
+create_popular_revolt_title_effect = {
+	$FACTION$ = {
+		ordered_faction_county_member = {
+			limit = {
+				faith = $FACTION_LEADER$.faith
+				culture = $FACTION_LEADER$.culture
+			}
+			alternative_limit = {
+				always = yes
+			}
+
+			order_by = total_county_levies
+
+			save_scope_as = base_county
+		}
+		create_dynamic_title = {
+			tier = $TIER$
+			name = FACTION_POPULIST_CREATED_TITLE_NAME
+		}
+		scope:new_title = {
+			set_variable = {
+				name = faction
+				value = $FACTION$
+			}
+		}
+	}
+}
+
+peasant_faction_demands_enforced = {
+	$FACTION$ = {
+		every_faction_county_member = {
+			custom = peasant_faction_every_county
+			change_county_control = peasant_war_victory_county_control_loss
+			add_county_modifier = {
+				modifier = peasant_war_lost_county_modifier
+				years = 10
+			}
+		}
+		hidden_effect = {
+			destroy_faction = yes
+		}
+	}
+}
+
+invalidate_claimant_factions_on_death_effect = {
+	every_in_list = {
+		variable = claimant_factions
+		if = {
+			limit = {
+				exists = faction_war
+			}
+			faction_war = {
+				set_casus_belli = depose_war
+			}
+			faction_remove_war = yes # else the war gets invalidated when we destroy the faction
+		}
+		destroy_faction = yes
+	}
+	clear_variable_list = claimant_factions
+}
+
+setup_populist_leader_effect = {
+	save_scope_as = faction
+
+	random_faction_county_member = {
+		save_scope_as = peasant_county
+	}
+
+	# Runs the scripted effect to find the best title to target for the rebellion.
+	get_popular_revolt_target_effect = { FACTION = this }
+
+	# Find or create a leader for the populist faction.
+	scope:target_title = {
+		# Look to see if there are any displaced characters who are legitimate claimants to the target title that the populists might support.
+		random_claimant = {
+			limit = {
+				# Checks the 'is_character_valid' and 'can_character_join' triggers above, plus the faction hard/soft blocks in 00_rules.txt
+				can_join_faction = scope:faction
+				can_join_or_create_faction_against = scope:faction.faction_target
+
+				# Must share a faith & culture with the revolting county.
+				faith = scope:peasant_county.faith
+				culture = scope:peasant_county.culture
+
+				# Must be allowed to rule in their faith.
+				trigger_if = {
+					limit = {
+						faith = { has_doctrine = doctrine_gender_male_dominated }
+					}
+					is_male = yes
+				}
+				trigger_else_if = {
+					limit = {
+						faith = { has_doctrine = doctrine_gender_female_dominated }
+					}
+					is_female = yes
+				}
+				trigger_else = {
+					always = yes
+				}
+
+				# Must not already be a landed ruler, or set to inheirit a landed title.
+				AND = {
+					is_ruler = no
+					is_landed = no
+					NOT = {
+						any_heir_title = {
+							exists = this
+						}
+					}
+				}
+			}
+
+			save_scope_as = peasant_leader
+			add_character_flag = peasant_faction_claimant_without_title
+		}
+	}
+
+	# If we can't find any, then generate a new peasant character to be the populist leader of the revolt.
+	if = {
+		limit = {
+			NOT = { exists = scope:peasant_leader }
+		}
+		create_character = {
+			location = scope:peasant_county.title_province
+			template = peasant_faction_leader_template
+			faith = scope:peasant_county.faith
+			culture = scope:peasant_county.culture
+			gender_female_chance = {
+				if = {
+					limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_male_dominated } }
+					add = 0
+				}
+				else_if = {
+					limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_female_dominated } }
+					add = 100
+				}
+				else = {
+					add = 50
+				}
+			}
+			save_scope_as = peasant_leader
+		}
+		scope:peasant_leader = {
+			add_character_flag = peasant_faction_random_peasant
+		}
+	}
+
+	# Create a new title for the peasant.
+	create_dynamic_title = {
+		tier = duchy
+		name = FACTION_POPULIST_REVOLT_TITLE_NAME
+	}
+	create_title_and_vassal_change = change
+	scope:change = {
+		set_title_and_vassal_change_type = created
+	}
+	scope:new_title = {
+		set_capital_county = scope:peasant_county
+		set_landless_title = yes
+		set_destroy_on_succession = yes
+		set_delete_on_destroy = yes
+		set_no_automatic_claims = yes
+		set_definitive_form = yes
+		change_title_holder = {
+			holder = scope:peasant_leader
+			change = scope:change
+		}
+		set_variable = {
+			name = faction
+			value = scope:faction
+		}
+	}
+	resolve_title_and_vassal_change = scope:change
+	scope:peasant_leader = {
+		set_variable = {
+			name = peasant_title
+			value = scope:new_title
+		}
+	}
+	scope:new_title = { generate_coa = factions }
+
+	# Set the peasant leader as the head of the faction.
+	scope:peasant_leader = {
+		set_variable = {
+			name = rebel_leader_peasants
+			value = scope:faction
+		}
+		join_faction_skip_check = scope:faction
+	}
+	set_special_character = scope:peasant_leader
+}
+
+setup_peasant_leader_effect = {
+	save_scope_as = faction
+	random_faction_county_member = {
+		save_scope_as = peasant_county
+	}
+	create_character = {
+		location = scope:peasant_county.title_province
+		template = peasant_faction_leader_template
+		faith = scope:peasant_county.faith
+		culture = scope:peasant_county.culture
+		gender_female_chance = {
+			if = {
+				limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_male_dominated } }
+				add = 0
+			}
+			else_if = {
+				limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_female_dominated } }
+				add = 100
+			}
+			else = {
+				add = 50
+			}
+		}
+		save_scope_as = peasant_leader
+	}
+	scope:peasant_leader = {
+		add_character_flag = peasant_faction_random_peasant
+	}
+
+
+	create_dynamic_title = {
+		tier = duchy
+		name = FACTION_PEASANT_TITLE_NAME
+	}
+	create_title_and_vassal_change = change
+	scope:change = {
+		set_title_and_vassal_change_type = created
+	}
+
+	scope:new_title = {
+		set_capital_county = scope:peasant_county
+		set_landless_title = yes
+		set_destroy_on_succession = yes
+		set_delete_on_destroy = yes
+		set_no_automatic_claims = yes
+		set_definitive_form = yes
+		change_title_holder = {
+			holder = scope:peasant_leader
+			change = scope:change
+		}
+
+		set_variable = {
+			name = faction
+			value = scope:faction
+		}
+
+		# avoid unused variable error. This variable is referenced in code
+		var:faction = {}
+	}
+	resolve_title_and_vassal_change = scope:change
+	scope:peasant_leader = {
+		set_variable = {
+			name = peasant_title
+			value = scope:new_title
+		}
+	}
+	scope:new_title = { generate_coa = factions }
+
+	scope:peasant_leader = {
+		set_variable = {
+			name = rebel_leader_peasants
+			value = scope:faction
+		}
+		join_faction_skip_check = scope:faction
+	}
+
+	set_special_character = scope:peasant_leader
+}

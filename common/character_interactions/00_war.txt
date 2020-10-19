@@ -1,0 +1,951 @@
+﻿declare_war_interaction = {
+	category = interaction_category_diplomacy
+	common_interaction = yes
+	special_interaction = declare_war_interaction
+	interface = declare_war
+	interface_priority = 70
+	popup_on_receive = yes
+	pause_on_receive = yes
+
+	desc = declare_war_desc
+
+	is_shown = {
+		NOT = {
+			scope:recipient = scope:actor
+		}
+		scope:recipient = {
+			is_landed = yes
+		}
+		scope:actor = {
+			NOT = {
+				is_at_war_with = scope:recipient
+			}
+		}
+		
+	}
+
+	is_valid_showing_failures_only = {
+		scope:actor = {
+			NOT = { has_trait = incapable }
+			can_attack_in_hierarchy = scope:recipient
+			NOT = {
+				has_raised_armies = yes
+			}
+			has_any_display_cb_on = scope:recipient
+			NOT = {
+				is_allied_in_war = scope:recipient
+			}
+			custom_description = {
+				text = "is_not_bankrupt"
+				gold > 0
+			}
+			trigger_if = {
+				limit = {
+					has_variable_list = subjugation_offer_under_consideration
+				}
+				custom_description = {
+					text = is_not_considering_offer_of_subjugation
+					NOT = {
+						is_target_in_variable_list = {
+							name = subjugation_offer_under_consideration
+							target = scope:recipient
+						}
+					}
+				}
+			}
+		}
+		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
+		scope:recipient = {
+			trigger_if = {
+				limit = { is_imprisoned = yes }
+				NOT = {
+					imprisoner = scope:actor
+				}
+			}
+		}
+	}
+
+	has_valid_target_showing_failures_only = {
+		custom_description = {
+			text = "declare_war_hook_on_liege"
+			OR = {
+				war_declarer_needs_hook_on_liege = no
+				always = scope:hook
+			}
+		}
+		scope:actor = {
+			NOR = {
+				is_at_war_with = scope:recipient
+				custom_description = { #A vassal cannot go to war against someone their Liege is already at war with
+					text = liege_is_at_war_with_recipient
+					object = scope:recipient
+					liege = {
+						is_at_war_with = scope:recipient
+					}
+				}
+			}
+		}
+	}
+
+	send_options_exclusive = no
+	send_option = {
+		is_shown = {
+			war_declarer_needs_hook_on_liege = yes
+		}
+		is_valid = {
+			scope:actor = {
+				has_usable_hook = liege
+			}
+		}
+		flag = hook
+		localization = WAR_LIEGE_HOOK
+		can_invalidate_interaction = yes
+	}
+	should_use_extra_icon = {
+		war_declarer_needs_hook_on_liege = yes
+		scope:actor = { has_usable_hook = liege }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+	
+	on_accept = {
+
+		scope:actor = {
+			#Feedback!
+			hidden_effect = {
+				send_interface_toast = {
+					title = declare_war_interaction_notification
+
+					left_icon = scope:actor					
+					right_icon = scope:recipient
+
+					custom_tooltip = declare_war_interaction_notification_tooltip
+
+					show_as_tooltip = {
+						if = {
+							limit = { always = scope:hook }
+							use_hook = liege
+						}
+					}
+				}
+			}
+
+			#Has the instigator promised a vassal a war (vassal.2601)?
+			if = {
+				limit = {
+					exists = var:promised_war
+					var:promised_war = {
+						is_alive = yes
+						NOT = { this = scope:recipient }
+					}
+				}
+				trigger_event = {
+					id = vassal.2610
+					days = { 7 10 }
+				}
+			}
+
+			if = {
+				limit = { always = scope:hook }
+				use_hook = liege
+			}
+
+			#Send break up event if they are your lover
+			if = {
+				limit = {
+					has_relation_lover = scope:recipient
+					NOT = { has_relation_rival = scope:recipient } #To enable really strange love stories
+					any_character_war = {
+						casus_belli = {
+							primary_attacker = scope:actor
+							primary_defender = scope:recipient
+							any_target_title = { count >= 1 }
+						}
+					}
+				}
+				scope:recipient = {
+					trigger_event = {
+						id = lover.0103
+						days = { 14 30 }
+					}
+				}
+			}
+
+			#Invalidate any wars your vassals have going against recipient atm
+			scope:recipient = {
+				every_character_war = {
+					limit = {
+						primary_attacker = {
+							is_vassal_or_below_of = scope:actor
+							trigger_if = { #Ai should never invalidate a player's war!
+								limit = {
+									this = { is_ai = no }
+								}
+								scope:actor = {
+									is_ai = no
+								}
+							}
+						}
+					}
+					show_as_tooltip = { end_war = invalidated } #Actually ended in the event
+					primary_attacker = { trigger_event = war_event.1001 }
+				}
+			}
+		}
+	}
+	
+	auto_accept = yes
+}
+
+end_war_attacker_victory_interaction = {
+	special_interaction = end_war_attacker_victory_interaction
+	hidden = yes
+	use_diplomatic_range = no
+
+	ai_targets = {
+		ai_recipients = primary_war_enemies
+	}
+	
+	ai_frequency = 1
+	
+	# Depending on who was the attacker, we need to send a different notification message to the recipient.
+	notification_text = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = {
+						any_character_war = {
+							casus_belli = {
+								primary_attacker = scope:actor
+							}
+						}
+					}				}
+				desc = end_war_attacker_victory_attacker_desc
+			}
+			desc = end_war_attacker_victory_defender_desc
+		}
+	}
+
+	on_accept = {
+		casus_belli = {
+			primary_attacker = {
+				save_scope_as = attacker_winner
+			}
+			primary_defender = {
+				save_scope_as = defender_loser
+			}
+		}
+
+		release_prisoners_of_war_effect = yes
+
+		#Send notification to vassals
+		scope:attacker_winner = {
+			if = {
+				limit = {
+					any_vassal = {
+						NOT = { this = scope:defender_loser }
+					}
+				}
+				every_vassal = {
+					limit = { NOT = { this = scope:defender_loser } }
+					send_interface_toast = {
+						title = war_event.notification_liege_win.t
+						left_icon = scope:attacker_winner
+						custom_tooltip = war_event.1901
+					}
+				}
+			}
+		}
+		scope:defender_loser = {
+			if = {
+				limit = {
+					any_vassal = { NOT = { this = scope:attacker_winner } }
+				}
+				every_vassal = {
+					limit = {
+						NOT = { this = scope:attacker_winner }
+					}
+					send_interface_toast = {
+						title = war_event.notification_liege_loss.t
+						left_icon = scope:defender_loser
+						custom_tooltip = war_event.1902
+					}
+				}
+			}
+		}
+
+		#Special bookmark event for Aella of Northumbria
+		bookmark_867_northmen_aellas_capture_war_imprisonment_effect = yes
+
+		end_war = attacker
+	}
+	
+	on_decline = {
+	}
+	
+	ai_potential = {
+		is_at_war = yes
+		any_character_war = {
+			is_war_leader = root
+			attacker_war_score >= 100
+		}
+	}
+
+	ai_will_do = {
+		base = 0
+		
+		modifier = {
+			scope:war = {
+				primary_attacker = scope:actor
+				attacker_war_score >= 100				
+			}			
+			add = 100
+		}
+		modifier = {
+			scope:war = {
+				primary_defender = scope:actor
+				attacker_war_score >= 100
+				days_since_max_war_score >= 180			
+			}			
+			add = 100
+		}
+	}
+	
+	ai_accept = {
+		base = -99
+
+		compare_modifier = {
+			target = scope:war
+			value = attacker_war_score
+			desc = "WARSCORE_MODIFIER"
+		}
+		modifier = {
+			scope:war.casus_belli = {
+				primary_attacker = {
+					has_perk = peacemaker_perk
+					NOT = { this = scope:recipient }
+				}
+			}
+			
+			add = peacemaker_value
+			
+			desc = "PEACEMAKER_PERK_MODIFIER"
+		}
+	}
+	
+	auto_accept = {
+		OR = {
+			scope:war = {
+				attacker_war_score >= 100
+			}
+			AND = {
+				scope:recipient = { is_ai = yes }
+				primary_attacker = scope:recipient
+			}
+		}
+	}
+	
+	is_valid_showing_failures_only = {
+		scope:war = {
+			has_valid_casus_belli = yes
+		}
+	}
+	
+	show_answer_notification = no
+}
+
+end_war_attacker_white_peace_interaction = {
+
+	special_interaction = end_war_white_peace_interaction
+	hidden = yes
+	use_diplomatic_range = no
+	send_name = "WHITE_PEACE_INTERACTION"
+
+	ai_targets = {
+		ai_recipients = primary_war_enemies
+	}
+	
+	ai_frequency = 12
+	
+	# Depending on who was the attacker, we need to send a different notification message to the recipient.
+	notification_text = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = {
+						any_character_war = {
+							casus_belli = {
+								primary_attacker = scope:actor
+							}
+						}
+					}
+				}
+				desc = end_war_attacker_white_peace_attacker_desc
+			}
+			desc = end_war_attacker_white_peace_defender_desc
+		}
+	}
+
+	on_accept = {
+		casus_belli = {
+			primary_attacker = {
+				save_scope_as = attacker_white_peace
+			}
+			primary_defender = {
+				save_scope_as = defender_white_peace
+			}
+		}
+
+		release_prisoners_of_war_effect = yes
+
+		#Send notification to vassals
+		scope:attacker_white_peace = {
+			if = {
+				limit = {
+					any_vassal = { NOT = { this = scope:defender_white_peace } }
+				}
+				every_vassal = {
+					limit = {
+						NOT = { this = scope:defender_white_peace }
+					}
+					send_interface_toast = {
+						title = WAR_RESULTS_WHITE_PEACE
+						left_icon = scope:attacker_white_peace
+						custom_tooltip = war_event.1903
+					}
+				}
+			}
+		}
+		scope:defender_white_peace = {
+			if = {
+				limit = {
+					any_vassal = { NOT = { this = scope:attacker_white_peace } }
+				}
+				every_vassal = {
+					limit = {
+						NOT = { this = scope:attacker_white_peace }
+					}
+					send_interface_toast = {
+						title = WAR_RESULTS_WHITE_PEACE
+						left_icon = scope:defender_white_peace
+						custom_tooltip = war_event.1904
+					}
+				}
+			}
+		}
+
+		end_war = white_peace
+	}
+	
+	on_decline = {
+
+	}
+	
+	ai_potential = {
+		any_character_war = {
+			count >= 1
+			casus_belli = {
+				OR = {
+					primary_attacker = root
+					primary_defender = root
+				}
+			}
+		}
+		
+		trigger_if = {
+			limit = {
+				exists = scope:war
+			}
+			NOR = { # Don't send inane white peace offers to the player
+				scope:war = {
+					casus_belli = {
+						primary_defender = root
+						primary_attacker = {
+							is_ai = no
+						}
+					}
+					attacker_war_score >= 10
+				}
+				scope:war = {
+					casus_belli = {
+						primary_attacker = root
+						primary_defender = {
+							is_ai = no
+						}
+					}
+					defender_war_score >= 70
+				}
+			}
+		}
+	}
+
+	ai_will_do = {
+		base = 0
+
+		# Attacker concerned about defending in other wars
+		modifier = {
+			scope:war.casus_belli = {
+				primary_attacker = root
+			}
+			scope:war = {
+				war_days >= 365
+				attacker_war_score <= 0
+			}
+			any_character_war = {
+				NOT = { this = scope:war }
+				casus_belli = {
+					primary_defender = root
+				}
+			}
+			add = {
+				value = 10
+				if = {
+					limit = {
+						scope:war = {
+							attacker_war_score <= -50
+						}
+					}
+					add = 40
+				}
+			}
+		}
+
+		# Attacker Greed
+		ai_value_modifier = {
+			ai_greed = {
+				if = {
+					limit = {
+						scope:war.casus_belli = {
+							primary_attacker = root
+						}
+						scope:war = {
+							war_days >= 365
+							attacker_war_score <= 10
+						}
+						ai_greed > -20
+					}
+					value = -0.25
+				}
+			}
+			ai_vengefulness = {
+				if = {
+					limit = { ai_vengefulness > 0 }
+					value = -1
+				}
+			}
+		}
+
+		# Defender prefers White Peace to loss
+		modifier = {
+			scope:war.casus_belli = {
+				primary_defender = root
+			}
+			scope:war = {
+				war_days >= 182
+				defender_war_score <= 15
+			}
+			add = {
+				value = 10
+				if = {
+					limit = {
+						scope:war = {
+							defender_war_score <= -40
+						}
+					}
+					add = 50
+				}
+			}
+		}
+
+		# Do not attempt white peace vs. players if you're losing
+		modifier = {
+			OR = {
+				AND = {
+					scope:war.casus_belli = {
+						primary_attacker = root
+						primary_defender = { is_ai = no }
+					}
+					scope:war = {
+						defender_war_score >= 30
+					}
+				}
+				AND = {
+					scope:war.casus_belli = {
+						primary_defender = root
+						primary_attacker = { is_ai = no }
+					}
+					scope:war = {
+						attacker_war_score >= 30
+					}
+				}
+			}
+			factor = 0
+		}
+	}
+	
+	ai_accept = {
+		base = -30
+		compare_modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_defender = scope:recipient
+				}
+			}
+			target = scope:war
+			value = attacker_war_score
+			desc = "WARSCORE_MODIFIER"
+		}
+		compare_modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_attacker = scope:recipient
+				}
+			}
+			target = scope:war
+			value = defender_war_score
+			desc = "WARSCORE_MODIFIER"
+		}
+
+		# Length of War
+		compare_modifier = {
+			target = scope:war
+			trigger = {
+				scope:war = {
+					war_days >= 365
+				}
+			}
+			value = {
+				value = war_days
+				divide = 91 # 40 in 10 years
+			}
+			desc = "WAR_LENGTH"
+		}
+
+		# Attacker concerned about other wars
+		modifier = {
+			scope:war.casus_belli = {
+				primary_attacker = scope:recipient
+			}
+			scope:recipient = {
+				any_character_war = {
+					NOT = { this = scope:war }
+					primary_defender = scope:recipient
+ 				}
+			}
+			add = 10
+			
+			desc = CONCERN_ABOUT_OTHER_WARS
+		}
+
+		# Vengefulness
+		ai_value_modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_defender = scope:recipient
+				}
+			}
+			ai_vengefulness = {
+				if = {
+					limit = {
+						scope:war.casus_belli = {
+							primary_defender = scope:recipient
+						}
+					}
+					value = -0.25
+				}
+			}
+			ai_greed = {
+				if = {
+					limit = {
+						scope:war.casus_belli = {
+							primary_attacker = scope:recipient
+						}
+					}
+					value = -0.25
+				}
+			}
+			ai_zeal = {
+				value = -0.2
+				if = {
+					limit = {
+						faith = {
+							faith_hostility_level = {
+								target = scope:actor.faith
+								value = 2
+							}
+						}
+					}
+					multiply = 2
+				}
+				if = {
+					limit = {
+						faith = {
+							faith_hostility_level = {
+								target = scope:actor.faith
+								value = 3
+							}
+						}
+					}
+					multiply = 3
+				}
+				if = {
+					limit = {
+						OR = {
+							ai_zeal <= 0
+							faith = {
+								faith_hostility_level = {
+				 					target = scope:actor.faith
+									value <= 0
+				 				}
+				 			}
+						}
+					}
+					value = 0
+				}
+			}
+		}
+
+		modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_defender = scope:recipient
+					primary_attacker = { has_perk = peacemaker_perk }
+				}
+			}
+			add = peacemaker_value
+			
+			desc = "PEACEMAKER_PERK_MODIFIER"
+		}
+		
+		modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_attacker = scope:recipient
+					primary_defender = { has_perk = peacemaker_perk }
+				}
+			}
+			add = peacemaker_value
+			
+			desc = "PEACEMAKER_PERK_MODIFIER"
+		}
+	}
+	
+	is_valid_showing_failures_only = {
+		exists = scope:war
+		scope:war = {
+			has_valid_casus_belli = yes
+		}
+		is_white_peace_possible = yes
+	}
+	
+	show_answer_notification = no
+}
+
+end_war_attacker_defeat_interaction = {
+	special_interaction = end_war_attacker_defeat_interaction
+	hidden = yes
+	use_diplomatic_range = no
+
+	ai_targets = {
+		ai_recipients = primary_war_enemies
+	}
+	
+	ai_frequency = 1
+	
+	# Depending on who was the attacker, we need to send a different notification message to the recipient.
+	notification_text = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = {
+						any_character_war = {
+							casus_belli = {
+								primary_attacker = scope:actor
+							}
+						}
+					}
+				}
+				desc = end_war_attacker_defeat_attacker_desc
+			}
+			desc = end_war_attacker_defeat_defender_desc
+		}
+	}
+
+	on_accept = {
+		casus_belli = {
+			primary_attacker = {
+				save_scope_as = attacker_loser
+			}
+			primary_defender = {
+				save_scope_as = defender_winner
+				set_signature_weapon_effect = yes
+			}
+		}
+
+		release_prisoners_of_war_effect = yes
+
+		#Send notification to vassals
+		scope:attacker_loser = {
+			if = {
+				limit = {
+					any_vassal = {
+						NOT = { this = scope:defender_winner }
+					}
+				}
+				every_vassal = {
+					limit = {
+						NOT = { this = scope:defender_winner }
+					}
+					send_interface_toast = {
+						title = war_event.notification_liege_loss.t
+						left_icon = scope:attacker_loser
+						custom_tooltip = war_event.1905 
+					}
+				}
+			}
+		}
+		scope:defender_winner = {
+			if = {
+				limit = {
+					any_vassal = { NOT = { this = scope:attacker_loser } }
+				}
+				every_vassal = {
+					limit = {
+						NOT = { this = scope:attacker_loser }
+					}
+					send_interface_toast = {
+						title = war_event.notification_liege_win.t
+						left_icon = scope:defender_winner
+						custom_tooltip = war_event.1906 
+					}
+				}
+			}
+		}
+
+		end_war = defender
+	}
+	
+	on_decline = {
+
+	}
+	
+	ai_potential = {
+		is_at_war = yes
+		any_character_war = {
+			is_war_leader = root
+			defender_war_score >= 100
+		}
+	}
+
+	ai_will_do = {
+		base = 0
+		
+		modifier = {
+			scope:war = {
+				primary_defender = scope:actor
+				defender_war_score >= 100				
+			}			
+			add = 100
+		}
+		modifier = {
+			scope:war = {
+				primary_attacker = scope:actor
+				defender_war_score >= 100
+				days_since_max_war_score >= 180			
+			}			
+			add = 100
+		}
+	}
+	
+	ai_accept = {
+		base = -99
+
+		compare_modifier = {
+			target = scope:war
+			value = defender_war_score
+			desc = "WARSCORE_MODIFIER"
+		}
+		modifier = {
+			add = 1000
+			scope:war.casus_belli = {
+				primary_defender = scope:recipient
+			}
+			desc = "WOULD_WIN_MODIFIER"
+		}
+		modifier = {
+			scope:war.casus_belli = {
+				primary_defender = {
+					has_perk = peacemaker_perk
+					NOT = { this = scope:recipient }
+				}
+			}
+			
+			add = peacemaker_value
+			
+			desc = "PEACEMAKER_PERK_MODIFIER"
+		}
+	}
+	
+	auto_accept = {
+		OR = {
+			scope:war = {
+				defender_war_score >= 100
+			}
+			AND = {
+				scope:recipient = { is_ai = yes }
+				primary_defender = scope:recipient
+			}
+		}
+	}
+	
+	is_valid_showing_failures_only = {
+		scope:war = {
+			has_valid_casus_belli = yes
+		}
+	}
+	
+	show_answer_notification = no
+}
+
+
+view_war_interaction = {
+	category = interaction_category_diplomacy
+	common_interaction = yes
+
+	special_interaction = offer_peace_interaction
+	interface = offer_peace
+	use_diplomatic_range = no
+	ignores_pending_interaction_block = yes
+
+	is_shown = {
+		scope:actor = {
+			is_at_war_with = scope:recipient		
+			NOT = {	
+				any_character_war = {
+					is_war_leader = scope:actor
+					is_participant = scope:recipient
+				}
+			}
+		}
+	}
+	auto_accept = yes
+}
+
+offer_peace_interaction = {
+	category = interaction_category_diplomacy
+	common_interaction = yes
+
+	special_interaction = offer_peace_interaction
+	interface = offer_peace
+	use_diplomatic_range = no
+
+	is_shown = {
+		scope:actor = {
+			is_at_war_with = scope:recipient		
+			any_character_war = {
+				is_war_leader = scope:actor
+				is_participant = scope:recipient
+			}
+		}
+	}
+	auto_accept = yes
+}

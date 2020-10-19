@@ -1,0 +1,794 @@
+﻿namespace = heresy
+
+##################################
+# Heresy Outbreak (Non-Eastern) #
+# by Sean Hughes				 #
+# 0001 - 0004					#
+##################################
+
+scripted_trigger nearby_county_of_faith = {
+	any_in_list = {
+		list = neaby_same_religion_counties
+		faith = prev
+	}
+}
+
+scripted_trigger no_heretical_hof_faith_trigger = { #Head of Faith shouldn't convert.
+	OR = {
+		NOT = {
+			exists = root.religious_head
+		}
+		AND = {
+			exists = root.religious_head
+			NOT = { this = root.religious_head }
+		}
+	}
+}
+
+scripted_trigger is_valid_heresiarch = {
+	faith = root
+	OR = {
+		highest_held_title_tier = tier_duchy
+		highest_held_title_tier = tier_county
+	}
+	is_imprisoned = no
+	is_capable_adult_ai = yes
+	is_landed = yes
+	exists = capital_county
+	NOT = { has_trait = heresiarch }
+	no_heretical_hof_faith_trigger = yes
+}
+
+heresy.0001 = {
+	hidden = yes
+	scope = faith
+
+	trigger = {
+	}
+
+	immediate = {
+		#Look for a valid Duke of this Faith to be our heresiarch.
+		random_ruler = {
+			#Prefer Dukes with only 1 or 2 Duchies.
+			limit = {
+				is_valid_heresiarch = yes
+				highest_held_title_tier = 3
+				any_held_title = {
+					tier = tier_duchy
+					count < 3 #Limit the influence of Mega-Dukes
+				}
+			}
+			#Then accept any valid Duke.
+			alternative_limit = {
+				is_valid_heresiarch = yes
+				highest_held_title_tier = 3
+			}
+			#If no Dukes exist, accept a Count.
+			alternative_limit = {
+				is_valid_heresiarch = yes		
+			}
+
+			weight = {
+				base = 100
+
+				modifier = {
+					add = 100
+					is_powerful_vassal = yes
+				}
+				modifier = {
+					add = 75
+					is_independent_ruler = yes
+				}
+				modifier = {
+					add = 50
+					is_a_faction_member = yes
+				}
+			}
+
+			save_scope_as = heretic_ruler
+			primary_title = {
+				save_scope_as = heretic_title
+			}
+			capital_county = {
+				save_scope_as = heretic_capital
+			}
+		}
+
+
+		#Once we have a heresiarch, look for a valid heretical faith to them to convert to.
+		if = {
+			limit = {
+				exists = scope:heretic_ruler
+			}
+
+			#Save a list of provinces in our religion group (we will be reusing this a lot for distance checks).
+			every_province = {
+				limit = {
+					is_county_capital = yes
+					faith.religion = root.religion
+					squared_distance = {
+						target = scope:heretic_capital
+						value < squared_distance_medium
+					}
+				}
+				add_to_list = neaby_same_religion_counties
+			}
+
+			# Compile a list of possible heresies to convert to.
+			religion = {
+				every_faith = {
+					add_to_list = potential_heresies
+				}
+			}
+
+			#We want to pick certain faiths to be our heresy over others, assuming they are valid.
+			random_in_list = {
+				list = potential_heresies
+
+				#Priority 1: Any nearby player-created faith.
+				limit = {
+					has_variable = player_created_faith
+					num_county_followers > 0
+					is_valid_heresy = {
+						ORIGIN_FAITH = root
+						HERETICAL_FAITH = this
+					}
+					nearby_county_of_faith = yes
+				}
+				# Priority 2: Any nearby 'preferred heresy' faith.
+				alternative_limit = {
+					num_county_followers > 0
+					is_preferred_heresy = {
+						ORIGIN_FAITH = root
+						HERETICAL_FAITH = this
+					}
+					nearby_county_of_faith = yes
+				}
+				# Priority 2.5: For the 'strict' game rule, only use preferred heresies.
+				alternative_limit = {
+					has_game_rule = strict_regional_heresy
+					is_preferred_heresy = {
+						ORIGIN_FAITH = root
+						HERETICAL_FAITH = this
+					}
+				}
+				# Priority 3: Any valid faith.
+				alternative_limit = {
+					is_valid_heresy = {
+						ORIGIN_FAITH = root
+						HERETICAL_FAITH = this
+					}
+				}
+				# Priority 4: Any faith.
+				alternative_limit = {
+					always = yes
+				}
+
+				weight = {
+					base = 50
+
+					# Preferred heresies get another bonus.
+					modifier = {
+						factor = 5			
+						is_preferred_heresy = {
+							ORIGIN_FAITH = root
+							HERETICAL_FAITH = this
+						}
+					}
+					# More likely to pick Faiths that don't currently exist.
+					modifier = {
+						factor = 3
+						num_county_followers = 0
+					}
+					modifier = {
+						has_game_rule = strict_regional_heresy
+						NOT = {
+							is_preferred_heresy = {
+								ORIGIN_FAITH = root
+								HERETICAL_FAITH = this
+							}
+						}
+						factor = 0
+					}
+
+					# Certain Faiths should be much more rare in general.
+					# Uncommon Faiths
+				}
+
+				save_scope_as = heretic_faith
+			}
+
+			#Trigger the heresy event for all rulers of the same Faith.
+			if = {
+				limit = {
+					exists = scope:heretic_faith
+				}
+
+				save_scope_as = origin_faith
+
+				#Determine roughly how many Counties we expext to flip to the heretical Faith.
+				random_list = {
+					20 = {
+						modifier = {
+							add = 20
+							fervor > 30
+						}
+						set_variable = {
+							name = heresy_power
+							value = 10
+						}
+					}
+					55 = {
+						set_variable = {
+							name = heresy_power
+							value = 15
+						}
+					}
+					20 = {
+						modifier = {
+							add = 30
+							fervor <= 20
+						}
+						set_variable = {
+							name = heresy_power
+							value = 20
+						}
+					}
+					5 = {
+						modifier = {
+							add = 45
+							fervor <= 10
+						}
+
+						set_variable = {
+							name = heresy_power
+							value = 25
+						}
+					}
+				}
+
+				# Modify heresy power for pluralist/fundamentalist
+				if = {
+					limit = {
+						has_doctrine_parameter = pluralism_pluralistic_resistant_to_heresy
+					}
+					change_variable = {
+						name = heresy_power
+						multiply = hostility_multiplier_pluralism
+					}
+				}
+				else_if = {
+					limit = {
+						has_doctrine_parameter = pluralism_fundamentalist_vulnerable_to_heresy
+					}
+					change_variable = {
+						name = heresy_power
+						multiply = hostility_multiplier_fundamentalist
+					}
+				}
+
+				# Changes to another religion have reduced heresy power
+				if = {
+					limit = {
+						NOT = { scope:origin_faith.religion = scope:heretic_faith.religion }
+					}
+					change_variable = {
+						name = heresy_power
+						multiply = 0.5
+					}
+				}
+
+				#Flag the heretic faith as the parent faith's active heresy for the next 10 years.
+				set_variable = {
+					name = current_heresy
+					value = scope:heretic_faith
+					days = 3650
+				}
+
+				#Trigger the heresy outbreak event.
+				scope:heretic_ruler = {
+					trigger_event = {
+						id = heresy.0010
+						days = 3
+					}
+				}
+			}
+		}	
+	}
+}
+
+##################################
+# Heresy Outbreak (Eastern)		#
+# by Sean Hughes				 #
+# 0005							 #
+##################################
+
+heresy.0005 = {
+	hidden = yes
+	scope = faith
+
+	trigger = {
+		always = no
+	}
+
+	immediate = {
+	}
+}
+
+
+##################
+# New Major Heresy
+# by Sean Hughes
+# 0010
+##################
+
+heresy.0010 = {
+	type = character_event
+	title = heresy.0010.t
+	desc = {
+		desc = heresy.0010.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					always = no
+					#has_variable = dead_heresy
+				}
+				desc = heresy.0010.desc.resurgent
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:is_new_heresy
+				}
+				desc = heresy.0010.desc.nonexistant
+			}
+			desc = heresy.0010.desc.exists
+		}
+	}
+	left_portrait = scope:heretic_ruler
+	major = yes
+	theme = faith
+	
+	trigger = {
+		scope:origin_faith = {
+			var:heresy_power > 0
+		}
+	}
+
+	major_trigger = {
+		OR = {
+			faith = scope:origin_faith
+			faith = scope:heretic_faith
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_sacredrite"
+		
+		if = {
+			limit = {
+				scope:heretic_faith = {
+					num_county_followers = 0
+				}
+			}
+			save_scope_value_as = {
+				name = is_new_heresy
+				value = yes
+			}
+		}
+
+		#Consume heresy power to fuel this conversion.
+		scope:origin_faith = {
+			if = {
+				limit = {
+					scope:heretic_ruler = {
+						highest_held_title_tier >= 3
+					}
+				}
+				#If we're a Duke, consume more heresy power.
+				change_variable = {
+					name = heresy_power
+					subtract = 3
+				}
+			}
+			else = {
+				#Otherwise only consume a little heresy power.
+				change_variable = {
+					name = heresy_power
+					subtract = 1
+				}
+			}
+		}
+		
+		scope:heretic_ruler = {
+			#Convert this character to the new heresy.
+			set_character_faith_with_conversion = scope:heretic_faith
+			add_trait = heresiarch
+
+			#Kick off the follow-up events in the heresy chain.
+			trigger_event = {
+				id = heresy.0011
+				days = { 4 7 }
+			}
+
+			#Convert most miscellaneous courtiers & guests they have to the same heresy.
+			every_courtier_or_guest = {
+				limit = {
+					faith = scope:origin_faith
+					NOR = {
+						has_trait = zealous
+						this = this.faith.religious_head
+					}
+					is_available_ai = yes
+				}
+				set_character_faith = scope:heretic_faith
+			}
+		}
+
+		#Send notifications to everyone who might care about the conversion.
+		every_player = {
+			limit = {
+				NOR = {
+					#These characters already get the full event.
+					faith = scope:origin_faith
+					faith = scope:heretic_faith
+				}
+				OR = {
+					#Everyone in the same Realm is notified.
+					AND = {
+						exists = top_liege
+						top_liege = scope:heretic_ruler.top_liege
+					}
+					#If we're physically close to the character, we also get notified.
+					capital_county = {
+						squared_distance = {
+							target = scope:heretic_capital
+							value < squared_distance_medium
+						}	
+					}
+				}
+			}
+
+			send_interface_message = {
+				type = event_heresy_outbreak_neutral
+				title = heresy.0010.notification.title
+				desc = heresy.0010.notification
+				
+				left_icon = scope:heretic_ruler
+				goto = scope:heretic_ruler
+			}
+		}
+
+		#Fervor adjustments to prevent multiple heresy flip-flopping.
+		scope:heretic_faith = {
+			change_fervor = 100
+		}
+		scope:origin_faith = {
+			change_fervor = 10
+		}
+	}
+
+	option = {
+		name = {
+			trigger = {
+				this.faith = scope:origin_faith
+				scope:origin_faith = {
+					faith_hostility_level = {
+						target = scope:heretic_faith
+						value > 1
+					}
+				}
+				exists = scope:is_new_heresy
+			}
+			text = heresy.0010.a.new_heresy
+		}
+		name = {
+			trigger = {
+				this.faith = scope:origin_faith
+				scope:origin_faith = {
+					faith_hostility_level = {
+						target = scope:heretic_faith
+						value > 1
+					}
+				}
+				NOT = { exists = scope:is_new_heresy }
+			}
+			text = heresy.0010.a.existing_heresy
+		}
+		name = {
+			trigger = {
+				this.faith = {
+					faith_hostility_level = {
+						target = scope:heretic_faith
+						value = 1
+					}
+				}
+			}
+			text = heresy.0010.a.astray_faith
+		}
+		name = {
+			trigger = {
+				this.faith = scope:heretic_faith
+			}
+			text = heresy.0010.a.same_faith
+		}
+		custom_tooltip = heresy.0010.tt.custom
+	}
+
+	option = {
+		name = heresy.0010.b
+		trigger = {
+			is_ai = no
+			NOT = { this.faith = scope:heretic_faith }
+		}
+		custom_tooltip = heresy.0010.tt.custom
+
+		#Convert to the new heresy.
+		set_character_faith_with_conversion = scope:heretic_faith
+		add_piety = major_piety_loss
+		
+		add_internal_flag = dangerous
+	}
+}
+
+##################
+# Major Heresy Spreads
+# by Sean Hughes
+# 0011
+##################
+scripted_trigger no_heretical_hof_faith_0011_trigger = { #Head of Faith shouldn't convert.
+	OR = {
+		NOT = {
+			exists = scope:origin_faith.religious_head
+		}
+		AND = {
+			exists = scope:origin_faith.religious_head
+			NOT = { this = scope:origin_faith.religious_head }
+		}
+	}
+}
+heresy.0011 = {
+	hidden = yes
+	
+	trigger = {
+		scope:origin_faith = {
+			var:heresy_power > 0
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+	}
+
+	immediate = {
+		clear_saved_scope = convert_ruler
+		random_ruler = {
+			limit = {
+				highest_held_title_tier > 1 #No Barons, they're inconsequential.
+				faith = scope:origin_faith
+				highest_held_title_tier < 4 #No AI Kings/Emperors, they're too powerful.
+				is_landed = yes
+				exists = capital_county
+				is_capable_adult_ai = yes
+				no_heretical_hof_faith_0011_trigger = yes
+			}
+
+			weight = {
+				base = 1000 # 100% weight
+
+				#Rulers of counties close to the Heresiarch's are more likely to join their Heresy.
+				modifier = {
+					add = -900 # 10% weight
+					capital_county = {
+						squared_distance = {
+							target = scope:heretic_capital
+							value > squared_distance_small
+						}
+					}
+				}
+				modifier = {
+					add = -90 # 1% weight
+					capital_county = {
+						squared_distance = {
+							target = scope:heretic_capital
+							value > squared_distance_medium
+						}
+					}
+				}
+				modifier = {
+					add = -10 # 0% weight (fallback only)
+					capital_county = {
+						squared_distance = {
+							target = scope:heretic_capital
+							value > squared_distance_large
+						}	
+					}
+				}
+
+				#Rulers of the same(or similar) culture are more likely to join Heresies.
+				modifier = {
+					factor = 3
+					has_same_culture_group_as = scope:heretic_ruler
+				}
+				modifier = {
+					factor = 4
+					has_same_culture_as = scope:heretic_ruler
+				}
+
+				#Counts are less likely to join a heresy than a Duke (though it's still possible if they're nearby)
+				modifier = {
+					factor = 0.25
+					highest_held_title_tier = 2
+				}
+			}
+
+			save_scope_as = convert_ruler
+			primary_title = {
+				save_scope_as = convert_title
+			}
+			capital_county = {
+				save_scope_as = convert_capital
+			}
+		}
+
+		if = {
+			limit = {
+				exists = scope:convert_ruler
+			}
+
+			#Consume heresy power to fuel this conversion.
+			scope:origin_faith = {
+				if = {
+					limit = {
+						scope:heretic_ruler = {
+							highest_held_title_tier >= 3
+						}
+					}
+					#If we're a Duke, consume more heresy power.
+					change_variable = {
+						name = heresy_power
+						subtract = 3
+					}
+				}
+				else = {
+					#Otherwise only consume a little heresy power.
+					change_variable = {
+						name = heresy_power
+						subtract = 1
+					}
+				}
+			}
+
+			scope:convert_ruler = {
+				set_character_faith_with_conversion = scope:heretic_faith
+
+				#Trigger the next heresy conversion event in the chain.
+				trigger_event = {
+					id = heresy.0011
+					days = { 7 14 }
+				}
+			}
+
+			#Send notifications to everyone who might care about the conversion
+			every_player = {
+				limit = {
+					OR = {
+						#Everyone in the same Realm is notified.
+						AND = {
+							exists = top_liege
+							top_liege = scope:convert_ruler.top_liege
+						}
+						AND = {
+							#If convert is Duke or above, all same-faith charatcers (on both sides) are notified.
+							OR = {
+								faith = scope:origin_faith
+								faith = scope:heretic_faith
+							}
+							scope:convert_ruler = {
+								highest_held_title_tier >= 3
+							}
+						}
+						#If we're physically close to the character, we also get notified.
+						AND = {
+							exists = capital_county
+							capital_county = {
+								squared_distance = {
+									target = scope:convert_capital
+									value < squared_distance_medium
+								}	
+							}
+						}
+					}
+				}
+
+				# Save our faith's scope for localization purposes.
+				this = {
+					save_scope_as = me
+					faith = {
+						save_scope_as = my_faith
+					}
+				}
+
+				# If the ruler converted to our faith, send a 'good' notification.
+				if = {
+					limit = {
+						scope:my_faith = scope:heretic_faith
+					}
+					send_interface_message = {				
+						type = event_heresy_outbreak_good
+						title = heresy.0011.notification.same_faith
+						left_icon = scope:convert_ruler
+						show_as_tooltip = {
+							scope:convert_ruler = {
+								set_character_faith = scope:heretic_faith
+							}
+						}
+					}
+				}
+				# If the ruler converted to a faith we consider heretical, send a special notification.
+				else_if = {
+					limit = {
+						scope:my_faith = scope:origin_faith
+						scope:my_faith = {
+							faith_hostility_level = {
+								target = scope:heretic_faith
+								value >= 1
+							}
+						}
+					}
+					if = {
+						# If the heretics are in our realm, send a 'bad' notification, as it's an immediate problem we have to deal with.
+						limit = {
+							top_liege = {
+								any_vassal_or_below = {
+									this = scope:convert_ruler
+								}
+							}
+						}
+						send_interface_message = {
+							type = event_heresy_outbreak_bad
+							title = heresy.0011.notification.heresy
+							left_icon = scope:convert_ruler
+							show_as_tooltip = {
+								scope:convert_ruler = {
+									set_character_faith = scope:heretic_faith
+								}
+							}
+						}
+					}
+					# If the heretics are simply elsewhere in the world, send a 'neutral' notificiation, as they are not an immediate concern (and this may even present an opportunity).
+					else = {
+						send_interface_message = {
+							type = event_heresy_outbreak_neutral
+							title = heresy.0011.notification.heresy
+							left_icon = scope:convert_ruler
+							show_as_tooltip = {
+								scope:convert_ruler = {
+									set_character_faith = scope:heretic_faith
+								}
+							}
+						}
+					}
+				}
+				# If we don't care that much about the faith the ruler converted to/from, send a 'neutral' notification.
+				else = {
+					send_interface_message = {
+						type = event_heresy_outbreak_neutral
+						title = heresy.0011.notification.other
+						left_icon = scope:convert_ruler
+						show_as_tooltip = {
+							scope:convert_ruler = {
+								set_character_faith = scope:heretic_faith
+							}
+						}
+					}
+				}
+			}
+
+
+			#Fervor adjustments to prevent multiple heresy flip-flopping.
+			scope:origin_faith = {
+				change_fervor = 10
+			}
+		}
+	}
+}

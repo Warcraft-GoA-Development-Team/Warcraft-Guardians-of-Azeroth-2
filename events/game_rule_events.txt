@@ -1,0 +1,2023 @@
+﻿namespace = game_rule
+
+# Generated families 	- 1001
+# Gender equality 		- 1010
+
+scripted_trigger de_jure_liege_title_to_destroy = {
+	tier > tier_county
+	is_titular = no
+	is_landless_type_title = no
+	NOT = { exists = controlled_faith }
+	save_temporary_scope_as = de_jure_liege_title
+	
+	NOT = {
+		ROOT = {
+			any_sub_realm_title = {
+				tier = tier_county
+				target_is_de_jure_liege_or_above = scope:de_jure_liege_title
+			}
+		}
+	}
+	
+	NAND = {
+		has_game_rule = on_limited_de_jure_requirement
+		holder = {
+			is_ai = no
+		}
+		this = holder.primary_title
+	}
+}
+
+game_rule.1 = { # De Jure Requirement
+	hidden = yes
+	
+	trigger = {
+		NOT = { has_game_rule = off_de_jure_requirement }
+		any_held_title = {
+			de_jure_liege_title_to_destroy = yes
+		}
+	}
+
+	immediate = {
+		# Notification
+		random_held_title = {
+			limit = {
+				de_jure_liege_title_to_destroy = yes
+			}
+			save_scope_as = title_to_destroy
+		}
+		send_interface_message = {
+			type = event_chancellor_task_bad
+			title = de_jure_requirement_title
+			desc = de_jure_requirement_desc
+
+			left_icon = scope:title_to_destroy
+
+			destroy_title = scope:title_to_destroy
+			add_pressed_claim = scope:title_to_destroy
+		}
+	}
+}
+
+
+######################
+# GENERATED FAMILIES #
+######################
+
+scripted_trigger only_ai_if_ai_only_trigger = {
+	trigger_if = {
+		limit = { has_game_rule = on_generate_families_ai_only }
+		is_ai = yes
+	}
+	trigger_else = {
+		always = yes
+	}
+}
+
+
+game_rule.1000 = {
+	type = empty
+	hidden = yes
+
+	trigger = {
+		OR = {
+			has_game_rule = on_generate_families
+			has_game_rule = on_generate_families_ai_only
+		}
+	}
+
+	immediate = {
+		every_independent_ruler = {
+			if = {
+				limit = { only_ai_if_ai_only_trigger = yes }
+				trigger_event = game_rule.1001
+			}
+			every_vassal_or_below = {
+				limit = { only_ai_if_ai_only_trigger = yes }
+				trigger_event = game_rule.1001
+			}
+		}
+	}
+}
+
+game_rule.1001 = { #by Mathilda Bjarnehed
+	type = character_event
+	hidden = yes
+	
+	trigger = {
+		#Is in need of family
+		NOT = {
+			exists = player_heir
+		}
+		#Allowed to get family
+		NOT = { # Otherwise historical characters sometimes generate inappropriate children
+			any_child = {
+				always = yes
+			}
+		}
+		NOR = {
+			has_trait = celibate
+			has_trait = eunuch
+		}
+		age >= 17 #Because you need ~1 year of pregnancy
+		is_landed = yes
+		primary_title = {
+			is_mercenary_company = no
+			is_holy_order = no
+		}
+		NOR = {
+			has_government = republic_government
+			has_government = theocracy_government
+		}
+	}
+
+	
+
+	immediate = {
+		game_rule_create_spouse_and_children = { CHARACTER = root }
+
+		#In case your created player heir is an older woman (past childbearing age or with a very short window)
+		if = {
+			limit = {
+				exists = player_heir
+				player_heir = {
+					is_female = yes
+					age >= 40
+				}
+				#Nothing else should need to be checked, they shouldn't be celibate or something like that
+			}
+			player_heir = {
+				save_scope_as = childless_heir
+			 	game_rule_create_spouse_and_children = { CHARACTER = scope:childless_heir }
+			}
+		}
+	}
+}
+
+########################
+# EXCLAVE INDEPENDENCE #
+########################
+
+game_rule.2 = { # Exclave Independence
+	hidden = yes
+	
+	trigger = {
+		is_independent_ruler = yes
+		exists = root.capital_province
+		any_sub_realm_title = {
+			tier = tier_county
+			NOT = {
+				is_connected_to = {
+					target = root.capital_province.county
+				}
+			}
+		}
+		trigger_if = {
+			limit = {
+				exists = primary_heir
+			}
+			primary_heir = {
+				NOR = {
+					is_independent_ruler = yes # Disallow this when the heir is independent, lest we risk breaking up realms that should be connected
+					is_ai = no # Players always inherit everything
+				}
+			}
+		}
+	}
+
+	immediate = {
+	
+		if = { # None
+			limit = {
+				has_game_rule = off_exclave_independence
+			}
+		}
+		else_if = { # Delay for AI if at war, skip if player at war
+			limit = {
+				is_at_war = yes
+			}
+			if = {
+				limit = {
+					is_ai = yes
+					exists = primary_heir
+				}
+				primary_heir = {
+					trigger_event = { id = game_rule.2 years = 5 }
+				}
+			}
+		}
+		else_if = { # Limited, AI only
+			limit = {
+				has_game_rule = ai_limited_exclave_independence
+				is_ai = yes
+				NOT = {
+					any_vassal_or_below = {
+						is_ai = no
+					}
+				}
+			}
+	
+			root.capital_province.county = {
+				every_connected_county = { # Start off by making a list of all disconnected Counties
+					invert = yes
+					max_naval_distance = 2000
+					allow_one_county_land_gap = yes
+					add_to_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					any_connected_county = {
+						NOT = { is_in_list = disconnected_counties }
+						max_naval_distance = 2000
+					}
+				}
+				add_to_list = cull_naval_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_naval_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_naval_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_naval_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_naval_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					target_is_de_jure_liege_or_above = root.primary_title
+				}
+				add_to_list = cull_de_jure_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_de_jure_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_de_jure_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_de_jure_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_de_jure_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = { # Release Kings first
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_kingdom
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Dukes second
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_duchy
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Counts last
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_county
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Finally, release contiguous areas under someone from the pool
+				list = disconnected_counties
+				
+				limit = {
+					OR = {
+						holder.top_liege = root
+						holder = root
+					}
+				}
+				
+				save_scope_as = county_of_origin
+				
+				every_pool_character = {
+					province = scope:county_of_origin.title_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				every_pool_character = {
+					province = scope:county_of_origin.holder.capital_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				if = {
+					limit = {
+						NOT = {
+							any_in_list = {
+								list = potential_holders
+								is_available_adult = yes
+							}
+						}
+					}
+					create_character = {
+						location = scope:county_of_origin.title_province
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						gender_female_chance = 50
+						age = 32
+						save_scope_as = backup_character
+					}
+					scope:backup_character = {
+						add_to_list = potential_holders
+					}
+				}
+				
+				random_in_list = {
+					list = potential_holders
+					limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+					}
+					
+					save_scope_as = new_county_holder
+					#get_title = scope:county_of_origin
+					
+					create_title_and_vassal_change = change
+					every_in_list = {
+						list = disconnected_counties
+						limit = {
+							OR = {
+								holder.top_liege = root
+								holder = root
+							}
+							is_connected_to = {
+								target = scope:county_of_origin
+							}
+							NOT ={
+								is_connected_to = {
+									target = root.capital_province.county
+								}
+							}
+						}
+						scope:change = {
+							set_title_and_vassal_change_type = independency
+							set_add_claim_on_loss = yes
+						}
+						change_title_holder = {
+							holder = scope:new_county_holder
+							change = scope:change
+						}
+						#scope:new_county_holder = { get_title = prev }
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+					if = { # Just in case they need to create a duchy
+						limit = {
+							gold < 500
+						}
+						add_gold = 500
+					}
+				}
+			}
+		}
+		else_if = { # Significant, AI Only
+			limit = {
+				has_game_rule = ai_significant_exclave_independence
+				is_ai = yes
+				NOT = {
+					any_vassal_or_below = {
+						is_ai = no
+					}
+				}
+			}
+			
+			root.capital_province.county = {
+				every_connected_county = { # Start off by making a list of all disconnected Counties
+					invert = yes
+					max_naval_distance = 2000
+					add_to_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					target_is_de_jure_liege_or_above = root.primary_title
+				}
+				add_to_list = cull_de_jure_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_de_jure_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_de_jure_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_de_jure_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_de_jure_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					any_connected_county = {
+						NOT = { is_in_list = disconnected_counties }
+						max_naval_distance = 2000
+					}
+				}
+				add_to_list = cull_naval_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_naval_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_naval_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_naval_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_naval_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = { # Release Kings first
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_kingdom
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Dukes second
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_duchy
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Counts last
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_county
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Finally, release contiguous areas under someone from the pool
+				list = disconnected_counties
+				
+				limit = {
+					OR = {
+						holder.top_liege = root
+						holder = root
+					}
+				}
+				
+				save_scope_as = county_of_origin
+				
+				every_pool_character = {
+					province = scope:county_of_origin.title_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				every_pool_character = {
+					province = scope:county_of_origin.holder.capital_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				if = {
+					limit = {
+						NOT = {
+							any_in_list = {
+								list = potential_holders
+								is_available_adult = yes
+							}
+						}
+					}
+					create_character = {
+						location = scope:county_of_origin.title_province
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						gender_female_chance = 50
+						age = 32
+						save_scope_as = backup_character
+					}
+					scope:backup_character = {
+						add_to_list = potential_holders
+					}
+				}
+				
+				random_in_list = {
+					list = potential_holders
+					limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+					}
+					
+					save_scope_as = new_county_holder
+					#get_title = scope:county_of_origin
+					
+					create_title_and_vassal_change = change
+					every_in_list = {
+						list = disconnected_counties
+						limit = {
+							OR = {
+								holder.top_liege = root
+								holder = root
+							}
+							is_connected_to = {
+								target = scope:county_of_origin
+							}
+							NOT ={
+								is_connected_to = {
+									target = root.capital_province.county
+								}
+							}
+						}
+						scope:change = {
+							set_title_and_vassal_change_type = independency
+							set_add_claim_on_loss = yes
+						}
+						change_title_holder = {
+							holder = scope:new_county_holder
+							change = scope:change
+						}
+						#scope:new_county_holder = { get_title = prev }
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+					if = { # Just in case they need to create a duchy
+						limit = {
+							gold < 500
+						}
+						add_gold = 500
+					}
+				}
+			}
+		}
+		else_if = { # Total, AI only
+			limit = {
+				has_game_rule = ai_total_exclave_independence
+				is_ai = yes
+				NOT = {
+					any_vassal_or_below = {
+						is_ai = no
+					}
+				}
+			}
+	
+			root.capital_province.county = {
+				every_connected_county = { # Start off by making a list of all disconnected Counties
+					invert = yes
+					max_naval_distance = 2000
+					add_to_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					any_connected_county = {
+						NOT = { is_in_list = disconnected_counties }
+						max_naval_distance = 2000
+					}
+				}
+				add_to_list = cull_naval_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_naval_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_naval_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_naval_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_naval_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = { # Release Kings first
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_kingdom
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Dukes second
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_duchy
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Counts last
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_county
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Finally, release contiguous areas under someone from the pool
+				list = disconnected_counties
+				
+				limit = {
+					OR = {
+						holder.top_liege = root
+						holder = root
+					}
+				}
+				
+				save_scope_as = county_of_origin
+				
+				every_pool_character = {
+					province = scope:county_of_origin.title_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				every_pool_character = {
+					province = scope:county_of_origin.holder.capital_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				if = {
+					limit = {
+						NOT = {
+							any_in_list = {
+								list = potential_holders
+								is_available_adult = yes
+							}
+						}
+					}
+					create_character = {
+						location = scope:county_of_origin.title_province
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						gender_female_chance = 50
+						age = 32
+						save_scope_as = backup_character
+					}
+					scope:backup_character = {
+						add_to_list = potential_holders
+					}
+				}		
+				
+				random_in_list = {
+					list = potential_holders
+					limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+					}
+					
+					save_scope_as = new_county_holder
+					#get_title = scope:county_of_origin
+					
+					create_title_and_vassal_change = change
+					every_in_list = {
+						list = disconnected_counties
+						limit = {
+							OR = {
+								holder.top_liege = root
+								holder = root
+							}
+							is_connected_to = {
+								target = scope:county_of_origin
+							}
+							NOT ={
+								is_connected_to = {
+									target = root.capital_province.county
+								}
+							}
+						}
+						scope:change = {
+							set_title_and_vassal_change_type = independency
+							set_add_claim_on_loss = yes
+						}
+						change_title_holder = {
+							holder = scope:new_county_holder
+							change = scope:change
+						}
+						#scope:new_county_holder = { get_title = prev }
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+					if = { # Just in case they need to create a duchy
+						limit = {
+							gold < 500
+						}
+						add_gold = 500
+					}
+				}
+			}
+		}
+		else_if = { # Limited: Land connected to Capital, De Jure of Primary Title, or one gap away, as well as coastal
+			limit = {
+				has_game_rule = limited_exclave_independence
+			}
+	
+			root.capital_province.county = {
+				every_connected_county = { # Start off by making a list of all disconnected Counties
+					invert = yes
+					max_naval_distance = 2000
+					allow_one_county_land_gap = yes
+					add_to_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					any_connected_county = {
+						NOT = { is_in_list = disconnected_counties }
+						max_naval_distance = 2000
+					}
+				}
+				add_to_list = cull_naval_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_naval_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_naval_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_naval_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_naval_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					target_is_de_jure_liege_or_above = root.primary_title
+				}
+				add_to_list = cull_de_jure_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_de_jure_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_de_jure_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_de_jure_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_de_jure_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = { # Release Kings first
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_kingdom
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Dukes second
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_duchy
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Counts last
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_county
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Finally, release contiguous areas under someone from the pool
+				list = disconnected_counties
+				
+				limit = {
+					OR = {
+						holder.top_liege = root
+						holder = root
+					}
+				}
+				
+				save_scope_as = county_of_origin
+				
+				every_pool_character = {
+					province = scope:county_of_origin.title_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				every_pool_character = {
+					province = scope:county_of_origin.holder.capital_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				if = {
+					limit = {
+						NOT = {
+							any_in_list = {
+								list = potential_holders
+								is_available_adult = yes
+							}
+						}
+					}
+					create_character = {
+						location = scope:county_of_origin.title_province
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						gender_female_chance = 50
+						age = 32
+						save_scope_as = backup_character
+					}
+					scope:backup_character = {
+						add_to_list = potential_holders
+					}
+				}
+				
+				random_in_list = {
+					list = potential_holders
+					limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+					}
+					
+					save_scope_as = new_county_holder
+					#get_title = scope:county_of_origin
+					
+					create_title_and_vassal_change = change
+					every_in_list = {
+						list = disconnected_counties
+						limit = {
+							OR = {
+								holder.top_liege = root
+								holder = root
+							}
+							is_connected_to = {
+								target = scope:county_of_origin
+							}
+							NOT ={
+								is_connected_to = {
+									target = root.capital_province.county
+								}
+							}
+						}
+						scope:change = {
+							set_title_and_vassal_change_type = independency
+							set_add_claim_on_loss = yes
+						}
+						change_title_holder = {
+							holder = scope:new_county_holder
+							change = scope:change
+						}
+						#scope:new_county_holder = { get_title = prev }
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+					if = { # Just in case they need to create a duchy
+						limit = {
+							gold < 500
+						}
+						add_gold = 500
+					}
+				}
+			}
+		}
+		else_if = { # Significant: Land connected to Capital or De Jure of Primary Title, and coastal
+			limit = {
+				has_game_rule = significant_exclave_independence
+			}
+	
+			root.capital_province.county = {
+				every_connected_county = { # Start off by making a list of all disconnected Counties
+					invert = yes
+					max_naval_distance = 2000
+					add_to_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					target_is_de_jure_liege_or_above = root.primary_title
+				}
+				add_to_list = cull_de_jure_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_de_jure_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_de_jure_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_de_jure_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_de_jure_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = disconnected_counties
+						
+						any_connected_county = {
+							NOT = { is_in_list = disconnected_counties }
+							max_naval_distance = 2000
+						}
+					}
+				}
+				random_in_list = {
+					list = disconnected_counties
+					
+					limit = {
+						any_connected_county = {
+							NOT = { is_in_list = disconnected_counties }
+							max_naval_distance = 2000
+						}
+					}
+					
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = { # Release Kings first
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_kingdom
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Dukes second
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_duchy
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Counts last
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_county
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Finally, release contiguous areas under someone from the pool
+				list = disconnected_counties
+				
+				limit = {
+					OR = {
+						holder.top_liege = root
+						holder = root
+					}
+				}
+				
+				save_scope_as = county_of_origin
+				
+				every_pool_character = {
+					province = scope:county_of_origin.title_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				every_pool_character = {
+					province = scope:county_of_origin.holder.capital_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				if = {
+					limit = {
+						NOT = {
+							any_in_list = {
+								list = potential_holders
+								is_available_adult = yes
+							}
+						}
+					}
+					create_character = {
+						location = scope:county_of_origin.title_province
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						gender_female_chance = 50
+						age = 32
+						save_scope_as = backup_character
+					}
+					scope:backup_character = {
+						add_to_list = potential_holders
+					}
+				}
+				
+				random_in_list = {
+					list = potential_holders
+					limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+					}
+					
+					save_scope_as = new_county_holder
+					#get_title = scope:county_of_origin
+					
+					create_title_and_vassal_change = change
+					every_in_list = {
+						list = disconnected_counties
+						limit = {
+							OR = {
+								holder.top_liege = root
+								holder = root
+							}
+							is_connected_to = {
+								target = scope:county_of_origin
+							}
+							NOT ={
+								is_connected_to = {
+									target = root.capital_province.county
+								}
+							}
+						}
+						scope:change = {
+							set_title_and_vassal_change_type = independency
+							set_add_claim_on_loss = yes
+						}
+						change_title_holder = {
+							holder = scope:new_county_holder
+							change = scope:change
+						}
+						#scope:new_county_holder = { get_title = prev }
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+					if = { # Just in case they need to create a duchy
+						limit = {
+							gold < 500
+						}
+						add_gold = 500
+					}
+				}
+			}
+		}
+		else_if = { # Total: Only keep things connected to your capital, or coastal
+			limit = {
+				has_game_rule = total_exclave_independence
+			}
+	
+			root.capital_province.county = {
+				every_connected_county = { # Start off by making a list of all disconnected Counties
+					invert = yes
+					max_naval_distance = 2000
+					add_to_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = {
+				list = disconnected_counties
+				
+				limit = {
+					any_connected_county = {
+						NOT = { is_in_list = disconnected_counties }
+						max_naval_distance = 2000
+					}
+				}
+				add_to_list = cull_naval_connection_counties
+			}
+			
+			while = {
+				limit = {
+					any_in_list = {
+						list = cull_naval_connection_counties
+					}
+				}
+				random_in_list = {
+					list = cull_naval_connection_counties
+					
+					save_scope_as = cull_origin_county
+					
+					every_connected_county = {
+						remove_from_list = cull_naval_connection_counties
+						remove_from_list = disconnected_counties
+					}
+					remove_from_list = cull_naval_connection_counties
+					remove_from_list = disconnected_counties
+				}
+			}
+			
+			every_in_list = { # Release Kings first
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_kingdom
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Dukes second
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_duchy
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Release Counts last
+				list = disconnected_counties
+				
+				limit = {
+					holder.primary_title.tier = tier_county
+					NOR = {
+						holder = root
+						holder = {
+							any_sub_realm_title = {
+								tier = tier_county
+								NOT = { is_in_list = disconnected_counties }
+							}
+						}
+					}
+				}
+				holder = {
+					create_title_and_vassal_change = change
+					scope:change = {
+						set_title_and_vassal_change_type = independency
+						set_add_claim_on_loss = yes
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+			}
+			
+			every_in_list = { # Finally, release contiguous areas under someone from the pool
+				list = disconnected_counties
+				
+				limit = {
+					OR = {
+						holder.top_liege = root
+						holder = root
+					}
+				}
+				
+				save_scope_as = county_of_origin
+				
+				every_pool_character = {
+					province = scope:county_of_origin.title_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				every_pool_character = {
+					province = scope:county_of_origin.holder.capital_province
+					limit = {
+						is_available_adult = yes
+					}
+					add_to_list = potential_holders
+				}
+				
+				if = {
+					limit = {
+						NOT = {
+							any_in_list = {
+								list = potential_holders
+								is_available_adult = yes
+							}
+						}
+					}
+					create_character = {
+						location = scope:county_of_origin.title_province
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						gender_female_chance = 50
+						age = 32
+						save_scope_as = backup_character
+					}
+					scope:backup_character = {
+						add_to_list = potential_holders
+					}
+				}
+				
+				random_in_list = {
+					list = potential_holders
+					limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = {
+							has_dominant_ruling_gender = prev
+						}
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						has_claim_on = scope:county_of_origin
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						culture = scope:county_of_origin.culture
+					}
+					alternative_limit = {
+						is_available_adult = yes
+						faith = scope:county_of_origin.faith
+					}
+					alternative_limit = {
+						is_available_adult = yes
+					}
+					
+					save_scope_as = new_county_holder
+					#get_title = scope:county_of_origin
+					
+					create_title_and_vassal_change = change
+					every_in_list = {
+						list = disconnected_counties
+						limit = {
+							OR = {
+								holder.top_liege = root
+								holder = root
+							}
+							is_connected_to = {
+								target = scope:county_of_origin
+							}
+							NOT ={
+								is_connected_to = {
+									target = root.capital_province.county
+								}
+							}
+						}
+						scope:change = {
+							set_title_and_vassal_change_type = independency
+							set_add_claim_on_loss = yes
+						}
+						change_title_holder = {
+							holder = scope:new_county_holder
+							change = scope:change
+						}
+						#scope:new_county_holder = { get_title = prev }
+					}
+					becomes_independent = {
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+					if = { # Just in case they need to create a duchy
+						limit = {
+							gold < 500
+						}
+						add_gold = 500
+					}
+				}
+			}
+		}
+	}
+}
+
+#######################
+# HUNGARIAN MIGRATION #
+#######################

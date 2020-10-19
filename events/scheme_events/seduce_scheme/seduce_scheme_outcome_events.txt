@@ -1,0 +1,3190 @@
+﻿# The outcome of a seduction scheme
+
+namespace = seduce_outcome
+
+# NOTE: To set up a new scheme outcome, make sure that you make an event for the owner and one for the target, and add them to their relevant on_actions.
+
+
+# 0000-0999: Maintenance events
+# 1000-1999: Setup events
+# 2000-2999: Success events for scheme owner
+# 3000-3999: Success events for scheme target
+# 4000-4999: Failure events for scheme owner
+
+##"Hard" rejections that block the target for future schemes
+# 8100-8999: Early outcome events
+
+
+
+######################################################
+# MAINTENANCE EVENTS
+# 0000-0999
+######################################################
+
+#I am a player and there is a discovery chance. Do I want to take the risk?
+seduce_outcome.0001 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = seduce_outcome.0001.t
+	desc = {
+		desc = seduce_outcome.0001.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:scheme.scheme_success_chance >= 60 }
+				desc = seduce_outcome.0001.positive.desc
+			}
+			desc = seduce_outcome.0001.negative.desc
+		}
+	}
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		scope:target = { liege = { save_scope_as = discoverer } }
+	}
+
+	option = {
+		name = seduce_outcome.0001.a
+		custom_tooltip = seduce_outcome.0001.a.tt
+		trigger_event = seduce_outcome.0002 #Do the rolls!
+
+		stress_impact = {
+			craven = minor_stress_impact_gain
+		}
+	}
+
+	option = {
+		name = seduce_outcome.0001.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}	
+
+#Rolls success and discovery, and triggers on_actions (or sends "player's choice" event)
+seduce_outcome.0002 = {
+	type = character_event
+
+	hidden = yes
+
+	immediate = {
+		#SUCCESS ROLL
+		random = {
+			chance = scope:scheme.scheme_success_chance
+
+			save_scope_value_as = {
+				name = scheme_successful
+				value = yes
+			}
+		}
+
+		#DISCOVERY ROLL
+		save_scope_value_as = {
+			name = discovery_chance
+			value = {
+				value = 100
+				subtract = scope:scheme.scheme_secrecy
+			}
+		}
+
+		random = {
+			chance = scope:discovery_chance
+			save_scope_value_as = {
+				name = scheme_discovered
+				value = yes
+			}
+		}
+
+		#FOR AI TARGETS, SEND ON_ACTIONS
+		if = {
+			limit = { scope:target = { is_ai = yes } }
+			if = {
+				limit = {
+					exists = scope:scheme_successful
+				}
+				trigger_event = {
+					on_action = seduce_success
+				}
+			}
+			else = {
+				trigger_event = {
+					on_action = seduce_failure
+				}
+			}
+		}
+		#FOR PLAYER CHARACTER, SEND CHOICE EVENT
+		else = {
+			scope:target = {
+				trigger_event = {
+					id = seduce_outcome.0003
+				}
+			}
+		}
+	}
+}
+
+#Player scheme target selects outcome
+seduce_outcome.0003 = { #by Mathilda Bjarnehed & Petter Vilberg
+	type = character_event
+	title = seduce_outcome.0003.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:scheme_successful }
+				desc = seduce_outcome.0003.success.desc
+			}
+			desc = seduce_outcome.0003.failure.desc
+		}
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	#Success: I want to be your lover
+	option = {
+		trigger = { matching_gender_and_sexuality_trigger = { CHARACTER_1 = scope:owner CHARACTER_2 = scope:target } }
+		name = {
+			trigger = { exists = scope:scheme_successful }
+			text = seduce_outcome.0003.a.success
+		}
+		name = {
+			trigger = { NOT = { exists = scope:scheme_successful } }
+			text = seduce_outcome.0003.a.failure
+		}
+
+		show_as_tooltip = {
+			had_sex_with_effect = {
+				CHARACTER = scope:owner
+				PREGNANCY_CHANCE = seduce_pregnancy_chance
+			}
+			custom_tooltip = seduce_outcome.0003.a.tt
+		}
+
+		#As owner's intent might be seen as incestuous/sodomy, apply a secret that player can reveal if they want to 
+		hidden_effect = {
+			scope:owner = {
+				#Sodomy
+				give_homosexual_secret_or_nothing_with_target_effect = { CHARACTER = scope:target }
+
+				#Incest
+				give_incest_secret_or_nothing_with_target_effect = { CHARACTER = scope:target } 
+				
+				#Adultery/fornication isn't a secret, but is applied as traits when the secrets are revealed
+			}
+		}
+
+		scope:scheme = { #Unlocks "become lover" option against player characters
+			save_scope_value_as = {
+				name = continued_relationship
+				value = yes
+			}
+		}
+		
+		scope:owner = {
+			trigger_event = { #Owner gets any success event, and then target will be notified of their choice
+				on_action = seduce_success
+			}
+		}
+
+		#Stress
+		if = {
+			limit = { #Extra stress for zealous
+				faith = { save_temporary_scope_as = my_faith }
+				OR = {
+					relation_with_character_is_incestuous_in_my_faith_trigger = { CHARACTER = scope:owner }
+					relation_with_character_is_sodomy_trigger = { CHARACTER = scope:owner }
+					AND = {
+						NOT = { is_consort_of = scope:owner }
+						OR = {				
+							trait_is_shunned_in_faith_trigger = { TRAIT = adulterer FAITH = scope:my_faith GENDER_CHARACTER = root } #Fornicator is handled by same rules
+							trait_is_criminal_in_faith_trigger = { TRAIT = adulterer FAITH = scope:my_faith GENDER_CHARACTER = root } #Fornicator is handled by same rules
+						}
+					}
+				}
+			}
+			stress_impact = {
+				chaste = medium_stress_impact_gain
+				zealous = medium_stress_impact_gain
+			}
+		}
+		else = { #Regular stress
+			stress_impact = {
+				chaste = medium_stress_impact_gain
+			}
+		}
+	}
+
+	#Success: Okay, we can have sex but nothing more
+	option = {
+		name = {
+			trigger = { exists = scope:scheme_successful }
+			text = seduce_outcome.0003.b.success
+		}
+		name = {
+			trigger = { NOT = { exists = scope:scheme_successful } }
+			text = seduce_outcome.0003.b.failure
+		}
+
+		show_as_tooltip = {
+			had_sex_with_effect = {
+				CHARACTER = scope:owner
+				PREGNANCY_CHANCE = seduce_pregnancy_chance
+			}
+		}
+
+		scope:owner = {
+			trigger_event = { #Owner gets any success event, and then target will be notified of their choice (owner can't pick become lovers)
+				on_action = seduce_success
+			}
+		}
+
+		#Stress
+		if = {
+			limit = { #Extra stress for zealous
+				faith = { save_temporary_scope_as = my_faith }
+				OR = {
+					relation_with_character_is_incestuous_in_my_faith_trigger = { CHARACTER = scope:owner }
+					relation_with_character_is_sodomy_trigger = { CHARACTER = scope:owner }
+					AND = {
+						NOT = { is_consort_of = scope:owner }
+						OR = {				
+							trait_is_shunned_in_faith_trigger = { TRAIT = adulterer FAITH = scope:my_faith GENDER_CHARACTER = root } #Fornicator is handled by same rules
+							trait_is_criminal_in_faith_trigger = { TRAIT = adulterer FAITH = scope:my_faith GENDER_CHARACTER = root } #Fornicator is handled by same rules
+						}
+					}
+				}
+			}
+			stress_impact = {
+				chaste = medium_stress_impact_gain
+				compassionate = minor_stress_impact_gain
+				zealous = medium_stress_impact_gain
+			}
+		}
+		else = { #Regular stress
+			stress_impact = {
+				chaste = medium_stress_impact_gain
+				compassionate = minor_stress_impact_gain
+			}
+		}
+	}
+	
+	#Failure: let down easy
+	option = {
+		name = seduce_outcome.0003.c
+
+		save_scope_value_as = {
+			name = target_chose_nice_reject
+			value = yes
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+		scope:owner = {
+			trigger_event = {
+				id = seduce_outcome.4001 #Nice reject
+				days = 1
+			}
+		}
+
+		#Stress
+		stress_impact = {
+			lustful = medium_stress_impact_gain
+		}
+		if = { #Hard to say no to someone who is seductive
+			limit = {
+				NOT = { has_trait = chaste }
+				exists = scope:scheme_successful
+			}
+			add_stress = minor_stress_gain
+		}
+	}
+
+	#Failure: be mean
+	option = {
+		trigger = { NOT = { is_consort_of = scope:owner }} # Not an option if you're already married/concubines (it's not adultery then!)
+		name = seduce_outcome.0003.d
+
+		save_scope_value_as = {
+			name = target_chose_mean_reject
+			value = yes
+		}
+		show_as_tooltip = {
+			seduce_outcome_publicised_attempted_crimes_or_nothing_effect = {
+				TARGET = scope:target
+				OWNER = scope:owner
+			}
+		}
+		
+		seduction_block_character_effect = { CHARACTER = scope:owner }
+
+		reverse_add_opinion = {
+			target = scope:owner
+			modifier = angry_opinion
+			opinion = -20
+		}
+		scope:owner = {
+			trigger_event = {
+				id = seduce_outcome.4003 #Mean reject
+				days = 1
+			}
+		}
+
+		#Stress
+		stress_impact = {
+			lustful = medium_stress_impact_gain
+			compassionate = medium_stress_gain
+		}
+	}
+
+	#Failure: no lovers at all please!
+	option = {
+		name = seduce_outcome.0003.e
+		custom_tooltip = seduce_outcome.0003.e.tt
+		add_character_flag = {
+			flag = block_seduce_attempts
+			years = 10
+		}
+
+		save_scope_value_as = {
+			name = target_chose_nice_reject
+			value = yes
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+		scope:owner = {
+			trigger_event = {
+				id = seduce_outcome.4001 #Nice reject
+				days = 1
+			}
+		}
+
+		#Stress
+		stress_impact = {
+			lustful = medium_stress_impact_gain
+		}
+	}
+}
+
+#Gained lover relation through different means
+#by Linnéa Thimrén
+seduce_outcome.0004 = {
+	type = character_event
+	title = seduce_outcome.0004.t
+	desc = seduce_outcome.0004.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	#No scheme, no widget
+
+	option = {
+		name = seduce_outcome.0004.a
+	}
+}
+
+#Target died
+#by Ewan Cowhig Croft
+seduce_outcome.0005 = {
+	type = character_event
+	title = seduce_outcome.0005.t
+	desc = seduce_outcome.0005.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	#No scheme, no widget
+
+	option = {
+		name = seduce_outcome.0005.a
+	}
+}
+
+######################################################
+# SUCCESS EVENTS FOR OWNER
+# 2000-2999
+######################################################
+
+scripted_trigger seduce_outcome_become_lovers_trigger = {
+	OR = {
+		scope:scheme = { exists = scope:continued_relationship }
+		scope:target = { is_ai = yes }
+	}
+	matching_gender_and_sexuality_trigger = { CHARACTER_1 = scope:owner CHARACTER_2 = scope:target }
+}
+
+scripted_trigger seduce_outcome_just_sex_trigger = {
+	OR = {
+		scope:target = { is_ai = yes }
+		scope:owner = { is_ai = yes }
+		AND = {
+			scope:target = { is_ai = no }
+			scope:scheme = { NOT = { exists = scope:continued_relationship } }
+		}
+		NOT = { matching_gender_and_sexuality_trigger = { CHARACTER_1 = scope:owner CHARACTER_2 = scope:target } }
+	}
+}
+
+# Target is the Pope and you are the same religion
+# by Tobias Bodlund
+seduce_outcome.2000 = {
+	type = character_event
+	title = seduce_outcome.2000.t
+	desc = seduce_outcome.2000.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	
+	trigger = {
+		always = no
+	}
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2000.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+		
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2000.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option if
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3000
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+# Both are drunkards
+# by Tobias Bodlund
+seduce_outcome.2010 = {
+	type = character_event
+	title = seduce_outcome.2010.t
+	desc = seduce_outcome.2010.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		has_trait = drunkard
+		scope:target = { has_trait = drunkard }
+	}
+
+	weight_multiplier = {
+		base = 100
+	}
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+		
+		play_music_cue = "mx_cue_seduction"
+		
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2010.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2010.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3010
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+# In the privy
+seduce_outcome.2020 = {
+	type = character_event
+	title = seduce_outcome.2020.t
+	desc = seduce_outcome.2020.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = courtyard
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2020.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2020.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3020
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+# Both are Gluttonous
+# by Tobias Bodlund and Linnéa Thimrén
+seduce_outcome.2030 = {
+	type = character_event
+	title = seduce_outcome.2030.t
+	desc = {
+		desc = seduce_outcome.2030.a.desc
+		triggered_desc = {
+			trigger = {
+				drinks_alcohol_trigger = yes
+			}
+			desc = seduce_outcome.2030.alcohol.desc
+		}
+		desc = seduce_outcome.2030.b.desc
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		has_trait = gluttonous
+		scope:target = { has_trait = gluttonous }
+	}
+	
+	weight_multiplier = {
+		base = 50
+	}
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2030.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2030.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3030
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+# At the walls
+# by Tobias Bodlund and Linnéa Thimrén
+seduce_outcome.2040 = {
+	type = character_event
+	title = seduce_outcome.2040.t
+	desc = seduce_outcome.2040.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = courtyard
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		assign_quirk_effect = yes
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+		
+		play_music_cue = "mx_cue_seduction"
+		
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2040.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2040.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3040
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+# Both are Chaste and at least one is married to another
+seduce_outcome.2050 = {
+	type = character_event
+	title = seduce_outcome.2050.t
+	desc = seduce_outcome.2050.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		has_trait = chaste
+		num_of_relation_lover < 1
+		scope:target = {
+			has_trait = chaste
+			num_of_relation_lover < 1
+			NOT = { is_spouse_of = root }
+		}
+		OR = {
+			is_married = yes
+			scope:target = { is_married = yes }
+		}
+	}
+	
+	weight_multiplier = {
+		base = 100
+	}
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2050.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2050.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3050
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+#Go to the target's chambers
+#by Linnéa Thimrén
+seduce_outcome.2301 = {
+	type = character_event
+	title = seduce_outcome.2301.t
+	desc = seduce_outcome.2301.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = { #More likely if you're in the same court
+			add = 0.7
+			seduction_target_is_close_trigger = yes
+		}
+		modifier = { #Less likely if you're the target's spouse
+			add = -0.2
+			scope:target = { is_spouse_of = root }
+		}
+	}
+
+	immediate = {
+		scope:target = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+		
+		play_music_cue = "mx_cue_seduction"
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2301.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		flavor = seduce_outcome.2301.a.tt
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2301.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3301
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+#Sneak into target's court (long distance seduction)
+#by Linnéa Thimrén
+seduce_outcome.2302 = {
+	type = character_event
+	title = seduce_outcome.2302.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target = { court_owner = scope:target }
+				}
+				desc = seduce_outcome.2302.desc_court_owner
+			}
+			desc = seduce_outcome.2302.desc_not_court_owner
+		}
+		desc = seduce_outcome.2302.desc_end
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		seduction_target_is_close_trigger = no
+		exists = scope:target.location.barony
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = { #More likely if they're in a different realm
+			add = 1
+			scope:target = {
+				NOT = {
+					top_liege = root.top_liege
+				}
+			}
+		}
+	}
+
+	immediate = {
+		scope:target.location.barony = {
+			save_scope_as = court_of_residence
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success): yes
+		owner_seduce_outcome_sex_effect = yes
+		
+		play_music_cue = "mx_cue_seduction"
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2302.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2302.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3302
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+#Gregarious target(and owner), gushing compliments
+#by Linnéa Thimrén
+seduce_outcome.2303 = {
+	type = character_event
+	title = seduce_outcome.2303.t
+	desc = seduce_outcome.2303.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:target = { has_trait = gregarious }
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = { #More likely if you're also gregarious!
+			add = 2
+			has_trait = gregarious
+		}
+	}
+
+	immediate = {
+		assign_quirk_effect = yes
+		scope:target = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2303.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2303.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3303
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+#Meet under the open sky (primarily for hunters etc.)
+#by Linnéa Thimrén
+seduce_outcome.2304 = {
+	type = character_event
+	title = seduce_outcome.2304.t
+	desc = seduce_outcome.2304.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = terrain
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = { #Much more likely if target is a hunter
+			add = 2
+			scope:target = { has_trait = lifestyle_hunter }
+		}
+		modifier = { #More likely if you're also a hunter!
+			add = 1
+			has_trait = lifestyle_hunter
+		}
+		modifier = {
+			add = 0.5
+			seduction_target_is_close_trigger = no
+		}
+	}
+
+	immediate = {
+		select_local_harmless_animal_effect = yes
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):yes
+		owner_seduce_outcome_sex_effect = yes
+		
+		play_music_cue = "mx_cue_seduction"
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2304.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2304.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3304
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+#Love letter
+#by Linnéa Thimrén
+seduce_outcome.2305 = {
+	type = character_event
+	title = seduce_outcome.2305.t
+	desc = {
+		desc = seduce_outcome.2305.desc_opening
+		desc = seduce_outcome.2305.desc_ending
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = {
+			add = 1
+			scope:target = { has_learning_lifestyle_trait_trigger = yes }
+		}
+		modifier = {
+			add = 1
+			scope:target = { has_trait = education_learning }
+		}
+	}
+
+	immediate = {
+		save_scope_as = love_letter_target
+		scope:target = {
+			love_letter_calculation_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2305.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		flavor = {
+			first_valid = {
+				triggered_desc = {
+					trigger = { scope:target = { var:love_letter_quality = 1 } }
+					desc = seduce_outcome.2305.a_terrible
+				}
+				triggered_desc = {
+					trigger = { scope:target = { var:love_letter_quality = 2 } }
+					desc = seduce_outcome.2305.a_okay
+				}
+				triggered_desc = {
+					trigger = { scope:target = { var:love_letter_quality = 3 } }
+					desc = seduce_outcome.2305.a_great
+				}
+				triggered_desc = {
+					trigger = { scope:target = { var:love_letter_quality = 4 } }
+					desc = seduce_outcome.2305.a_amazing
+				}
+			}
+		}
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2305.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3305
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+#Seduce your spouse
+#by Linnéa Thimrén
+seduce_outcome.2306 = {
+	type = character_event
+	title = seduce_outcome.2306.t
+	desc = seduce_outcome.2306.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:target = {
+			is_spouse_of = root
+		}
+	}
+
+	weight_multiplier = {
+		base = 10
+	}
+
+	immediate = {
+		set_object_of_significance_effect = ye
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):s
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2306.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+		
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2306.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3306
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+#Seduction of rival
+#by Linnéa Thimrén
+seduce_outcome.2307 = {
+	type = character_event
+	title = seduce_outcome.2307.t
+	desc = seduce_outcome.2307.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		OR = {
+			has_relation_rival = scope:target
+			opinion = {
+				target = scope:target
+				value < medium_negative_opinion
+			}
+			reverse_opinion = {
+				target = scope:target
+				value < medium_negative_opinion
+			}
+		}
+	}
+
+	immediate = {
+	#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+		scope:target = {
+			assign_quirk_effect = yes
+		}
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2307.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+		
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2307.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3307
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+#Seduction of close family member
+#by Linnéa Thimrén
+seduce_outcome.2308 = {
+	type = character_event
+	title = seduce_outcome.2308.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					relation_with_character_is_sodomy_in_my_or_lieges_faith_trigger = { CHARACTER = scope:target }
+				}
+				desc = seduce_outcome.2308.desc_illigal
+			}
+			desc = seduce_outcome.2308.desc_not_illigal
+		}
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		is_close_or_extended_family_of = scope:target
+	}
+
+	immediate = {
+		scope:target = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		name = seduce_outcome.2308.a
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+		
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2308.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3308
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+#Outcome using the sex scene generator
+#by Linnéa Thimrén
+seduce_outcome.2309 = {
+	type = character_event
+	title = seduce_outcome.2309.t
+	desc = {
+		desc = seduce_outcome.2309.desc_opening
+		desc = seduce_outcome.2309.desc_ending
+	}
+	
+	theme = seduce_scheme
+	left_portrait = {
+		character = scope:target
+		animation = flirtation_left
+	}
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		NOR = {
+			has_trait = chaste
+			scope:target = { has_trait = chaste }
+		}
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = {
+			add = 1
+			scope:target = { has_trait = lustful }
+		}
+		modifier = {
+			add = 1
+			has_trait = lustful
+		}
+		modifier = {
+			add = -2
+			OR = {
+				has_sexuality = asexual
+				scope:target = { has_sexuality = asexual }
+			}
+		}
+	}
+
+	immediate = {
+		hidden_effect = {
+			random = {
+				chance = 30
+				set_random_sex_scene_location_effect = yes
+				transfer_sex_scene_location_to_character_effect = { CHARACTER = scope:target }
+			}
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		owner_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #Go for both consummation and relationship
+		name = seduce_outcome.2309.a
+		trigger = { seduce_outcome_become_lovers_trigger = yes } #Enabled if a player target said "lovers please" or target is AI
+		
+		owner_seduce_outcome_become_lovers_option_effects = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { #I'm just here for the fun time!
+		name = seduce_outcome.2301.b
+		trigger = { seduce_outcome_just_sex_trigger = yes } #Blocks this option for AI owners if the target is a player who said "lovers please"
+
+		owner_seduce_outcome_just_sex_effects = yes
+
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_vengefulness = 0.25
+			}
+		}
+	}
+
+	after = {
+		scope:target = {
+			trigger_event = seduce_outcome.3309
+		}
+		show_as_tooltip = {
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+	}
+}
+
+
+
+
+
+#We were discovered! Triggered after the success event by owner_seduce_outcome_become_lovers_option_effects and owner_seduce_outcome_just_sex_effects
+seduce_outcome.2900 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = seduce_outcome.2900.t
+	desc = {
+		desc = seduce_outcome.2900.start.desc
+		triggered_desc = {
+			trigger = { exists = scope:capital }
+			desc = seduce_outcome.2900.capital.desc
+		}
+		desc = seduce_outcome.2900.end.desc
+	}
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = terrain
+	}
+	left_portrait = scope:target
+	right_portrait = scope:target_liege
+	#No widget
+
+	trigger = {
+		exists = scope:target.liege
+	}
+
+	immediate = {
+		scope:target = {
+			liege = {
+				save_scope_as = target_liege
+
+				if = {
+					limit = { exists = capital_barony }
+					capital_barony = { save_scope_as = capital }
+				}
+			}
+		}
+	}
+
+	option = {
+		name = seduce_outcome.2900.a
+		
+		show_as_tooltip = {
+			seduce_outcome_success_discovered_effect = yes #This is actually applied in target_liege's event seduce_outcome.3901
+		}
+
+		scope:target.liege = {
+			trigger_event = seduce_outcome.3901
+		}
+	}
+}
+
+
+######################################################
+# SUCCESS EVENTS FOR TARGET (mirror of owner's)
+# 3000-3999
+######################################################
+
+# Pope
+seduce_outcome.3000 = {
+	type = character_event
+	title = seduce_outcome.2000.t
+	desc = seduce_outcome.3000.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3000.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2000.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+# Drunkards
+seduce_outcome.3010 = {
+	type = character_event
+	title = seduce_outcome.2010.t
+	desc = seduce_outcome.3010.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes 
+		
+		play_music_cue = "mx_cue_seduction"
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.2010.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2010.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+		
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+# Privy
+seduce_outcome.3020 = {
+	type = character_event
+	title = seduce_outcome.2020.t
+	desc = seduce_outcome.3020.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = courtyard
+	}
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.2020.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2020.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+# Gluttons
+seduce_outcome.3030 = {
+	type = character_event
+	title = seduce_outcome.2030.t
+	desc = {
+		desc = seduce_outcome.3030.a.desc
+		triggered_desc = {
+			trigger = {
+				drinks_alcohol_trigger = yes
+			}
+			desc = seduce_outcome.3030.alcohol.desc
+		}
+		desc = seduce_outcome.3030.b.desc
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.2030.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2030.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+# At the walls
+seduce_outcome.3040 = {
+	type = character_event
+	title = seduce_outcome.2040.t
+	desc = seduce_outcome.3040.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = courtyard
+	}
+	left_portrait = scope:owner
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes 
+		
+		play_music_cue = "mx_cue_seduction"
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.2040.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2040.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+# Chaste
+seduce_outcome.3050 = {
+	type = character_event
+	title = seduce_outcome.2050.t
+	desc = seduce_outcome.3050.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.2050.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2050.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+#Owner comes to the target's chambers
+seduce_outcome.3301 = {
+	type = character_event
+	title = seduce_outcome.3301.t
+	desc = seduce_outcome.3301.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+		
+		play_music_cue = "mx_cue_seduction"
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3301.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+		flavor = seduce_outcome.3301.a.tt
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.3301.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+		
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+#Owner sneaks into target's court (distance seduction)
+seduce_outcome.3302 = {
+	type = character_event
+	title = seduce_outcome.2302.t
+	desc = {
+		desc = seduce_outcome.3302.desc_opening
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target = { court_owner = scope:target }
+				}
+				desc = seduce_outcome.3302.desc_court_owner
+			}
+			desc = seduce_outcome.3302.desc_not_court_owner
+		}
+		desc = seduce_outcome.3302.desc_end
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		if = {
+			limit = { NOT = { court_owner = scope:target } }
+			court_owner = { save_scope_as = court_owner }
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+		
+		play_music_cue = "mx_cue_seduction"
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3302.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+	
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2302.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+		
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+#Gregarious target(and owner), gushing compliments
+seduce_outcome.3303 = {
+	type = character_event
+	title = seduce_outcome.2303.t
+	desc = seduce_outcome.3303.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3303.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2302.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+#Out in the woods
+seduce_outcome.3304 = {
+	type = character_event
+	title = seduce_outcome.2304.t
+	desc = seduce_outcome.3304.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = terrain
+	}
+	left_portrait = scope:owner
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3304.a
+		trigger = {	scope:owner = { has_character_flag = consummation_and_relationship } }
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2302.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+#Love letter
+seduce_outcome.3305 = {
+	type = character_event
+	title = seduce_outcome.2305.t
+	desc = seduce_outcome.3305.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		save_scope_as = love_letter_target
+		scope:owner = {
+			love_letter_calculation_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3305.a
+		trigger = {	scope:owner = { has_character_flag = consummation_and_relationship } }
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2302.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+
+#Seduction of spouse
+seduce_outcome.3306 = {
+	type = character_event
+	title = seduce_outcome.3306.t
+	desc = seduce_outcome.3306.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3306.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2302.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+
+#Seduction of rival
+seduce_outcome.3307 = {
+	type = character_event
+	title = seduce_outcome.3307.t
+	desc = seduce_outcome.3307.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3307.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.3307.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+
+#Seduction of close family member
+seduce_outcome.3308 = {
+	type = character_event
+	title = seduce_outcome.3308.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					relation_with_character_is_sodomy_in_my_or_lieges_faith_trigger = { CHARACTER = scope:owner }
+				}
+				desc = seduce_outcome.3308.desc_illigal
+			}
+			desc = seduce_outcome.3308.desc_not_illigal
+		}
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	immediate = {
+		scope:owner = {
+			assign_quirk_effect = yes
+		}
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.3308.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.3307.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+#Outcome using the sex scene generator
+seduce_outcome.3309 = {
+	type = character_event
+	title = seduce_outcome.2309.t
+	desc = {
+		desc = seduce_outcome.3309.desc_opening
+		desc = seduce_outcome.3309.desc
+	}
+	
+	theme = seduce_scheme
+	left_portrait = {
+		character = scope:owner
+		animation = flirtation_left
+	}
+
+	immediate = {
+		#Either runs had_sex_with_effect or shows a tooltip of it (effect is always just run once per success):
+		target_seduce_outcome_sex_effect = yes
+	}
+
+	option = { #We went for both consummation and relationship
+		name = seduce_outcome.2309.a
+		trigger = { scope:owner = { has_character_flag = consummation_and_relationship } }
+
+		set_relation_lover_through_seduction_effect = {
+			CHARACTER = scope:owner
+		}
+	}
+
+	option = { #We're just here for the fun time!
+		name = seduce_outcome.2302.b
+		trigger = { scope:owner = { NOT = { has_character_flag = consummation_and_relationship } } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		if = {
+			limit = { scope:owner = { has_character_flag = consummation_and_relationship } }
+			scope:owner = { remove_character_flag = consummation_and_relationship }
+		}
+	}
+}
+
+
+##We were discovered! Outcommented because the scheme target should always be unlanded if discovery happens.
+#seduce_outcome.3900 = { #by Mathilda Bjarnehed
+#	type = character_event
+#	title = seduce_outcome.3900.t
+#	desc = seduce_outcome.3900.desc
+#	
+#	theme = seduce_scheme
+#	left_portrait = scope:owner
+#	right_portrait = scope:target_liege
+#
+#	option = {
+#		name = seduce_outcome.2900.a
+		#
+#		show_as_tooltip = {
+			#seduce_outcome_success_discovered_effect = yes #This is actually applied in target_liege's event seduce_outcome.3901, sent by 3900
+#		}
+#
+#		scope:target_liege = {
+#			trigger_event = seduce_outcome.3901
+#		}
+#	}
+#}
+#seduce_outcome.3900.t: "Discovered!"
+#seduce_outcome.3900.desc: "Mere moments after I have kissed [owner.GetTitledFirstName] goodbye, my [ROOT.Char.Custom2('RelationToMeShort', SCOPE.sC('target_liege'))]'s enraged shouts cut through the peaceful silence.\n\nMy heart sinks like a stone.\n\nKnowing that there is nothing I can do or say to prevent the coming disaster, I brace myself for [target_liege.GetTitledFirstNamePossessive] wrath."
+
+#Discovery event for spouse/liege
+seduce_outcome.3901 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = seduce_outcome.3901.t
+	desc = seduce_outcome.3901.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = sitting_room
+	}
+	left_portrait = scope:owner
+	right_portrait = scope:target
+	#No scheme, no widget
+
+	immediate = {
+		random_dummy_gender_servant_effect = yes
+	}
+
+	option = {
+		name = seduce_outcome.3900.a
+		
+		scope:target = { seduce_outcome_success_discovered_effect = yes }
+	}
+}
+
+######################################################
+# FAILURE EVENTS FOR OWNER
+# 4000-4999
+######################################################
+
+# Nice rejection - I don't think about you that way
+# by Linnéa Thimrén and Mathilda Bjarnehed
+seduce_outcome.4001 = {
+	type = character_event
+	title = seduce_outcome.4001.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:target = { relation_with_character_is_incestuous_in_my_faith_trigger = { CHARACTER = root } } }
+				desc = seduce_outcome.4001.incest.desc
+			}
+			desc = seduce_outcome.4001.regular.desc
+		}
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		OR = {
+			NOT = { exists = scope:scheme_discovered }
+			exists = scope:target_chose_nice_reject #Player chose this outcome
+		}
+	}
+
+	weight_multiplier = {
+		base = 0.75
+		modifier = {
+			reverse_opinion = {
+				target = scope:target
+				value >= high_positive_opinion
+			}
+			factor = 1.3
+		}
+		modifier = {
+			OR = {
+				has_relation_friend = scope:target
+				is_spouse_of = scope:target
+			}
+			factor = 1.3
+		}
+		modifier = { #Very unlikely if they don't dislike you
+			NOR = {
+				reverse_opinion = {
+					target = scope:target
+					value >= low_positive_opinion
+				}
+				AND = {
+					scope:target = { ai_compassion >= medium_positive_ai_value }
+					reverse_opinion = {
+						target = scope:target
+						value >= low_negative_opinion
+					}
+				}
+			}
+			factor = 0.1
+		}
+	}
+
+	immediate = {
+		scope:target = {
+			assign_quirk_effect = yes
+		}
+	}
+
+	option = {
+		name = seduce_outcome.4001.a
+
+		scope:target = { seduction_cooldown_for_character_effect = { CHARACTER = scope:owner } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+# Never! Hard reject
+# by Mathilda Bjarnehed
+seduce_outcome.4002 = {
+	type = character_event
+	title = seduce_outcome.4001.t
+	desc = seduce_outcome.4002.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		OR = {
+			reverse_opinion = { #Dislikes you
+				target = scope:target
+				value < 0
+			}
+			AND = { #Thinks that you're ugly
+				scope:target = { ai_compassion < medium_positive_ai_value }
+				attraction < 0
+			}
+			ai_values_divergence = { #Very different
+				target = scope:target
+				value >= high_ai_values_divergence
+			}
+			scope:target = { has_trait = chaste } #Chaste
+			scope:target = { #This is not honorable
+				trait_is_shunned_or_criminal_in_my_or_lieges_faith_trigger = { TRAIT = adulterer GENDER_CHARACTER = scope:target }
+				OR = {
+					ai_honor >= low_positive_ai_value
+					has_trait = zealous
+					has_trait = honest
+				}
+			}
+		}
+		NOT = { exists = scope:scheme_discovered }
+		NOT = { is_spouse_of = scope:target }
+
+		# Disabled by Graceful Recovery Perk
+		NOT = { has_perk = graceful_recovery_perk }
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			reverse_opinion = {
+				target = scope:target
+				value >= high_positive_opinion
+			}
+			factor = 0.1
+		}
+	}
+
+
+	option = {
+		name = seduce_outcome.4002.a
+
+		scope:target = { seduction_block_character_effect = { CHARACTER = scope:owner } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+# Never! And I will tell everyone! (reveals, not dependent of discovery roll)
+# by Mathilda Bjarnehed
+seduce_outcome.4003 = {
+	type = character_event
+	title = seduce_outcome.4003.t
+	desc = {
+		random_valid = {
+			triggered_desc = { #They have a mean plot
+				trigger = {
+					scope:target = {
+						OR = {
+							opinion = {
+								target = root
+								value < 0
+							}
+							ai_honor <= low_negative_ai_value
+							ai_compassion <= low_negative_ai_value
+							ai_vengefulness >= low_positive_ai_value
+							has_trait = sadistic
+							has_trait = vengeful
+							has_trait = deceitful
+						}
+					}
+					NOR = {
+						has_trait = compassionate
+						has_trait = chaste
+						has_trait = zealous
+					}
+				}
+				desc = seduce_outcome.4003.plot.desc
+			}
+			desc = seduce_outcome.4003.regular.desc
+		}
+	}
+	theme = seduce_scheme
+	left_portrait = {
+		character = scope:target
+		animation = anger
+	}
+
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		OR = {
+			#Regular conditions
+			reverse_opinion = { #Dislikes you
+				target = scope:target
+				value < 0
+			}
+			AND = { #Thinks that you're ugly
+				scope:target = { ai_compassion < medium_positive_ai_value }
+				attraction < 0
+			}
+			ai_values_divergence = { #Very different
+				target = scope:target
+				value >= high_ai_values_divergence
+			}
+			scope:target = { has_trait = chaste } #Chaste
+			scope:target = { #This is not honorable
+				trait_is_shunned_or_criminal_in_my_or_lieges_faith_trigger = { TRAIT = adulterer GENDER_CHARACTER = scope:target }
+				OR = {
+					ai_honor >= low_positive_ai_value
+					has_trait = zealous
+					has_trait = honest
+				}
+			}
+			#Was triggered by player choice
+			exists = scope:target_chose_mean_reject
+		}
+		NOT = { is_consort_of = scope:target }
+
+		#Disabled by Graceful Recovery Perk
+		NOT = { has_perk = graceful_recovery_perk }
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = {
+			scope:target = { ai_vengefulness >= medium_positive_ai_value }
+			add = 1
+		}
+		modifier = {
+			scope:target = { ai_compassion < medium_positive_ai_value }
+			add = 1
+		}
+		modifier = {
+			has_relation_rival = scope:target
+			add = 2
+		}
+		modifier = {
+			has_trait = zealous
+			add = 1
+		}
+		modifier = {
+			#A fellow homo-/bisexual character will hesitate to call you out in public
+			scope:target = { relation_with_character_is_sodomy_in_my_or_lieges_faith_trigger = { CHARACTER = root } }
+			add = -0.5
+		}
+	}
+
+	immediate = { play_music_cue = "mx_cue_negative" }
+
+	option = {
+		name = {
+			text = seduce_outcome.4003.a.plot
+			trigger = {
+				scope:target = {
+					OR = {
+						opinion = {
+							target = root
+							value < 0
+						}
+						ai_honor <= low_negative_ai_value
+						ai_compassion <= low_negative_ai_value
+						ai_vengefulness >= low_positive_ai_value
+						has_trait = sadistic
+						has_trait = vengeful
+						has_trait = deceitful
+					}
+				}
+				NOR = {
+					has_trait = compassionate
+					has_trait = chaste
+					has_trait = zealous
+				}
+			}
+		}
+		name = seduce_outcome.4003.a.regular
+		if = {
+			limit = {
+				OR = {
+					scope:target = { is_landed = yes }
+					AND = {
+						exists = host
+						host = root
+					}
+				}
+			}
+			seduce_outcome_publicised_attempted_crimes_or_nothing_effect = {
+				TARGET = scope:target
+				OWNER = scope:owner
+			}
+		}
+		else_if = {
+			limit = {
+				scope:target = {
+					exists = liege
+					NOT = { liege = scope:owner }
+				}
+			}
+			show_as_tooltip = {
+				seduce_outcome_publicised_attempted_crimes_or_nothing_effect = {
+					TARGET = scope:target
+					OWNER = scope:owner
+				}
+			}
+			scope:target = { liege = { trigger_event = seduce_outcome.4900 } }
+		}
+
+		scope:target = { seduction_block_character_effect = { CHARACTER = scope:owner } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+
+# We cannot be together (it would be incest or sodomy)
+# by Mathilda Bjarnehed
+seduce_outcome.4004 = {
+	type = character_event
+	title = seduce_outcome.4004.t
+	desc = {
+		desc = seduce_outcome.4004.start.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:target = { relation_with_character_is_incestuous_in_my_or_lieges_faith_trigger = { CHARACTER = root } } }
+				desc = seduce_outcome.4004.incest.desc
+			}
+			triggered_desc = {
+				trigger = { scope:target = { relation_with_character_is_sodomy_in_my_or_lieges_faith_trigger = { CHARACTER = root } } }
+				desc = seduce_outcome.4004.sodomy.desc
+			}
+		}
+		desc = seduce_outcome.4004.end.desc
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		scope:target = {
+			OR = {
+				relation_with_character_is_incestuous_in_my_or_lieges_faith_trigger = { CHARACTER = root }
+				AND = {
+					relation_with_character_is_sodomy_in_my_or_lieges_faith_trigger = { CHARACTER = root }
+					opinion = {
+						target = root
+						value >= low_positive_opinion
+					}
+					OR = {
+						opinion = {
+							target = root
+							value >= medium_positive_opinion
+						}
+						has_trait = lustful
+						root = { attraction >= low_positive_attraction }
+					}
+				}
+			}
+		}
+		NOT = { exists = scope:scheme_discovered }
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			reverse_opinion = {
+				target = scope:target
+				value >= high_positive_opinion
+			}
+			add = 1
+		}	
+	}
+
+	option = {
+		name = seduce_outcome.4004.a
+		
+		scope:target = { seduction_cooldown_for_character_effect = { CHARACTER = scope:owner } }
+
+		hidden_effect = {
+			if = {
+				limit = {
+					can_set_relation_potential_lover_trigger = { CHARACTER = scope:target }
+				}
+				random = {
+					chance = 50
+					set_relation_potential_lover = scope:target
+				}
+			}
+		}
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+# Discovered failure!
+# by Mathilda Bjarnehed
+seduce_outcome.4005 = {
+	type = character_event
+	title = seduce_outcome.2900.t
+	desc = seduce_outcome.4005.desc
+	
+	theme = seduce_scheme
+	override_background = {
+		event_background = courtyard
+	}
+	left_portrait = scope:target
+	right_portrait = scope:target_liege
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		exists = scope:scheme_discovered
+		scope:target = {
+			is_landed = no
+			exists = liege
+		}
+	}
+
+	immediate = {
+		scope:target = { liege = { save_scope_as = target_liege } }
+	}
+
+	option = {
+		name = seduce_outcome.4005.a
+
+		show_as_tooltip = {
+			seduce_outcome_publicised_attempted_crimes_or_nothing_effect = {
+				TARGET = scope:target
+				OWNER = scope:owner
+			}
+		} #Is actually applied in 4900
+
+		scope:target = { seduction_cooldown_for_character_effect = { CHARACTER = scope:owner } }
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+		#Send "failed seduction attempt discovered" event to target's liege
+		scope:target_liege = { trigger_event = seduce_outcome.4900 }
+	}
+}
+
+
+# Target's liege get notified of your attempt
+# by Mathilda Bjarnehed
+seduce_outcome.4900 = {
+	type = character_event
+	title = seduce_outcome.3901.t
+	desc = seduce_outcome.4900.desc
+	theme = seduce_scheme
+	override_background = {
+		event_background = corridor_night
+	}
+	left_portrait = scope:owner
+	right_portrait = scope:target
+
+	immediate = { save_scope_as = target_liege }
+	
+	option = {
+		name = {
+			trigger = {
+				OR = {
+					is_spouse_of = scope:target
+					is_close_or_extended_family_of = scope:target
+				}
+			}
+			text = seduce_outcome.4900.a.family
+		}
+		name = {
+			trigger = {
+				NOR = {
+					is_spouse_of = scope:target
+					is_close_or_extended_family_of = scope:target
+				}
+			}
+			text = seduce_outcome.4900.a.courtier
+		}
+
+			
+		scope:owner = {
+			seduce_outcome_publicised_attempted_crimes_or_nothing_effect = {
+				TARGET = scope:target
+				OWNER = scope:owner
+			}
+		}
+	}
+}
+
+
+
+
+
+##########################
+# EARLY OUTCOMES
+# 8100-8999
+##########################
+
+#Target: Close family hard reject choice
+#by Linnéa Thimrén
+seduce_outcome.8101 = {
+	type = character_event
+	title = seduce_outcome.8101.t
+	desc = {
+		desc = seduce_outcome.8101.desc
+		first_valid = {
+			#It's love!
+			triggered_desc = {
+				trigger = {
+					OR = {
+						has_relation_potential_lover = scope:owner
+						AND = {
+							accepts_incest_with_trigger = { CHARACTER = scope:owner }
+							opinion = {
+								target = scope:owner
+								value >= 50
+							}
+						}
+					}
+				}
+				desc = seduce_outcome.8101.desc_positive
+			}
+			#I hate them / it's forbidden!
+			triggered_desc = {
+				trigger = {
+					OR = {
+						opinion = {
+							target = scope:owner
+							value < 0
+						}
+						has_relation_rival = scope:owner
+						AND = {
+							relation_with_character_is_incestuous_in_my_or_lieges_faith_trigger = { CHARACTER = scope:owner }
+							has_negative_attitude_towards_trait_trigger = { TRAIT = incestuous GENDER_CHARACTER = scope:owner }
+						}
+					}
+				}
+				desc = seduce_outcome.8101.desc_negative
+			}
+			#Neutral
+			desc = seduce_outcome.8101.desc_neutral
+		}
+	}
+	
+	theme = seduce_scheme
+	left_portrait = scope:owner
+
+	trigger = {
+		exists = scope:scheme
+	}
+
+	immediate = {
+		hidden_effect = {
+			#For clearer and more controllable ai outcomes, we determine the outcome here:
+
+			#HARD REJECT OR NOT?
+			if = { # Guaranteed rejection
+				limit = { guaranteed_under_20_incest_rejection_trigger = { TARGET = scope:target SEDUCER = scope:owner } }
+				save_scope_value_as = {
+					name = incest_outcome
+					value = flag:reject
+				}
+			}
+			else_if = { #Guaranteed acceptance (as long as guaranteed_under_20_incest_rejection_trigger is false)
+				limit = { scope:owner = { has_perk = subtle_desire_perk } }
+				save_scope_value_as = {
+					name = incest_outcome
+					value = flag:accept
+				}
+			}
+			else = { #Randomization
+				random = {
+					chance = 100
+					incest_acceptance_modifier = { #A factor between 1 and 0
+						TARGET = scope:target
+						SEDUCER = scope:owner
+					}
+					save_scope_value_as = {
+						name = incest_outcome
+						value = flag:accept
+					}					
+				}	
+				if = {
+					limit = { NOT = { exists = scope:incest_outcome } }
+					save_scope_value_as = {
+						name = incest_outcome
+						value = flag:reject
+					}
+				}
+			}
+
+			#SPECIFY REJECTION TYPE
+			if = {
+				limit = {
+					exists = scope:incest_outcome
+					scope:incest_outcome = flag:reject
+				}
+
+				#What kind of reject?
+				random_list = {
+					30 = { #Reveal
+						opinion_modifier = {
+							opinion_target = scope:owner
+							multiplier = -0.25
+						}
+						ai_value_modifier = {
+							ai_boldness = 0.5
+							ai_compassion = -0.5
+							ai_vengefulness = 0.5
+						}
+						ai_boldness_target_modifier = { VALUE = 100 }
+						ai_vengefulness_target_modifier = { VALUE = 100 }
+						min = 1 # To ensure 'incest_outcome' is never left unset.
+
+						save_scope_value_as = {
+							name = incest_outcome
+							value = flag:reject_reveal
+						}
+					}
+					70 = { #Silent reject
+						opinion_modifier = {
+							opinion_target = scope:owner
+							multiplier = 0.25
+						}
+						modifier = { #Less harsh on child
+							is_parent_of = scope:owner
+							add = 30
+						}
+						modifier = { #Less harsh if you stand to inherit
+							is_heir_of = scope:owner
+							add = 30
+						}
+						ai_value_modifier = {
+							ai_boldness = -0.5
+							ai_compassion = 0.5
+							ai_vengefulness = -0.5
+						}
+						ai_greed_target_modifier = { VALUE = 75 }
+						min = 1 # To ensure 'incest_outcome' is never left unset.
+
+						save_scope_value_as = {
+							name = incest_outcome
+							value = flag:reject_no_reveal
+						}
+					}
+				}
+			}
+		}
+	}
+
+	option = { #Leave me be!!
+		name = seduce_outcome.8101.a
+		
+		reverse_add_opinion = {
+			target = scope:owner
+			modifier = refusal_opinion
+			opinion = -20
+		}
+
+		seduction_block_character_effect = { CHARACTER = scope:owner }
+
+		scope:owner = {
+			trigger_event = seduce_outcome.8102
+		}
+		
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = 100
+				scope:incest_outcome = flag:reject_no_reveal
+			}
+		}
+	}
+
+	option = { #I will tell everyone about this!
+		name = seduce_outcome.8101.c
+
+		reverse_add_opinion = {
+			target = scope:owner
+			modifier = angry_opinion
+			opinion = -35
+		}
+
+		seduction_block_character_effect = { CHARACTER = scope:owner }
+
+		#Reveals incest (and sodomy/adultery)
+		show_as_tooltip = {
+			scope:owner = {
+				seduce_outcome_publicised_attempted_crimes_or_nothing_effect = {
+					TARGET = scope:target
+					OWNER = scope:owner
+				}
+			}
+		}
+
+		scope:owner = {
+			trigger_event = seduce_outcome.8103
+		}
+
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = 100
+				scope:incest_outcome = flag:reject_reveal
+			}
+		}
+	}
+
+	option = { #Sin be damned, lets go!
+		name = seduce_outcome.8101.b
+		custom_tooltip = seduce_outcome.8101.b.tt
+
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = 100
+				scope:incest_outcome = flag:accept
+			}
+		}
+	}
+}
+
+
+#Owner: Rejected by close family
+#by Linnéa Thimrén
+seduce_outcome.8102 = {
+	type = character_event
+	title = seduce_outcome.8102.t
+	desc = seduce_outcome.8102.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		scope:target = {
+			assign_quirk_effect = yes
+		}
+	}
+
+	option = {
+		name = seduce_outcome.8102.a
+		custom_tooltip = seduce_outcome.blocked_from_seduction
+
+		scope:target = { seduction_block_character_effect = { CHARACTER = scope:owner } }
+
+		if = {
+			limit = { exists = scope:scheme }
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+		
+		reverse_add_opinion = {
+			target = scope:target
+			modifier = respect_opinion
+			opinion = -25
+		}
+	}
+}
+
+#Owner: Rejected by close family, and revealed!
+#by Linnéa Thimrén
+seduce_outcome.8103 = {
+	type = character_event
+	title = seduce_outcome.8103.t
+	desc = seduce_outcome.8103.desc
+	
+	theme = seduce_scheme
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		scope:target = {
+			assign_quirk_effect = yes
+		}
+	}
+
+	option = {
+		name = seduce_outcome.8103.a
+		custom_tooltip = seduce_outcome.blocked_from_seduction
+
+		seduce_outcome_publicised_attempted_crimes_or_nothing_effect = {
+			TARGET = scope:target
+			OWNER = scope:owner
+		}
+
+		scope:target = { seduction_block_character_effect = { CHARACTER = scope:owner } }
+
+		if = {
+			limit = { exists = scope:scheme }
+			scope:scheme = {
+				end_scheme = yes
+			}
+		}
+
+		reverse_add_opinion = {
+			target = scope:target
+			modifier = respect_opinion
+			opinion = -40
+		}
+	}
+}
