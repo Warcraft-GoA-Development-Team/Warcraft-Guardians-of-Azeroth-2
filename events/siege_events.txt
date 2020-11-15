@@ -1,0 +1,994 @@
+﻿#Events for sieges
+
+namespace = siege
+
+#0001-0999: Capturing prisoners, by Mathilda Bjarnehed and Sean Hughes
+
+#########################################
+# CAPTURING PRISONERS 					#
+# 0001-0999	 							#
+# by Mathilda Bjarnehed and Sean Hughes #
+#########################################
+
+#On county capture (all provinces taken), calculate capture using desirable_for_capture_trigger.
+
+# Used for checking if a captured combatant is worth war-score.
+scripted_trigger siege_0001_character_is_important_hostage = {
+	OR = {
+		this = scope:primary_siege_attacker
+		this = scope:primary_siege_defender
+		is_heir_of = scope:primary_siege_attacker
+		is_heir_of = scope:primary_siege_defender
+	}
+}
+
+scripted_trigger siege_0001_can_be_captured = {
+	# Captured characters must be located in the raided barony itself.
+	location = scope:barony.title_province
+
+	# Reasons to exclude characters from the capture pool:
+	NOR = {
+		# If the raiders have defeated the holder's army, but the army has not yet retreated to a different province, shield them from capture by the raid.
+		exists = commanding_army
+		exists = knight_army
+
+		# Is imprisoned in the barony stay prisoners (special case, any courtiers/vassals of the raider will get released elsewhere).
+		is_imprisoned = yes
+	}
+}
+
+# Prisoner capture/kill logic, by Mathilda Bjarnehed
+siege.0001 = {
+	hidden = yes
+	
+	trigger = {
+		scope:county.holder = scope:previous_controller
+		OR = {
+			any_war_enemy = { this = scope:previous_controller }
+			any_war_enemy = { any_vassal_or_below = { this = scope:previous_controller } }
+		}
+	}
+
+	immediate = {
+		save_scope_as = occupant
+		scope:barony.holder = { save_scope_as = holder }
+
+		# Depending on if the occupier is an attacker or defender in this war, get the primary attacker/defender of the siege.
+		scope:war = {
+			if = {
+				limit = {
+					is_attacker = scope:occupant
+				}
+				# If occupier is an attacker, the war's primary attacker is also the primary attacker in this siege (the attackers have occupied one of the defender's provinces).
+				primary_attacker = {
+					save_scope_as = primary_siege_attacker
+				}
+				primary_defender = {
+					save_scope_as = primary_siege_defender
+				}
+			}
+			else = {
+				# Otherwise the occupier is a defender, so the primary defender in the war is the primary attacker in the siege (the defenders have occupied one of the attacker's provinces).
+				primary_defender = {
+					save_scope_as = primary_siege_attacker
+				}
+				primary_attacker = {
+					save_scope_as = primary_siege_defender
+				}
+			}
+		}
+		
+		###BUILD CAPTURE ATTEMPT LIST###
+		#Add capture targets from all occupied baronies if it is someone's capital
+		every_in_list = {
+			list = occupied_baronies
+			limit = {
+				exists = holder
+				save_temporary_scope_as = list_barony
+				holder = { capital_barony = { this = scope:list_barony } }
+			}
+			holder = {
+				if = {
+					limit = { siege_0001_can_be_captured = yes }
+					add_to_list = capture_attempt_targets
+				}
+				every_courtier_or_guest = {
+					limit = { siege_0001_can_be_captured = yes }
+					add_to_list = capture_attempt_targets
+				}
+			}
+		}
+
+		###BUILD SUCCESSFUL CAPTURE LIST###
+		#Calculate capture success
+		every_in_list = {
+			list = capture_attempt_targets
+			random = {	
+				chance = siege_base_capture_chance # 35 becomes 20 for average intrigue and prowess, can go as low as 5 at very high intrigue and prowess
+
+				# Capture Modifiers
+				compare_modifier = { #Adds -20 for 20 intrigue, adds -10 for 10 intrigue
+					#target = this
+					value = intrigue
+					multiplier = -1
+					min = -20
+					}
+				compare_modifier = { #Adds -10 for 20 prowess, -5 for 10 prowess
+					#target = this
+					value = prowess
+					multiplier = -0.5
+					min = -15
+				}
+
+				# Capture Effects
+				if = {
+					limit = {
+						desirable_for_capture_trigger = yes
+						NOT = { scope:occupant = { has_variable = rebel_leader_peasants	}}
+					}
+					add_to_list = captured_targets_effects
+				}
+				else = {
+					add_to_list = killed_targets
+				}
+			}
+		}
+		
+
+		### SEND NOTIFICATIONS TO CONCERNED PARTIES ###
+			
+
+		if = {
+			limit = {
+				any_in_list = {
+					list = captured_targets_effects
+					count >= 1
+				}
+			}
+			# Send notification to the county occupier
+			root = {
+				trigger_event = siege.0002
+			}
+
+			#Send notification to holder (about captures and deaths)
+			scope:barony.holder = {
+				if = {
+					limit = {
+						save_temporary_scope_as = notification_target
+						any_in_list = {
+							list = captured_targets_effects
+							NOT = { this = scope:notification_target}
+						}
+					}
+					trigger_event = siege.0003
+				}
+			}
+
+			# Send a message to all other players who may be concerned about the fate of the captured prisoners.
+			every_player = {
+				limit = {
+					NOR = {
+						this = root
+						this = scope:barony.holder
+					}
+
+					save_temporary_scope_as = notification_target
+					any_in_list = {
+						list = captured_targets_effects
+						has_any_relation_trigger = { CHARACTER = scope:notification_target }
+					}
+				}
+				trigger_event = siege.0004
+			}
+		}
+
+		if = {
+			limit = {
+				any_in_list = {
+					list = killed_targets
+					count >= 1
+				}
+			}
+
+			#Send notification to holder (about deaths)
+			scope:barony.holder = {
+				trigger_event = siege.0013
+			}
+
+			# Send a message to all other players who may be concerned about the fate of the slain prisoners.
+			every_player = {
+				limit = {
+					NOR = {
+						this = root
+						this = scope:barony.holder
+					}
+
+					save_temporary_scope_as = notification_target
+					any_in_list = {
+						list = killed_targets
+						has_any_relation_trigger = { CHARACTER = scope:notification_target }
+					}
+				}
+				trigger_event = siege.0014
+			}
+		}	
+ 		
+		### IMPRISON AND KILL EFFECTS ###
+		every_in_list = {
+			list = captured_targets_effects
+
+			# Since we sent custom imprisonment events, we want to block the default ones.
+			hidden_effect = {
+				add_character_flag = {
+					flag = block_imprisonment_event
+					days = 1
+				}
+			}
+
+			prisoner_of_war_capture_effect = {
+				TARGET = this
+				IMPRISONER = root
+			}
+
+			### IF NECESSARY, SEND TOASTS TO WAR LEADERS ###
+
+			# Check if this prisoner is important enough (worth war score) that it is worth sending a toast about them in the first place.
+			if = {
+				limit = {
+					siege_0001_character_is_important_hostage = yes
+				}
+				save_scope_as = important_hostage
+
+				# The imprisoner must be informed that they captured an important hostage.
+				scope:occupant = {
+					trigger_event = siege.0005
+				}
+
+				# The losing primary participant must be informed that they will/have lost warscore because a hostage was captured.
+				if = {
+					limit = {
+						# But not if they themselves are the prisoner! (they will get an event already upon being imprisoned).
+						NOT = {
+							scope:important_hostage = scope:primary_siege_defender
+						}
+					}
+					scope:primary_siege_defender = {
+						trigger_event = siege.0006
+					}
+				}
+
+				# If the primary siege attacker is different from the occupier, we also need to send a message to the siege attacker.
+				if = {
+					limit = {
+						NOT = {
+							scope:occupant = scope:primary_siege_attacker
+						}
+					}
+					scope:primary_siege_attacker = {
+						trigger_event = siege.0007
+					}
+				}
+			}
+		}
+		every_in_list = {
+			list = killed_targets
+
+			death = {
+				death_reason = death_siege
+				#killer = root
+			}
+		}
+	}
+}
+
+# Notify county occupier of captured prisoners, by Mathilda Bjarnehed and Sean Hughes
+siege.0002 = {
+	hidden = yes
+
+	immediate = {
+
+		# Initialize the variable we will use to keep track of how many relevant prisoners there are.
+		set_variable = {
+			name = num_other_relevant_captured_combatants
+			value = 0
+		}
+
+		# Re-order the combatant list based on who we care about the most.
+		ordered_in_list = {
+			list = captured_targets_effects
+			max = 99
+			check_range_bounds = no
+
+			order_by = {
+				value = captured_combatant_weights_for_root_participant
+			}
+
+			# Add the prisoners to a new list tailored to be more relevant to this character.
+			add_to_list = captured_targets_occupant
+			root = {
+				change_variable = {
+					name = num_other_relevant_captured_combatants
+					add = 1
+				}
+			}
+
+			# The first two prisoners on this list (i.e., the most important people to us) should be have their individual scopes saved for use in portraits & localization.
+			if = {
+				limit = {
+					NOT = { exists = scope:prisoner_1 }
+				}
+				save_scope_as = prisoner_1
+			}
+			else_if = {
+				limit = {
+					NOT = { exists = scope:prisoner_2 }
+				}
+				save_scope_as = prisoner_2
+			}
+		}
+
+		# Decrement the number of relevant captured combatants, to exclude the primary prisoner from the count (for localization).
+		change_variable = {
+			name = num_other_relevant_captured_combatants
+			add = -1
+		}
+
+		# Send a message telling us about the prisoners we have captured.
+		send_interface_message = {
+			type = event_captured_combatants_good
+			left_icon = scope:prisoner_1
+			right_icon = scope:barony
+			title = {
+				first_valid = {
+					triggered_desc = { #There was only 1
+						trigger = {
+							any_in_list = {
+								list = captured_targets_occupant
+								count = 1
+							}
+						}
+						desc = siege.0002.one_captured.t
+					}
+					#There were several
+					desc = siege.0002.several_captured.t
+				}
+			}
+			desc = {
+				first_valid = {
+					triggered_desc = { #There was only 1
+						trigger = {
+							any_in_list = {
+								list = captured_targets_occupant
+								count = 1
+							}
+						}
+						desc = siege.0002.one_captured
+					}
+					triggered_desc = { #There was only 2
+						trigger = {
+							any_in_list = {
+								list = captured_targets_occupant
+								count = 2
+							}
+						}
+						desc = siege.0002.two_captured
+					}
+					#There were several
+					desc = siege.0002.several_captured
+				}
+			}
+			tooltip = event_message_effect
+
+			show_as_tooltip = {
+				every_in_list = {
+					list = captured_targets_occupant
+
+					save_temporary_scope_as = this_prisoner
+					root = {
+						imprison = {
+							target = scope:this_prisoner
+							type = house_arrest
+						}
+					}
+				}
+			}
+		}
+	}
+
+	after = {
+		remove_variable = num_other_relevant_captured_combatants
+	}
+}
+
+# Notify county holder of captured prisoners, by Mathilda Bjarnehed and Sean Hughes
+siege.0003 = {
+	hidden = yes
+
+	immediate = {
+		# Initialize the variable we will use to keep track of how many relevant prisoners there are.
+		set_variable = {
+			name = num_other_relevant_captured_combatants
+			value = 0
+		}
+
+		# Re-order the combatant list based on who we care about the most.
+		ordered_in_list = {
+			list = captured_targets_effects
+			max = 99
+			check_range_bounds = no
+
+			# Do not send a notification about ourselves.
+			limit = {
+				NOT = { this = root }
+			}
+
+			order_by = {
+				value = captured_combatant_weights_for_root_participant
+			}
+
+			# Add the prisoners to a new list tailored to be more relevant to this character.
+			add_to_list = captured_targets_holder
+			root = {
+				change_variable = {
+					name = num_other_relevant_captured_combatants
+					add = 1
+				}
+			}
+
+			# The first two prisoners on this list (i.e., the most important people to us) should be have their individual scopes saved for use in portraits & localization.
+			if = {
+				limit = {
+					NOT = { exists = scope:prisoner_1 }
+				}
+				save_scope_as = prisoner_1
+			}
+			else_if = {
+				limit = {
+					NOT = { exists = scope:prisoner_2 }
+				}
+				save_scope_as = prisoner_2
+			}
+		}
+
+		# Decrement the number of relevant captured combatants, to exclude the primary prisoner from the count (for localization).
+		change_variable = {
+			name = num_other_relevant_captured_combatants
+			add = -1
+		}
+
+		send_interface_message = {
+			type = event_captured_combatants_bad
+			left_icon = scope:prisoner_1
+			right_icon = scope:barony
+			title = {
+				first_valid = {
+					triggered_desc = { #There was only 1 captured
+						trigger = {
+							any_in_list = {
+								list = captured_targets_holder
+								count = 1
+							}
+						}
+						desc = siege.0003.one_captured.t
+					}
+					desc = siege.0003.several_captured.t
+				}
+			}
+			desc = {
+				first_valid = {
+					triggered_desc = { #There was only 1 captured
+						trigger = {
+							any_in_list = {
+								list = captured_targets_holder
+								count = 1
+							}
+						}
+						desc = siege.0003.one_captured
+					}
+					triggered_desc = { #There were 2 captured
+						trigger = {
+							any_in_list = {
+								list = captured_targets_holder
+								count = 2
+							}
+						}
+						desc = siege.0003.two_captured
+					}
+					desc = siege.0003.several_captured
+				}
+				desc = siege.0003.end
+			}
+			tooltip = event_message_effect
+			every_in_list = {
+				list = captured_targets_holder
+				show_as_tooltip = {
+					root = {
+						imprison = {
+							target = prev
+							type = dungeon
+						}
+					}
+				}
+			}
+		}
+	}
+
+	after = {
+		remove_variable = num_other_relevant_captured_combatants
+	}	
+}
+
+# Notify other concerned characters about relevant prisoners, by Sean Hughes
+siege.0004 = {
+	hidden = yes
+
+	immediate = {
+		# Initialize the variable we will use to keep track of how many relevant prisoners there are.
+		set_variable = {
+			name = num_other_relevant_captured_combatants
+			value = 0
+		}
+
+		# Re-order the combatant list based on who we care about the most.
+		ordered_in_list = {
+			list = captured_targets_effects
+			max = 99
+			check_range_bounds = no
+
+			limit = {
+				NOT = {this = root} # Do not send a message about ourselves.
+				has_any_relation_trigger = { CHARACTER = root }
+			}
+
+			order_by = {
+				value = captured_combatant_weights_for_root_participant
+			}
+
+			# Add the prisoners to a new list tailored to be more relevant to this character.
+			add_to_list = captured_targets_other
+			root = {
+				change_variable = {
+					name = num_other_relevant_captured_combatants
+					add = 1
+				}
+			}
+
+			# The first two prisoners on this list (i.e., the most important people to us) should be have their individual scopes saved for use in portraits & localization.
+			if = {
+				limit = {
+					NOT = { exists = scope:prisoner_1 }
+				}
+				save_scope_as = prisoner_1
+			}
+			else_if = {
+				limit = {
+					NOT = { exists = scope:prisoner_2 }
+				}
+				save_scope_as = prisoner_2
+			}
+		}
+
+		# Decrement the number of relevant captured combatants, to exclude the primary prisoner from the count (for localization).
+		change_variable = {
+			name = num_other_relevant_captured_combatants
+			add = -1
+		}
+
+		send_interface_message = {
+			type = event_captured_combatants_bad
+			left_icon = scope:prisoner_1
+			right_icon = scope:barony
+			title = siege.0004.relation_captured.t
+			desc = {
+				first_valid = {
+					triggered_desc = { #There was only 1 captured
+						trigger = {
+							any_in_list = {
+								list = captured_targets_other
+								count = 1
+							}
+						}
+						desc = siege.0004.one_captured
+					}
+					triggered_desc = { #There were 2 captured
+						trigger = {
+							any_in_list = {
+								list = captured_targets_other
+								count = 2
+							}
+						}
+						desc = siege.0004.two_captured
+					}
+					desc = siege.0004.several_captured
+				}
+				desc = siege.0004.end
+			}
+			tooltip = event_message_effect
+			every_in_list = {
+				list = captured_targets_other
+				show_as_tooltip = {
+					root = {
+						imprison = {
+							target = prev
+							type = dungeon
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+# Send a toast to the imprisoner if the person they captured is worth war score.
+siege.0005 = {
+	hidden = yes
+
+	immediate = {
+		if = {
+			limit = {
+				scope:important_hostage = scope:primary_siege_defender
+			}
+			send_interface_toast = {
+				title = siege.1005.pow_toast.t
+				left_icon = scope:occupier
+				right_icon = scope:important_hostage
+
+				custom_tooltip = siege.1005.pow_toast.desc.primary
+			}
+		}
+		else = {
+			send_interface_toast = {
+				title = siege.1005.pow_toast.t
+				left_icon = scope:occupier
+				right_icon = scope:important_hostage
+
+				custom_tooltip = siege.1005.pow_toast.desc
+			}
+		}
+	}
+}
+
+# Send a toast to the primary defender if the person that was captured is worth war score (and is not them).
+siege.0006 = {
+	hidden = yes
+
+	immediate = {
+		send_interface_toast = {
+			title = siege.1006.pow_toast.t
+			left_icon = scope:occupier
+			right_icon = scope:important_hostage
+
+			custom_tooltip = siege.1006.pow_toast.desc
+		}
+	}
+}
+
+# Send a toast to the primary attacker (if different from the imprisoner) that someone was captured who is worth war score.
+siege.0007 = {
+	hidden = yes
+
+	immediate = {
+		if = {
+			limit = {
+				scope:important_hostage = scope:primary_siege_defender
+			}
+			send_interface_toast = {
+				title = siege.1005.pow_toast.t
+				left_icon = scope:occupier
+				right_icon = scope:important_hostage
+
+				custom_tooltip = siege.1007.pow_toast.desc.primary
+			}
+		}
+		else = {
+			send_interface_toast = {
+				title = siege.1005.pow_toast.t
+				left_icon = scope:occupier
+				right_icon = scope:important_hostage
+
+				custom_tooltip = siege.1007.pow_toast.desc
+			}
+		}
+	}
+}
+
+
+# Send a message to the holder about any courtiers which were killed in the siege.
+siege.0013 = {
+	hidden = yes
+
+	immediate = {
+		# Initialize the variable we will use to keep track of how many relevant prisoners there are.
+		set_variable = {
+			name = num_other_relevant_slain_combatants
+			value = 0
+		}
+
+		# Re-order the combatant list based on who we care about the most.
+		ordered_in_list = {
+			list = killed_targets
+			max = 99
+			check_range_bounds = no
+
+			# Do not send a notification about ourselves.
+			limit = {
+				NOT = { this = root }
+			}
+
+			order_by = {
+				value = captured_combatant_weights_for_root_participant
+			}
+
+			# Add the prisoners to a new list tailored to be more relevant to this character.
+			add_to_list = killed_targets_holder
+			root = {
+				change_variable = {
+					name = num_other_relevant_slain_combatants
+					add = 1
+				}
+			}
+
+			# The first two prisoners on this list (i.e., the most important people to us) should be have their individual scopes saved for use in portraits & localization.
+			if = {
+				limit = {
+					NOT = { exists = scope:casualty_1 }
+				}
+				save_scope_as = casualty_1
+			}
+			else_if = {
+				limit = {
+					NOT = { exists = scope:casualty_2 }
+				}
+				save_scope_as = casualty_2
+			}
+		}
+
+		# Decrement the number of relevant killed combatants, to exclude the primary prisoner from the count (for localization).
+		change_variable = {
+			name = num_other_relevant_slain_combatants
+			add = -1
+		}
+
+		send_interface_message = {
+			type = event_captured_combatants_bad
+			left_icon = scope:casualty_1
+			right_icon = scope:barony
+			title = {
+				first_valid = {
+					triggered_desc = { #There was only 1 killed
+						trigger = {
+							any_in_list = {
+								list = killed_targets_holder
+								count = 1
+							}
+						}
+						desc = siege.0013.one_killed.t
+					}
+					desc = siege.0013.several_killed.t
+				}
+			}
+			desc = {
+				first_valid = {
+					triggered_desc = { #There was only 1 killed
+						trigger = {
+							any_in_list = {
+								list = killed_targets_holder
+								count = 1
+							}
+						}
+						desc = siege.0013.one_killed
+					}
+					triggered_desc = { #There were 2 killed
+						trigger = {
+							any_in_list = {
+								list = killed_targets_holder
+								count = 2
+							}
+						}
+						desc = siege.0013.two_killed
+					}
+					desc = siege.0013.several_killed # 3 or more were killed.
+				}
+				desc = siege.0013.end
+			}
+			tooltip = event_message_effect
+			every_in_list = {
+				list = captured_targets_holder
+				show_as_tooltip = {
+					death = {
+						death_reason = death_siege
+					}
+				}
+			}
+		}
+	}
+
+	after = {
+		remove_variable = num_other_relevant_slain_combatants
+	}	
+}
+
+# Send a message to other concerned parties about courtiers who died in the siege which they cared about.
+siege.0014 = {
+	hidden = yes
+
+	immediate = {
+		# Initialize the variable we will use to keep track of how many relevant prisoners there are.
+		set_variable = {
+			name = num_other_relevant_slain_combatants
+			value = 0
+		}
+
+		# Re-order the combatant list based on who we care about the most.
+		ordered_in_list = {
+			list = killed_targets
+			max = 99
+			check_range_bounds = no
+
+			# Do not send a notification about ourselves.
+			limit = {
+				NOT = { this = root }
+				has_any_relation_trigger = { CHARACTER = root }
+			}
+
+			order_by = {
+				value = captured_combatant_weights_for_root_participant
+			}
+
+			# Add the prisoners to a new list tailored to be more relevant to this character.
+			add_to_list = killed_targets_other
+			root = {
+				change_variable = {
+					name = num_other_relevant_slain_combatants
+					add = 1
+				}
+			}
+
+			# The first two prisoners on this list (i.e., the most important people to us) should be have their individual scopes saved for use in portraits & localization.
+			if = {
+				limit = {
+					NOT = { exists = scope:casualty_1 }
+				}
+				save_scope_as = casualty_1
+			}
+			else_if = {
+				limit = {
+					NOT = { exists = scope:casualty_2 }
+				}
+				save_scope_as = casualty_2
+			}
+		}
+
+		# Decrement the number of relevant killed combatants, to exclude the primary prisoner from the count (for localization).
+		change_variable = {
+			name = num_other_relevant_slain_combatants
+			add = -1
+		}
+
+		send_interface_message = {
+			type = event_captured_combatants_bad
+			left_icon = scope:casualty_1
+			right_icon = scope:barony
+			title = {
+				first_valid = {
+					triggered_desc = { #There was only 1 killed
+						trigger = {
+							any_in_list = {
+								list = killed_targets_other
+								count = 1
+							}
+						}
+						desc = siege.0014.one_killed.t
+					}
+					desc = siege.0014.several_killed.t
+				}
+			}
+			desc = {
+				first_valid = {
+					triggered_desc = { #There was only 1 killed
+						trigger = {
+							any_in_list = {
+								list = killed_targets_other
+								count = 1
+							}
+						}
+						desc = siege.0014.one_killed
+					}
+					triggered_desc = { #There were 2 killed
+						trigger = {
+							any_in_list = {
+								list = killed_targets_other
+								count = 2
+							}
+						}
+						desc = siege.0014.two_killed
+					}
+					desc = siege.0014.several_killed # 3 or more were killed.
+				}
+				desc = siege.0014.end
+			}
+			tooltip = event_message_effect
+			every_in_list = {
+				list = captured_targets_other
+				show_as_tooltip = {
+					death = {
+						death_reason = death_siege
+					}
+				}
+			}
+		}
+	}
+
+	after = {
+		remove_variable = num_other_relevant_slain_combatants
+	}	
+}
+
+# Sieged Lost Notifications
+siege.0101 = {
+	hidden = yes
+
+	immediate = {
+		save_scope_as = occupant
+
+		# Inform the owner of the holding that they have lost the siege.
+		scope:barony.holder = {	
+			if = {
+				limit = {
+					this = scope:previous_controller
+				}
+				scope:barony.holder = {
+					trigger_event = siege.0102
+				}
+
+				# Notify other characters who may be concerned about the occupation.
+				every_liege_or_above = {
+					limit = {
+						is_at_war_with = scope:occupant
+					}
+					trigger_event = siege.0103
+				}
+			}
+		}
+	}
+}
+
+# Notification event for the character whose holding was occipied.
+siege.0102 = {
+	hidden = yes
+
+	immediate = {
+		send_interface_message = {
+			type = event_siege_lost_bad
+			left_icon = scope:occupant
+			right_icon = scope:barony
+			title = siege.0102.title
+			desc = {
+				first_valid = {
+					triggered_desc = {
+						trigger = {
+							is_at_war_with = scope:occupant
+						}
+						desc = siege.0102.message.foe
+					}
+					desc = siege.0102.message.neutral
+				}
+			}
+		}
+	}
+}
+
+# Notification event for the other characters who may be concerned (just lieges who are fighting the occupier in a war?)
+siege.0103 = {
+	hidden = yes
+
+	immediate = {
+		send_interface_message = {
+			type = event_siege_lost_bad
+			left_icon = scope:occupant
+			right_icon = scope:barony
+			title = siege.0103.title
+			desc = siege.0103.message
+		}
+	}
+}
