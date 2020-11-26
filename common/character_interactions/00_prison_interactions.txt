@@ -107,6 +107,7 @@
 	on_auto_accept = {
 		illegal_imprisonment_dread_effect = yes
 		imprison_court_chaplain_consequences_effect = yes
+		imprison_HoF_consequences_effect = yes
 		scope:recipient = {
 			if = {
 				limit = {
@@ -162,6 +163,7 @@
 		}
 		illegal_imprisonment_dread_effect = yes
 		imprison_court_chaplain_consequences_effect = yes
+		imprison_HoF_consequences_effect = yes
 		scope:recipient = {
 			if = {
 				limit = {
@@ -244,7 +246,10 @@
 	}
 		
 	on_decline = {
-		illegal_imprisonment_dread_effect = yes
+		scope:actor = { 
+			imprison_HoF_consequences_effect = yes 
+			imprison_tyranny_effect = yes
+		}
 		scope:recipient = {
 			#If target is count or higher, start war.
 			if = {
@@ -309,6 +314,12 @@
 							}
 							can_be_fired_from_council_trigger = { COURT_OWNER = scope:recipient.liege }
 						}
+						trigger_if = {
+							limit = {
+								exists = scope:actor.faith.religious_head
+							}
+							NOT = { scope:actor.faith.religious_head = scope:recipient }
+						}
 					}
 					select_and_move_to_pool_effect = yes
 				}
@@ -362,8 +373,6 @@
 
 					add_to_list = ward_children
 				}
-
-				scope:recipient = { trigger_event = char_interaction.0090 }
 			}
 			if = {
 				limit = {
@@ -496,6 +505,7 @@
 							ai_honor > 0
 						}
 						scope:actor = {
+							has_imprisonment_reason = scope:recipient
 							has_realm_law_flag = vassal_refusal_is_treason
 						}
 					}
@@ -506,6 +516,7 @@
 		modifier = {
 			add = 20
 			scope:actor = {
+				any_vassal_or_below = { this = scope:recipient }
 				has_realm_law_flag = vassal_refusal_is_treason
 			}
 			desc = AI_REFUSAL_IS_TREASON
@@ -1077,12 +1088,21 @@ ransom_interaction = {
 			scope:actor = {
 				save_scope_as = imprisoner
 
+				#Save scopes for portraits
+				scope:recipient = { save_scope_as = portrait_first }
+				if = {
+					limit = {
+						NOT = { scope:portrait_first = scope:prisoner }
+					}
+					scope:prisoner = { save_scope_as = portrait_second}
+				}
+
 				# Must come after we save the payment value, or the payer won't know how much they need to pay.
 				send_interface_message = {
 					type = event_prison_good
 					title = msg_ransom_prisoner
-					right_icon = scope:recipient
-					left_icon = scope:prisoner
+					right_icon = scope:portrait_first
+					left_icon = scope:portrait_second
 					ransom_interaction_effect = yes
 				}
 			}
@@ -1536,7 +1556,7 @@ pay_ransom_interaction = {
 	}
 
 	#Use hook
-	send_option = {	
+	send_option = {
 		is_valid = {
 			exists = scope:recipient
 			scope:actor = {
@@ -1565,11 +1585,12 @@ pay_ransom_interaction = {
 			scope:gold = yes
 			desc = "GOLD_POSITIVE_REASON"
 		}
-		modifier = {
-			add = 15
+		modifier = { # Accept more than half the ransom (unless greedy)
+			add = 25
 			scope:current_gold = yes
-			scope:actor = {
-				gold >= scope:secondary_recipient.half_ransom_cost_value
+			AND = {
+				scope:actor = { gold >= scope:secondary_recipient.half_ransom_cost_value }
+				NOT = { scope:recipient.ai_greed >= medium_positive_ai_value }
 			}
 			desc = "GOLD_POSITIVE_REASON"
 		}
@@ -1584,6 +1605,15 @@ pay_ransom_interaction = {
 			scope:favor = yes
 			NOT = { scope:recipient.top_liege = scope:actor.top_liege }
 			desc = "NO_USE_FOR_A_FAVOR_REASON"
+		}
+		modifier = { # For clarification
+			add = 0
+			scope:current_gold = yes
+			OR = {
+				scope:actor = { gold < scope:secondary_recipient.half_ransom_cost_value }
+				scope:recipient.ai_greed >= medium_positive_ai_value
+			}
+			desc = "WANTS_MORE_GOLD"
 		}
 		modifier = { # Say no to rivals
 			add = -55
@@ -1964,6 +1994,16 @@ ransom_me_interaction = {
 			desc = "GOLD_POSITIVE_REASON"
 		}
 		
+		modifier = { # Accept more than half the ransom (unless greedy)
+			add = 25
+			scope:current_gold = yes
+			AND = {
+				scope:actor = { gold >= half_ransom_cost_value }
+				NOT = { scope:recipient.ai_greed >= medium_positive_ai_value }
+			}
+			desc = "GOLD_POSITIVE_REASON"
+		}
+		
 		modifier = {
 			add = 50
 			scope:favor = yes
@@ -1982,6 +2022,16 @@ ransom_me_interaction = {
 				scope:recipient.ai_greed >= medium_positive_ai_value
 			}
 			desc = "NO_USE_FOR_A_FAVOR_REASON"
+		}
+		
+		modifier = { # For clarification
+			add = 0
+			scope:current_gold = yes
+			OR = {
+				scope:actor = { gold < half_ransom_cost_value }
+				scope:recipient.ai_greed >= medium_positive_ai_value
+			}
+			desc = "WANTS_MORE_GOLD"
 		}
 		
 		#opinion_modifier = { # A lot more likely if Recipient likes Actor
@@ -2020,6 +2070,7 @@ ransom_me_interaction = {
 			add = 100
 			desc = SCHEME_WEAK_HOOK_USED
 		}
+		
 		modifier = { # An Intimidated recipient is significantly more likely to accept an offer from the liege
 			add = 40
 			trigger = {
@@ -2175,7 +2226,7 @@ release_from_prison_interaction = {
 					}
 					set_character_faith = scope:actor.faith
 					add_opinion = {
-						modifier = demanded_conversion
+						modifier = demanded_my_conversion_opinion
 						target = scope:actor
 					}
 				}
@@ -3207,7 +3258,7 @@ execute_prisoner_interaction = {
 							has_execute_reason = scope:recipient
 						}
 					}
-					scope:actor = {			
+					scope:actor = {
 						stress_impact = {
 							compassionate = medium_stress_impact_gain
 							forgiving = minor_stress_impact_gain
@@ -3215,10 +3266,18 @@ execute_prisoner_interaction = {
 					}
 				}
 				else = {
-					scope:actor = {			
+					scope:actor = {
 						stress_impact = {
 							compassionate = medium_stress_impact_gain
-							just = medium_stress_impact_gain
+						}
+						if = {
+							limit = {
+								#Sacrificing is a valid reason for a just character to not gain stress
+								NOT = { always = scope:execution_sacrifice }
+							}
+							stress_impact = {
+								just = medium_stress_impact_gain
+							}
 						}
 					}
 				}
@@ -3254,6 +3313,7 @@ execute_prisoner_interaction = {
 	send_option = {
 		is_shown = {
 			scope:actor.faith = scope:recipient.faith
+			NOT = { scope:actor.faith = { has_doctrine = tenet_human_sacrifice } }
 		}
 		flag = execution_beheaded
 		localization = "EXECUTION_BEHEADED"
@@ -3277,10 +3337,19 @@ execute_prisoner_interaction = {
 		is_shown = {
 			NOT = {
 				scope:actor.faith = scope:recipient.faith
+				scope:actor.faith = { has_doctrine = tenet_human_sacrifice }
 			}
 		}
 		flag = execution_burned
 		localization = "EXECUTION_BURNED"
+	}
+
+	send_option = {
+		is_shown = {
+			scope:actor.faith = { has_doctrine = tenet_human_sacrifice }
+		}
+		flag = execution_sacrifice
+		localization = "EXECUTION_SACRIFICE"
 	}
 	
 	

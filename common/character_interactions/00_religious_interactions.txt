@@ -38,7 +38,7 @@ ask_for_conversion_interaction = {
 	ai_max_reply_days = 5
 	
 	on_accept = {
-		demand_conversion_interaction_effect = yes
+		new_faith_created_conversion_effect = yes
 		if = {
 			limit = { scope:hook = yes }
 			scope:actor = {
@@ -466,46 +466,70 @@ demand_conversion_vassal_ruler_interaction = {
 		scope:recipient = {
 			hidden_effect = {
 				random_list = {
-					40 = { #They ask for gold
+					80 = { # Conditional acceptance
+						modifier = {
+							factor = 0 # Heresiarchs never agree to convert
+							scope:recipient = {
+								has_trait = heresiarch
+							}
+						}
 						ai_value_modifier = {
 							ai_greed = 0.5
 						}
-						modifier = {
-							factor = 0
-							scope:recipient = {
-								has_trait = heresiarch
+						random_list = {
+							50 = { #They ask for gold
+								modifier = {
+									add = 50 # More likely to ask for gold if they're poor
+									scope:recipient.short_term_gold < medium_gold_value
+								}
+								modifier = {
+									add = { # Much more likely to ask for gold involved in one of their own wars (they want to win).
+										value = 50
+										if = {
+											# Especially true if they're in debt!
+											limit = { gold < 0 }
+											add = 150
+										}
+									}									
+									is_at_war = yes
+									any_character_war = {
+										is_war_leader = scope:recipient
+									}
+								}
+								scope:actor = {
+									trigger_event = {
+										id = religious_interaction.2011
+									}
+								}
+							}
+							500 = { #They ask for a favor
+								trigger = {
+									exists = scope:recipient.capital_county
+									NOT = { has_hook = scope:actor }
+								}
+								# Direct feudal vassals appreciate favors more (they can improve their contract).
+								modifier = {
+									add = {
+										value = 50
+										# This goes double for your Powerful Vassals. A better contract is likely to be much more important than a short-term payout.
+										if = {
+											limit = { is_powerful_vassal_of = scope:actor }
+											add = 100
+										}
+									}
+									this.liege = scope:actor
+									has_government = feudal_government
+								}
+								scope:actor = {
+									trigger_event = {
+										id = religious_interaction.2012
+									}
+								}
 							}
 						}
-						scope:actor = {
-							trigger_event = {
-								id = religious_interaction.2011
-							}
-						}
+
 					}
-					40 = { #They ask for a favor
-						trigger = {
-							NOT = {
-								has_hook = scope:actor
-								exists = scope:recipient.capital_county
-							}
-						}
-						modifier = {
-							add = 50
-							NOT = { scope:actor.gold > medium_gold_value }
-						}
-						modifier = {
-							factor = 0
-							scope:recipient = {
-								has_trait = heresiarch
-							}
-						}
-						scope:actor = {
-							trigger_event = {
-								id = religious_interaction.2012
-							}
-						}
-					}
-					20 = { #Full refuse
+					20 = { # Full refuse
 						modifier = {
 							add = 20
 							scope:recipient.demand_conversion_likelihood_calculation < 40
@@ -533,6 +557,16 @@ demand_conversion_vassal_ruler_interaction = {
 					modifier = demanded_my_conversion_opinion
 					target = scope:actor
 					opinion = -10
+				}
+				scope:actor = {
+					if = {
+						limit = {
+							refusing_conversion_is_crime_trigger = {
+								CHARACTER = scope:recipient
+							}
+						}
+						custom_tooltip = action_can_lawfully_imprison_label
+					}
 				}
 			}
 		}
@@ -1883,6 +1917,20 @@ send_to_holy_order_interaction = {
 
 	send_options_exclusive = no
 
+	cost = {
+		piety = scope:recipient.ask_to_take_vows_piety_cost
+	}
+
+	on_send = {
+		scope:recipient = {
+			set_variable = {
+				name = vows_piety_spent
+				value = ask_to_take_vows_piety_cost
+				days = 10
+			}
+		}
+	}
+
 	on_accept = {
 		scope:actor = {
 			if = {
@@ -1893,7 +1941,12 @@ send_to_holy_order_interaction = {
 			trigger_event = holy_order.0001
 			show_as_tooltip = {
 				send_child_to_holy_order_tooltip_effect = yes
-				kick_from_court_interaction_warning_tooltip_effect = yes
+				scope:recipient = { kick_from_court_interaction_warning_tooltip_effect = yes }
+			}
+		}
+		hidden_effect = {
+			scope:recipient = {
+				remove_variable = vows_piety_spent
 			}
 		}
 	}
@@ -1912,45 +1965,33 @@ send_to_holy_order_interaction = {
 				id = religious_interaction.1031
 			}
 		}
-		scope:actor = {
-			add_piety_no_experience = {
-				value = medium_piety_value
-				if = {
-					limit = {
-						scope:recipient = {
-							is_close_family_of = scope:actor
-							NOR = {
-								is_child_of = scope:actor
-								scope:actor.primary_title = {
-									place_in_line_of_succession = {
-										target = prev
-										value <= 3
-									}
-								}
-							}
-						}
-					}
-					add = medium_piety_value
-				}
-				if = {
-					limit = {
-						scope:recipient = {
-							OR = {
-								is_child_of = scope:actor
-								scope:actor.primary_title = {
-									place_in_line_of_succession = {
-										target = prev
-										value <= 3
-									}
-								}
-							}
-						}
-					}
-					add = major_piety_value
+
+		# Refund piety cost
+		show_as_tooltip = {
+			scope:actor = {
+				add_piety_no_experience = {
+					value = scope:recipient.ask_to_take_vows_piety_cost
 				}
 			}
 		}
-	}
+		hidden_effect = {
+			if = {
+				limit = {
+					scope:recipient = {
+						has_variable = vows_piety_spent
+ 					}
+				}
+				scope:actor = {
+					add_piety_no_experience = {
+						value = scope:recipient.var:vows_piety_spent
+ 					}
+ 				}
+				scope:recipient = {
+					remove_variable = vows_piety_spent
+				}
+ 			}
+ 		}
+ 	}
 
 	auto_accept = no
 
@@ -2278,38 +2319,6 @@ send_to_holy_order_interaction = {
 		}
 	}
 	
-	cost = {
-		piety = {
-			value = {
-				add = medium_piety_value
-				if = {
-					limit = {
-						scope:recipient = {
-							OR = {
-								is_child_of = scope:actor
-								scope:actor.primary_title = {
-									place_in_line_of_succession = {
-										target = prev
-										value <= 3
-									}
-								}
-							}
-						}
-					}
-					add = major_piety_value
-				}
-				else_if = {
-					limit = {
-						scope:recipient = {
-							is_close_family_of = scope:actor
-						}
-					}
-					add = medium_piety_value
-				}
-			}
-		}
-	}
-	
 	# AI will do
 	
 	ai_potential = {
@@ -2555,6 +2564,20 @@ take_vows_interaction = {
 
 	send_options_exclusive = no
 
+	cost = {
+		piety = scope:recipient.ask_to_take_vows_piety_cost
+	}
+
+	on_send = {
+		scope:recipient = {
+			set_variable = {
+				name = vows_piety_spent
+				value = ask_to_take_vows_piety_cost
+				days = 10
+ 			}
+ 		}
+ 	}
+
 	on_accept = {
 		scope:actor = {
 			if = {
@@ -2628,6 +2651,12 @@ take_vows_interaction = {
 				}
 			}
 		}
+
+		hidden_effect = {
+			scope:recipient = {
+				remove_variable = vows_piety_spent
+			}
+		}
 	}
 
 	on_decline = {
@@ -2644,45 +2673,34 @@ take_vows_interaction = {
 				id = religious_interaction.1031
 			}
 		}
-		scope:actor = {
-			add_piety_no_experience = {
-				value = medium_piety_value
-				if = {
-					limit = {
-						scope:recipient = {
-							is_close_family_of = scope:actor
-							NOR = {
-								is_child_of = scope:actor
-								scope:actor.primary_title = {
-									place_in_line_of_succession = {
-										target = prev
-										value <= 3
-									}
-								}
-							}
-						}
-					}
-					add = medium_piety_value
-				}
-				if = {
-					limit = {
-						scope:recipient = {
-							OR = {
-								is_child_of = scope:actor
-								scope:actor.primary_title = {
-									place_in_line_of_succession = {
-										target = prev
-										value <= 3
-									}
-								}
-							}
-						}
-					}
-					add = major_piety_value
+
+		# Refund piety cost
+		show_as_tooltip = {
+			scope:actor = {
+				add_piety_no_experience = {
+					value = scope:recipient.ask_to_take_vows_piety_cost
 				}
 			}
 		}
-	}
+		# Refund piety cost
+		hidden_effect = {
+			if = {
+				limit = {
+					scope:recipient = {
+						has_variable = vows_piety_spent
+ 					}
+ 				}
+				scope:actor = {
+					add_piety_no_experience = {
+						value = scope:recipient.var:vows_piety_spent
+ 					}
+				}
+				scope:recipient = {
+					remove_variable = vows_piety_spent
+ 				}
+ 			}
+ 		}
+ 	}
 
 	auto_accept = no
 
@@ -3132,38 +3150,6 @@ take_vows_interaction = {
 		}
 	}
 	
-	cost = {
-		piety = {
-			value = {
-				add = medium_piety_value
-				if = {
-					limit = {
-						scope:recipient = {
-							OR = {
-								is_child_of = scope:actor
-								scope:actor.primary_title = {
-									place_in_line_of_succession = {
-										target = prev
-										value <= 3
-									}
-								}
-							}
-						}
-					}
-					add = major_piety_value
-				}
-				else_if = {
-					limit = {
-						scope:recipient = {
-							is_close_family_of = scope:actor
-						}
-					}
-					add = medium_piety_value
-				}
-			}
-		}
-	}
-	
 	# AI will do
 	
 	ai_potential = {
@@ -3369,6 +3355,7 @@ temporal_condemnation_interaction = {
 			object = scope:recipient
 			value = religious_legal_pronouncement_learning_requirement
 			religious_legal_pronouncement_requirements >= 0
+			scope:actor = { learning >= 1 }
 		}
 	}
 
@@ -3817,7 +3804,7 @@ hof_ask_for_gold_interaction = {
 				any_character_war = {
 					is_attacker = scope:actor
 					OR = {
-						using_cb = religious_war
+						using_non_ghw_holy_war_cb_trigger = yes
 						using_cb = excommunication_war
 					}
 				}
@@ -3831,7 +3818,7 @@ hof_ask_for_gold_interaction = {
 				is_at_war = yes
 				any_character_war = {
 					is_defender = scope:actor
-					using_cb = religious_war
+					using_non_ghw_holy_war_cb_trigger = yes
 				}
 			}
 		}
@@ -4170,14 +4157,6 @@ hof_ask_for_claim_interaction = {
 				save_scope_as = recipient
 			}
 		}
-		scope:actor.faith = {
-			if = {
-				limit = { exists = religious_head }
-				religious_head = {
-					save_scope_as = recipient
-				}
-			}
-		}
 	}
 
 	has_valid_target_showing_failures_only = {
@@ -4203,7 +4182,7 @@ hof_ask_for_claim_interaction = {
 	}
 	
 	is_valid_showing_failures_only = {
-		trigger_if = { # Can't request on titles you already ahve a pressed claim on
+		trigger_if = { # Can't request on titles you already have a pressed claim on
 			limit = {
 				exists = scope:target
 				scope:actor = {
@@ -4215,7 +4194,7 @@ hof_ask_for_claim_interaction = {
 				always = no
 			}
 		}
-		trigger_if = { # Cant request claims on baronies
+		trigger_if = { # Can't request claims on baronies
 			limit = {
 				OR = {
 					scope:recipient.highest_held_title_tier = tier_barony
@@ -4231,6 +4210,12 @@ hof_ask_for_claim_interaction = {
 				text = "hof_ask_for_claim_no_baronies"
 				always = no
 			}
+		}
+		# Can't request claims on theocratic lessees
+		custom_description = {
+			text = "hof_ask_for_claim_theocratic_lessee"
+			object = scope:recipient
+			scope:secondary_recipient = { is_theocratic_lessee = no }
 		}
 		scope:actor = { # Variable piety cost depending on tier
 			trigger_if = {
