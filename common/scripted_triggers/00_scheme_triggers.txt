@@ -1,0 +1,260 @@
+﻿
+diplomacy_scheme_trigger = {
+	OR = {
+		scheme_type = befriend
+		scheme_type = sway
+		scheme_type = courting
+	}
+}
+
+intrigue_scheme_trigger = {
+	OR = {
+		scheme_type = murder
+		scheme_type = abduct
+		scheme_type = fabricate_hook
+	}
+}
+
+hostile_scheme_trigger = {
+	OR = {
+		scheme_type = murder
+		scheme_type = abduct
+		scheme_type = claim_throne
+		scheme_type = fabricate_hook
+	}
+}
+
+friendly_scheme_trigger = {
+	OR = {
+		scheme_type = seduce
+		scheme_type = befriend
+		scheme_type = sway
+		scheme_type = courting
+	}
+}
+
+agent_valid_to_be_discovered_by_spymaster = {
+	trigger_if = {
+		limit = {
+			exists = scope:target.court_owner.cp:councillor_spymaster
+		}
+		NOT = {
+			this = scope:target.court_owner.cp:councillor_spymaster
+		}
+	}
+	NOT = {
+		has_character_flag = free_to_scheme
+	}
+	NOT = {
+		reverse_has_opinion_modifier = {
+			target = scope:target.court_owner
+			modifier = scheming_against_me
+		}
+		reverse_has_opinion_modifier = {
+			target = scope:target.court_owner
+			modifier = schemed_against_me
+		}
+	}
+}
+
+
+
+
+personal_scheme_success_compare_target_liege_tier_trigger = {
+	is_landed = no
+	exists = liege
+	OR = {
+		is_spouse_of = liege
+		is_close_family_of = liege
+		dynasty = liege.dynasty
+	}
+}
+
+is_good_familial_murder_target_trigger = {
+	root = {
+		can_start_scheme = {
+			target = prev
+			type = murder
+		}
+		OR = {
+			AND = { # Psychopaths ignore opinion...
+				ai_greed >= very_high_positive_ai_value
+				ai_compassion <= very_high_negative_ai_value
+				has_trait = sadistic # Make sadistic people able to murder their own children
+			}
+			AND = { # Very greedy and non-compassionate characters almost ignore opinion...
+				ai_greed >= very_high_positive_ai_value
+				ai_compassion <= high_negative_ai_value
+				opinion = {
+					target = prev
+					value <= medium_positive_opinion
+				}
+			}
+			AND = { # Significantly greedy and non-compassionate characters can murder even at positive opinion
+				ai_greed >= high_positive_ai_value
+				ai_compassion < 0
+				opinion = {
+					target = prev
+					value <= low_positive_opinion
+				}
+			}
+			AND = { # Somewhat greedy characters can murder people they just barely dislike...
+				ai_greed >= medium_positive_ai_value
+				opinion = {
+					target = prev
+					value <= low_negative_opinion
+				}
+			}
+			AND = { # Otherwise, their opinion must be rather poor...
+				opinion = {
+					target = prev
+					value <= medium_negative_opinion
+				}
+			}
+		}
+	}
+	NOR = {
+		has_opinion_modifier = {
+			modifier = received_title_county
+			target = root
+		}
+		has_opinion_modifier = {
+			modifier = received_title_duchy
+			target = root
+		}
+		has_opinion_modifier = {
+			modifier = received_title_kingdom
+			target = root
+		}
+		has_opinion_modifier = {
+			modifier = received_title_empire
+			target = root
+		}
+	}
+	OR = {
+		any_held_title = {
+			tier >= root.highest_held_title_tier
+			place_in_line_of_succession = {
+				target = root
+				value <= {
+					value = 2
+					if = {
+						limit = { root.highest_held_title_tier > tier_barony }
+						add = 1
+					}
+				}
+			}
+		}
+		any_heir_title = {
+			NOT = { holder = root }
+			tier >= root.highest_held_title_tier
+			place_in_line_of_succession = {
+				target = root
+				value <= {
+					value = 2
+					if = {
+						limit = { root.highest_held_title_tier > tier_barony }
+						add = 1
+					}
+				}
+			}
+		}
+	}
+}
+
+# This trigger is a bit contrived in some way to ensure absolutely everyone gets evaluated without any early-outing
+# It should always return true
+# We use "count = all" and trigger_ifs to ensure that all have to be evaluated, and that all return
+build_murder_targets_trigger = {
+	any_relation = { # Rivals are good targets for murder schemes
+		type = rival
+		count = all
+		trigger_if = {
+			limit = {
+				root = {
+					ai_honor <= low_positive_ai_value
+					can_start_scheme = {
+						target = prev
+						type = murder
+					}
+				}
+			}
+			add_to_temporary_list = murder_targets
+		}
+	}
+	any_relation = { # Same with nemeses
+		type = nemesis
+		count = all
+		trigger_if = {
+			limit = {
+				root = {
+					ai_honor <= medium_positive_ai_value
+					can_start_scheme = {
+						target = prev
+						type = murder
+					}
+				}
+			}
+			add_to_temporary_list = murder_targets
+		}
+	}
+	trigger_if = { # Greedy people have no qualms murdering their way up the succession...
+		limit = {
+			ai_greed >= low_positive_ai_value
+			exists = dynasty
+		}
+		dynasty = {
+			any_dynasty_member = {
+				count = all
+				trigger_if = {
+					limit = {
+						is_good_familial_murder_target_trigger = yes
+					}
+					add_to_temporary_list = murder_targets
+				}
+			}
+		}
+		any_close_or_extended_family_member = {
+			count = all
+			trigger_if = {
+				limit = {
+				NOT = { is_in_list = murder_targets }
+					is_good_familial_murder_target_trigger = yes
+				}
+				add_to_temporary_list = murder_targets
+			}
+		}
+	}
+	any_consort = { # Unfaithful spouses
+		trigger_if = {
+			limit = {
+				root = {
+					ai_compassion <= 0
+					can_start_scheme = {
+						target = prev
+						type = murder
+					}
+				}
+				exposed_cheating_on_spouse_trigger = { SPOUSE = root }
+				add_to_temporary_list = murder_targets
+			}
+		}
+	}
+	trigger_if = { # Certain vassals will plot against their liege under certain conditions
+		limit = {
+			highest_held_title_tier > tier_barony
+			exists = liege
+			liege = {
+				tyranny >= medium_tyranny
+			}
+			opinion = {
+				target = liege
+				value <= high_negative_opinion
+			}
+			ai_rationality >= medium_positive_ai_value
+		}
+		liege = {
+			add_to_temporary_list = murder_targets
+		}
+	}
+}
