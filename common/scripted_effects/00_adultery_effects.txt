@@ -1,0 +1,644 @@
+﻿
+#####################################################################
+# EFFECT LIST
+#####################################################################
+# !!! Remember to add all new effects with a short description here !!!
+
+
+
+
+#### Extramaritial sex effects: applies adultery/fornicator traits, opionions and informs spouse. Needs SPOUSE_EVENT = yes/no
+# extramarital_sex_attempt_exposure_consequences_with_target_effect 		- for failed sex attempts, spouse does not dislike target
+# extramarital_sex_exposure_consequences_with_target_effect 				- standard one for exposure (note, you have to run this on both characters!)	
+# extramaritial_sex_exposure_consequences_with_had_recent_sex_var_effect - for sex without targets, based on had_recent_sex var (set in had_sex_with_unknown_effect)
+# extramarital_sex_exposure_consequences_effect 							- "support" effect
+# extramarital_sex_discovery_consequences_with_target_effect
+#	- standard one discovery (note, you have to run this on both characters!)	
+
+
+# mother_of_young_child_has_lover_variable_effect		
+#	- when adultery has been discovered, this effect can set if paternity could be doubted
+
+# spy_on_mother_pregnancy_adultery_effect
+
+# expose_lover_secret_or_run_consequence_effect
+#	- Checks for the existence of a Lover Secret with a target, and which either exposes it, or runs the extramarital_sex_exposure_consequences_with_target_effect for both characters. Takes TARGET and EXPOSER
+
+#####################################################################
+# EFFECTS
+#####################################################################
+
+
+####Extramaritial sex effects:
+#To be used when a character is exposed/discovered as an adulterer/fornicator (for the consequences, not the exposure/discpvery itself). Lover secret exposure, discovered seduce schemes, events.
+# Exposure effects: These are used when the cheating has been made public (i.e. not for secret discovery without exposure)
+# Discovery effects: These re used when the cheating is not public, but a partner has discovered the cheater
+#The target version is for situations where it's known who the other character was and adds some opinion penalties and consequences for them as well.
+
+extramarital_sex_exposure_consequences_with_target_effect = { #Note: only adds stuff for one of the sex partners, it must be run twice! It is intentionally kept this way so you can apply it in two different places in an event chain etc.
+	save_temporary_scope_as = sex_character
+	
+	#Applies traits, piety level loss, unfaithfulness opinions
+	$TARGET$ = { save_scope_as = sex_partner }	
+	if = { # Check to make absolutely sure it's extramarital
+		limit = {
+			NOT = { scope:sex_character = { is_consort_of = scope:sex_partner } }
+		}
+		extramarital_sex_exposure_consequences_effect = { SPOUSE_EVENT = $SPOUSE_EVENT$ }
+
+		#Slept with spouse opinions & potential rivalry
+		$TARGET$ = {
+			every_spouse = {
+				limit = { NOT = { this = scope:sex_character } } #Extra safety
+				save_scope_as = sex_partner_spouse
+
+				hidden_effect = {
+					#Remove duplicate opinion from discovery
+					if = {
+						limit = {
+							has_opinion_modifier = {
+								target = scope:sex_character
+								modifier = slept_with_spouse_discovered_opinion
+							}
+						}
+						remove_opinion = {
+							target = scope:sex_character
+							modifier = slept_with_spouse_discovered_opinion
+						}
+					}
+				}
+
+				if = { #(only visible for directly relevant exposure)
+					limit = {
+						#OR = { #TODO_CD: commented out until TIT-16673 has been resolved due to errors
+						#	scope:sex_character = root
+						#	scope:sex_partner = root
+						#	scope:sex_partner_spouse = root
+						#}
+					}
+					if = {
+						limit = {
+							NOT = { faith = { has_doctrine_parameter = no_unfaithfulness_penalty_active }  }
+						}
+						add_opinion = {
+							target = scope:sex_character
+							modifier = slept_with_spouse_exposed_opinion
+						}
+					}
+				}
+				else = {
+					if = {
+						limit = {
+							NOT = { faith = { has_doctrine_parameter = no_unfaithfulness_penalty_active }  }
+						}
+						hidden_effect = {
+							add_opinion = {
+								target = scope:sex_character
+								modifier = slept_with_spouse_exposed_opinion
+							}
+						}
+					}
+				}
+
+				hidden_effect = {
+					#Rivalry
+					if = {
+						limit = {
+							is_ai = yes
+							scope:sex_character = { is_ai = yes }
+							ai_vengefulness >= medium_positive_ai_value
+							can_set_relation_nemesis_trigger = { CHARACTER = scope:sex_character }
+						}
+						set_relation_nemesis = scope:sex_character
+					}
+					else = {
+						progress_towards_rival_effect = { CHARACTER = scope:sex_character OPINION = no }
+					}
+				}
+			}
+		}
+	}
+}
+
+extramaritial_sex_exposure_consequences_with_had_recent_sex_var_effect = {
+	if = {
+		limit = { exists = var:had_recent_sex }
+
+		if = {
+			limit = { var:had_recent_sex = flag:male }
+			dummy_male = { save_scope_as = unknown_sex_partner }
+		}
+		else = {
+			dummy_female = { save_scope_as = unknown_sex_partner }
+		}
+
+		extramarital_sex_exposure_consequences_effect = { SPOUSE_EVENT = $SPOUSE_EVENT$ }
+	}
+}
+
+extramarital_sex_attempt_exposure_consequences_with_target_effect = {
+	#Applies traits, piety level loss, unfaithfulness opinions
+	$TARGET$ = { save_scope_as = sex_partner }
+	save_scope_value_as = { #For use desc in adultery.4001
+		name = unsuccessful_sex_attempt
+		value = yes
+	}
+	extramarital_sex_exposure_consequences_effect = { SPOUSE_EVENT = $SPOUSE_EVENT$ }
+}
+
+
+extramarital_sex_exposure_consequences_effect = {
+	save_temporary_scope_as = sex_character
+	save_temporary_scope_value_as = {
+		name = spouse_event
+		value = $SPOUSE_EVENT$
+	}
+
+	#APPLY TRAITS & REMOVE PIETY LEVELS
+	add_adulterer_fornicator_trait_or_nothing_effect = yes
+	remove_piety_level_for_shunned_or_criminal_trait_effect = { TRAIT = adulterer } #Fornicator falls under same doctrine
+	if = {
+		limit = {
+			OR = {
+				AND = {
+					exists = scope:sex_partner
+					relation_with_character_is_sodomy_in_my_or_lieges_faith_trigger = { CHARACTER = scope:sex_partner }
+				}
+				AND = {
+					exists = scope:unknown_sex_partner
+					relation_with_character_is_sodomy_in_my_or_lieges_faith_trigger = { CHARACTER = scope:unknown_sex_partner }
+				}
+			}
+		}
+		add_trait = sodomite
+		remove_piety_level_for_shunned_or_criminal_trait_effect = { TRAIT = sodomite }
+	}
+	if = {
+		limit = {
+			exists = scope:sex_partner
+			relation_with_character_is_incestuous_in_my_or_lieges_faith_trigger = { CHARACTER = scope:sex_partner }
+		}
+		add_trait = incestuous
+		remove_piety_level_for_shunned_or_criminal_trait_effect = { TRAIT = incestuous }
+	}
+
+	#APPLY UNFAITHFUL OPINIONS TOWARDS SPOUSES AND LOVERS (only visible for directly relevant exposure)
+	if = {
+		limit = {
+			#OR = { #TODO_CD: commented out until TIT-16673 has been resolved due to errors
+			#	scope:sex_character = root
+			#	AND = {
+			#		exists = scope:sex_partner
+			#		scope:sex_partner = root
+			#	}
+			#	any_spouse = {
+			#		this = root
+			#	}
+			#	any_relation = {
+			#		type = soulmate
+			#		this = root
+			#	}
+			#}
+		}
+		every_relation = {
+			type = soulmate
+			limit = {
+				soulmate_relation_is_exclusive_trigger = yes
+				NOT = { #So we don't add it both at discovery and exposure
+					has_opinion_modifier = {
+						target = scope:sex_character
+						modifier = betrayed_our_promise
+					}
+				}
+			}
+			add_opinion = {
+				target = scope:sex_character
+				modifier = betrayed_our_promise
+			}
+		}
+
+		every_spouse = {
+			if = {
+				limit = {
+					NOT = { faith = { has_doctrine_parameter = no_unfaithfulness_penalty_active } }
+				}
+				add_opinion = {
+					target = scope:sex_character
+					modifier = unfaithful_spouse_exposed_opinion
+				}			
+			}
+		}
+	}
+	else = {
+		hidden_effect = {
+			every_relation = {
+				type = soulmate
+				limit = {
+					soulmate_relation_is_exclusive_trigger = yes
+					NOT = { #So we don't add it both at discovery and exposure
+						has_opinion_modifier = {
+							target = scope:sex_character
+							modifier = betrayed_our_promise
+						}
+					}
+				}
+				add_opinion = {
+					target = scope:sex_character
+					modifier = betrayed_our_promise
+				}
+			}
+
+			every_spouse = {
+				if = {
+					limit = {
+						NOT = { faith = { has_doctrine_parameter = no_unfaithfulness_penalty_active }  }
+					}
+					add_opinion = {
+						target = scope:sex_character
+						modifier = unfaithful_spouse_exposed_opinion
+					}
+				}		
+			}
+		}
+	}
+	every_spouse = {
+		hidden_effect = {
+			#Remove duplicate opinion from discovery
+			if = {
+				limit = {
+					has_opinion_modifier = {
+						target = scope:sex_character
+						modifier = unfaithful_spouse_discovered_opinion
+					}
+				}
+				remove_opinion = {
+					target = scope:sex_character
+					modifier = unfaithful_spouse_discovered_opinion
+				}
+			}
+		}
+
+		#NOTIFY SPOUSE (SHOULD ALWAYS BE "NO" IF EFFECT IS USED ON SECRET EXPOSURE)
+		if = {
+			limit = {
+				scope:spouse_event = yes
+				NOT = { faith = { has_doctrine_parameter = no_unfaithfulness_penalty_active } }
+			}
+
+			scope:sex_character = { save_scope_as = adultery_spouse }
+			trigger_event = adultery.4001
+		}
+	}
+}
+
+extramarital_sex_discovery_consequences_with_target_effect = {
+	save_temporary_scope_as = sex_character
+	
+	# If the discoverer is my partner
+	if = {
+		limit = {
+			OR = {
+				is_consort_of = $DISCOVERER$
+				has_relation_lover = $DISCOVERER$
+				has_relation_soulmate = $DISCOVERER$
+			}
+		}
+
+		#Spouse and lover opinions
+		$DISCOVERER$ = {
+			if = {
+				limit = {
+					has_relation_soulmate = scope:sex_character
+					soulmate_relation_is_exclusive_trigger = yes
+				}
+				add_opinion = {
+					target = scope:sex_character
+					modifier = betrayed_our_promise
+				}
+			}
+
+			if = {
+				limit = {
+					is_consort_of = scope:sex_character
+					NOT = { faith = { has_doctrine_parameter = no_unfaithfulness_penalty_active }  }
+				}
+				add_opinion = {
+					target = scope:sex_character
+					modifier = unfaithful_spouse_discovered_opinion
+				}
+			}
+		}
+	}
+
+	# If the discoverer is my sex partner's spouse
+	if = {
+		limit = {
+			$TARGET$ = {
+				is_consort_of = $DISCOVERER$
+			}
+		}
+		$DISCOVERER$ = {
+			if = {
+				limit = {
+					NOT = { faith = { has_doctrine_parameter = no_unfaithfulness_penalty_active }  }
+				}
+				add_opinion = {
+					target = scope:sex_character
+					modifier = slept_with_spouse_discovered_opinion
+				}
+			}
+		}
+	}
+}
+
+
+
+###misc
+
+
+mother_of_young_child_has_lover_variable_effect = {
+	if = {
+		limit = {
+			$LOVER_1$ = { sex_opposite_of = $LOVER_2$ }
+		}
+
+		#Who is the woman?
+		if = {
+			limit = { $LOVER_1$ = { is_female = yes } }
+			$LOVER_1$ = { save_temporary_scope_as = mother_check }
+		}
+		else = {
+			$LOVER_2$ = { save_temporary_scope_as = mother_check }
+		}
+
+		#Is SPOUSE the woman's spouse, and do they have a young child together?
+		$SPOUSE$ = {
+			if = {
+				limit = {
+					is_spouse_of = scope:mother_check
+					any_child = {
+						is_child_of = scope:mother_check
+						NOR = {
+							has_trait = bastard
+							has_trait = legitimized_bastard
+						}
+						age <= 5
+					}
+				}
+				set_variable = {
+					name = mother_of_young_child_has_lover
+					value = scope:mother_check
+				}
+			}
+		}
+	}
+}
+
+spy_on_mother_pregnancy_adultery_effect = {
+	show_as_tooltip = {
+		if = { # Check whether root or Spymaster should spy
+			limit = {
+				exists = cp:councillor_spymaster
+				NOT = { cp:councillor_spymaster = scope:mother }
+				cp:councillor_spymaster.intrigue > intrigue
+			}
+			cp:councillor_spymaster = {
+				duel = {
+					skill = intrigue
+					target = scope:mother
+
+					6 = {
+						compare_modifier = {
+							value = scope:duel_value
+							multiplier = 0.5
+							min = -5
+						}
+						desc = adultery.1003.duel_success
+						root = {
+							custom_tooltip = adultery.1003.duel_success_tt
+						}
+					}
+
+					4 = {
+						compare_modifier = {
+							value = scope:duel_value
+							multiplier = -0.5
+							min = -3
+						}
+						desc = adultery.1003.duel_failure
+						root = {
+							reverse_add_opinion = {
+								target = scope:mother
+								modifier = spied_on_me_opinion
+							}
+						}
+					}
+				}
+			}
+		}
+		else = {
+			duel = {
+				skill = intrigue
+				target = scope:mother
+
+				6 = {
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = 0.5
+						min = -5
+					}
+					desc = adultery.1003.duel_success
+					custom_tooltip = adultery.1003.duel_success_tt
+				}
+
+				4 = {
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = -0.5
+						min = -3
+					}
+					desc = adultery.1003.duel_failure
+					reverse_add_opinion = {
+						target = scope:mother
+						modifier = spied_on_me_opinion
+					}
+				}
+			}
+		}
+	}
+	hidden_effect = {
+		scope:mother = {
+			add_character_flag = {
+				flag = father_suspects_this_pregnancy
+				months = 8
+			}
+		}
+
+		if = { # Check whether root or Spymaster should spy
+			limit = {
+				exists = cp:councillor_spymaster
+				NOT = { cp:councillor_spymaster = scope:mother }
+				cp:councillor_spymaster.intrigue > intrigue
+			}
+			cp:councillor_spymaster = {
+				duel = {
+					skill = intrigue
+					target = scope:mother
+
+					6 = {
+						compare_modifier = {
+							value = scope:duel_value
+							multiplier = 0.5
+							min = -5
+						}
+						trigger = {
+							NOT = { scope:mother.pregnancy_real_father = root }
+						}
+						root = {
+							debug_spouse_and_pregnancy_real_father_effect = yes
+							trigger_event = {
+								id = adultery.1004
+								days = { 10 15 }
+							}
+						}
+					}
+
+					4 = {
+						compare_modifier = {
+							value = scope:duel_value
+							multiplier = -0.5
+							min = -3
+						}
+						root = {
+							trigger_event = {
+								id = adultery.1009
+								days = { 10 15 }
+							}
+						}
+					}
+				}
+			}
+		}
+		else = {
+			duel = {
+				skill = intrigue
+				target = scope:mother
+
+				6 = {
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = 0.5
+						min = -5
+					}
+					trigger = {
+						NOT = { scope:mother.pregnancy_real_father = root }
+					}
+					debug_spouse_and_pregnancy_real_father_effect = yes
+					trigger_event = {
+						id = adultery.1004
+						days = { 10 15 }
+					}
+				}
+
+				4 = {
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = -0.5
+						min = -3
+					}
+					compare_modifier = {
+						trigger = {
+							exists = cp:councillor_spymaster
+							cp:councillor_spymaster = scope:mother.pregnancy_real_father
+						}
+						target = cp:councillor_spymaster
+						value = intrigue
+						multiplier = 5
+					}
+					trigger_event = {
+						id = adultery.1009
+						days = { 10 15 }
+					}
+				}
+			}
+		}			
+	}
+}
+
+
+
+expose_lover_secret_or_run_consequence_effect = {
+	# TARGET = lover to be checked
+	# EXPOSER = secret_exposer in case of a Secret reveal
+	
+	# Look for a Lover Secret and save it if one exists
+	if = {
+		limit = {
+			$TARGET$ = { is_alive = yes} # Check whether the other party is still alive
+			any_secret = {
+				secret_type = secret_lover
+				secret_target = $TARGET$
+			}
+		}
+		random_secret = {
+			limit = {
+				secret_type = secret_lover
+				secret_target = $TARGET$
+			}
+			save_scope_as = lover_secret_to_expose
+		}
+	}
+
+	# Expose the Secret if it exists
+	if = {
+		limit = {
+			exists = scope:lover_secret_to_expose
+		}
+		scope:lover_secret_to_expose = {
+			expose_secret = $EXPOSER$
+		}
+	}
+
+	# Otherwise run the expose effects
+	else = {
+		if = {
+			limit = {
+				is_spouse_of = $EXPOSER$
+			}
+			extramarital_sex_exposure_consequences_with_target_effect = {
+				TARGET = $TARGET$
+				SPOUSE_EVENT = no
+			}
+		}
+		else = {
+			extramarital_sex_exposure_consequences_with_target_effect = {
+				TARGET = $TARGET$
+				SPOUSE_EVENT = yes
+			}
+		}
+		save_scope_as = this_character
+		if = {
+			limit = { $TARGET$ = { is_alive = yes } } # Check whether the other party is still alive
+			$TARGET$ = {
+				extramarital_sex_exposure_consequences_with_target_effect = {
+					TARGET = scope:this_character
+					SPOUSE_EVENT = yes
+				}
+			}
+		}
+	}
+}
+
+
+debug_spouse_and_pregnancy_real_father_effect = {
+	scope:mother.pregnancy_real_father = { save_scope_as = real_father }
+	scope:mother.pregnancy_assumed_father = { save_scope_as = assumed_father }
+	if = {
+		limit = { scope:real_father = scope:assumed_father }
+		debug_log = "Real Father and Assumed Father were the same!"
+	}
+	else = {
+		#debug_log = "Adultery discovered from spying on mother!"
+		#debug_log_scopes = yes
+	}
+}
