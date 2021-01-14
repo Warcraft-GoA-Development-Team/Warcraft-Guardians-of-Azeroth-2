@@ -1,0 +1,256 @@
+﻿activity_feast = {
+	expiration_days = 300
+	has_activity_window = yes
+	days_until_auto_start = 20
+	frame = 2
+	color = { 0.853906 0.867188 0.105469 1 }
+	valid = {
+		activity_owner = {
+			is_alive = yes
+			is_imprisoned = no
+		}
+	}
+	on_spawn = {
+		invite_character_to_activity = activity_owner
+		accept_invitation_for_character = activity_owner
+		
+		activity_owner = {
+			#Start by setting the "host spouse"
+			if = {
+				limit = {
+					any_spouse = {
+						is_landed = no
+						is_available_adult = yes
+					}
+				}
+				save_temporary_scope_as = tmp_host
+				random_spouse = {
+					limit = {
+						this = scope:tmp_host.primary_spouse
+						is_landed = no
+						is_available_adult = yes
+					}
+					alternative_limit = {
+						is_landed = no
+						is_available_adult = yes
+					}
+					save_scope_as = spouse
+				}
+			}
+			every_spouse = {
+				limit = {
+					is_available_for_activity_trigger = yes
+					is_adult = yes
+				}
+				add_to_temporary_list = potential_guests
+			}
+			if = {
+				limit = {
+					exists = liege
+					NOT = { liege = this }
+					liege = {
+						is_available_for_activity_trigger = yes
+					}
+				}
+				liege = {
+					add_to_temporary_list = potential_guests
+				}
+			}
+			every_child = {
+				limit = {
+					is_available_for_activity_trigger = yes
+					OR = {
+						is_adult = yes
+						is_landed = yes
+					}
+				}
+				add_to_temporary_list = potential_guests
+			}
+			every_parent = {
+				limit = {
+					is_available_for_activity_trigger = yes
+				}
+				add_to_temporary_list = potential_guests
+			}
+			every_sibling = {
+				limit = {
+					is_available_for_activity_trigger = yes
+					OR = {
+						is_adult = yes
+						is_landed = yes
+					}
+				}
+				add_to_temporary_list = potential_guests
+			}
+			every_vassal = {
+				limit = {
+					is_available_for_activity_trigger = yes
+				}
+				add_to_temporary_list = potential_guests	
+			}
+			every_scheme = {
+				limit = {
+					OR = {
+						scheme_type = courting
+						scheme_type = befriend
+						scheme_type = seduce
+						scheme_type = sway
+					}
+					exists = scheme_target
+				}
+				scheme_target = {
+					add_to_temporary_list = potential_guests
+				}
+			}
+			
+			every_in_list = {
+				list = potential_guests
+				scope:activity = {
+					invite_character_to_activity = prev
+				}
+				if = { #Close relations
+					limit = {
+						is_close_or_extended_family_of = scope:activity.activity_owner
+						has_any_scripted_relation = scope:activity.activity_owner
+						is_consort_of = scope:activity.activity_owner
+					}
+					trigger_event = feast.1503
+				}
+				else_if = { #Vassals
+					limit = {
+						target_is_liege_or_above = scope:activity.activity_owner
+					}
+					trigger_event = {
+						id = feast.1501
+						days = 3
+					}
+				}
+				else_if = { #Liege
+					limit = {
+						this = scope:activity.activity_owner.liege
+					}
+					trigger_event = {
+						id = feast.1502
+						days = { 1 5 }
+					}
+				}
+				else = { #Catch for anyone else
+					trigger_event = feast.1503
+				}
+			}
+	
+		}
+	}
+	on_activate = {
+		if = {
+			limit = {
+				# Check that there are guests apart from the feast host.
+				NOT = {
+					any_participant = {
+						NOT = {	this = scope:activity.activity_owner }
+					}
+				}
+			}
+			# If there are no other guests, throw this event.
+			activity_owner = {
+				trigger_event = feast.2003
+			}
+		}
+		else = {
+		# If there are guests present
+			activity_owner = { # The host gets their events
+				# The key event is chosen for the host, and fires other events from there to every participant:
+				trigger_event = feast.0001
+				trigger_event = {
+					on_action = feast_main_event_selection
+					days = 10
+				}
+				#Reveler lifestyle tracking:
+				reveler_points_gain_effect = {
+					CHANGE = 2
+				}
+			}
+			every_participant = {
+				limit = { NOT = { this = scope:activity.activity_owner } }
+				#Reveler lifestyle tracking:
+				reveler_points_gain_effect = {
+					CHANGE = 1
+				}
+				#Remove blocker for invitations to feasts (the feast is now active and will work as a blocker)
+				remove_variable = booked_for_a_party
+			}
+		}
+	}
+	on_complete = {
+		activity_owner = {
+			if = { #A vassal was promised a feast (vassal.2101)
+				limit = {
+					exists = var:was_promised_a_feast
+					var:was_promised_a_feast = {
+						is_alive = yes
+					}
+				}
+				trigger_event = {
+					id = vassal.2110
+					days = { 7 14 }
+				}
+			}
+		}
+		every_participant = {
+			target_weight_modifier_effect = {
+				VALUE = feast_weight_modifier_value
+			}
+		}
+	}
+	on_expire = { # Should never happen - kept as fallback for weirdness only
+		activity_owner = {
+			trigger_event = feast.2002
+		}
+	}
+	
+	on_participant_death = {
+	
+	}
+	on_invalidated = {
+		activity_owner = {
+			save_scope_as = host
+		}
+		every_participant = {
+			limit = {
+				NOT = { this = scope:host }
+			}
+			add_to_list = feast_participants
+		}
+		complete_activity = yes
+		if = {
+			limit = {
+				scope:host = {
+					is_alive = no
+				}
+			}
+			#Host died
+			every_in_list = {
+				list = feast_participants
+				trigger_event = {
+					id = feast.5003
+					days = 2 #So you don't get spammed
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				scope:host = {
+					is_imprisoned = yes
+				}
+			}
+			#Host has been imprisoned
+			every_in_list = {
+				list = feast_participants
+				trigger_event = feast.5005
+			}
+			scope:host = {
+				trigger_event = feast.5004
+			}
+		}
+	}
+}
