@@ -32,7 +32,7 @@ set_horde_characters_effect = {
 			add_dynasty_perk = warfare_legacy_1
 			add_dynasty_perk = warfare_legacy_2
 		}
-		spawn_horde_troops_effect = yes
+		# Don't spawn armies here, it doesn't work
 	}
 
 	scope:durotan = {
@@ -42,30 +42,33 @@ set_horde_characters_effect = {
 
 # Give Horde troops
 spawn_horde_troops_effect = {
-	spawn_army = {
-		uses_supply = no
-		inheritable = no
-		name = horde_event_troops
-		levies = {
-			value = 5000
+	if = {
+		limit = { exists = capital_province }
+		spawn_army = {
+			uses_supply = no
+			inheritable = no
+			name = horde_event_troops
+			levies = {
+				value = 2500
+			}
+			men_at_arms = {
+				type = light_footmen
+				stacks = 5
+			}
+			men_at_arms = {
+				type = light_horsemen
+				stacks = 2
+			}
+			men_at_arms = {
+				type = armored_horsemen
+				stacks = 2
+			}
+			men_at_arms = {
+				type = mangonel
+				stacks = 2
+			}
+			location = capital_province
 		}
-		men_at_arms = {
-			type = light_footmen
-			stacks = 10
-		}
-		men_at_arms = {
-			type = light_horsemen
-			stacks = 5
-		}
-		men_at_arms = {
-			type = armored_horsemen
-			stacks = 5
-		}
-		men_at_arms = {
-			type = mangonel
-			stacks = 5
-		}
-		location = capital_province
 	}
 }
 
@@ -77,11 +80,17 @@ declare_war_on_stormwind_effect = {
 	title:k_stormwind.holder = { save_scope_as = stormwind_holder }
 	
 	scope:blackhand = {
-		start_war = {
-			cb = mongol_realm_invasion_war
-			target = title:k_stormwind.holder
-			target_title = title:k_stormwind.empire
+		add_character_flag = {
+			flag = free_mongol_cb
+			days = 14
 		}
+		start_war = {
+			cb = mongol_invasion_war
+			target = title:k_stormwind.holder
+			target_title = title:k_stormwind
+		}
+		
+		trigger_event = horde_invasion.5
 	}
 	
 	every_player = {
@@ -94,22 +103,14 @@ horde_war_target_evaluation_and_declaration_effect = {
 	# Set the Horde Emperor as reference point
 	save_scope_as = horde_warchief
 	add_character_flag = {
-		flag = free_horde_cb
+		flag = free_mongol_cb
 		days = 14
 	}
 	# Select a new target
-	random_neighboring_top_liege_realm_owner = {
+	random_neighboring_top_liege_realm = {
 		limit = {
-			NOT = { is_allied_to = scope:horde_warchief }
-			NOT = { this = scope:horde_warchief }
-			NOT = { top_liege = scope:horde_warchief }
-			save_temporary_scope_as = truce_check
-			NOT = {
-				scope:horde_warchief = {
-					any_truce_target = {
-						this = scope:truce_check
-					}
-				}
+			holder = {
+				is_good_war_target_trigger = { ATTACKER = scope:horde_warchief }
 			}
 		}
 		weight = {
@@ -119,14 +120,180 @@ horde_war_target_evaluation_and_declaration_effect = {
 				always = yes
 			}
 		}
-		save_temporary_scope_as = next_invasion_target
-		primary_title = {
-			save_temporary_scope_as = next_invasion_title_target
+		holder = { save_temporary_scope_as = next_invasion_target }
+		save_temporary_scope_as = next_invasion_title_target
+	}
+	if = {
+		limit = {
+			exists = scope:next_invasion_target
+		}
+		start_war = {
+			cb = mongol_invasion_war
+			target = scope:next_invasion_target
+			target_title = scope:next_invasion_title_target.kingdom
 		}
 	}
-	start_war = {
-		cb = mongol_realm_invasion_war
-		target = scope:next_invasion_target
-		target_title = scope:next_invasion_title_target.empire
+}
+try_to_set_horde_story_owner = {
+	if = {
+		limit = { $OWNER$ = { culture_group = culture_group:orc_group } }
+		$OWNER$ = { add_character_modifier = { modifier = great_invader_modifier } }
+		make_story_owner = $OWNER$
+		spawn_horde_troops_effect = yes
 	}
+	else = {
+		end_story = yes
+	}
+}
+
+disband_horde_effect = {
+	save_scope_as = warchief
+	create_title_and_vassal_change = {
+		type = independency
+		save_scope_as = horde_end
+		add_claim_on_loss = no
+	}
+	
+	every_vassal = {
+		add_to_temporary_list = horde_vassals
+	}
+	
+	every_in_list = {
+		list = horde_vassals
+		limit = {
+			exists = capital_province
+			OR = {
+				capital_province = { squared_distance = { target = scope:warchief.capital_province value > squared_distance_small } } #Becomes independent if it's far from warchief capital
+				sub_realm_size > small_realm_size
+			}
+		}
+		becomes_independent = { change = scope:horde_end }
+	}
+	
+	resolve_title_and_vassal_change = scope:horde_end
+	
+	destroy_title = title:e_horde
+	
+	trigger_event = game_rule.2		#Exclave independence
+	
+	every_player = {
+		limit = {
+			OR = {
+				is_in_list = horde_vassals
+				culture_group = culture_group:orc_group
+			}
+		}
+		trigger_event = horde_invasion.3
+	}
+}
+
+invite_burning_blade_effect = {
+	save_temporary_scope_as = warchief
+	title:c_dark_portal.title_province = { save_temporary_scope_as = dark_portal }
+	
+	#Dharl
+	create_character = {
+		template = dharl_character_template
+		name = "Dharl"
+		location = scope:dark_portal
+		save_scope_as = dharl
+	}
+	scope:dharl = {
+		# Gives some land
+		get_random_county_effect = { GIVER = scope:warchief }
+		
+		# Creates clan title
+		create_title_and_vassal_change = {
+			type = created
+			save_scope_as = title_creation
+			add_claim_on_loss = no
+		}
+		title:d_burning_blade = {
+			change_title_holder = {
+				holder = scope:dharl
+				change = scope:title_creation
+			}
+		}
+		resolve_title_and_vassal_change = scope:title_creation
+		
+		# Gives some gold and troops
+		horde_clan_start_pack_effect = yes
+	}
+}
+invite_dragonmaw_effect = {
+	save_temporary_scope_as = warchief
+	title:c_dark_portal.title_province = { save_temporary_scope_as = dark_portal }
+	
+	# Zuluhed
+	create_character = {
+		template = zuluhed_character_template
+		name = "Zuluhed"
+		location = scope:dark_portal
+		save_scope_as = zuluhed
+	}
+	scope:zuluhed = {
+		give_nickname = nick_the_whacked
+		
+		# Gives some land
+		get_random_county_effect = { GIVER = scope:warchief }
+		
+		# Creates clan title
+		create_title_and_vassal_change = {
+			type = created
+			save_scope_as = title_creation
+			add_claim_on_loss = no
+		}
+		title:d_dragonmaw = {
+			change_title_holder = {
+				holder = scope:zuluhed
+				change = scope:title_creation
+			}
+		}
+		resolve_title_and_vassal_change = scope:title_creation
+		
+		# Gives some gold and troops
+		horde_clan_start_pack_effect = yes
+	}
+	
+	#Nekros
+	create_character = {
+		template = nekros_character_template
+		name = "Nekros"
+		employer = scope:zuluhed
+		save_scope_as = nekros
+	}
+	
+	#Nek'rosh
+	create_character = {
+		template = nekrosh_character_template
+		name = "Nek'rosh"
+		father = scope:nekros
+		employer = scope:zuluhed
+		save_scope_as = nekrosh
+	}
+}
+get_random_county_effect = {
+	save_temporary_scope_as = target
+	create_title_and_vassal_change = {
+		type = granted
+		save_scope_as = title_granting
+		add_claim_on_loss = no
+	}
+	$GIVER$ = {
+		random_held_title = {
+			limit = {
+				tier = tier_county
+				NOT = { this = $GIVER$.capital_county }
+			}
+			change_title_holder = {
+				holder = scope:target
+				change = scope:title_granting
+			}
+		}
+	}
+	resolve_title_and_vassal_change = scope:title_granting
+}
+horde_clan_start_pack_effect = {
+	add_gold = 500
+	spawn_horde_troops_effect = yes
 }
