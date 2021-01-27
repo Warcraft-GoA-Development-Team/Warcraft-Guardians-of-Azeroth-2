@@ -1,0 +1,698 @@
+﻿marriage_interaction_on_accept_effect = {
+	#Use hook
+	if = {
+		limit = { always = scope:marriage_hook }
+		scope:actor = {
+			use_hook = scope:recipient
+		}
+		#To make sure betrothals can't be broken if a hook was used
+		if = {
+			limit = {
+				OR = {
+					scope:secondary_actor = { is_adult = no }
+					scope:secondary_recipient = { is_adult = no }
+				}
+			}
+			scope:secondary_actor = {
+				set_variable = {
+					name = hook_used_for_betrothal
+					value = scope:secondary_recipient
+				}
+			}
+		}
+	}
+
+	#No longer concubine/consort
+	if = {
+		limit = {
+			scope:secondary_recipient = { is_concubine = yes }
+		}
+		scope:secondary_recipient = {
+			random_consort = {
+				limit = {
+					any_concubine = { this = scope:secondary_recipient }
+				}
+				remove_concubine = scope:secondary_recipient
+			}
+		}
+	}
+	if = {
+		limit = {
+			scope:secondary_actor = { is_concubine = yes }
+		}
+		scope:secondary_actor = {
+			random_consort = {
+				limit = {
+					any_concubine = { this = scope:secondary_actor }
+				}
+				remove_concubine = scope:secondary_actor
+			}
+		}
+	}
+
+	#Marriage notification events
+	hidden_effect = {
+		scope:actor = {
+			if = {
+				limit = { NOT = { this = scope:recipient } }
+				trigger_event = marriage_interaction.0010
+			}
+			else = { #In my own court
+				if = {
+					limit = { #Betrothal?
+						OR = {
+							scope:secondary_actor = { is_adult = no }
+							scope:secondary_recipient = { is_adult = no }
+						}
+					}
+					send_interface_toast = {
+						title = arrange_marriage_interaction_accept_betrothal_toast
+						left_icon = scope:secondary_actor 
+						right_icon = scope:secondary_recipient
+						custom_tooltip  = arrange_marriage_interaction_accept_betrothal_toast_desc
+					}
+				}
+				else = {
+					send_interface_toast = {
+						title = arrange_marriage_interaction_accept_toast
+						left_icon = scope:secondary_actor 
+						right_icon = scope:secondary_recipient
+						custom_tooltip  = arrange_marriage_interaction_accept_toast_desc
+					}
+				}
+			}
+		}
+
+		# Apply any relevant opinion penalties for relatives of spouse.
+		scope:secondary_actor = {
+			if = {
+				limit = { 
+					any_consort = {
+						count >= 2
+					}
+				}
+				every_consort = {
+					# If the spouse themselves does not believe in polygamy...
+					limit = {
+						NOR = {
+							faith = { has_doctrine = doctrine_polygamy }
+							faith = { has_doctrine = doctrine_concubines }
+						}
+					}
+
+					#... then family members who also do not believe in polygamy aren't happy about having a relative forced into polygamous union with you.
+					every_close_family_member = {
+						if = {
+							limit = { 
+								NOR = {
+									faith = { has_doctrine = doctrine_polygamy }
+									faith = { has_doctrine = doctrine_concubines }
+								}
+							}
+							add_opinion = {
+								target = scope:secondary_actor
+								modifier = relative_in_blasphemous_union_opinion
+							}
+						}
+					}
+
+					# NOTE: Spouse's own opinions handled in the 'on_marriage' code on_action inside of marriage_concubinage.txt, and are not included here.
+				}
+			}
+		}
+	}
+
+	###MANAGEMENT SCRIPT FOR VARIOUS EVENTS/CONTENT###
+	
+	#If your spouse councillor had boosted the chance of marriage, remove modifier
+	if = {
+		limit = {
+			scope:secondary_actor = {
+				has_character_modifier = heir_easier_to_marry_off_modifier
+			}
+			scope:actor = { player_heir = scope:secondary_actor }
+		}
+		scope:secondary_actor = {
+			remove_character_modifier = heir_easier_to_marry_off_modifier
+		}
+	}
+	if = {
+		limit = {
+			scope:secondary_actor = {
+				is_child_of = scope:actor
+				has_character_modifier = child_easier_to_marry_off_modifier
+			}
+		}
+		scope:secondary_actor = {
+			remove_character_modifier = child_easier_to_marry_off_modifier
+		}
+	}
+
+	#AI Break up consideration after marriage
+	scope:secondary_recipient = { 
+		if = {
+			limit = {
+				is_adult = yes
+				is_ai = yes
+			}
+			scope:secondary_actor = { save_scope_as = new_spouse_secondary_actor }
+			trigger_event = lover.0205
+		}
+	}
+	scope:secondary_actor = {
+		if = {
+			limit = {
+				is_adult = yes
+				is_ai = yes
+			}
+			scope:secondary_recipient = { save_scope_as = new_spouse_secondary_recipient }
+			trigger_event = lover.0205
+		}
+	}
+}
+
+concubine_on_accept_effect = {
+	scope:recipient = {
+		trigger_event = marriage_interaction.0040
+		if = {
+			# Victim is angry for being forced into concubinage.
+			limit = {
+				is_imprisoned = yes
+			}
+			release_from_prison = yes
+			add_opinion = {
+				target = scope:actor
+				modifier = forced_me_concubine_marriage_opinion
+			}
+
+			# Family members of victim are also angry that you've forced them into concubinage.
+			every_close_family_member = {
+				if = {
+					limit = { 
+						NOT = { this = scope:actor } # Don't hate yourself.
+					}
+					add_opinion = {
+						target = scope:actor
+						modifier = forced_family_concubine_marriage_opinion
+					}
+					hidden_effect = {
+						send_interface_message = {
+							type = event_generic_neutral
+							title = msg_close_family_member_taken_as_concubine_title
+							right_icon = scope:recipient
+							left_icon = scope:actor
+							show_as_tooltip = { scope:actor = { make_concubine = scope:recipient } }
+						}
+					}
+
+					# Family members are even *more* angry if they don't believe in concubines/polyamory (different from polygamy).
+					if = {
+						limit = { 
+							NOR = {
+								faith = { has_doctrine = doctrine_concubines }
+								faith = { has_doctrine = tenet_polyamory }
+							}
+						}
+						add_opinion = {
+							target = scope:secondary_actor
+							modifier = relative_in_blasphemous_union_opinion
+						}
+					}
+				}
+			}
+					
+			# Spouses, if any exist, are also furious.
+			if = {
+				limit = {
+					is_married = yes
+				}
+				every_spouse = {
+					show_as_tooltip = {
+						add_opinion = {
+							target = scope:actor
+							modifier = forced_spouse_concubine_marriage_opinion
+						}
+						divorce = scope:recipient # no additional opinion hit, no scripted effect
+					}
+					trigger_event = marriage_interaction.0041
+				}
+			}
+					
+			# Stealing concubines pisses the former concubinist off.
+			if = {
+				limit = {
+					is_concubine = yes
+				}
+				this.concubinist = {
+					show_as_tooltip = {
+						add_opinion = {
+							target = scope:actor
+							modifier = stole_concubine_opinion
+						}
+						remove_concubine = scope:recipient # no additional opinion hit, no scripted effect
+					}
+					trigger_event = marriage_interaction.0041
+				}
+			}
+
+			# Break any betrothals which may exist (without additional opinion penalties).
+			if = {
+				limit = { exists = betrothed }
+				betrothed = { trigger_event = marriage_interaction.0041 }
+				break_betrothal = betrothed
+			}
+
+			# Having concubines means they're now no longer yours.
+			if = {
+				limit = { number_of_concubines > 0	}
+				every_concubine = {
+					scope:recipient = {
+						remove_concubine = prev
+					}
+				}
+			}
+		}
+	}
+
+	# Send us a notification about what we just did.
+	scope:actor = {
+		hidden_effect = {
+			send_interface_toast = {
+				type = event_generic_neutral
+				title = msg_concubine_taken_title
+				right_icon = scope:recipient
+				make_concubine = scope:recipient
+			}
+		}
+	}
+}
+
+divorce_effect = {
+	$DIVORCER$ = {
+		divorce = $DIVORCEE$
+		
+		reverse_add_opinion = {
+			modifier = divorced_me_opinion
+			target = $DIVORCEE$
+		}
+	}
+	# Opinion hit
+	$DIVORCEE$ = {
+		every_close_or_extended_family_member = {
+			limit = { NOT = { this = $DIVORCER$ } } # don't hate yourself just because of some incest
+			custom = all_family_members
+			add_opinion = {
+				modifier = divorced_close_kin
+				target = $DIVORCER$
+			}
+		}
+	}
+
+	if = {
+		limit = {
+			$DIVORCER$ = {
+				has_character_modifier = rejected_from_marriage_bed_modifier
+			}
+		}
+		remove_character_modifier = rejected_from_marriage_bed_modifier
+	}
+	if = {
+		limit = {
+			$DIVORCEE$ = {
+				has_character_modifier = rejected_from_marriage_bed_modifier
+			}
+		}
+		remove_character_modifier = rejected_from_marriage_bed_modifier
+	}
+}
+
+marriage_soulmate_exclusivity_confrontation_effect = {
+	$SPOUSE_1$ = { add_to_temporary_list = new_spouses }
+	$SPOUSE_2$ = { add_to_temporary_list = new_spouses }
+
+	every_in_list = {
+		list = new_spouses
+		limit = {
+			any_relation = {
+				type = soulmate
+				NOT = { is_in_list = new_spouses }
+			}
+		}
+		add_character_flag = {
+			flag = can_be_confronted_about_lover_exclusivity
+			days = 1825
+		}
+	}
+}
+
+# CHARACTER = character we check for if they should send a message
+# SPOUSE = the spouse in this divorce
+# scope:reason = flag:script or flag:faith
+send_divorce_notifications_effect = {
+	$CHARACTER$ = {
+		if = {
+			limit = {
+				is_ai = no
+			}
+			switch = {
+				trigger = scope:reason
+				flag:script = {
+					send_interface_message = {
+						type = msg_divorce
+						left_icon = $SPOUSE$
+					}
+				}
+				flag:faith = {
+					send_interface_message = {
+						type = msg_spouse_invalidated
+						left_icon = $SPOUSE$
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				any_heir_to_title = {
+					exists = holder
+					holder = { is_ai = no }
+				}
+			}
+			every_heir_to_title = {
+				limit = {
+					exists = holder
+					holder = { is_ai = no }
+				}
+				holder = {
+					if = {
+						limit = {
+							NOT = { is_in_list = had_notification_sent } 
+						}
+						add_to_list = had_notification_sent
+						switch = {
+							trigger = scope:reason
+							flag:script = {
+								send_interface_message = {
+									type = msg_divorce_player_heir
+									left_icon = $CHARACTER$
+									right_icon = $SPOUSE$
+								}
+							}
+							flag:faith = {
+								send_interface_message = {
+									type = msg_spouse_invalidated_player_heir
+									left_icon = $CHARACTER$
+									right_icon = $SPOUSE$
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+# CHARACTER = character we check for if they should send a message
+# BETROTHED = the other person in the betrothal
+# scope:reason = flag:timeout, flag:death, flag:faith, or flag:script
+send_break_betrothal_notifications_effect = {
+	$CHARACTER$ = {
+		if = {
+			limit = {
+				is_ai = no
+			}
+			switch = {
+				trigger = scope:reason
+				flag:script = {
+					send_interface_message = {
+						type = msg_break_betrothal
+						left_icon = $BETROTHED$
+					}
+				}
+				flag:faith = {
+					send_interface_message = {
+						type = msg_betrothal_invalidated
+						left_icon = $BETROTHED$
+					}
+				}
+				# flag:death is hanlded by normal death management events
+				# flag:timeout is hanlded by caller separately
+			}
+		}
+		else_if = {
+			limit = {
+				any_heir_to_title = {
+					exists = holder
+					holder = { is_ai = no }
+				}
+			}
+			every_heir_to_title = {
+				limit = {
+					holder = { is_ai = no }
+				}
+				holder = {
+					if = {
+						limit = {
+							NOT = { is_in_list = had_notification_sent } 
+						}
+						add_to_list = had_notification_sent
+						switch = {
+							trigger = scope:reason
+							flag:script = {
+								send_interface_message = {
+									type = msg_break_betrothal_player_heir
+									left_icon = $CHARACTER$
+									right_icon = $BETROTHED$
+								}
+							}
+							flag:faith = {
+								send_interface_message = {
+									type = msg_betrothal_invalidated_player_heir
+									left_icon = $CHARACTER$
+									right_icon = $BETROTHED$
+								}
+							}
+							# flag:death is hanlded by normal death management events
+							# flag:timeout is hanlded by caller separately
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+
+
+# When you take spouses/concubines whose Faith does not permit that union, they will gain opinion penalties.
+# This effect adds/updates/replaces/removes those opinion penalties, as approprite to the current situation.
+update_active_consort_opinion_effect = {
+
+	# If we currently have any existing consort opinion modifiers, check if they should be downgraded from permanent modifiers to decaying modifiers.
+	downgrade_invalid_consort_opinions_effect = { PARTNER = $PARTNER$ }
+
+	if = {
+		# If this opinion change was triggered by being divorced/set-aside, we may still technically be married/joined to PARTNER at this moment, but we won't be very shortly and should skip this step.
+		limit = {
+			NOR = {
+				exists = scope:is_being_divorced
+				exists = scope:is_being_set_aside
+			}
+		}
+
+		# Oterwise, apply any new consort opinion effects that are applicable.
+		if = {
+			# Characters who do not believe in concubinage, but are forced into it, have the harshest opinion penalties.
+			limit = {
+				is_concubine_of = $PARTNER$
+				NOT = { faith = { has_doctrine = doctrine_concubines }}
+			}
+			if = {
+				# Harshest opinion penalty if they are a concubine but believe in monogamy
+				limit = { faith = { has_doctrine = doctrine_monogamy }}
+				add_opinion = {
+					target = $PARTNER$
+					modifier = concubine_with_monogamous_faith_opinion
+				}
+			}
+			else_if = {
+				# Lesser-but-still-harsh opinion penalty if they are a concubine but believe in polygamy
+				limit = { faith = { has_doctrine = doctrine_polygamy }}
+				add_opinion = {
+					target = $PARTNER$
+					modifier = concubine_with_polygamous_faith_opinion
+				}
+			}
+		}
+		else_if = {
+			# Characters who are legitimate spouses of their partner, but do not approve of their partner's other spouses/concubines, will have milder opinion penalties.
+			limit = {
+				is_spouse_of = $PARTNER$
+				$PARTNER$ = { any_consort = { count >= 2 }}
+				NOT = { faith = { has_doctrine = doctrine_concubines }}
+				NOT = { faith = { has_doctrine = tenet_polyamory }}
+			}
+			if = {
+				limit = {
+					$PARTNER$ = { any_concubine = { count >= 1 }}
+				}
+				add_opinion = {
+					target = $PARTNER$
+					modifier = spouse_does_not_believe_in_concubines_opinion
+				}
+				#Remove the opinion modifier if you flip-flop and go get concubines after getting rid of them all...
+				remove_opinion = {
+					target = $PARTNER$
+					modifier = spouse_does_not_believe_in_former_concubines_opinion
+				}
+			}
+			else_if = {
+				limit = {
+					NOT = { faith = { has_doctrine = doctrine_polygamy }}
+				}
+				add_opinion = {
+					target = $PARTNER$
+					modifier = polygamous_marriage_opinion
+				}
+			}
+		}
+	}
+}
+
+# Checks if we have any permanent opinion modifiers which are no longer applicable. If so, downgrade them to decaying opinion modifiers.
+downgrade_invalid_consort_opinions_effect = {
+	if = {
+		limit = {
+			has_opinion_modifier = {
+				modifier = concubine_with_monogamous_faith_opinion
+				target = $PARTNER$
+			}
+			OR = {
+				# We are no longer a concubine of PARTNER...
+				NOT = { is_concubine_of = $PARTNER$ }
+				# ...or will no longer be a concubine of them.
+				trigger_if = {
+					limit = { exists = scope:is_being_set_aside}
+					scope:is_being_set_aside = this
+				}
+
+				# Or, our Faith has changed to permit us being a concubine.
+				faith = { has_doctrine = doctrine_concubines }
+			}
+		}
+		remove_opinion = {
+			modifier = concubine_with_monogamous_faith_opinion
+			target = $PARTNER$
+		}
+		add_opinion = {
+			modifier = formerly_concubine_with_monogamous_faith_opinion
+			target = $PARTNER$
+		}
+	}
+
+	if = {
+		limit = {
+			has_opinion_modifier = {
+				modifier = concubine_with_polygamous_faith_opinion
+				target = $PARTNER$
+			}
+			OR = {
+				# We are no longer a concubine of PARTNER...
+				NOT = { is_concubine_of = $PARTNER$ }
+				# ...or will no longer be a concubine of them.
+				trigger_if = {
+					limit = { exists = scope:is_being_set_aside}
+					scope:is_being_set_aside = this
+				}
+
+				# Or, our Faith has changed to permit us being a concubine.
+				faith = { has_doctrine = doctrine_concubines }
+			}
+		}
+		remove_opinion = {
+			modifier = concubine_with_polygamous_faith_opinion
+			target = $PARTNER$
+		}
+		add_opinion = {
+			modifier = formerly_concubine_with_polygamous_faith_opinion
+			target = $PARTNER$
+		}
+	}
+
+	if = {
+		limit = {
+			has_opinion_modifier = {
+				modifier = spouse_does_not_believe_in_concubines_opinion
+				target = $PARTNER$
+			}
+			OR = {
+				# We are no longer married to PARTNER...
+				NOT = { is_spouse_of = $PARTNER$ }
+				# ...or will no longer be married to them.
+				trigger_if = {
+					limit = { exists = scope:is_being_divorced}
+					scope:is_being_divorced = this
+				}
+
+				# Or, the offending relationship no longer exists.
+				$PARTNER$ = { any_concubine = {	count = 0 }}
+				AND = {
+					# The last remaining concubine is being set aside, leaving none.
+					exists = scope:is_being_set_aside
+					$PARTNER$ = { any_concubine = { count = 1 }}
+				}
+
+				# Or, our Faith has changed to permit the relationship.
+				faith = { has_doctrine = doctrine_concubines }
+				faith = { has_doctrine = tenet_polyamory }
+			}
+		}
+		remove_opinion = {
+			modifier = spouse_does_not_believe_in_concubines_opinion
+			target = $PARTNER$
+		}
+		add_opinion = {
+			modifier = spouse_does_not_believe_in_former_concubines_opinion
+			target = $PARTNER$
+		}
+	}
+
+	if = {
+		limit = {
+			has_opinion_modifier = {
+				modifier = polygamous_marriage_opinion
+				target = $PARTNER$
+			}
+			OR = {
+				# We are no longer married to PARTNER...
+				NOT = { is_spouse_of = $PARTNER$ }
+				# ...or will no longer be married to them.
+				trigger_if = {
+					limit = { exists = scope:is_being_divorced}
+					scope:is_being_divorced = this
+				}
+
+				# Or, the offending relationship no longer exists.
+				$PARTNER$ = { any_spouse = { count = 1 }}
+				AND = {
+					# One of the 2 remaining spouses will be divorced next tick, leaving only 1.
+					exists = scope:is_being_divorced 
+					$PARTNER$ = { any_spouse = { count = 2 }}
+				}
+
+				# Or, our Faith has changed to permit the relationship.
+				faith = { has_doctrine = doctrine_concubines }
+				faith = { has_doctrine = doctrine_polygamy }
+				faith = { has_doctrine = tenet_polyamory }
+			}
+		}
+		remove_opinion = {
+			modifier = polygamous_marriage_opinion
+			target = $PARTNER$
+		}
+		add_opinion = {
+			modifier = former_polygamous_marriage_opinion
+			target = $PARTNER$
+		}
+	}
+}

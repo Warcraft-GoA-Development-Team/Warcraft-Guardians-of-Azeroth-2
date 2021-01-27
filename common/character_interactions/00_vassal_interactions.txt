@@ -1,0 +1,1627 @@
+﻿#Interactions relating to vassals
+
+grant_vassal_interaction = {
+	category = interaction_category_vassal
+	common_interaction = yes
+	interface = transfer_vassal
+
+	special_interaction = grant_vassal_interaction
+
+	populate_actor_list = {
+		scope:actor = {
+			every_vassal = {
+				add_to_list = characters
+			}
+		}
+	}
+
+	desc = grant_vassal_interaction_desc
+	
+	prompt = GRANT_VASSAL_SELECT_VASSAL_TO_TRANSFER
+
+	greeting = positive
+	notification_text = GRANT_VASSAL_PROPOSAL
+
+	pre_answer_yes_key = ACCEPT
+	pre_answer_no_key = DECLINE
+
+	is_shown = {
+		NOT = { scope:recipient = scope:actor }
+		OR = {
+			AND = {
+				exists = scope:recipient.liege
+				scope:recipient.liege = scope:actor
+			}
+			AND = {
+				exists = scope:actor.liege
+				scope:actor.liege = scope:recipient
+			}
+		}
+		scope:recipient.highest_held_title_tier > tier_barony
+	}
+
+	is_valid_showing_failures_only = {
+		scope:recipient = { is_diplomatically_available = yes }
+		NOT = { scope:actor = { is_at_war_with = scope:recipient } }
+		trigger_if = {
+			limit = { exists = scope:secondary_actor }
+			NOT = { scope:secondary_actor = { is_at_war_with = scope:recipient } }
+			scope:secondary_actor = { is_diplomatically_available = yes }
+			scope:recipient.primary_title.tier > scope:secondary_actor.primary_title.tier
+		}
+		trigger_if = {
+			limit = {
+				scope:actor = { is_ai = yes }
+				exists = scope:secondary_actor
+			}
+			scope:secondary_actor = {
+				NOT = { has_character_flag = ai_should_not_transfer }
+			}
+		}
+
+		trigger_if = {
+			limit = { scope:recipient.highest_held_title_tier <= tier_county }
+			scope:recipient = { highest_held_title_tier > tier_county }
+		}
+		trigger_else = {
+			scope:actor = {
+				custom_description = {
+					text = "basic_valid_vassal_to_tranfer"
+					object = scope:recipient
+					any_vassal = {
+						NOT = { highest_held_title_tier = tier_barony }
+						scope:recipient.highest_held_title_tier > highest_held_title_tier
+					}
+				}
+			}
+		}
+	}
+	
+	can_be_picked = {
+		NOT = { scope:recipient = root }
+		highest_held_title_tier > tier_barony
+		highest_held_title_tier < scope:recipient.highest_held_title_tier
+
+		trigger_if = {
+			limit = { scope:actor.liege = scope:recipient }
+			NOT = {
+				primary_title = {
+					any_this_title_or_de_jure_above = {
+						holder = scope:actor
+					}
+				}
+			}
+		}
+
+		# Not at war with the vassal being transferred (blocks explicit transfer of war enemies, which invalidates the war).
+		custom_description = {
+			text = "basic_is_at_war_with_vassal"
+			subject = root
+			object = scope:actor
+			NOT = {
+				root = {
+					is_at_war_with = scope:actor
+				}
+			}
+		}
+
+		# Not at war with a vassal under the vassal being transferred (blocks implicit transfers of war enemies).
+		custom_description = {
+			text = "basic_is_at_war_with_sub_vassal"
+			subject = root
+			object = scope:actor
+			NOT = {
+				any_vassal_or_below = {
+					is_at_war_with = root
+				}
+			}
+		}
+	}
+	
+	auto_accept = {
+		scope:recipient = {
+			custom_description = {
+				text = wants_more_vassals
+				is_ai = yes
+			}
+		}
+	}
+	
+	on_accept = {		
+		scope:actor = {
+			send_interface_toast = {
+				title = grant_vassal_interaction_notification
+				right_icon = scope:recipient
+				left_icon = scope:secondary_actor
+
+				# If we're granting a vassal to our liege, gain a truce with our former vassal (we can't immediately reconquer them, and they can't attack us either).
+				if = {
+					limit = {
+						scope:secondary_actor = {
+							is_vassal_of = scope:actor
+						}
+					}
+					add_truce_both_ways = {
+						character = scope:secondary_actor
+						days = 3650
+						name = TRUCE_GRANT_INDEPENDENCE
+					}
+				}
+
+				# Transfer the vassal over to their new liege.
+				create_title_and_vassal_change = {
+					type = granted
+					save_scope_as = change
+					add_claim_on_loss = no
+				}
+				scope:secondary_actor = {
+					change_liege = {
+						liege = scope:recipient
+						change = scope:change
+					}
+				}
+				resolve_title_and_vassal_change = scope:change
+
+				# Gain an opinion bonus with the person we gave a vassal to.
+				scope:recipient = {
+					add_opinion = {
+						target = scope:actor
+						modifier = granted_vassal
+					}
+				}
+
+				stress_impact = {
+					greedy = medium_stress_impact_gain
+				}
+			}
+		}
+	}
+
+	on_decline = {
+		scope:actor = {
+			trigger_event = char_interaction.0211
+		}
+	}
+	
+	# AI handled entirely though code
+}
+
+retract_vassal_interaction = {
+	category = interaction_category_vassal
+	special_interaction = retract_vassal_interaction
+	interface = transfer_vassal
+	ai_maybe = yes
+	ai_min_reply_days = 4
+	ai_max_reply_days = 9
+	popup_on_receive = yes
+	pause_on_receive = yes
+
+	desc = retract_vassal_interaction_desc
+
+	on_decline_summary = general_rebellion_decline_summary
+	
+	prompt = RETRACT_VASSAL_SELECT_VASSAL_TO_RETRACT
+
+	notification_text = RETRACT_VASSAL_PROPOSAL
+
+	populate_recipient_list = {
+		scope:recipient = {
+			every_vassal = {
+				add_to_list = characters
+			}
+		}
+	}
+
+	is_shown = {
+		NOT = { scope:recipient = scope:actor }
+		scope:recipient = {
+			highest_held_title_tier > tier_barony
+			liege = scope:actor
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		NOT = { scope:actor = { is_at_war_with = scope:recipient } }
+		scope:recipient = {
+			custom_description = {
+				text = "basic_vassal_to_retract"
+				any_vassal = {
+					highest_held_title_tier > tier_barony # Make sure this exactly matches `can_be_picked` below
+				}
+			}
+		}
+		scope:actor = {
+			trigger_if = {
+				limit = { has_government = tribal_government }
+				custom_description = {
+					text = "has_law_allowing_vassal_retraction_tribal"
+					has_realm_law_flag = vassal_retraction_allowed
+				}
+			}
+			trigger_if = {
+				limit = {
+					NOT = { has_government = tribal_government }
+				}
+				custom_description = {
+					text = "has_law_allowing_vassal_retraction_crown"
+					has_realm_law_flag = vassal_retraction_allowed
+				}
+			}
+		}
+		scope:recipient = { is_diplomatically_available = yes }
+		trigger_if = {
+			limit = { exists = scope:secondary_recipient }
+			scope:secondary_recipient = { is_diplomatically_available = yes }
+		}
+		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
+	}
+
+	can_send = {
+		scope:actor = {
+			custom_description = {
+				text = "character_interactions_hostile_actions_disabled_delay"
+				NOT = { has_character_flag = flag_hostile_actions_disabled_delay }
+			}
+		}
+	}
+	
+	can_be_picked = {
+		highest_held_title_tier > tier_barony
+	}
+
+	on_send = {
+		scope:actor = {
+			add_character_flag = {
+				flag = flag_hostile_actions_disabled_delay
+				days = 10
+			}
+		}
+		hidden_effect = {
+			scope:secondary_recipient = {
+				add_character_flag = {
+					flag = ai_should_not_transfer
+					years = 3
+				}
+			}
+		}
+	}
+
+	on_accept = {
+		retract_vassal_interaction_effect = yes
+		
+		if = {
+			limit = {
+				scope:actor = { has_character_flag = flag_hostile_actions_disabled_delay }
+			}
+			scope:actor = { remove_character_flag = flag_hostile_actions_disabled_delay }
+		}
+
+		scope:actor = {
+			trigger_event = char_interaction.0220
+		}
+	}
+
+	on_decline = {
+		scope:actor = { vassal_revocation_tyranny_effect = yes }
+		war_for_retraction_effect = yes
+		scope:recipient = {
+			add_opinion = {
+				target = scope:actor
+				modifier = retracted_vassal
+			}
+		}
+		if = {
+			limit = {
+				scope:actor = { has_realm_law_flag = vassal_refusal_is_treason }
+			}
+			scope:actor = {
+				add_opinion = {
+					target = scope:recipient
+					modifier = treasonous_retract_refusal
+				}
+			}
+		}
+		if = {
+			limit = {
+				scope:actor = { has_character_flag = flag_hostile_actions_disabled_delay }
+			}
+			scope:actor = { remove_character_flag = flag_hostile_actions_disabled_delay }
+		}
+	}
+
+	auto_accept = {
+		OR = {
+			scope:recipient = {
+				is_imprisoned_by = scope:actor
+			}
+			custom_description = {
+				text = "spending_hook"
+				subject = scope:actor
+				object = scope:recipient
+				scope:hook = yes
+				scope:actor = { has_strong_hook = scope:recipient }
+			}
+		}
+	}
+	
+	can_be_blocked = {
+		custom_description = { #Hook from Recipient can counteract, but only if Actor is not forcing the action via Strong Hook.
+			text = "spending_hook"
+			subject = scope:recipient
+			object = scope:actor
+			scope:recipient = { has_hook = scope:actor }
+			NAND = {
+				scope:hook = yes
+				scope:actor = { has_strong_hook = scope:recipient }
+			}
+		}
+	}
+
+	on_blocked_effect = {
+		scope:recipient = {
+			remove_hook = {
+				target = scope:actor
+			}
+		}
+	}
+
+	ai_accept = {
+		base = 0 # Try to make it 0 for most interactions
+
+		modifier = {
+			scope:hook = yes
+			add = 40
+			desc = SCHEME_WEAK_HOOK_USED
+		}
+		
+		opinion_modifier = { # Opinion Factor
+			who = scope:recipient
+			opinion_target = scope:actor
+			multiplier = 1.0
+			desc = AI_OPINION_REASON
+		}
+		
+		modifier = {
+			add = 25
+			scope:actor = {
+				has_realm_law_flag = vassal_refusal_is_treason
+			}
+			desc = AI_REFUSAL_IS_TREASON
+		}
+
+		ai_value_modifier = {
+			who = scope:recipient
+			ai_greed = {
+				if = {
+					limit = {
+						scope:recipient = { NOT = { ai_greed = 0 } }
+					}
+					value = -0.25
+				}
+			}
+			ai_honor  = {
+				if = {
+					limit = {
+						scope:recipient = { #If AI is honorable and the law compels to obey the liege, AI will be more likely to obey.
+							ai_honor > 0
+						}
+						scope:actor = {
+							has_realm_law_flag = vassal_refusal_is_treason
+						}
+					}
+					value = 0.75
+				}
+			}
+		}
+		modifier = {
+			exists = scope:actor.primary_title.title_capital_county
+			scope:secondary_recipient = {
+				OR = {
+					any_sub_realm_county = {
+						this = scope:actor.primary_title.title_capital_county
+					}
+					any_sub_realm_duchy = {
+						this = scope:actor.primary_title.title_capital_county.de_jure_liege
+					}
+				}
+			}
+			add = 50
+			desc = AI_VASSAL_HOLDS_REALM_CAPITAL
+		}
+		
+		modifier = { #Sub-Vassal is NOT De jure of current Vassal.
+			add = 25
+			NOT = {
+				scope:recipient = {
+					any_held_title = {
+						is_de_jure_liege_or_above_target = scope:secondary_recipient.primary_title
+					}
+				}
+			}
+			desc = AI_REFUSAL_IS_NOT_DE_JURE_LIEGE
+		}
+		modifier = { #Sub-Vassal is De jure of liege title.
+			add = 15
+			scope:actor = {
+				any_held_title = {
+					this = scope:secondary_recipient.primary_title.de_jure_liege
+				}
+			}
+			desc = AI_REFUSAL_IS_DE_JURE_LIEGE
+		}
+		modifier = {
+			add = 25
+			scope:recipient = {
+				has_dread_level_towards = {
+					target = scope:actor
+					level = 1
+				}
+			}
+			desc = INTIMIDATED_REASON
+		}
+		modifier = {
+			add = 50
+			scope:recipient = {
+				has_dread_level_towards = {
+					target = scope:actor
+					level = 2
+				}
+			}
+			desc = COWED_REASON
+		}
+		modifier = { #Comparative military strength.
+			desc = offer_vassalization_interaction_aibehavior_power_tt
+			add = {
+				value = 1
+					subtract = {
+					value = scope:recipient.max_military_strength
+					divide = { value = scope:actor.max_military_strength min = 1 }
+					}
+				multiply = 100
+			}
+		}
+		modifier = { #Different faith, no pluralism.
+			desc = AI_REFUSAL_SPLITTING_SAME_FAITH_VASSALS
+			trigger = {
+				scope:actor.faith = scope:secondary_recipient.faith #Will not care as much if the vassal being retracted is of a different faith.
+				scope:actor = {
+					NOR = { #Of two different faiths AND the potential vassal's faith is not pluralistic.
+						faith = scope:recipient.faith
+						faith = { has_doctrine = doctrine_pluralism_pluralistic }
+					}
+				}
+			}
+			add = {
+				value = -25
+				if = {
+					limit = {
+						scope:actor.faith = {
+							faith_hostility_level = {
+								target = scope:recipient.faith
+								value >= faith_hostile_level
+							}
+						}
+					}
+					add = -10
+				}
+				if = {
+					limit = {
+						scope:actor.faith = {
+							faith_hostility_level = {
+								target = scope:recipient.faith
+								value >= faith_evil_level
+							}
+						}
+					}
+					add = -25
+				}
+			}
+		}
+	}
+
+	#Use hook
+	send_option = {
+		is_valid = {
+			scope:actor = {
+				has_usable_hook = scope:recipient
+			}
+		}
+		flag = hook
+		localization = SCHEME_HOOK
+	}
+	should_use_extra_icon = {
+		scope:actor = { has_usable_hook = scope:recipient }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+
+	send_options_exclusive = no
+	
+	can_send_despite_rejection = yes
+	
+	# AI
+	ai_targets = {
+		ai_recipients = vassals
+	}
+	ai_frequency = 12
+
+	ai_potential = {
+		has_realm_law_flag = title_revocation_allowed
+		primary_title.tier > tier_county
+	}
+
+	ai_will_do = {
+		base = -1000
+
+		# We want to avoid tyranny unless we've got a good reason
+		# And even if we can avoid tyranny we don't want to retract just because we can, so this only gets us to -10
+		# Certain characters will retract despite tyranny, if their rationality is sufficiently low
+		modifier = {
+			scope:actor = {
+				OR = {
+					has_revoke_title_reason = scope:recipient
+					AND = {
+						ai_rationality <= very_high_negative_ai_value
+						OR = {
+							has_trait = lunatic
+							has_trait = possessed
+							has_trait = arbitrary
+						}
+					}
+				}
+			}
+
+			add = 990
+		}
+		# Always retract preferred capital if you hold the duchy, or the duchy is uncreated
+		modifier = {
+			exists = scope:actor.primary_title.title_capital_county
+			OR = {
+				scope:actor = {
+					any_held_title = {
+						this = scope:actor.primary_title.title_capital_county.de_jure_liege
+					}
+				}
+				scope:actor.primary_title.title_capital_county.de_jure_liege = {
+					is_title_created = no
+				}
+			}
+			scope:secondary_recipient = {
+				any_sub_realm_county = {
+					this = scope:actor.primary_title.title_capital_county
+				}
+			}
+			NAND = { # Don't retract player vassals tyrannically
+				scope:recipient = {
+					is_ai = no
+				}
+				scope:actor = {
+					NOT = { has_revoke_title_reason = scope:recipient }
+				}
+			}
+			add = 1000
+		}
+		# Always retract preferred capital duchy
+		modifier = {
+			exists = scope:actor.primary_title.title_capital_county
+			scope:secondary_recipient = {
+				any_sub_realm_duchy = {
+					this = scope:actor.primary_title.title_capital_county.de_jure_liege
+				}
+			}
+			NAND = { # Don't retract player vassals tyranically
+				scope:recipient = {
+					is_ai = no
+				}
+				scope:actor = {
+					NOT = { has_revoke_title_reason = scope:recipient }
+				}
+			}
+			add = 1000
+		}
+		# Retract vassal we're dejure liege of if below domain limit
+		modifier = {
+			scope:actor = {
+				vassal_limit_available > 0
+			}
+			scope:secondary_recipient.primary_title.de_jure_liege.holder = scope:actor
+			add = 500
+		}
+		# Retract non-De Jure vassals from Megadukes (only if a revoke reason is present, so we don't end up in massive tyranny war spirals)
+		modifier = {
+			scope:actor = {
+				has_revoke_title_reason = scope:recipient
+			}
+			scope:recipient = {
+				primary_title.tier = tier_duchy
+				any_sub_realm_county = {
+					count > 30
+				}
+			}
+			NOT = {
+				scope:secondary_recipient.primary_title.de_jure_liege.holder = scope:recipient
+			}
+			add = 500
+		}
+		# Do not revoke titles from certain characters
+		modifier = {
+			scope:actor = {
+				OR = {
+					has_relation_friend = scope:recipient
+					has_relation_best_friend = scope:recipient
+					has_relation_lover = scope:recipient
+					has_relation_soulmate = scope:recipient
+					is_heir_of = scope:recipient
+				}
+			}
+			add = -2000
+		}
+		# Do not revoke titles when the chance of success if exceedingly low
+		modifier = {
+			NOT = {
+				scope:recipient = {
+					is_imprisoned_by = scope:actor
+				}
+			}
+			scope:actor = {
+				OR = {
+					gold < minimum_ai_gold_value_for_tyranny_wars
+					AND = {
+						scope:actor.max_military_strength < scope:recipient.max_military_strength
+						gold < comfortable_ai_gold_value_for_tyranny_wars
+					}
+				}
+			}
+			add = -2000
+		}
+		
+		modifier = { # The AI will only use a Hook if they couldn't otherwise do this
+			scope:hook = yes
+			add = -1
+		}
+
+		modifier = { # The AI shouldn't ruin the player's fun
+			add = -2000
+			scope:recipient = { has_character_flag = is_party_baron }
+		}
+
+		modifier = { # Avoid triggering Tyranny wars mid-war
+			factor = 0
+			scope:actor = {
+				is_at_war = yes
+			}
+			scope:recipient = {
+				NOT = {
+					is_imprisoned_by = scope:actor
+				}
+			}
+		}
+	}
+}
+
+start_independence_faction_interaction = {
+	category = interaction_category_vassal
+
+
+	desc = start_independence_faction_interaction_desc
+
+	is_shown = {
+		NOT = { scope:actor = scope:recipient }
+		scope:actor = {
+			highest_held_title_tier > tier_barony
+			liege = scope:recipient
+			is_a_faction_member = no
+		}
+		scope:recipient = {
+			NOT = {
+				any_targeting_faction = {
+					faction_is_type = independence_faction
+				}
+			}
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		scope:actor = {
+			can_create_faction = {
+				target = scope:recipient
+				type = independence_faction
+			}
+		}
+	}
+	
+	on_accept = {
+		scope:actor = {
+			send_interface_toast = {
+				title = start_independence_faction_interaction_notification
+
+				left_icon = scope:actor					
+				right_icon = scope:recipient
+
+				create_faction = {
+					type = independence_faction
+					target = scope:recipient
+				}
+				if = {
+					limit = {
+						is_de_jure_vassal_of_liege_trigger = yes
+					}
+					stress_impact = {
+						just = medium_stress_impact_gain
+					}
+				}
+			}
+		}
+	}
+	
+	auto_accept = yes
+}
+
+join_independence_faction_interaction = {
+	category = interaction_category_vassal
+
+
+	desc = join_independence_faction_interaction_desc
+
+	is_shown = {
+		NOT = { scope:actor = scope:recipient }
+		scope:actor.liege = scope:recipient
+		scope:actor = {
+			is_a_faction_member = no
+			highest_held_title_tier > tier_barony
+		}
+		scope:recipient = {
+			highest_held_title_tier > tier_barony
+			any_targeting_faction = {
+				faction_is_type = independence_faction
+			}
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		scope:recipient = {
+			custom_description = {
+				text = "basic_independence_faction_at_war"
+				object = scope:recipient
+				any_targeting_faction = {
+					faction_is_type = independence_faction
+					faction_is_at_war = no
+				}
+			}
+		}
+		scope:actor = {
+			can_join_or_create_faction_against = {
+				who = scope:recipient
+				faction = independence_faction
+			}
+		}
+	}
+
+	on_accept = {
+		scope:recipient = {
+			random_targeting_faction = {
+				limit = {
+					faction_is_type = independence_faction
+				}
+				save_scope_as = faction_target
+			}
+		}
+
+		scope:actor = {
+			send_interface_toast = {
+				title = join_independence_faction_interaction_notification
+
+				left_icon = scope:actor					
+				right_icon = scope:recipient
+
+				join_faction = scope:faction_target
+				if = {
+					limit = {
+						is_de_jure_vassal_of_liege_trigger = yes
+					}
+					stress_impact = {
+						just = minor_stress_impact_gain
+					}
+				}
+			}
+		}
+	}
+	
+	auto_accept = yes
+}
+
+create_claimant_faction_against_interaction = {
+	category = interaction_category_vassal
+	use_diplomatic_range = no
+
+	desc = create_claimant_faction_against_interaction_desc
+
+	special_interaction = create_claimant_faction_against_interaction
+	interface = create_claimant_faction_against
+
+	is_shown = {
+		NOT = { scope:actor = scope:secondary_actor }
+		scope:actor.liege = scope:secondary_actor
+		scope:actor = {
+			custom_description = {
+				text = "FACTION_JOIN_CREATE_CONDITION_NOT_FACTION_MEMBER"
+				is_a_faction_member = no
+			}
+			highest_held_title_tier > tier_barony
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		scope:actor = { NOT = { has_truce = scope:secondary_actor } }
+		scope:secondary_actor = {
+			trigger_if = {
+				limit = {
+					NOT = {
+						any_held_title = {
+							any_claimant = {}
+						}
+					}
+				}
+				custom_description = {
+					text = "basic_claimant_found"
+					always = no
+				}
+			}
+			trigger_else = {
+				custom_description = {
+					text = "basic_capable_claimant_found"
+					any_held_title = {
+						any_claimant = {
+							NOT = { has_trait = incapable }
+						}
+					}
+				}
+			}
+		}
+		scope:actor = {
+			can_join_or_create_faction_against = {
+				who = scope:secondary_actor
+				faction = claimant_faction
+				check_in_a_faction = no # already checked in is_shown. Via the faction interface we'd see this twice if it fails (TIT-11380)
+			}
+		}
+		trigger_if = {
+			limit = {
+				exists = scope:recipient
+			}
+			scope:recipient = {
+				NOT = { is_at_war_with = scope:actor }
+				NOT = { has_trait = incapable }
+			}
+		}
+		scope:secondary_actor = { NOT = { has_strong_hook = scope:actor } }
+	}
+
+	on_send = {
+		scope:actor = {
+			set_variable = {
+				name = claiming_title
+				value = scope:landed_title
+			}
+
+			if = {
+				limit = {
+					can_create_faction = {
+						type = claimant_faction
+						target = scope:secondary_actor
+					}
+				}
+
+				create_faction = {
+					type = claimant_faction
+					target = scope:secondary_actor
+				}
+				joined_faction = {
+					set_special_character = scope:recipient
+					set_special_title = scope:landed_title
+				}
+				scope:recipient = {
+					add_to_variable_list = {
+						name = claimant_factions
+						target = scope:actor.joined_faction
+					}
+				}
+
+				if = {
+					limit = { NOT = { this = scope:recipient } }
+					save_scope_as = faction_invite_from
+					joined_faction = { save_scope_as = faction }
+					scope:secondary_actor = { save_scope_as = faction_target }
+					scope:recipient = {
+						trigger_event = faction_invitation.0001
+					}
+				}
+			}
+
+			remove_variable = claiming_title
+		}
+	}
+
+	auto_accept = yes
+}
+
+invite_to_council_position_interaction = {
+	category = interaction_category_vassal
+	popup_on_receive = yes
+	pause_on_receive = yes
+
+	hidden = yes
+
+	special_interaction = invite_to_council_interaction
+	notification_text = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = {
+						is_councillor_of = scope:actor
+					}
+				}
+				desc = liege_offer_council_position_exchange
+			}
+			triggered_desc = {
+				trigger = {
+					scope:actor = {
+						opinion = {
+							value >= 30
+							target = scope:recipient
+						}
+					}
+				}
+				desc = liege_offer_council_position_liked
+			}
+			triggered_desc = {
+				trigger = {
+					scope:actor = {
+						opinion = {
+							value <= -30
+							target = scope:recipient
+						}
+					}
+				}
+				desc = liege_offer_council_position_disliked
+			}
+			triggered_desc = {
+				trigger = {
+					scope:recipient = {
+						is_powerful_vassal_of = scope:actor
+					}
+				}
+				desc = liege_offer_council_position_powerful
+			}
+			triggered_desc = {
+				trigger = {
+					scope:recipient = {
+						OR = {
+							diplomacy > high_skill_rating
+							martial > high_skill_rating
+							stewardship > high_skill_rating
+							intrigue > high_skill_rating
+							learning > high_skill_rating
+						}
+					}
+				}
+				desc = liege_offer_council_position_skilled
+			}
+			desc = liege_offer_council_position_fallback
+		}
+	}
+	
+	is_valid_showing_failures_only = {
+		ALL_FALSE = {
+			scope:recipient.council_task = scope:target
+			scope:actor = { is_at_war_with = scope:recipient }
+		}
+	}
+
+	on_accept = {
+		# Assign the councillor to their new responsibilities.
+		scope:actor = {
+			assign_council_task = {
+				target = scope:recipient
+				council_task = scope:target
+			}
+		}
+
+		# If the new councillor is a player, inform their liege that they have accepted the offer.
+		if = {
+			limit = {
+				scope:recipient = {
+					is_ai = no
+				}
+			}
+			scope:actor = {
+				trigger_event = {
+					id = council_interaction.0001
+					days = 1
+				}
+			}
+		}
+	}
+
+	on_decline = {
+		# If the requested councillor is a player, inform their liege that they have declined the offer.
+		if = {
+			limit = {
+				scope:recipient = {
+					is_ai = no
+				}
+			}
+			scope:actor = {
+				trigger_event = {
+					id = council_interaction.0002
+					days = 1
+				}			
+			}
+		}
+	}
+
+	auto_accept = {
+		custom_description = {
+			text = auto_accept_interaction_ai	
+			object = scope:recipient
+			scope:recipient = {
+				is_ai = yes
+			}
+		}
+	}
+}
+
+force_onto_council = {
+	category = interaction_category_vassal
+
+	desc = force_onto_council_desc
+	notification_text = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:actor = { has_strong_hook = scope:recipient }
+				}
+				desc = force_onto_council.notification.strong_hook
+			}
+			desc = force_onto_council.notification.fallback
+		}
+	}
+
+	special_interaction = force_onto_council_interaction
+	interface = council_task_interaction
+
+	should_use_extra_icon = {
+		scope:actor = { has_usable_hook = scope:recipient }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+
+	is_shown = {
+		NOT = { scope:recipient = scope:actor }
+		scope:actor = {
+			liege = scope:recipient
+			NOT = {
+				is_councillor = yes
+			}
+		}
+	}
+	
+	is_valid_showing_failures_only = {
+		scope:actor = {
+			custom_description = {
+				text = "has_usable_hook_or_council_rights_through_vassal_contract"
+				subject = scope:actor
+				OR = {
+					has_usable_hook = scope:recipient
+					vassal_contract_has_flag = can_demand_council_seat
+				}
+			}
+			is_adult = yes
+			NOT = {
+				is_at_war_with = scope:recipient
+			}
+		}
+	}
+
+	has_valid_target_showing_failures_only = {
+		trigger_if = {
+			limit = {
+				exists = scope:target.councillor
+			}
+			scope:target.councillor = {
+				NOT = {
+					is_blocked_from_being_fired_from_council_trigger = {
+						COURT_OWNER = scope:recipient
+					}
+				}
+			}
+		}
+	}
+
+	on_accept = {
+		scope:target = {
+			save_scope_as = council_task
+		}
+		scope:actor = {
+			if = {
+				limit = {
+					NOT = { vassal_contract_has_flag = can_demand_council_seat }
+				}
+				use_hook = scope:recipient
+			}
+			block_firing_councillor_effect = { COURT_OWNER = scope:recipient }
+			#And notify exactly which councillor type they've become.
+			hidden_effect = {
+				send_interface_toast = {	
+					title = force_onto_council.actor.tt
+					left_icon = scope:recipient
+					custom_tooltip = force_onto_council.actor.tt.duration
+				}
+			}
+			stress_impact = { content = minor_stress_impact_gain }
+		}
+		scope:recipient = {
+			assign_council_task = {
+				target = scope:actor
+				council_task = scope:council_task
+			}
+			custom_tooltip = force_onto_council.desc.tt
+			#And notify exactly which councillor type they've become.
+			hidden_effect = {
+				send_interface_toast = {	
+					title = force_onto_council.recipient.tt
+					left_icon = scope:actor
+					custom_tooltip = force_onto_council.recipient.tt.duration
+				}
+			}
+		}
+	}
+
+	ai_set_target = {
+		scope:actor = {
+			random_list = {
+				10 = {
+					trigger = {
+						exists = scope:recipient.council_task:councillor_chancellor
+						can_be_chancellor_trigger = { COURT_OWNER = scope:recipient }
+					}
+					modifier = {
+						factor = diplomacy
+					}
+					modifier = {
+						trigger = { highest_skill = diplomacy }
+						factor = 10
+					}
+					scope:recipient.council_task:councillor_chancellor = {
+						save_scope_as = target
+					}
+				}
+				10 = {
+					trigger = {
+						exists = scope:recipient.council_task:councillor_steward
+						can_be_steward_trigger = { COURT_OWNER = scope:recipient }
+					}
+					modifier = {
+						factor = stewardship
+					}
+					modifier = {
+						trigger = { highest_skill = stewardship }
+						factor = 10
+					}
+					scope:recipient.council_task:councillor_steward = {
+						save_scope_as = target
+					}
+				}
+				10 = {
+					trigger = {
+						exists = scope:recipient.council_task:councillor_marshal
+						can_be_marshal_trigger = { COURT_OWNER = scope:recipient }
+					}
+					modifier = {
+						factor = martial
+					}
+					modifier = {
+						trigger = { highest_skill = martial }
+						factor = 10
+					}
+					scope:recipient.council_task:councillor_marshal = {
+						save_scope_as = target
+					}
+				}
+				10 = {
+					trigger = {
+						exists = scope:recipient.council_task:councillor_spymaster
+						can_be_spymaster_trigger = { COURT_OWNER = scope:recipient }
+					}
+					modifier = {
+						factor = intrigue
+					}
+					modifier = {
+						trigger = { highest_skill = intrigue }
+						factor = 10
+					}
+					scope:recipient.council_task:councillor_spymaster = {
+						save_scope_as = target
+					}
+				}
+				10 = {
+					trigger = {
+						exists = scope:recipient.council_task:councillor_court_chaplain
+						can_be_court_chaplain_trigger = { COURT_OWNER = scope:recipient }
+					}
+					modifier = {
+						factor = learning
+					}
+					modifier = {
+						trigger = { highest_skill = learning }
+						factor = 10
+					}
+					scope:recipient.council_task:councillor_court_chaplain = {
+						save_scope_as = target
+					}
+				}
+			}
+		}
+	}
+	
+	ai_potential = {
+		always = yes
+	}
+	
+	ai_targets = {
+		ai_recipients = liege
+	}
+	ai_frequency = 36
+
+	auto_accept = yes
+	force_notification = yes
+	
+	ai_will_do = {
+		base = 100
+		
+		modifier = {
+			factor = 0
+			scope:actor = {
+				ai_greed <= medium_positive_ai_value
+				OR = {
+					has_relation_friend = scope:recipient
+					has_relation_lover = scope:recipient
+					has_relation_best_friend = scope:recipient
+					has_relation_soulmate = scope:recipient
+				}
+			}
+		}
+		
+		modifier = {
+			factor = 0
+			is_councillor = yes
+		}
+	}
+}
+
+stop_attacker_vassal_war_interaction = {
+	category = interaction_category_vassal
+	interface = interfere_in_war
+	special_interaction = interfere_in_war_interaction
+	ai_accept_negotiation = yes
+	popup_on_receive = yes
+	pause_on_receive = yes
+
+	send_name = "SEND_DEMAND"
+	
+	ai_maybe = yes
+	
+	prompt = STOP_VASSAL_WAR_ATTACKER
+
+	desc = {
+		desc = stop_vassal_war_negotiation
+		triggered_desc = {
+			trigger = { scope:actor = { has_usable_hook = scope:recipient } }
+			desc = stop_vassal_war_use_hook
+		}
+		desc = might_ask_for_something_in_return_warning_double_line_break
+	}
+
+	on_decline_summary = stop_attacker_vassal_war_decline_summary
+
+	is_shown = {
+		NOT = { scope:recipient = scope:actor }
+		scope:recipient = {
+			exists = liege
+			liege = scope:actor
+			highest_held_title_tier > tier_barony
+			any_character_war = {
+				primary_attacker = scope:recipient
+				save_temporary_scope_as = target_war
+			}
+		}
+		scope:actor = {
+			NOT = { is_participant_in_war = scope:target_war }		
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		custom_description = {
+			text = cannot_stop_war_when_already_fighting
+			object = scope:recipient
+			scope:recipient = {
+				NOT = {
+					any_war_enemy = {
+						this = scope:actor
+					}
+				}
+			}
+		}
+		custom_description = {
+			text = cannot_stop_war_timer
+			object = scope:recipient
+			NOT = {
+				scope:recipient = {
+					has_opinion_modifier = {
+						target = scope:actor
+						modifier = attempt_to_force_end_war_opinion
+					}
+				}
+			}
+		}
+		NOT = {
+			scope:recipient = {
+				has_strong_hook = scope:actor
+			}
+		}
+	}
+	
+	can_be_picked = {
+		scope:target.primary_attacker = scope:recipient
+	}
+
+	on_accept = {
+		scope:recipient = {
+			add_opinion = {
+				modifier = attempt_to_force_end_war_opinion
+				target = scope:actor
+			}
+		}
+		hidden_effect = {
+			scope:recipient = {
+				trigger_event = vassal_interaction.0001 #Starts "negotiations"
+			}
+		}
+	}
+
+	auto_accept = yes
+}
+
+stop_defender_vassal_war_interaction = {
+	category = interaction_category_vassal
+	interface = interfere_in_war
+	special_interaction = interfere_in_war_interaction
+	ai_accept_negotiation = yes
+	popup_on_receive = yes
+	pause_on_receive = yes
+	send_name = "SEND_DEMAND"
+	
+	ai_maybe = yes
+	
+	prompt = STOP_VASSAL_WAR_DEFENDER
+
+	desc = {
+		desc = stop_vassal_war_negotiation
+		triggered_desc = {
+			trigger = { scope:actor = { has_usable_hook = scope:recipient } }
+			desc = stop_vassal_war_use_hook
+		}
+		desc = might_ask_for_something_in_return_warning_double_line_break
+	}
+
+	on_decline_summary = stop_attacker_vassal_war_decline_summary
+
+	is_shown = {
+		NOT = { scope:recipient = scope:actor }
+		scope:recipient = {
+			exists = liege
+			liege = scope:actor
+			highest_held_title_tier > tier_barony
+			any_character_war = {
+				primary_defender = scope:recipient
+				save_temporary_scope_as = target_war
+			}
+		}
+		scope:actor = {
+			NOT = { is_participant_in_war = scope:target_war }	
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		custom_description = {
+			text = cannot_stop_war_when_already_fighting
+			object = scope:recipient
+			NOT = {
+				scope:recipient = {
+					any_war_enemy = {
+						this = scope:actor
+					}
+				}
+			}
+		}
+		custom_description = {
+			text = cannot_stop_war_timer
+			object = scope:recipient
+			NOT = {
+				scope:recipient = {
+					has_opinion_modifier = {
+						target = scope:actor
+						modifier = attempt_to_force_surrender_opinion
+					}
+				}
+			}
+		}
+		NOT = {
+			scope:recipient = {
+				has_strong_hook = scope:actor
+			}
+		}
+	}
+	
+	can_be_picked = {
+		scope:target.primary_defender = scope:recipient
+	}
+
+	on_accept = {
+		scope:recipient = {
+			add_opinion = {
+				modifier = attempt_to_force_surrender_opinion
+				target = scope:actor
+			}
+		}
+		hidden_effect = {
+			scope:recipient = {
+				trigger_event = vassal_interaction.0011 #Starts "negotiations"
+			}
+		}
+	}
+
+	auto_accept = yes
+}
+
+ask_for_pardon_interaction = {
+	category = interaction_category_vassal
+
+
+	desc = ask_for_pardon_interaction_desc
+
+	notification_text = ASK_FOR_PARDON_NOTIFICATION
+	
+	is_shown = {
+		ask_for_pardon_available_trigger = { ACTOR = scope:actor }
+		scope:actor.top_liege = scope:recipient
+	}
+	
+
+	is_valid_showing_failures_only = {
+		scope:recipient = { is_diplomatically_available = yes }
+		scope:actor = {
+			NOT = { is_at_war_with = scope:recipient }
+			NOT = { is_imprisoned_by = scope:recipient }#Then you use the regular ransom interactions
+		}
+	}
+
+	is_highlighted = {
+		scope:actor = {
+			has_usable_hook = scope:recipient
+		}
+	}
+	
+	ai_accept = {
+		base = -50
+
+		#How bad is it, really?
+		modifier = {
+			scope:recipient = {
+				has_banish_reason = scope:actor
+				NOR = { #These are worse
+					has_execute_reason = scope:actor
+					has_revoke_title_reason = scope:actor
+				}
+			}
+			desc = AI_BANISHMENT_REASON_MODIFIER
+			add = -20
+		}
+		modifier = {
+			scope:recipient = {
+				has_revoke_title_reason = scope:actor
+				NOT = { #This is worse are worse
+					has_execute_reason = scope:actor
+				}
+			}
+			desc = AI_REVOKE_TITLE_REASON_MODIFIER
+			add = -30
+		}
+		modifier = {
+			scope:recipient = {
+				has_execute_reason = scope:actor
+			}
+			desc = AI_EXECUTE_REASON_MODIFIER
+			add = -40
+		}
+
+		#Willing to forgive
+		opinion_modifier = {
+			who = scope:recipient
+			opinion_target = scope:actor
+			multiplier = 1
+			desc = AI_OPINION_REASON
+		}
+	}
+
+	auto_accept = {
+		custom_description = {
+			text = "spending_hook"
+			subject = scope:actor
+			object = scope:recipient
+			scope:hook = yes
+		}
+	}
+	
+	ai_min_reply_days = 1
+	ai_max_reply_days = 5
+	
+	on_accept = {
+		ask_for_pardon_interaction_effect = yes
+		scope:actor = {
+			trigger_event = vassal_interaction.0030
+		}
+	}
+
+	on_auto_accept = {
+		scope:recipient = {
+			trigger_event = char_interaction.0240
+		}
+	}
+
+	on_decline = {
+		scope:recipient = {
+			send_interface_toast = {
+				title = ask_for_pardon_interaction_decline_toast
+				left_icon = scope:actor
+
+				custom_tooltip = ask_for_pardon_interaction_accept_decline
+			}
+		}
+	}
+
+	#Use hook
+	send_option = {
+		is_valid = {
+			scope:actor = {
+				has_usable_hook = scope:recipient
+			}
+		}
+		flag = hook
+		localization = SCHEME_HOOK
+	}
+	should_use_extra_icon = {
+		scope:actor = { has_usable_hook = scope:recipient }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+	send_options_exclusive = no
+	
+	ai_targets = {
+		ai_recipients = liege
+	}
+	ai_frequency = 12
+	
+	ai_will_do = {
+		base = 0
+		
+		modifier = {
+			add = 100
+			scope:actor = {
+				has_usable_hook = scope:recipient
+			}
+		}
+		
+		modifier = {
+			add = 100
+			scope:hook = yes
+		}
+	}
+}
