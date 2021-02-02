@@ -1,0 +1,904 @@
+﻿namespace = raiding
+
+##################################################
+#Raiding CB events
+
+	#0001-0002	- You have the chance to sack a holding.
+	#0003		- Your holding may have been sacked (liege or vassal).
+	#0004		- Your vassal's holding may have been sacked.
+	#0011		- Raiding notification event, received upon delivering army loot.
+	#0012		- Raiding notification event, telling involved parties how much loot a defending army stole.
+	#0021		- Increase raid tally.
+	#0022		- Chance to fire viking/raider trait acquisition event.
+	#0023		- Acquire viking/raider trait.
+
+##################################################
+
+##################################################
+# Fire and Blood
+# by Ewan Cowhig Croft
+# #0001-0004
+##################################################
+
+#	You have the chance to sack a holding.
+raiding.0001 = {	#Hidden event: do I get a sacking?
+	hidden = yes
+	type = empty
+	scope = army
+
+	trigger = {
+		scope:raider = {	#You must be leading your own forces.
+			is_at_location = scope:barony.title_province
+		}
+		scope:barony.title_province = {
+			fort_level > 0
+		}
+		NOT = {
+			scope:county = { has_county_modifier = recently_sacked_modifier }	#The county must not have recently been sacked.
+		}
+	}
+
+	immediate = {
+		random = {
+			chance = 30
+			modifier = {
+				add = 20
+				scope:raider = { has_trait = viking }
+			}
+			scope:raider = {
+				scope:county = { save_scope_as = sacked_county }	#For loc.
+				scope:barony = { save_scope_as = sacked_barony }	#For loc.
+				scope:raider.capital_province = { save_scope_as = raider_capital }
+				trigger_event = raiding.0002
+			}
+		}
+	}
+}
+
+raiding.0002 = {	#Less hidden event: I do get a sacking!
+	type = character_event
+	title = raiding.0002.t
+	desc = raiding.0002.desc
+	theme = battle
+	override_background = {
+		event_background = burning_building
+	}
+	left_portrait = {
+		character = root
+		animation = anger
+	}
+	right_portrait = {
+		character = scope:sacked_county_owner
+		animation = fear
+		triggered_animation = {
+			trigger = {
+				ai_vengefulness >= medium_positive_ai_value
+				ai_boldness > high_negative_ai_value
+			}
+			animation = rage
+		}
+	}
+
+	immediate = {
+		scope:sacked_county.holder = { save_scope_as = sacked_county_owner }	#For loc.
+	}
+
+	#Bring me slaves and scrolls!
+	option = {
+		name = raiding.0002.a
+		trigger = {
+			root.capital_county = { development_level < 15 }	#If you have a certain amount of development, you can't gain anything from this.
+			OR = {
+				scope:county = { development_level > 15 }	#The county must actually have enough development to be worth sacking.
+				scope:county.holder = {	#Or at least be a non-tribal place.
+					NOT = { has_government = tribal_government }
+				}
+			}
+		}
+		scope:sacked_county = {
+			add_county_modifier = {	#Prevent the county from being sacked again, by anyone, for quite a while.
+				modifier = recently_sacked_modifier
+				years = 20
+			}
+			change_county_control = -10
+			change_development_progress = major_development_progress_loss	#Always deduct progress.
+			if = {	#If they don't have enough progress made, burn a level of development.
+				limit = { development_towards_level_increase < major_development_progress_gain }
+				change_development_level = -1
+			}
+			save_scope_value_as = {
+				name = sack_status
+				value = flag:admin_plundered
+			}
+			holder = {
+				trigger_event = raiding.0003
+				if = {
+					limit = { is_independent_ruler = no }
+					liege = { trigger_event = raiding.0004 }
+				}
+			}
+		}
+		root.capital_county = {
+			change_development_progress = medium_development_progress_gain
+		}
+		stress_impact = {
+			compassionate = minor_stress_impact_gain
+			forgiving = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = 0.5
+				ai_compassion = -0.5
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = compassionate
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = forgiving
+			}
+		}
+	}
+
+	#Bring me bounteous plunder!
+	option = {
+		name = raiding.0002.b
+		scope:sacked_county = {
+			add_county_modifier = {	#Prevent the county from being sacked again for quite a while.
+				modifier = recently_sacked_modifier
+				years = 20
+			}
+			if = {	#If they have enough progress gain to take the hit, then they just lose some progress.
+				limit = {
+					development_towards_level_increase > medium_development_progress_loss
+				}
+				change_development_progress = medium_development_progress_loss
+			}
+			else = {	#If they don't, then they lose the progress, and a level of development is burned away.
+				change_development_progress = medium_development_progress_loss
+				change_development_level = -1
+			}
+			save_scope_value_as = {
+				name = sack_status
+				value = flag:gold_plundered
+			}
+			holder = {
+				if = {
+					limit = { is_independent_ruler = yes }
+					trigger_event = raiding.0003
+				}
+				else = {
+					trigger_event = raiding.0003
+					liege = { trigger_event = raiding.0004 }
+				}
+			}
+		}
+		add_gold = scope:sacked_barony.county.title_province.raid_gold_value
+		add_prestige = minor_prestige_value
+		stress_impact = {
+			compassionate = minor_stress_impact_gain
+			forgiving = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = 0.75
+				ai_compassion = -0.25	#It's more ethical to steal stuff than people, right?
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = compassionate
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = forgiving
+			}
+		}
+	}
+	#I want no part of these shenanigans.
+	option = {
+		name = raiding.0002.c
+		scope:sacked_county = {
+			#Opinion gain if not primary defender.
+			save_scope_value_as = {
+				name = sack_status
+				value = flag:spared_plundered
+			}
+			holder = {
+				if = {
+					limit = { is_independent_ruler = yes }
+					trigger_event = raiding.0003
+				}
+				else = {
+					trigger_event = raiding.0003
+					liege = { trigger_event = raiding.0004 }
+				}
+			}
+		}
+		if = {
+			limit = {
+				faith = {
+					OR = {
+						trait_is_sin = compassionate
+						trait_is_sin = forgiving
+						trait_is_sin = calm
+					}
+				}
+			}
+			add_piety = minor_piety_loss
+		}
+		else = { add_piety = medium_piety_gain }
+		stress_impact = {
+			sadistic = minor_stress_impact_gain
+			vengeful = minor_stress_impact_gain
+			wrathful = minor_stress_impact_gain
+			greedy = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_compassion = 0.5
+				ai_honor = 0.25
+				ai_greed = -0.25
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = sadistic
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = vengeful
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = wrathful
+			}
+		}
+	}
+}
+
+# Your holding may have been sacked (liege or vassal).
+raiding.0003 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:sack_status = flag:spared_plundered }
+				desc = raiding.0003.t_spared
+			}
+			desc = raiding.0003.t_attacked
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = {	#If the holding was raided for skilled slaves, let us know of such.
+				trigger = {
+					scope:sack_status = flag:admin_plundered
+					is_independent_ruler = yes
+				}
+				desc = raiding.0003.desc.admin_plundered_independent
+			}
+			triggered_desc = {	#If the holding was raided for gold, then tell us our shinies are gone.
+				trigger = {
+					scope:sack_status = flag:gold_plundered
+					is_independent_ruler = yes
+				}
+				desc = raiding.0003.desc.gold_plundered_independent
+			}
+			triggered_desc = {	#If the holding was spared, we have a lukewarm one response.
+				trigger = {
+					scope:sack_status = flag:spared_plundered
+					is_independent_ruler = yes
+				}
+				desc = 	raiding.0003.desc.spared_plundered_independent
+			}
+			triggered_desc = {
+				trigger = { scope:sack_status = flag:admin_plundered }
+				desc = raiding.0003.desc.admin_plundered_vassal
+			}
+			triggered_desc = {
+				trigger = { scope:sack_status = flag:gold_plundered }
+				desc = raiding.0003.desc.gold_plundered_vassal
+			}
+			desc = raiding.0003.desc.spared_plundered_vassal
+		}
+	}
+	theme = battle
+	override_background = {
+		event_background = burning_building
+	}
+	left_portrait = {
+		character = scope:raider
+		animation = war_over_win
+	}
+
+	#Oh no!
+	option = {
+		name = raiding.0003.a
+		add_prestige = minor_prestige_loss
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_energy = -0.25	#I am too lazy to do much more than lament.
+				ai_vengefulness = -0.25	#I will not stand for this.
+			}
+		}
+	}
+
+	#I will avenge this slight!
+	option = {
+		name = raiding.0003.b
+		trigger = {
+			NOT = { scope:sack_status = flag:spared_plundered }
+		}
+		if = {
+			limit = { has_relation_rival = scope:raider }
+			add_prestige = miniscule_prestige_gain
+		}
+		else = {
+			progress_towards_rival_effect = {
+				CHARACTER = scope:raider
+				OPINION = no
+			}
+		}
+		stress_impact = { forgiving = minor_stress_impact_gain }
+		ai_chance = {
+			base = 0	#Otherwise every raiding culture will have a million rivals.
+			ai_value_modifier = {	#Vengeful characters may do this, though.
+				ai_vengefulness = 0.2
+			}
+			modifier = {	#Angry characters can also struggle to get over these things.
+				add = 10
+				has_trait = wrathful
+			}
+			modifier = {	#Vengeful characters are, by definition, not going to let things go.
+				add = 10
+				has_trait = vengeful
+			}
+			modifier = {	#Dead peasants happen, y'know?
+				add = -20
+				has_trait = forgiving
+			}
+		}
+	}
+
+	#I will pay for the reconstruction.
+	option = {
+		name = raiding.0003.c
+		trigger = {
+			is_independent_ruler = yes
+			NOT = { scope:sack_status = flag:spared_plundered }
+			NOT = { has_government = tribal_government }	#Tribes don't care about development.
+			OR = {
+				is_ai = no
+				short_term_gold >= scope:sacked_barony.county.title_province.raid_gold_value
+			}
+		}
+		remove_short_term_gold = scope:sacked_barony.county.title_province.raid_gold_value
+		scope:sacked_county = {
+			add_county_modifier = {
+				modifier = rebuilding_after_sacking_modifier
+				years = 10
+			}
+		}
+		stress_impact = { lazy = minor_stress_impact_gain }
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_compassion = 0.5
+				ai_greed = -0.5
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = lazy
+			}
+		}
+	}
+}
+
+# Your vassal's holding may have been sacked.
+raiding.0004 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:sack_status = flag:spared_plundered }
+				desc = raiding.0003.t_spared
+			}
+			desc = raiding.0003.t_attacked
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = {	#If the holding was raided for skilled slaves, let us know of such.
+				trigger = {	scope:sack_status = flag:admin_plundered }
+				desc = raiding.0004.desc.admin_plundered
+			}
+			triggered_desc = {	#If the holding was raided for gold, then tell us our vassal's shinies are gone.
+				trigger = {	scope:sack_status = flag:gold_plundered }
+				desc = raiding.0004.desc.gold_plundered
+			}
+			desc = 	raiding.0004.desc.spared_plundered #If the holding was spared, we have a lukewarm one response.
+		}
+	}
+	theme = battle
+	override_background = {
+		event_background = burning_building
+	}
+	left_portrait = {
+		character = scope:raider
+		animation = anger
+	}
+	right_portrait = {
+		character = scope:sacked_county_owner
+		animation = fear
+		triggered_animation = {
+			trigger = {
+				ai_vengefulness >= medium_positive_ai_value
+				ai_boldness > high_negative_ai_value
+			}
+			animation = rage
+		}
+	}	
+
+	#Oh no!
+	option = {	
+		name = raiding.0004.a
+		add_prestige = miniscule_prestige_loss
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_energy = -0.25	#Too lazy to care.
+				ai_compassion = -0.25	#But wouldn't care anyway.
+			}
+		}
+	}
+
+	#Send some cash-monies.
+	option = {	
+		name = raiding.0004.b
+		trigger = {
+			NOT = { scope:sack_status = flag:spared_plundered }
+			OR = {
+				is_ai = no
+				short_term_gold >= medium_gold_value
+			}
+		}
+		pay_short_term_gold = {
+			target = scope:sacked_county.holder
+			gold = scope:sacked_barony.county.title_province.raid_gold_value
+		}
+		scope:sacked_county.holder = {
+			add_opinion = {
+				target = liege
+				modifier = grateful_opinion
+				opinion = 20
+			}
+		}
+		stress_impact = { greedy = medium_stress_impact_gain }
+		ai_chance = {
+			base = 20	#Reduced base chance: the AI shouldn't bankrupt itself helping vassals.
+			ai_value_modifier = {
+				ai_compassion = 0.25
+				ai_greed = -0.25
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = greedy
+			}
+		}
+	}
+
+	#I will pay for the reconstruction.
+	option = {
+		name = raiding.0004.c
+		trigger = {
+			NOR = {
+				scope:sack_status = flag:spared_plundered
+				has_government = tribal_government	#Tribes don't care about development.
+			}
+			OR = {
+				is_ai = no
+				short_term_gold >= scope:sacked_barony.county.title_province.raid_gold_value
+			}
+		}
+		remove_short_term_gold = scope:sacked_barony.county.title_province.raid_gold_value
+		scope:sacked_county.holder = {
+			add_opinion = {
+				target = liege
+				modifier = grateful_opinion
+				opinion = 30
+			}
+		}
+		scope:sacked_county = {
+			add_county_modifier = {
+				modifier = rebuilding_after_sacking_modifier
+				years = 10
+			}
+		}
+		scope:sacked_county.holder = {
+			send_interface_message = {
+				type = event_war_good
+				title = raiding.0004.c.feed.t
+				desc = raiding.0004.c.feed.desc
+				right_icon = liege
+			}
+		}
+		stress_impact = { greedy = medium_stress_impact_gain }
+		ai_chance = {
+			base = 10	#Reduced base chance: the AI shouldn't bankrupt itself helping vassals.
+			ai_value_modifier = {
+				ai_compassion = 0.5
+				ai_greed = -0.5
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = greedy
+			}
+		}
+	}
+}
+
+##################################################
+# Raiding Notification Events
+# by Ewan Cowhig Croft
+# #0011-0012
+##################################################
+
+# Loot delivered.
+raiding.0011 = {
+	hidden = yes
+	scope = army
+
+	immediate = {
+		set_variable = {
+			name = raid_loot
+			value = root.raid_loot
+		}
+		scope:raider = {
+			send_interface_message = {
+				type = event_raid_good
+				title = raiding.0011.t
+				desc = raiding.0011.desc
+				right_icon = root.army_commander
+				hidden_effect = { add_prestige = root.var:raid_loot }
+			}
+		}
+	}
+}
+
+# Loot lost to defending army.
+raiding.0012 = {
+	hidden = yes
+	scope = army
+
+	immediate = {
+		set_variable = {
+			name = raid_loot
+			value = root.raid_loot
+		}
+		set_variable = {
+			name = raid_prestige
+			value = {
+				value = root.raid_loot
+				multiply = 0.5
+				ceiling = yes
+			}
+		}
+		if = {
+			limit = {
+				OR = {
+					var:raid_loot >= 1
+					var:raid_prestige >= 1
+				}
+			}
+			scope:raider = {
+				send_interface_message = {
+					type = event_raid_bad
+					title = raiding.0012.a.t
+					desc = raiding.0012.a.desc
+					right_icon = root.army_commander
+				}
+			}
+			scope:recipient = {
+				send_interface_message = {
+					type = event_raid_good
+					title = raiding.0012.b.t
+					desc = raiding.0012.b.desc
+					right_icon = root.army_commander
+					hidden_effect = { add_prestige = root.var:raid_prestige }
+				}
+			}
+		}
+	}
+}
+
+
+# Prisoner-taking script beyond this point. Much of this is transcribed from work done by Sean Hughes & Mathilda Bjarnehed for siege events.
+scripted_trigger raiding_0012_can_be_captured = {
+	# Captured characters must be located in the raided barony itself.
+	location = scope:barony.title_province
+
+	# Reasons to exclude characters from the capture pool:
+	NOR = {
+		# If the raiders have defeated the holder's army, but the army has not yet retreated to a different province, shield them from capture by the raid.
+		exists = commanding_army
+		exists = knight_army
+
+		# Is imprisoned in the barony stay prisoners (special case, any courtiers/vassals of the raider will get released elsewhere).
+		is_imprisoned = yes
+	}
+}
+
+# Chance to kidnap prisoners from the holding holder.
+raiding.0013 = {
+	hidden = yes
+	scope = army
+
+	trigger = { # Only take prisoners if this barony is the holder's capital (where their family/courtiers live).
+		scope:barony.holder.capital_barony = scope:barony
+	}
+
+	immediate = {
+		# For localization.
+		scope:raider = { save_scope_as = occupant }	
+		scope:barony.holder = { save_scope_as = holder}
+
+		#BUILD CAPTURE ATTEMPT LIST
+		scope:barony.holder = {
+			if = {
+				limit = { raiding_0012_can_be_captured = yes }
+				add_to_list = capture_attempt_targets
+			}
+			every_courtier_or_guest = {
+				limit = { raiding_0012_can_be_captured = yes }
+				add_to_list = capture_attempt_targets
+			}
+		}
+
+		#CALCULATE CAPTURE CHANCE
+		every_in_list = {
+			list = capture_attempt_targets
+			random = {	
+				chance = raid_base_capture_chance # 30 becomes 15 for average intrigue and prowess, can go as low as 0 at very high intrigue and prowess.
+
+				# Capture Modifiers
+				compare_modifier = { #Adds -20 for 20 intrigue, adds -10 for 10 intrigue.
+					#target = this
+					value = intrigue
+					multiplier = -1
+					min = -20
+				}
+				compare_modifier = { #Adds -10 for 20 prowess, -5 for 10 prowess.
+					#target = this
+					value = prowess
+					multiplier = -0.5
+					min = -15
+				}
+				modifier = { #Less likely to capture the ruler themselves in a raid
+					is_landed = yes
+					add = -10
+				}
+
+				# Capture Effects
+				if = {
+					limit = { desirable_for_capture_trigger = yes }
+					add_to_list = captured_targets_effects
+				}
+				else = { add_to_list = killed_targets }
+			}
+		}
+
+		#IMPRISON & KILL EFFECTS
+		every_in_list = {
+			list = captured_targets_effects
+
+			hidden_effect = {
+				add_character_flag = {
+					flag = block_imprisonment_event
+					days = 1
+				}
+			}
+
+			prisoner_of_war_capture_effect = {
+				TARGET = this
+				IMPRISONER = scope:raider
+			}
+		}
+		every_in_list = {
+			list = killed_targets
+
+			death = {
+				death_reason = death_raid
+			}
+		}
+
+		#NOTIFY CONCERNED PARTIES
+		#Inform about captures.
+		if = {
+			limit = {
+				any_in_list = {
+					list = captured_targets_effects
+					count >= 1
+				}
+			}
+			#Inform raider.
+			scope:raider = {
+				trigger_event = siege.0002
+			}
+			#Inform affected holder about captures.
+			scope:barony.holder = {
+				if = {
+					limit = {
+						save_temporary_scope_as = notification_target
+						any_in_list = {
+							list = captured_targets_effects
+							NOT = { this = scope:notification_target}
+						}
+					}
+					trigger_event = siege.0003
+				}
+			}
+			#Inform concerned players about captures.
+			every_player = {
+				limit = {
+					NOR = {
+						this = scope:raider
+						this = scope:barony.holder
+					}
+					save_temporary_scope_as = notification_target
+					any_in_list = {
+						list = captured_targets_effects
+						has_any_relation_trigger = { CHARACTER = scope:notification_target }
+					}
+				}
+				trigger_event = siege.0004
+			}
+		}
+		#Inform about kills.
+		if = {
+			limit = {
+				any_in_list = {
+					list = killed_targets
+					count >= 1
+				}
+			}
+			# Inform affected holder about kills.
+			scope:barony.holder = {
+				trigger_event = siege.0013
+			}
+			#Inform concerned players about kills.
+			every_player = {
+				limit = {
+					NOR = {
+						this = scope:raider
+						this = scope:barony.holder
+					}
+					save_temporary_scope_as = notification_target
+					any_in_list = {
+						list = killed_targets
+						has_any_relation_trigger = { CHARACTER = scope:notification_target }
+					}
+				}
+				trigger_event = siege.0014
+			}
+		}
+	}
+}
+
+
+##################################################
+# Becoming a Raider/Viking
+# by Ewan Cowhig Croft
+# #0021-0022
+##################################################
+
+# Increase raid tally
+raiding.0021 = {
+	hidden = yes
+	scope = army
+
+	trigger = {
+		exists = army_commander
+	}
+
+	immediate = {
+		root.army_commander = {
+			if = {
+				limit = {
+					NOT = { has_variable = raid_counter }
+				}
+				set_variable = {
+					name = raid_counter
+					value = 1
+				}
+			}
+			else = {
+				change_variable = {
+					name = raid_counter
+					add = 1
+				}
+			}
+		}
+	}
+}
+
+# Chance to fire viking/raider trait acquisition event
+raiding.0022 = {
+	hidden = yes
+	scope = army
+
+	trigger = {
+		exists = army_commander
+		army_commander = {
+			has_variable = raid_counter
+			var:raid_counter >= 20
+			NOT = { has_trait = viking }
+		}
+	}
+
+	immediate = {
+		root.army_commander = { save_scope_as = raid_leader }
+		scope:raid_leader = {
+			random = {
+				chance = 20
+				trigger_event = {
+					id = raiding.0023
+					days = { 180 545 }
+				}
+				modifier = {
+					add = 10
+					var:raid_counter >= 30
+				}
+				modifier = {
+					add = 10
+					var:raid_counter >= 40
+				}
+				modifier = {
+					add = 10
+					var:raid_counter >= 50
+				}
+			}
+		}
+	}
+}
+
+# Acquire viking/raider trait
+raiding.0023 = {
+	type = character_event
+	title = raiding.0023.t
+	desc = raiding.0023.desc
+	theme = war
+	override_background = {
+		event_background = burning_building
+	}
+	left_portrait = {
+		character = root
+		animation = war_over_win
+	}
+
+	trigger = {
+		scope:raid_leader = {
+			is_alive = yes
+			NOT = { has_trait = viking }
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = { is_landed = no }
+			liege.capital_province = { save_scope_as = capital_province }
+		}
+		else = {
+			capital_province = { save_scope_as = capital_province }
+		}
+	}
+
+	#Accept the trait.
+	option = {
+		name = raiding.0023.a
+		add_trait = viking
+	}
+}
