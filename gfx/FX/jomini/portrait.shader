@@ -539,7 +539,10 @@ PixelShader =
 			// Warcraft
 			// Replaced by function since it's easier to track
 			float GetRandomColorNumber ( float seed ) {
-				return clamp((1 - seed), 0, 1);
+				seed = seed + 0.5;
+				seed = seed * seed;
+				seed = clamp(seed - 0.5, 0, 1);
+				return (1 - seed);
 			}
 
 			float4 BlendDecal( uint BlendMode, float4 Target, float4 Blend, float Weight )
