@@ -542,7 +542,7 @@ PixelShader =
 				seed = seed + 0.5;
 				seed = seed * seed;
 				seed = clamp(seed - 0.5, 0, 1);
-				return (1 - seed);
+				return (seed);
 			}
 
 			float4 BlendDecal( uint BlendMode, float4 Target, float4 Blend, float Weight )
