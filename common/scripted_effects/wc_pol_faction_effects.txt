@@ -1,0 +1,348 @@
+﻿# Joining effects
+become_leader_of_faction_effect = {
+	set_global_variable = {
+		name = $faction$_leader
+		value = this
+	}
+	add_to_global_variable_list = {
+		name = $faction$_members
+		target = this
+	}
+	save_temporary_scope_value_as = {
+		name = temp_give_modifiers
+		value = flag:$give_modifiers$
+	}
+	
+	set_variable = { name = pol_faction value = flag:$faction$ }
+	add_alliances_with_faction_effect = { MEMBERS = $faction$_members }
+	
+	if = {
+		limit = { scope:temp_give_modifiers = flag:yes }
+		add_character_modifier = faction_leader_modifier
+	}
+	
+	# Updates GUI info
+	try_to_update_pol_faction_info_effect = { faction = $faction$ }
+}
+join_pol_faction_effect = {
+	custom_description = {
+		text = join_union_tooltip
+	}
+	add_to_global_variable_list = {
+		name = $faction$_members
+		target = this
+	}
+	set_variable = { name = pol_faction value = flag:$faction$ }
+	add_alliances_with_faction_effect = { MEMBERS = $faction$_members }
+	
+	# Updates GUI info
+	try_to_update_pol_faction_info_effect = { faction = $faction$ }
+}
+
+### Leaving effects
+leave_or_break_pol_faction_effect = {
+	custom_description = {
+		text = leave_union_tooltip
+	}
+	leave_pol_faction_effect = { faction = $faction$ }
+	if = {
+		limit = { global_var:$faction$_leader = this }
+		try_to_break_pol_faction_effect = { faction = $faction$ }
+	}
+	
+	# Updates GUI info
+	try_to_update_pol_faction_info_effect = { faction = $faction$ }
+}
+leave_pol_faction_effect = {
+	remove_list_global_variable = {
+		name = $faction$_members
+		target = this
+	}
+	remove_variable = pol_faction
+	# remove_pol_faction_loc_effect = yes
+	
+	# Opinion
+	if = {
+		limit = { is_alive = yes }
+		every_in_global_list = {
+			variable = $faction$_members
+			limit = {
+				is_alive = yes
+				
+				NOT = { this = prev }
+			}
+			add_opinion = {
+				modifier = left_union_opinion
+				target = prev
+			}
+		}
+	}
+	
+	if = {
+		limit = { has_character_modifier = faction_leader_modifier }
+		remove_character_modifier = faction_leader_modifier
+	}
+}
+try_to_break_pol_faction_effect = {
+	save_scope_as = former_leader
+	add_to_list = former_$faction$_members
+	
+	if = {
+		limit = {
+			any_in_global_list = {
+				variable = $faction$_members
+				NOT = { this = scope:former_leader }
+				can_lead_faction_trigger = { faction = $faction$ landless = no }
+			}
+		}
+		ordered_in_global_list = {
+			variable = $faction$_members
+			limit = {
+				NOT = { this = scope:former_leader }
+				can_lead_faction_trigger = { faction = $faction$ landless = no }
+			}
+			order_by = pol_faction_leader_values
+			max = 1
+			
+			try_to_transfer_pol_faction_loc_effect = { PREV_HOLDER = scope:former_leader }
+			become_leader_of_faction_effect = {
+				faction = $faction$
+				give_modifiers = yes
+			}
+
+			trigger_event = WCPLF.200
+		}
+	}
+	else = {
+		remove_global_variable = $faction$_leader
+		every_in_global_list = {
+			variable = $faction$_members
+			limit = {
+				is_alive = yes
+				
+				NOT = { this = scope:former_leader }
+			}
+			add_to_list = former_$faction$_members
+			
+			leave_pol_faction_effect = { faction = $faction$ }
+		}
+		clear_global_variable_list = $faction$_members
+		
+		every_in_list = {
+			list = former_$faction$_members
+			limit = {
+				is_ai = no
+			}
+			set_variable = {
+				name = former_faction
+				value = flag:$faction$
+			}
+			
+			trigger_event = WCPLF.250
+		}
+	}
+}
+
+### Inheritance and clean up effects
+try_to_inherit_faction_effect = {
+	if = {
+		limit = { $PREV_HOLDER$ = global_var:$faction$_leader }
+		if = {
+			limit = { $PREV_HOLDER$ = { NOT = { can_lead_faction_trigger = { faction = $faction$ landless = no } } } }
+			if = {
+				limit = { can_lead_faction_trigger = { faction = $faction$ landless = no } }
+				try_to_transfer_pol_faction_loc_effect = { PREV_HOLDER = $PREV_HOLDER$ }
+				become_leader_of_faction_effect = {
+					faction = $faction$
+					give_modifiers = yes
+				}
+			}
+			# Must go after become_leader_of_faction_effect
+			$PREV_HOLDER$ = { leave_or_break_pol_faction_effect = { faction = $faction$ } }
+		}
+	}
+	else = {
+		if = {
+			limit = { $PREV_HOLDER$ = { NOT = { can_be_in_faction_trigger = { faction = $faction$ landless = no } } } }
+			$PREV_HOLDER$ = { leave_or_break_pol_faction_effect = { faction = $faction$ } }
+			if = {
+				limit = { can_be_in_faction_trigger = { faction = $faction$ landless = no } }
+				join_pol_faction_effect = { faction = $faction$ }
+			}
+		}
+	}
+}
+try_to_inherit_any_faction_effect = {
+	if = {
+		limit = { $PREV_HOLDER$ = { is_in_pol_faction_trigger = { faction = alliance } } }
+		try_to_inherit_faction_effect = { PREV_HOLDER = $PREV_HOLDER$ faction = alliance }
+	}
+	else_if = {
+		limit = { $PREV_HOLDER$ = { is_in_pol_faction_trigger = { faction = horde } } }
+		try_to_inherit_faction_effect = { PREV_HOLDER = $PREV_HOLDER$ faction = horde }
+	}
+	else_if = {
+		limit = { $PREV_HOLDER$ = { is_in_pol_faction_trigger = { faction = custom } } }
+		try_to_inherit_faction_effect = { PREV_HOLDER = $PREV_HOLDER$ faction = custom }
+	}
+}
+try_to_clean_up_pol_faction_effect = {
+	if = {
+		limit = { this = global_var:$faction$_leader }
+		if = {
+			limit = { NOT = { can_lead_faction_trigger = { faction = $faction$ landless = no } } }
+			leave_or_break_pol_faction_effect = { faction = $faction$ }
+		}
+	}
+	else = {
+		if = {
+			limit = { NOT = { can_be_in_faction_trigger = { faction = $faction$ landless = no } } }
+			leave_or_break_pol_faction_effect = { faction = $faction$ }
+		}
+	}
+}
+try_to_clean_up_any_faction_effect = {
+	if = {
+		limit = { is_in_pol_faction_trigger = { faction = alliance } }
+		try_to_clean_up_pol_faction_effect = { faction = alliance }
+	}
+	else_if = {
+		limit = { is_in_pol_faction_trigger = { faction = horde } }
+		try_to_clean_up_pol_faction_effect = { faction = horde }
+	}
+	else_if = {
+		limit = { is_in_pol_faction_trigger = { faction = custom } }
+		try_to_clean_up_pol_faction_effect = { faction = custom }
+	}
+}
+leave_or_break_any_pol_faction_effect = {
+	if = {
+		limit = { is_in_pol_faction_trigger = { faction = alliance } }
+		leave_or_break_pol_faction_effect = { faction = alliance }
+	}
+	else_if = {
+		limit = { is_in_pol_faction_trigger = { faction = horde } }
+		leave_or_break_pol_faction_effect = { faction = horde }
+	}
+	else_if = {
+		limit = { is_in_pol_faction_trigger = { faction = custom } }
+		leave_or_break_pol_faction_effect = { faction = custom }
+	}
+}
+
+add_alliances_with_faction_effect = {
+	save_temporary_scope_as = alliance_actor
+	every_in_global_list = {
+		variable = $MEMBERS$
+		limit = {
+			is_alive = yes
+			
+			NOT = { this = scope:alliance_actor }
+			NOT = { is_allied_to = scope:alliance_actor }
+		}
+		scope:alliance_actor = {
+			create_alliance = {
+				target = prev
+				allied_through_owner = scope:alliance_actor
+				allied_through_target = prev
+			}
+		}
+	}
+}
+break_alliances_with_faction_effect = {
+	every_in_global_list = {
+		variable = $MEMBERS$
+		limit = {
+			is_alive = yes
+			
+			NOT = { this = prev }
+			is_allied_to = prev
+			NOT = { is_any_family_relation_or_spouse_trigger = { CHARACTER = prev } }
+		}
+		break_alliance = prev
+	}
+}
+
+request_pol_faction_joining_effect = {
+	save_scope_as = actor
+	global_var:$faction$_leader = { save_scope_as = recipient }
+	save_scope_value_as = {
+		name = joining_faction
+		value = flag:$faction$
+	}
+	
+	stress_impact = {
+		shy = minor_stress_impact_gain
+	}
+	
+	show_as_tooltip = { join_pol_faction_effect = { faction = $faction$ } }
+	
+	scope:recipient = { trigger_event = WCPLF.150 }
+}
+
+invite_to_pol_faction_effect = {
+	scope:actor = {
+		trigger_event = WCPLF.305
+
+		stress_impact = {
+			shy = minor_stress_impact_gain
+		}
+
+		if = {
+			limit = {
+				scope:hook = yes
+				has_hook = scope:recipient
+			}
+			use_hook = scope:recipient
+		}
+	}
+
+	scope:recipient = {
+		if = {
+			limit = { scope:actor = { leads_pol_faction_trigger = { faction = alliance } } }
+			join_pol_faction_effect = { faction = alliance }
+		}
+		else_if = {
+			limit = { scope:actor = { leads_pol_faction_trigger = { faction = horde } } }
+			join_pol_faction_effect = { faction = horde }
+		}
+		else_if = {
+			limit = { scope:actor = { leads_pol_faction_trigger = { faction = custom } } }
+			join_pol_faction_effect = { faction = custom }
+		}
+	}
+}
+
+assign_pol_faction_modifiers = {
+	if = {
+		limit = { exists = global_var:$faction$_leader }
+		global_var:$faction$_leader = { add_character_modifier = faction_leader_modifier }
+	}
+}
+
+try_to_transfer_pol_faction_loc_effect = {
+	if = {
+		limit = {
+			NOT = { has_variable = custom_union_name }
+			$PREV_HOLDER$ = { has_variable = custom_union_name }
+		}
+		set_variable = {
+			name = custom_union_name
+			value = $PREV_HOLDER$.var:custom_union_name
+		}
+		copy_localized_text = {
+			key = custom_union_name
+			target = $PREV_HOLDER$
+		}
+		# $PREV_HOLDER$ = {
+			# remove_pol_faction_loc_effect = yes
+		# }
+	}
+}
+remove_pol_faction_loc_effect = {
+	if = {
+		limit = { has_variable = custom_union_name }
+		remove_variable = custom_union_name
+		remove_localized_text = custom_union_name
+	}
+}
