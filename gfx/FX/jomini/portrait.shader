@@ -1009,6 +1009,17 @@ Effect portrait_skin
 	PixelShader = "PS_skin"
 	Defines = { "FAKE_SSS_EMISSIVE" }
 }
+
+# Warcraft
+Effect portrait_skin_alpha_to_coverage
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_skin"
+	BlendState = "alpha_to_coverage"
+	RasterizerState = "rasterizer_no_culling"
+	Defines = { "FAKE_SSS_EMISSIVE" }
+}
+
 Effect portrait_skinShadow
 {
 	VertexShader = "VS_portrait_blend_shapes_shadow"
