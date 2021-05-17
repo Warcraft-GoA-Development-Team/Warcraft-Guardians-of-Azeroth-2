@@ -285,6 +285,8 @@
 		# Truce
 		add_truce_attacker_victory_effect = yes
 
+		# FP1: note the victory for future memorialisation via stele (if applicable).
+		scope:attacker = { fp1_remember_recent_conquest_victory_effect = yes }
 	}
 
 	on_white_peace_desc = {
@@ -733,6 +735,8 @@ clan_invasion_war = {
 		# Truce
 		add_truce_attacker_victory_effect = yes
 
+		# FP1: note the victory for future memorialisation via stele (if applicable).
+		scope:attacker = { fp1_remember_recent_conquest_victory_effect = yes }
 	}
 
 	on_white_peace_desc = {
@@ -848,16 +852,29 @@ clan_invasion_war = {
 	min_ai_score = 100
 }
 
+# Warcraft
+# Used for Horde
 mongol_invasion_war = {
 	group = invasion
 
 	combine_into_one = yes
 	should_show_war_goal_subview = yes
 	mutually_exclusive_titles = { always = yes }
+	
+	# Warcraft
+	# Lok'tar ogar!
+	white_peace_possible = no
 
 	allowed_for_character = {
-		this = title:e_mongol_empire.holder
-		has_government = tribal_government
+		# Warcraft
+		is_great_invader_trigger = yes
+		
+		# Warcraft
+		# has_government = tribal_government
+	}
+	
+	# Warcraft
+	allowed_for_character_display_regardless = {
 		prestige_level >= 1
 	}
 	
@@ -881,15 +898,20 @@ mongol_invasion_war = {
 	}
 
 	should_invalidate = {
-		NOT = {
-			any_in_list = {
-				list = target_titles
-				any_in_de_jure_hierarchy = {
-					tier = tier_county
-					holder = {
-						OR = {
-							this = scope:defender
-							target_is_liege_or_above = scope:defender
+		# Warcraft
+		OR = {
+			scope:attacker = { is_great_invader_trigger = no }
+			
+			NOT = {
+				any_in_list = {
+					list = target_titles
+					any_in_de_jure_hierarchy = {
+						tier = tier_county
+						holder = {
+							OR = {
+								this = scope:defender
+								target_is_liege_or_above = scope:defender
+							}
 						}
 					}
 				}
@@ -992,10 +1014,19 @@ mongol_invasion_war = {
 				}
 			}
 
-			# Genghis Khan gets it for free
+			# Warcraft
+			# # Genghis Khan gets it for free
+			# if = {
+				# limit = { scope:attacker = { has_character_flag = is_temujin } }
+				# multiply = 0
+			# }
+			# If fired by the Mongol Invasion story, don't charge a cost
 			if = {
-				limit = { scope:attacker = { has_character_flag = is_temujin } }
-				multiply = 0
+				limit = { scope:attacker = { has_character_flag = free_mongol_cb } }
+				multiply = {
+					value = 0
+					desc = CB_MONGOL_INVASIONS_COST
+				}
 			}
 			
 			if = {
@@ -1033,6 +1064,14 @@ mongol_invasion_war = {
 		}
 		
 
+		# Warcraft
+		scope:attacker = {
+			set_variable = {
+				name = taken_duchies_num
+				value = 0
+			}
+		}
+		
 		# go through the dejure hierarchy under target titles, transfer titles with same or worse tolerance holders (their religion equaly or less tolerated than the defender's),
 		# take the holder as vassal otherwise and don't go deeper
 		every_in_list = {
@@ -1094,6 +1133,54 @@ mongol_invasion_war = {
 						add_to_temporary_list = vassals_taken
 					}
 				}
+				
+				# Warcraft
+				# Mark empires and kingdoms for destruction
+				if = {
+					limit = {
+						tier > tier_duchy
+					}
+					add_to_temporary_list = titles_to_destroy
+				}
+			}
+			# Orcish clans mark conquered duchies for claiming
+			if = {
+				limit = { scope:attacker = { is_horde_invader_trigger = yes } }
+				every_in_de_jure_hierarchy = {
+					continue = {
+						tier > tier_duchy
+					}
+					limit = {
+						exists = this
+						tier = tier_duchy
+						NOT = { is_in_list = duchies_taken }
+						trigger_if = {
+							limit = { NOT = { exists = holder } }
+							any_de_jure_county_holder = {
+								OR = {
+									this = scope:defender
+									target_is_liege_or_above = scope:defender
+								}
+							}
+						}
+						trigger_else = {
+							holder = {
+								OR = {
+									this = scope:defender
+									target_is_liege_or_above = scope:defender
+								}
+							}
+						}
+					}
+					
+					add_to_temporary_list = duchies_taken
+					scope:attacker = {
+						change_variable = {
+							name = taken_duchies_num
+							add = 1
+						}
+					}
+				}
 			}
 		}
 
@@ -1112,8 +1199,81 @@ mongol_invasion_war = {
 				liege = scope:attacker
 				change = scope:change
 			}
-		}	
+		}
 		resolve_title_and_vassal_change = scope:change
+		
+		# Warcraft
+		# Orcish clans take 50% of duchies
+		if = {
+			limit = { scope:attacker = { is_horde_invader_trigger = yes } }
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = change_two
+				add_claim_on_loss = no
+			}
+			scope:attacker = {
+				change_variable = {
+					name = taken_duchies_num
+					multiply = 0.5
+				}
+				round_variable = {
+					name = taken_duchies_num
+					nearest = 1
+				}
+				
+				custom_tooltip = DEMANDING_VASSAL_CB_TITLE
+				if = {
+					limit = { exists = scope:attacker.var:taken_duchies_num }
+					hidden_effect = {
+						ordered_vassal = {
+							limit = {
+								culture_group = scope:attacker.culture_group
+							}
+							order_by = max_military_strength
+							max = scope:attacker.var:taken_duchies_num
+							
+							save_temporary_scope_as = demanding_vassal
+							
+							random_in_list = {
+								list = duchies_taken
+								change_title_holder = {
+									holder = scope:demanding_vassal
+									change = scope:change_two
+								}
+								every_in_de_jure_hierarchy = {
+									continue = {
+										tier > tier_county
+									}
+									limit = {
+										exists = this
+										tier = tier_county
+										is_in_list = titles_taken
+									}
+									change_title_holder = {
+										holder = scope:demanding_vassal
+										change = scope:change_two
+										take_baronies = yes
+									}
+								}
+								remove_from_list = duchies_taken
+							}
+						}
+					}
+				}
+				#remove_variable = taken_duchies_num
+			}
+			resolve_title_and_vassal_change = scope:change_two
+		}
+		
+		# Destroy any titles that should be destroyed
+		hidden_effect = {
+			every_in_list = {
+				list = titles_to_destroy
+				scope:attacker = {
+					destroy_title = prev
+				}
+			}
+		}
 
 		# Prestige for the attacker's war allies
 		add_from_contribution_attackers = {
@@ -1140,7 +1300,9 @@ mongol_invasion_war = {
 
 		# Truce
 		add_truce_attacker_victory_effect = yes
-				
+
+		# FP1: note the victory for future memorialisation via stele (if applicable).
+		scope:attacker = { fp1_remember_recent_conquest_victory_effect = yes }
 	}
 
 	on_white_peace_desc = {
@@ -1187,6 +1349,9 @@ mongol_invasion_war = {
 			}
 			desc = invasion_war_white_peace_desc
 		}
+
+		# Warcraft
+		desc = shatter_realm_cb_attacker_desc
 	}
 	
 	on_defeat = {
@@ -1202,7 +1367,9 @@ mongol_invasion_war = {
 
 		# Prestige for the defender's war allies
 		add_from_contribution_defenders = {
-			prestige = mongol_invasion_cb_ally_prestige
+			# Warcraft
+			prestige = shatter_realm_prestige_value
+
 			opinion = {
 				modifier = contributed_in_war
 			}
@@ -1210,16 +1377,23 @@ mongol_invasion_war = {
 	
 		# Truce
 		add_truce_attacker_defeat_effect = yes
-			
+		
 		# piety change
 		every_in_list = {
 			list = target_titles
 			
 			scope:defender = {
-				add_prestige = mongol_invasion_cb_prestige_gain
+				# Warcraft
+				add_prestige = shatter_realm_prestige_value
 			}
 
 			scope:attacker = {
+				# Warcraft
+				add_prestige = {
+					value = shatter_realm_prestige_value
+					multiply = -1.0
+				}
+				
 				pay_short_term_income = {
 					years = 3
 					target = scope:defender
@@ -1234,6 +1408,11 @@ mongol_invasion_war = {
 					target = prev
 				}
 			}
+		}
+		
+		# Warcraft
+		scope:attacker = {
+			shatter_realm_effect = yes
 		}
 		
 		scope:attacker = {
@@ -1263,6 +1442,9 @@ mongol_invasion_war = {
 	min_ai_score = 100
 }
 
+# Warcraft
+# So far, not used
+# mongol_invasion_war looks better since it's used by both AI and player
 mongol_realm_invasion_war = {
 	group = invasion
 
@@ -1271,7 +1453,9 @@ mongol_realm_invasion_war = {
 	mutually_exclusive_titles = { always = yes }
 
 	allowed_for_character = {
-		this = title:e_mongol_empire.holder
+		# Warcraft
+		is_great_invader_trigger = yes
+
 		is_ai = yes # To keep it clean and simple for players
 		prestige_level >= 1
 	}
@@ -1409,14 +1593,15 @@ mongol_realm_invasion_war = {
 				}
 			}
 
-			# Genghis Khan gets it for free
-			if = {
-				limit = { scope:attacker = { has_character_flag = is_temujin } }
-				multiply = {
-					value = 0
-					desc = CB_GENGHIS_KHAN_COST
-				}
-			}
+			# Warcraft
+			# # Genghis Khan gets it for free
+			# if = {
+				# limit = { scope:attacker = { has_character_flag = is_temujin } }
+				# multiply = {
+					# value = 0
+					# desc = CB_GENGHIS_KHAN_COST
+				# }
+			# }
 
 			# If fired by the Mongol Invasion story, don't charge a cost
 			if = {
@@ -1561,7 +1746,9 @@ mongol_realm_invasion_war = {
 
 		# Truce
 		add_truce_attacker_victory_effect = yes
-				
+
+		# FP1: note the victory for future memorialisation via stele (if applicable).
+		scope:attacker = { fp1_remember_recent_conquest_victory_effect = yes }
 	}
 
 	on_white_peace_desc = {
