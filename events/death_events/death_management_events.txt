@@ -1,0 +1,4378 @@
+﻿#Events for managing death of characters
+
+namespace = death_management
+
+# Finds everyone who should care about the death and clean stuff up
+scripted_trigger death_management_0001_valid_for_death_event_trigger = {
+	NOR = {
+		this = scope:dead_character
+		block_death_event_trigger = { DEAD = scope:dead_character }
+		is_player_heir_of_trigger = { CHARACTER = scope:dead_character }
+		is_in_list = send_death_management_0002
+	}
+}
+
+# Calculates how much Stress a character should gain/lose from the death of someone they care about (in some fashion, love or hate) and saves that value for later event usage.
+# This must be run before the character actually dies, as death removes all extant relationships and opinion modifiers.
+scripted_effect calculate_stress_gain_loss_from_deceased_character_effect = {
+	save_scope_value_as = {
+		name = deceased_character_stress
+		value = {
+			if = {
+				# Dying character was extremely close to this character.
+				limit = {
+					OR = {
+						has_relation_soulmate = $DYING_CHARACTER$
+						has_relation_best_friend = $DYING_CHARACTER$
+					}
+				}
+				value = major_stress_gain
+			}
+			else_if = {
+				# Dying character was close and/or otherwise important to this character.
+				limit = {
+					OR = {
+						has_relation_lover = $DYING_CHARACTER$
+						has_relation_friend = $DYING_CHARACTER$
+						reverse_opinion = {
+							target = $DYING_CHARACTER$
+							value >= 75
+						}
+					}
+				}
+				value = medium_stress_gain
+			}
+			else_if = {
+				# Dying character was strongly disliked, rivaled, or was an obstacle to this character's ambitions.
+				limit = {
+					OR = {
+						has_relation_rival = $DYING_CHARACTER$
+						reverse_opinion = {
+							target = $DYING_CHARACTER$
+							value < -20
+						}
+						AND = {
+							is_heir_of = $DYING_CHARACTER$
+							ai_greed >= 50
+						}
+					}
+				}
+				value = minor_stress_loss
+			}
+			else = {
+				# Dying character was only moderately important to this character (siblings who weren't very close, for example).
+				# Characters who are less important than this shouldn't gain/lose stress at all (councillors, vassals, lieges, etc.).
+				value = minor_stress_gain
+			}
+
+			# Callous characters are less affected by the deaths of others, both positively and negatively.
+			if = {
+				limit = { has_trait = callous }
+				multiply = 0.5
+			}
+			# Sadistic and Vengeful characters are fully affected (but will probably have fewer friends and more enemies to begin with).
+		}
+	}
+	
+}
+
+death_management.0001 = {
+	type = character_event
+
+	hidden = yes
+
+	immediate = {
+		save_scope_as = dead_character
+
+		### CHECKING STATUSES & HANDLING LOANS ###
+		
+		#To save imprisoner & prisons status
+		if = {
+			limit = {
+				is_in_prison_type = dungeon
+				exists = imprisoner
+			}
+			imprisoner = {
+				save_scope_as = prison_holder
+			}
+		}
+		else_if = {
+			limit = {
+				is_in_prison_type = house_arrest
+			}
+			imprisoner = {
+				save_scope_as = house_arrest_holder
+			}
+		}
+
+		#To make heir inherit a loan (make them have a money claim)
+		if = {
+			limit = {
+				exists = var:owes_me_money
+				var:owes_me_money = {
+					is_alive = yes
+					NOR = {
+						this = scope:dead_character
+						is_player_heir_of_trigger = { CHARACTER = scope:dead_character }
+					}
+				}
+				exists = player_heir
+			}
+			player_heir = {
+				save_scope_as = new_loan_holder
+				if = {
+					limit = {
+						NOT = { exists = var:owes_me_money }
+					}
+					set_variable = {
+						name = original_lender
+						value = root
+					}
+					set_variable = {
+						name = owes_me_money
+						value = root.var:owes_me_money
+					}
+				}
+			}
+			var:owes_me_money = {
+				remove_variable = loan_holder
+				if = {
+					limit = {
+						exists = scope:new_loan_holder
+						scope:new_loan_holder = {
+							prev = root.var:owes_me_money
+						}
+					}
+					set_variable = {
+						name = loan_holder
+						value = scope:new_loan_holder
+					}
+				}
+			}
+		}
+
+		#Does someone owe my Holy Order money?
+		if = {
+			limit = {
+				exists = var:owes_me_money
+				var:owes_me_money = {
+					is_alive = yes
+					NOR = {
+						this = scope:dead_character
+						is_player_heir_of_trigger = { CHARACTER = scope:dead_character }
+					}
+					has_character_flag = borrow_from_holy_order
+				}
+				faith = {
+					any_faith_holy_order = {
+						leader = {
+							this = scope:dead_character
+						}
+					}
+				}
+			}
+			faith = {
+				random_faith_holy_order = {
+					limit = {
+						leader = { this = scope:dead_character }
+					}
+					save_scope_as = order
+				}
+			}
+			
+			var:owes_me_money = {
+				trigger_event = {
+					id = holy_order.0201
+					days = 1
+				}
+			}
+		}
+		if = {
+			limit = {
+				exists = var:owes_me_money
+				var:owes_me_money = { is_alive = yes }
+				NOT = { exists = player_heir }
+				NOT = {
+					var:owes_me_money = {
+						has_character_flag = borrow_from_holy_order
+					}
+				}
+			}
+			var:owes_me_money = {
+				remove_variable = loan_holder
+				remove_variable = loan_amount_owed
+			}
+		}
+
+		#To make the heir inherit a loan (make them owe someone money)
+		if = {
+			limit = {
+				exists = var:loan_holder
+				exists = var:loan_amount_owed
+				var:loan_holder = {
+					is_alive = yes
+					NOR = {
+						this = scope:dead_character
+						is_player_heir_of_trigger = { CHARACTER = scope:dead_character }
+					}
+				}
+				exists = player_heir
+			}
+			player_heir = {
+				set_variable = {
+					name = original_loan_holder
+					value = root
+				}
+				set_variable = {
+					name = loan_holder
+					value = this
+				}
+				set_variable = {
+					name = loan_amount_owed
+					value = root.var:loan_amount_owed
+				}
+			}
+		}
+
+		#To make the court physician stay in service
+		if = {
+			limit = {
+				any_relation = {
+					type = court_physician
+					count >= 1
+				}
+				exists = player_heir
+			}
+			random_relation = {
+				type = court_physician
+				save_scope_as = physician
+			}
+			player_heir = {
+				set_relation_court_physician = scope:physician
+			}
+		}
+
+		
+		#SEND EVENT ABOUT DEATH
+
+		#Send event about relevant death to consorts
+		every_consort = {
+			limit = { death_management_0001_valid_for_death_event_trigger = yes }
+			add_to_list = send_death_management_0002
+
+			#If heir's spouse dies
+			if = {
+				limit = {
+					any_parent = {
+						exists = primary_heir
+						primary_heir = { is_consort_of = scope:dead_character }
+						death_management_0001_valid_for_death_event_trigger = yes
+					}
+				}
+				random_parent = {
+					limit = {
+						exists = primary_heir
+						primary_heir = { is_consort_of = scope:dead_character }
+						death_management_0001_valid_for_death_event_trigger = yes
+						any_courtier = { is_consort_of = scope:dead_character }
+						is_ai = no #priority to players, who are the only people these are *really* relevant for
+					}
+					alternative_limit = {
+						exists = primary_heir
+						primary_heir = { is_consort_of = scope:dead_character }
+						death_management_0001_valid_for_death_event_trigger = yes
+						is_ai = no #priority to players, who are the only people these are *really* relevant for
+					}
+					alternative_limit = {
+						exists = primary_heir
+						primary_heir = { is_consort_of = scope:dead_character }
+						death_management_0001_valid_for_death_event_trigger = yes
+					}
+					primary_heir = { save_scope_as = spouse_of_dead_character }
+					save_scope_as = parent_of_spouse_of_dead_character
+					add_to_list = send_death_management_0002
+				}
+			}
+		}
+		#Send event about relevant death to betrothed
+		if = {
+			limit = { exists = betrothed }
+			betrothed = {
+				if = {
+					limit = { death_management_0001_valid_for_death_event_trigger = yes }
+					add_to_list = send_death_management_0002
+				}
+				save_scope_as = betrothed_of_dead_character
+				add_to_list = send_death_management_0002_betrothed
+				random_parent = { #The parent who most likely set up/agreed to the betrothal
+					limit = {
+						any_courtier = { this = scope:betrothed_of_dead_character }
+						death_management_0001_valid_for_death_event_trigger = yes
+						is_ai = no #priority to players, who are the only people these are *really* relevant for
+					}
+					alternative_limit = {
+						any_courtier = { this = scope:betrothed_of_dead_character }
+						death_management_0001_valid_for_death_event_trigger = yes
+					}
+					save_scope_as = parent_of_betrothed_of_dead_character
+					add_to_list = send_death_management_0002
+				}
+			}	
+		}
+		#Send event about relevant death to parents
+		every_parent = {
+			limit = { death_management_0001_valid_for_death_event_trigger = yes }
+			add_to_list = send_death_management_0002
+		}
+
+		#Send event about relevant death to "predecessor" if heir
+		if = {
+			limit = {
+				any_heir_title = {
+					count >= 1
+				}
+			}
+			every_heir_title = {
+				limit = { exists = holder }
+				holder = {
+					if = {
+						limit = {
+							player_heir = scope:dead_character
+							NOT = {
+								is_in_list = title_holder_list
+							}
+							death_management_0001_valid_for_death_event_trigger = yes
+						}
+						add_to_list = title_holder_list
+					}
+				}
+			}
+		}
+		every_in_list = {
+			list = title_holder_list
+			add_to_list = send_death_management_0002
+		}
+
+		#Send event about relevant death to children
+		every_child = {
+			limit = { death_management_0001_valid_for_death_event_trigger = yes }
+			add_to_list = send_death_management_0002
+		}
+		#Send event about relevant death to siblings
+		every_sibling = {
+			limit = { death_management_0001_valid_for_death_event_trigger = yes }
+			add_to_list = send_death_management_0002
+		}
+		#Send event about relevant death to lovers
+		every_relation = {
+			type = lover
+			limit = {
+				is_alive = yes
+				death_management_0001_valid_for_death_event_trigger = yes
+			}
+			add_to_list = send_death_management_0002_lover
+			if = {
+				limit = {
+					OR = {
+						has_relation_soulmate = scope:dead_character
+						has_opinion_modifier = {
+							target = scope:dead_character
+							modifier = love_opinion
+							value >= 40
+						}
+					}
+				}
+				add_character_flag = {
+					flag = important_lover
+					days = 3
+				}
+			}
+			add_to_list = send_death_management_0002
+		}
+		#Send event about relevant death to friends
+		every_relation = {
+			type = friend
+			limit = {
+				is_alive = yes
+				death_management_0001_valid_for_death_event_trigger = yes
+				NOT = { has_relation_best_friend = scope:dead_character }
+			}
+			add_to_list = send_death_management_0002_friend
+			add_to_list = send_death_management_0002
+		}
+		#Send event about relevant death to friends
+		every_relation = {
+			type = best_friend
+			limit = {
+				is_alive = yes
+				death_management_0001_valid_for_death_event_trigger = yes
+			}
+			add_to_list = send_death_management_0002_best_friend
+			add_to_list = send_death_management_0002
+		}
+		#Send event about relevant death to rivals
+		every_relation = {
+			type = rival
+			limit = {
+				is_alive = yes
+				death_management_0001_valid_for_death_event_trigger = yes
+			}
+			add_to_list = send_death_management_0002_rival
+			add_to_list = send_death_management_0002
+		}
+		#Send event about relevant death to Wards
+		every_relation = {
+			type = ward
+			limit = {
+				is_alive = yes
+			}
+			if = {
+				limit = { is_foreign_court_guest = yes }
+				return_to_court = yes
+			}
+			if = {
+				limit = { death_management_0001_valid_for_death_event_trigger = yes }
+				add_to_list = send_death_management_0002
+			}
+
+			#Send event about relevant death to Ward's parent if they have no other relationship to the Educator
+			every_parent = {
+				limit = {
+					is_ai = no
+					is_alive = yes
+					death_management_0001_valid_for_death_event_trigger = yes
+				}
+				add_to_list = send_death_management_0002 #Child's educator's death notification
+			}
+		}
+		#For liege if they're a councillor
+		if = {
+			limit = {
+				exists = liege
+				liege = {
+					NOT = {
+						this = root
+					}
+					death_management_0001_valid_for_death_event_trigger = yes
+				}
+				is_councillor_of = liege
+			}
+			liege = {
+				save_scope_as = liege_of_dead_character_councillor
+				add_to_list = send_death_management_0002
+			}
+		}
+		##For liege if they're a powerful vassal
+		#if = {
+		#	limit = {	
+		#		exists = liege
+		#		liege = {
+		#			NOT = {
+		#				this = root
+		#			}
+		#			death_management_0001_valid_for_death_event_trigger = yes
+		#		}
+		#		is_powerful_vassal_of = liege
+		#	}
+		#	liege = {
+		#		save_scope_as = liege_of_dead_character
+		#		add_to_list = send_death_management_0002
+		#	}
+		#}
+
+		#Check for a prison owner
+		if = {
+			limit = {
+				exists = scope:prison_holder
+			}
+			scope:prison_holder = {
+				if = {
+					limit = { death_management_0001_valid_for_death_event_trigger = yes }
+					add_to_list = send_death_management_0002
+				}
+			}
+		}
+
+		#For pinned characters
+		every_pinning_character = {
+			limit = { death_management_0001_valid_for_death_event_trigger = yes }
+			add_to_list = send_death_management_0002
+		}
+
+		#Send death_management.0002
+		every_in_list = {
+			list = send_death_management_0002
+
+			# Calculate and save how much stress we should gain/lose from this character's death.
+			calculate_stress_gain_loss_from_deceased_character_effect = {
+				DYING_CHARACTER = root
+			}
+
+			# Queue up a death notification event.
+			trigger_event = {
+				id = death_management.0002
+				delayed = yes
+			}
+
+			#To block any death notification  events sent after this for 3 days
+			add_death_event_blocker_effect = { DEAD = root } 
+		}
+	}
+}
+
+#Someone you care about (in some capacity) has died
+death_management.0002 = {
+	type = character_event
+
+	hidden = yes
+
+	trigger = {
+		trigger_if = {
+			limit = {
+				exists = scope:killer
+			}
+			NOT = { this = scope:killer } #Killers already know
+		}
+	}
+
+	immediate = { #Finds most important relation for notification & mourning events
+
+		if = {
+			limit = { #To block the player from getting events about themselves dying
+				NOT = {
+					is_player_heir_of_trigger = { CHARACTER = scope:dead_character }
+				}
+			}
+			if = { #Spouse
+				limit = {
+					exists = scope:prison_holder
+					NOT = { this = scope:prison_holder }
+					any_consort = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.2000 #Spouse death in dungeon notification
+			}
+			
+			else_if = { #Spouse
+				limit = {
+					exists = scope:prison_holder
+					this = scope:prison_holder
+					any_consort = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.3000 #Spouse death in YOUR dungeon notification
+			}
+
+			else_if = { #Spouse
+				limit = {
+					exists = scope:house_arrest_holder
+					any_consort = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.4000 #Spouse death in house arrest notification
+			}
+
+			else_if = { #Spouse
+				limit = {
+					any_consort = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.1000 #Spouse death notification
+			}
+
+			else_if = { #Heir
+				limit = {
+					exists = scope:prison_holder
+					NOT = { this = scope:prison_holder }
+					is_in_list = title_holder_list
+				}
+				trigger_event = death_management.2007 #Heir death in dungeon notification
+			}
+
+			else_if = { #Heir
+				limit = {
+					exists = scope:prison_holder
+					this = scope:prison_holder
+					is_in_list = title_holder_list
+					is_close_or_extended_family_of = scope:dead_character
+				}
+				trigger_event = death_management.3007 #Heir death in YOUR dungeon notification
+			}
+
+			else_if = { #Heir
+				limit = {
+					exists = scope:house_arrest_holder
+					is_in_list = title_holder_list
+					is_close_or_extended_family_of = scope:dead_character
+				}
+				trigger_event = death_management.4007 #Heir death in house arrest notification
+			}
+
+			else_if = { #Heir
+				limit = {
+					is_in_list = title_holder_list
+					is_close_or_extended_family_of = scope:dead_character
+				}
+				trigger_event = death_management.1007 #Heir death notification (for family)
+			}
+
+			else_if = { #Heir
+				limit = {
+					is_in_list = title_holder_list
+				}
+				send_interface_message = { #Heir death notification (for others)
+					type = character_has_died
+					desc = death_management.1007.a.tt
+					left_icon = scope:dead_character
+				}
+			}
+
+			else_if = { #Betrothed
+				limit = {
+					exists = scope:prison_holder
+					NOT = { this = scope:prison_holder }
+					is_in_list = send_death_management_0002_betrothed
+				}
+				trigger_event = death_management.2008 #Betrothed death in dungeon notification
+			}
+
+			else_if = { #Betrothed
+				limit = {
+					exists = scope:prison_holder
+					this = scope:prison_holder
+					is_in_list = send_death_management_0002_betrothed
+				}
+				trigger_event = death_management.3008 #Betrothed death in YOUR dungeon notification
+			}
+
+			else_if = { #Betrothed
+				limit = {
+					exists = scope:house_arrest_holder
+					is_in_list = send_death_management_0002_betrothed
+				}
+				trigger_event = death_management.4008 #Betrothed death in house arrest notification
+			}
+
+			else_if = { #Betrothed
+				limit = {
+					is_in_list = send_death_management_0002_betrothed
+				}
+				send_interface_message = {
+					type = character_has_died
+					desc = death_management.betrothed.desc
+					left_icon = scope:dead_character	
+				}
+			}
+
+			else_if = { #Child
+				limit = {
+					exists = scope:prison_holder
+					NOT = { this = scope:prison_holder }
+					any_child = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.2001 #Child death in dungeon notification
+			}
+
+			else_if = { #Child
+				limit = {
+					exists = scope:prison_holder
+					this = scope:prison_holder
+					any_child = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.3001 #Child death in YOUR dungeon notification
+			}
+
+			else_if = { #Child
+				limit = {
+					exists = scope:house_arrest_holder
+					any_child = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.4001 #Child death in house arrest notification
+			}
+
+			else_if = { #Child
+				limit = {
+					any_child = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.1001 #Child death notification
+			}
+
+			else_if = { #Parent
+				limit = {
+					exists = scope:prison_holder
+					NOT = { this = scope:prison_holder }
+					any_parent = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.2002 #Parent death in dungeon notification
+			}
+
+			else_if = { #Parent
+				limit = {
+					exists = scope:prison_holder
+					this = scope:prison_holder
+					any_parent = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.3002 #Parent death in YOUR dungeon notification
+			}
+
+			else_if = { #Parent
+				limit = {
+					exists = scope:house_arrest_holder
+					any_parent = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.4002 #Parent death in house arrest notification
+			}
+
+			else_if = { #Parent
+				limit = {
+					any_parent = { even_if_dead = yes this = scope:dead_character }
+				}
+				send_interface_message = {
+					type = character_has_died
+					desc = death_management.parent.desc
+					left_icon = scope:dead_character	
+
+					if = {
+						limit = {
+							NOT = {
+								scope:dead_character = {
+									# Warcaft
+									age >= age_65_value
+									death_reason = death_old_age
+								}
+							}
+						}
+						add_stress = scope:deceased_character_stress
+					}
+				}
+			}
+
+			else_if = { #Sibling
+				limit = {
+					any_sibling = { even_if_dead = yes this = scope:dead_character }
+				}
+				send_interface_message = {
+					type = character_has_died
+					desc = death_management.sibling.desc
+					left_icon = scope:dead_character
+					
+					if = {
+						limit = {
+							NOT = {
+								scope:dead_character = {
+									# Warcaft
+									age >= age_65_value
+									death_reason = death_old_age
+								}
+							}
+						}
+						add_stress = scope:deceased_character_stress
+					}
+				}
+			}
+
+			else_if = { #Lover
+				limit = {
+					is_in_list = send_death_management_0002_lover
+				}
+				if = {
+					limit = {
+						has_character_flag = important_lover
+					}
+					remove_character_flag = important_lover
+					trigger_event = death_management.1004 #Lover death notification
+				}
+				else = {
+					send_interface_message = {
+						type = lover_has_died
+						desc = death_management.lover.desc
+						left_icon = scope:dead_character
+
+						add_stress = scope:deceased_character_stress
+					}
+				}
+			}
+
+			else_if = { #Friend
+				limit = {
+					is_in_list = send_death_management_0002_friend
+				}
+				send_interface_message = {
+					type = friend_has_died
+					title = friend_death_notification_title
+					desc = death_management.friend.desc
+					left_icon = scope:dead_character
+
+					add_stress = scope:deceased_character_stress	
+				}
+			}
+
+			else_if = { #Best Friend
+				limit = {
+					is_in_list = send_death_management_0002_best_friend
+				}
+				trigger_event = death_management.1005 #Friend death notification
+			}
+
+			else_if = { #Rival in your dungeon
+				limit = {
+					exists = scope:prison_holder
+					scope:prison_holder = root
+					is_in_list = send_death_management_0002_rival
+				}
+				trigger_event = death_management.3006 #Rival death notification
+			}
+
+			else_if = { #Rival
+				limit = {
+					is_in_list = send_death_management_0002_rival
+				}
+				trigger_event = death_management.1006 #Rival death notification
+			}
+
+			else_if = {
+				limit = {
+					any_relation = { type = guardian even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.1010 #Educator death notification
+			}
+
+			else_if = { #Parent of spouse (if primary heir)
+				limit = {
+					exists = scope:parent_of_spouse_of_dead_character
+					this = scope:parent_of_spouse_of_dead_character
+				}
+				if = {
+					limit = {
+						tier_difference = {
+							target = scope:dead_character
+							value >= 4
+						}
+					}
+					trigger_event = death_management.1008 #Spouse of child death notification
+				}
+				else = {
+					send_interface_message = {
+						type = character_has_died
+						desc = death_management.spouse_child.desc
+						left_icon = scope:dead_character	
+					}
+				}
+			}
+
+			else_if = { #Parent of betrothed
+				limit = {
+					exists = scope:parent_of_betrothed_of_dead_character
+					this = scope:parent_of_betrothed_of_dead_character
+				}
+				if = {
+					limit = {
+						tier_difference = {
+							target = scope:dead_character
+							value >= 4
+						}
+					}
+					trigger_event = death_management.1009 #Betrothed of child death notification
+				}
+				else = {
+					send_interface_message = {
+						type = character_has_died
+						desc = death_management.betrothed_child.desc
+						left_icon = scope:dead_character	
+					}
+				}
+			}
+
+			else_if = {
+				limit = {
+					any_child = {
+						any_relation = { type = guardian even_if_dead = yes this = scope:dead_character }
+					}
+				}
+				random_child = {
+					limit = { any_relation = { type = guardian even_if_dead = yes this = scope:dead_character } }
+					save_scope_as = ward_of_dead_character
+				}
+				send_interface_message = { #Child's educator's death notification
+					type = character_has_died
+					desc = death_management.educator.desc
+					left_icon = scope:dead_character
+				}
+			}
+
+			else_if = {
+				limit = {
+					exists = scope:prison_holder
+					this = scope:prison_holder
+				}
+				send_interface_message = { #A prisoner died notification
+					type = character_has_died
+					desc = death_management.prisoner.desc
+					left_icon = scope:dead_character
+				}
+			}
+
+			else_if = {
+				limit = {
+					exists = scope:liege_of_dead_character_councillor
+					this = scope:liege_of_dead_character_councillor
+				}
+				send_interface_message = {
+					type = councillor_has_died
+					desc = death_management.liege_councillor.desc
+					left_icon = scope:dead_character
+				}
+			}
+
+			#else_if = {
+			#	limit = {
+			#		exists = scope:liege_of_dead_character
+			#		this = scope:liege_of_dead_character
+			#	}
+			#	send_interface_message = {
+			#		type = character_has_died
+			#		desc = death_management.liege.desc
+			#		left_icon = scope:dead_character
+			#	}
+			#}
+
+			else_if = {
+				limit = {
+					any_pinned_character = { this = scope:dead_character }
+				}
+				send_interface_message = {
+					type = character_has_died
+					desc = death_management.pinned.desc
+					left_icon = scope:dead_character
+				}
+			}
+		}
+	}
+}	
+
+
+######################################################
+# NOTIFICATION EVENTS
+# 1000-1999
+######################################################
+
+#Notification about dead spouse
+death_management.1000 = {
+	type = character_event
+	title = death_management.1000.t
+	desc = {
+		triggered_desc = {
+			trigger = {
+				exists = scope:killer
+			}
+			desc = death_management.1000.murder
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:like
+				}
+				desc = death_management.1000.like
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:dislike
+				}
+				desc = death_management.1000.dislike
+			}
+			desc = death_management.1000.neutral
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	trigger = {
+		NOT = { has_character_flag = knows_of_spouse_death_flag }
+	}
+
+	immediate = {
+		play_music_cue = mx_cue_death
+
+		if = {
+			limit = {
+				reverse_opinion = {
+					target = scope:dead_character
+					value >= 10
+				}
+				scope:dead_character = { has_any_bad_relationship_with_root_trigger = no }
+				OR = {
+					opinion = {
+						target = scope:dead_character
+						value >= 10
+					}
+					scope:dead_character = { has_friendly_relationship_with_root_trigger = yes }
+				}
+			}
+			save_scope_value_as = {
+				name = like
+				value = yes
+			}
+		}
+		else_if = {
+			limit = {
+				OR = {
+					has_any_bad_relationship_with_root_trigger = yes
+					opinion = {
+						target = scope:dead_character
+						value < -30
+					}
+				}
+			}
+			save_scope_value_as = {
+				name = dislike
+				value = yes
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = neutral
+				value = yes
+			}
+		}
+
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					any_secret = {
+						secret_type = secret_murder
+						secret_target = scope:dead_character
+						is_known_by = root
+					}
+				}
+			}
+			save_scope_value_as = {
+				name = known_killer
+				value = yes
+			}
+		}
+	}
+	
+	#My beloved spouse!
+	option = {
+		trigger = {
+			exists = scope:like
+		}
+		name = death_management.1000.a
+
+		stress_impact = {
+			base = medium_stress_impact_gain
+			callous = minor_stress_impact_loss
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = spouse
+		}
+	}
+
+	#That's a shame
+	option = {
+		trigger = {
+			exists = scope:neutral
+		}
+		name = death_management.1000.b
+
+		if = {
+			limit = {
+				OR = {
+					has_any_bad_relationship_with_root_trigger = yes
+					opinion = {
+						target = scope:dead_character
+						value < -30
+					}
+				}
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+				callous = minor_stress_impact_loss
+			}
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = spouse
+		}
+	}
+	
+	#What a relief!
+	option = {
+		trigger = {
+			exists = scope:dislike
+		}
+		exclusive = yes
+		name = death_management.1000.c
+
+		stress_impact = {
+			base = minor_stress_impact_loss
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				exists = scope:known_killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.1001.tt
+		}
+	}
+}
+
+#Notification for parent of dead child
+death_management.1001 = {
+	type = character_event
+	title = death_management.1001.t
+	desc = {
+		triggered_desc = {
+			trigger = {
+				exists = scope:killer
+			}
+			desc = death_management.1001.murder
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:dead_character = {
+						# Warcraft
+						age_in_relation_to_humans_less_than_trigger = { age = 16 }
+					}
+				}
+				desc = death_management.1001.child
+			}
+			triggered_desc = {
+				trigger = {
+					reverse_opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = death_management.1001.like
+			}
+			triggered_desc = {
+				trigger = {
+					reverse_opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = death_management.1001.dislike
+			}
+			desc = death_management.1001.neutral
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					any_secret = {
+						secret_type = secret_murder
+						secret_target = scope:dead_character
+						is_known_by = root
+					}
+				}
+			}
+			save_scope_value_as = {
+				name = known_killer
+				value = yes
+			}
+		}
+	}
+	
+	#Good child
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			reverse_opinion = {
+				target = scope:dead_character
+				value >= 40
+			}
+		}
+		name = death_management.1001.a
+
+		stress_impact = {
+			base = medium_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+
+	#Neutral
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			reverse_opinion = {
+				target = scope:dead_character
+				value < 40
+			}
+			reverse_opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.1000.b
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+	
+	#Relieved
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			reverse_opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.1001.c
+
+		stress_impact = {
+			base = minor_stress_impact_loss
+		}
+	}
+
+	#Little child...
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = no
+			}
+		}
+		name = death_management.1001.d
+
+		stress_impact = {
+			base = medium_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				exists = scope:known_killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.1001.tt
+		}
+	}
+}
+
+# Sound Foundations stat removal
+death_management.1002 = {
+	hidden = yes
+
+	immediate = {
+		every_parent = { sound_foundations_random_removal_effect = yes }
+	}
+}
+
+# Friendly Counsel
+# Called from on action: death & on action: remove friendship 
+death_management.1003 = {
+	hidden = yes
+
+	immediate = {
+		every_relation = {
+			type = friend
+			add_to_temporary_list = death_management_1002_friendly_counsel_friends
+		}
+		every_relation = {
+			type = best_friend
+			add_to_temporary_list = death_management_1002_friendly_counsel_friends
+		}
+		every_in_list = {
+			list = death_management_1002_friendly_counsel_friends
+			friendly_counsel_random_removal_effect = yes
+		}
+	}
+}
+
+#Dead lover
+death_management.1004 = {
+	type = character_event
+	title = death_management.1004.t
+	desc = death_management.1004.desc
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	option = {
+		name = death_management.1004.a
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = lover
+		}
+	}
+
+	after = {
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.1004.a.tt
+		}
+	}
+}
+
+#Dead friend
+death_management.1005 = {
+	type = character_event
+	title = death_management.1005.t
+	desc = death_management.1005.desc
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	option = {
+		name = death_management.1005.a
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = friend
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.1005.a.tt
+		}
+	}
+}
+
+#Dead rival
+death_management.1006 = {
+	type = character_event
+	title = death_management.1006.t
+	desc = death_management.1006.desc
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	option = {
+		name = death_management.1000.c
+
+		stress_impact = {
+			base = medium_stress_impact_loss
+		}
+	}
+
+	after = {
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+			if = {
+				limit = {
+					scope:killer = root
+				}
+				add_prestige = medium_prestige_gain
+			}
+		}
+		else = {
+			custom_tooltip = death_management.1006.a.tt
+		}
+	}
+}
+
+#Dead heir
+death_management.1007 = {
+	type = character_event
+	title = death_management.1007.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:killer
+				}
+				desc = death_management.1007.start_murder
+			}
+			desc = death_management.1007.start
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {	scope:dead_character.highest_held_title_tier >= root.highest_held_title_tier }
+				desc = death_management.1007.same_or_higher_tier
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						AND = {
+							is_male = yes
+							scope:dead_character = { is_male = yes }
+						}
+						AND = {
+							is_female = yes
+							scope:dead_character = { is_female = yes }
+						}
+					}
+				}
+				desc = death_management.1007.mytitle
+			}
+			desc = death_management.1007.ruler
+		}
+		desc = death_management.1007.end
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	trigger = {
+		exists = player_heir
+	}
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					any_secret = {
+						secret_type = secret_murder
+						secret_target = scope:dead_character
+						is_known_by = root
+					}
+				}
+			}
+			save_scope_value_as = {
+				name = known_killer
+				value = yes
+			}
+		}
+	}
+
+	
+	option = {
+		name = death_management.1007.a
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+	}
+
+	after = {
+		if = {
+			limit = {
+				exists = scope:known_killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.1007.a.tt
+		}
+	}
+}
+
+#Death of child's spouse (if child is primary heir)
+death_management.1008 = {
+	type = character_event
+	title = death_management.1009.t
+	desc = death_management.1008.desc
+	theme = death
+	left_portrait = scope:dead_character
+	lower_left_portrait = scope:spouse_of_dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+
+	option = {
+		name = death_management.1008.a
+	}
+
+	after = {
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.1008.a.tt
+		}
+	}
+}
+
+#Death of child's betrothed
+death_management.1009 = {
+	type = character_event
+	title = death_management.1009.t
+	desc = death_management.1009.desc
+	theme = death
+	left_portrait = scope:dead_character
+	lower_left_portrait = scope:betrothed_of_dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+
+	option = {
+		name = {
+			# Warcraft
+			trigger = { age <= age_16_value }
+
+			text = death_management.1009.a
+		}
+		name = {
+			# Warcaft
+			trigger = { age > age_16_value }
+			text = death_management.1008.a
+		}
+	}
+
+	after = {
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.1009.a.tt
+		}
+	}
+}
+
+
+#Death of child's Educator - event for child
+death_management.1010 = {
+	type = character_event
+	title = death_management.1010.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:killer
+					scope:killer = root
+				}
+				desc = death_management.1010.murderer
+			}
+			triggered_desc = {
+				trigger = { # Warcraft
+					age_in_relation_to_humans_less_than_trigger = { age = 12 } 
+				}
+				desc = death_management.1010.under_12
+			}
+			desc = death_management.1010.12_or_over
+		}
+	}
+	theme = death
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	option = {
+		name = {
+			text = death_management.1010.under_12_liked_educator
+			trigger = {
+				# Warcraft
+				age_in_relation_to_humans_less_than_trigger = { age = 12 }
+
+				opinion = {
+					target = scope:dead_character
+					value > 0
+				}
+				trigger_if = {
+					limit = {
+						exists = scope:killer
+					}
+					NOT = { scope:killer = root }
+				}
+			}
+		}
+		name = {
+			text = death_management.1010.under_12_disliked_educator
+			trigger = {
+				# Warcraft
+				age_in_relation_to_humans_less_than_trigger = { age = 12 }
+
+				opinion = {
+					target = scope:dead_character
+					value <= 0
+				}
+				trigger_if = {
+					limit = {
+						exists = scope:killer
+					}
+					NOT = { scope:killer = root }
+				}
+			}
+		}
+		name = {
+			text = death_management.1010.over_12_liked_educator
+			trigger = {
+				# Warcaft
+				age >= age_12_value
+
+				opinion = {
+					target = scope:dead_character
+					value > 0
+				}
+				trigger_if = {
+					limit = {
+						exists = scope:killer
+					}
+					NOT = { scope:killer = root }
+				}
+			}
+		}
+		name = {
+			text = death_management.1010.over_12_disliked_educator
+			trigger = {
+				OR = {
+					AND = {
+						# Warcaft
+						age >= age_12_value
+
+						opinion = {
+							target = scope:dead_character
+							value <= 0
+						}
+					}
+					AND = {
+						exists = scope:killer
+						scope:killer = root
+					}
+				}
+			}
+		}
+		custom_tooltip = death_management.1010.a.tt
+	}
+}
+
+
+######################################################
+# NOTIFICATION EVENTS - DUNGEON DEATH OR MURDER
+# 2000-2999
+######################################################
+
+#Notification about dead spouse - Dungeon or murder
+death_management.2000 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:prison_holder
+					NOT = {	scope:prison_holder = root }
+				}
+				desc = death_management.2000.t
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:killer
+					scope:killer = root
+				}
+				desc = death_management.2000.t.root_killer
+			}
+			desc = death_management.2000.t.no_killer
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = { # Special desc for killing own spouse
+				trigger = {
+					exists = scope:killer
+					scope:killer = root
+				}
+				desc = death_management.2000.murderer
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= medium_positive_opinion
+					}
+				}
+				desc = {
+					desc = death_management.2000.like
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								exists = scope:killer
+								scope:killer = scope:prison_holder
+							}
+							desc = death_management.2000.like_end_killer
+						}
+						desc = death_management.2000.like_end
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < medium_positive_opinion
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= low_negative_opinion
+					}
+				}
+				desc = {
+					desc = death_management.2000.neutral
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								exists = scope:killer
+								scope:killer = scope:prison_holder
+							}
+							desc = death_management.2000.neutral_end_killer
+						}
+						desc = death_management.2000.neutral_end
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < low_negative_opinion
+					}
+				}
+				desc = {
+					desc = death_management.2000.dislike
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								exists = scope:killer
+								scope:killer = scope:prison_holder
+							}
+							desc = death_management.2000.dislike_end_killer
+						}
+						triggered_desc = {
+							trigger = {
+								exists = scope:killer
+								NOT = { scope:killer = scope:prison_holder }
+							}
+							desc = death_management.2000.dislike_end_unknown_killer
+						}
+						desc = death_management.2000.dislike_end_no_killer
+					}
+				}
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					any_secret = {
+						secret_type = secret_murder
+						secret_target = scope:dead_character
+						is_known_by = root
+					}
+				}
+			}
+			scope:killer = {
+				save_scope_as = prison_holder
+			}
+		}
+	}
+	
+	#My beloved spouse!
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value >= medium_positive_opinion
+			}
+			OR = {
+				NOT = { exists = scope:prison_holder }
+				AND = {
+					exists = scope:prison_holder
+					NOT = { scope:prison_holder = root }
+				}
+			}
+		}
+		name = death_management.2000.a
+		if = {
+			limit = {
+				exists = scope:prison_holder
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2000.tt
+		}
+	}
+
+	#That's a shame
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value < medium_positive_opinion
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= neutral_opinion
+			}
+			OR = {
+				NOT = { exists = scope:prison_holder }
+				AND = {
+					exists = scope:prison_holder
+					NOT = { scope:prison_holder = root }
+				}
+			}
+		}
+		name = death_management.2000.b
+		if = {
+			limit = {
+				exists = scope:prison_holder
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2000.tt
+		}
+	}
+	
+	#What a relief!
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value < neutral_opinion
+			}
+			OR = {
+				NOT = { exists = scope:prison_holder }
+				AND = {
+					exists = scope:prison_holder
+					NOT = { scope:prison_holder = root }
+				}
+			}
+		}
+		name = death_management.2000.c
+		if = {
+			limit = {
+				exists = scope:prison_holder
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2000.tt
+		}
+	}
+
+	# What a way to go
+	option = {
+		trigger = {
+			exists = scope:prison_holder
+			root = scope:prison_holder
+		}
+		name = death_management.2000.d
+	}
+
+	after = {
+		if = {
+			limit = {
+				NOT = { exists = scope:prison_holder }
+			}
+			add_opinion = {
+				modifier = loved_one_dungeon_death
+				target = scope:prison_holder
+			}
+		}
+	}
+}
+
+#Dead heir - Dungeon
+death_management.2007 = {
+	type = character_event
+	title = death_management.2007.t
+	desc = {
+		desc = death_management.2007.start
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					OR = {
+						AND = {
+							is_male = yes
+							scope:dead_character = { is_male = yes }
+						}
+						AND = {
+							is_female = yes
+							scope:dead_character = { is_female = yes }
+						}
+					}
+				}
+				desc = death_management.2007.mytitle
+			}
+			desc = death_management.2007.ruler
+		}
+		desc = death_management.2007.end
+	}
+	theme = death
+	left_portrait = scope:dead_character
+	right_portrait = scope:new_heir
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = { exists = player_heir }
+			player_heir = {
+				save_scope_as = new_heir
+			}
+		}
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					NOT = {
+						any_secret = {
+							secret_type = secret_murder
+							secret_target = scope:dead_character
+							is_known_by = root
+						}
+					}
+				}
+			}
+			scope:killer = {
+				save_scope_as = prison_holder
+			}
+		}
+	}
+
+	
+	option = {
+		name = death_management.2007.a
+		if = {
+			limit = {
+				exists = scope:prison_holder
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2007.a.tt
+		}
+		if = {
+			limit = { exists = scope:new_heir }
+			custom_tooltip = death_management.2007.a.new_heir.tt
+		}
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				NOT = { exists = scope:prison_holder }
+			}
+			add_opinion = {
+				modifier = loved_one_dungeon_death
+				target = scope:prison_holder
+			}
+		}
+	}
+}
+
+#Notification for parent of dead child - Dungeon
+death_management.2001 = {
+	type = character_event
+	title = death_management.2001.t
+	desc = {
+		desc = death_management.2001.opening
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:dead_character = {
+						# Warcraft
+						age_in_relation_to_humans_less_than_trigger = { age = 16 }
+					}
+				}
+				desc = death_management.2001.child
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = {
+					desc = death_management.2001.like
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								exists = scope:prison_holder
+							}
+							desc = death_management.2001.like_end_killer
+						}
+						desc = death_management.2001.like_end
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 40
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = death_management.2001.neutral
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = {
+					desc = death_management.2001.dislike
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								exists = scope:prison_holder
+							}
+							desc = death_management.2001.dislike_end_killer
+						}
+						desc = death_management.2001.dislike_end
+					}
+				}
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					OR = {
+						any_secret = {
+							secret_type = secret_murder
+							secret_target = scope:dead_character
+							is_known_by = root
+						}
+						NOT = {
+							any_secret = {
+								secret_type = secret_murder
+								secret_target = scope:dead_character
+							}
+						}
+					}
+				}
+			}
+			scope:killer = {
+				save_scope_as = prison_holder
+			}
+		}
+	}
+
+	#Liked child
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.2000.b
+		if = {
+			limit = {
+				exists = scope:prison_holder
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2001.tt
+		}
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+	
+	#Relieved
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.2001.c
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2001.tt
+		}
+
+		stress_impact = {
+			base = minor_stress_impact_loss
+		}
+	}
+
+	#Little child...
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = no
+			}
+		}
+		name = death_management.2001.d
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2001.tt
+		}
+
+		stress_impact = {
+			base = medium_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				NOT = { exists = scope:killer }
+			}
+			add_opinion = {
+				modifier = loved_one_dungeon_death
+				target = scope:prison_holder
+			}
+		}
+	}
+}
+
+
+#Dead parent - Dungeon
+death_management.2002 = {
+	type = character_event
+	title = death_management.2002.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { # Warcraft
+					age_in_relation_to_humans_less_than_trigger = { age = 14 } 
+				}
+				desc = death_management.2002.child
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 30
+					}
+				}
+				desc = death_management.2002.like
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 30
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = death_management.2002.neutral
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = death_management.2002.dislike
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					any_secret = {
+						secret_type = secret_murder
+						secret_target = scope:dead_character
+						is_known_by = root
+					}
+				}
+			}
+			scope:killer = {
+				save_scope_as = prison_holder
+			}
+		}
+	}
+	
+	#Like
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value >= 40
+			}
+		}
+		name = death_management.2002.a
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2002.tt
+		}
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = parent
+		}
+	}
+
+	#Neutral
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value < 40
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.2002.b
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2002.tt
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = parent
+		}
+	}
+	
+	#Dislike
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.2002.c
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2002.tt
+		}
+
+
+		stress_impact = {
+			base = minor_stress_impact_loss
+		}
+	}
+
+	#Child reacts
+	option = {
+		trigger = {
+			# Warcraft
+			age_in_relation_to_humans_less_than_trigger = { age = 14 }
+		}
+		name = death_management.2002.d
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2002.tt
+		}
+
+		stress_impact = {
+			base = medium_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = parent
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				NOT = { exists = scope:killer }
+			}
+			add_opinion = {
+				modifier = loved_one_dungeon_death
+				target = scope:prison_holder
+			}
+		}
+	}
+}
+
+#Dead betrothed - Dungeon
+death_management.2008 = {
+	type = character_event
+	title = death_management.2008.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = {
+					desc = death_management.2008.desc.like
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								exists = scope:prison_holder
+							}
+							desc = death_management.2008.like_end_killer
+						}
+						desc = death_management.2008.like_end
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						opinion = {
+							target = scope:dead_character
+							value < 10
+						}
+						AND = {
+							has_personality_benevolent_trigger = no
+							OR = {
+								has_trait = callous
+								has_trait = sadistic
+								has_trait = lunatic
+								has_trait = possessed
+								has_trait = leper
+								has_trait = disfigured
+								has_trait = beauty_bad_2
+								has_trait = beauty_bad_3
+								has_trait = intellect_bad_2
+								has_trait = intellect_bad_3
+								has_trait = clubfooted
+								has_trait = hunchbacked
+								has_trait = dwarf
+								has_trait = inbred
+							}
+						}
+					}
+				}
+				desc = {
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								exists = scope:prison_holder
+							}
+							desc = death_management.2008.dislike_killer
+						}
+						desc = death_management.2008.dislike
+					}
+				}
+			}
+			desc = death_management.2008.desc.neutral
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = {
+				exists = scope:killer
+				scope:killer = {
+					any_secret = {
+						secret_type = secret_murder
+						secret_target = scope:dead_character
+						is_known_by = root
+					}
+				}
+			}
+			scope:killer = {
+				save_scope_as = prison_holder
+			}
+		}
+	}
+
+	option = { #Like/neutral
+		trigger = {
+			NOR = {
+				opinion = {
+					target = scope:dead_character
+					value < 10
+				}
+				AND = {
+					has_personality_benevolent_trigger = no
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = lunatic
+						has_trait = possessed
+						has_trait = leper
+						has_trait = disfigured
+						has_trait = beauty_bad_2
+						has_trait = beauty_bad_3
+						has_trait = intellect_bad_2
+						has_trait = intellect_bad_3
+						has_trait = clubfooted
+						has_trait = hunchbacked
+						has_trait = dwarf
+						has_trait = inbred
+					}
+				}
+			}
+		}
+		name = death_management.2008.a
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2002.tt
+		}
+
+		if = {
+			limit = {
+				opinion = {
+					target = scope:dead_character
+					value >= 60
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+		}
+	}
+
+	option = { #Dislike
+		trigger = {
+			OR = {
+				opinion = {
+					target = scope:dead_character
+					value < 10
+				}
+				AND = {
+					has_personality_benevolent_trigger = no
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = lunatic
+						has_trait = possessed
+						has_trait = leper
+						has_trait = disfigured
+						has_trait = beauty_bad_2
+						has_trait = beauty_bad_3
+						has_trait = intellect_bad_2
+						has_trait = intellect_bad_3
+						has_trait = clubfooted
+						has_trait = hunchbacked
+						has_trait = dwarf
+						has_trait = inbred
+					}
+				}
+			}
+		}
+		name = death_management.2008.b
+		if = {
+			limit = {
+				exists = scope:killer
+			}
+			custom_tooltip = death_management.1000.killed.tt
+		}
+		else = {
+			custom_tooltip = death_management.2002.tt
+		}
+
+		stress_impact = {
+			base = minor_stress_impact_loss
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				NOT = { exists = scope:killer }
+			}
+			add_opinion = {
+				modifier = loved_one_dungeon_death
+				target = scope:prison_holder
+			}
+		}
+	}
+}
+
+
+
+
+######################################################
+# NOTIFICATION EVENTS - YOUR DUNGEON DEATH
+# 3000-3999
+######################################################
+
+#Dead heir - Your dungeon
+death_management.3007 = {
+	type = character_event
+	title = death_management.3007.t
+	desc = {
+		desc = death_management.3007.start
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					OR = {
+						AND = {
+							is_male = yes
+							scope:dead_character = { is_male = yes }
+						}
+						AND = {
+							is_female = yes
+							scope:dead_character = { is_female = yes }
+						}
+					}
+				}
+				desc = death_management.3007.mytitle
+			}
+			desc = death_management.3007.ruler
+		}
+		desc = death_management.3007.end
+	}
+	theme = death
+	left_portrait = scope:dead_character
+	right_portrait = scope:new_heir
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		primary_heir = {
+			save_scope_as = new_heir
+		}
+	}
+
+	
+	option = {
+		name = death_management.3007.a
+		custom_tooltip = death_management.3007.a.tt
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+	}
+}
+
+
+#Notification about dead spouse - Your dungeon
+death_management.3000 = {
+	type = character_event
+	title = death_management.3000.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = death_management.3000.like
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 40
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = death_management.3000.neutral
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = death_management.3000.dislike
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	#My beloved spouse!
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value >= 40
+			}
+		}
+		name = death_management.3000.a
+		custom_tooltip = death_management.3000.tt
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = spouse
+		}
+	}
+
+	#That's a shame
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value < 40
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.3000.b
+		custom_tooltip = death_management.3000.tt
+
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = spouse
+		}
+	}
+	
+	#What a relief!
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.3000.c
+		custom_tooltip = death_management.3000.tt
+
+
+		stress_impact = {
+			base = medium_stress_impact_loss
+		}
+	}
+}
+
+#Notification for parent of dead child - Your dungeon
+death_management.3001 = {
+	type = character_event
+	title = death_management.3001.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:dead_character = {
+						# Warcraft
+						age_in_relation_to_humans_less_than_trigger = { age = 16 }
+					}
+				}
+				desc = death_management.3001.child
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = death_management.3001.like
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 40
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = death_management.3001.neutral
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = death_management.3001.dislike
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	#Good child
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 50
+			}
+		}
+		name = death_management.3001.a
+		custom_tooltip = death_management.3001.tt
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+
+	#Neutral
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value < 50
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.3000.b
+		custom_tooltip = death_management.3001.tt
+
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+	
+	#Relieved
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.3001.c
+		custom_tooltip = death_management.3001.tt
+
+
+		stress_impact = {
+			base = medium_stress_impact_loss
+		}
+	}
+
+	#Little child...
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = no
+			}
+		}
+		name = death_management.3001.d
+		custom_tooltip = death_management.3001.tt
+
+		stress_impact = {
+			base = medium_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = child
+		}
+	}
+}
+
+
+#Dead parent - Your dungeon
+death_management.3002 = {
+	type = character_event
+	title = death_management.3002.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { # Warcraft
+					age_in_relation_to_humans_less_than_trigger = { age = 14 } 
+				}
+				desc = death_management.3002.child
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = death_management.3002.like
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 40
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = death_management.3002.neutral
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = death_management.3002.dislike
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	#Like
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value >= 40
+			}
+		}
+		name = death_management.3002.a
+		custom_tooltip = death_management.3002.tt
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = parent
+		}
+	}
+
+	#Neutral
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value < 40
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.3002.b
+		custom_tooltip = death_management.3002.tt
+
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = parent
+		}
+	}
+	
+	#Dislike
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.3002.c
+		custom_tooltip = death_management.3002.tt
+
+
+		stress_impact = {
+			base = medium_stress_impact_loss
+		}
+	}
+
+	#Child reacts
+	option = {
+		trigger = {
+			# Warcraft
+			age_in_relation_to_humans_less_than_trigger = { age = 14 }
+		}
+		name = death_management.3002.d
+		custom_tooltip = death_management.3002.tt
+
+
+		stress_impact = {
+			base = medium_stress_impact_gain
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = parent
+		}
+	}
+}
+
+
+#Dead Rival - Your Dungeon
+death_management.3006 = {
+	type = character_event
+	title = death_management.3006.t
+	desc = death_management.3006.desc
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+
+	option = {
+		name = death_management.3006.a
+		custom_tooltip = death_management.3006.a.tt
+		add_prestige = medium_prestige_gain
+		stress_impact = {
+			base = major_stress_impact_loss
+		}
+	}
+}
+
+
+
+#Dead betrothed - Your dungeon
+death_management.3008 = {
+	type = character_event
+	title = death_management.3008.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = death_management.3008.desc.like
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						opinion = {
+							target = scope:dead_character
+							value < 10
+						}
+						AND = {
+							has_personality_benevolent_trigger = no
+							OR = {
+								has_trait = callous
+								has_trait = sadistic
+								has_trait = lunatic
+								has_trait = possessed
+								has_trait = leper
+								has_trait = disfigured
+								has_trait = beauty_bad_2
+								has_trait = beauty_bad_3
+								has_trait = intellect_bad_2
+								has_trait = intellect_bad_3
+								has_trait = clubfooted
+								has_trait = hunchbacked
+								has_trait = dwarf
+								has_trait = inbred
+							}
+						}
+					}
+				}
+				desc = death_management.3008.desc.dislike
+			}
+			desc = death_management.3008.desc.neutral
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+
+	option = { #Like/neutral
+		trigger = {
+			NOR = {
+				opinion = {
+					target = scope:dead_character
+					value < 10
+				}
+				AND = {
+					has_personality_benevolent_trigger = no
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = lunatic
+						has_trait = possessed
+						has_trait = leper
+						has_trait = disfigured
+						has_trait = beauty_bad_2
+						has_trait = beauty_bad_3
+						has_trait = intellect_bad_2
+						has_trait = intellect_bad_3
+						has_trait = clubfooted
+						has_trait = hunchbacked
+						has_trait = dwarf
+						has_trait = inbred
+					}
+				}
+			}
+		}
+		name = death_management.3008.a
+		custom_tooltip = death_management.3008.a.tt
+
+		if = {
+			limit = {
+				opinion = {
+					target = scope:dead_character
+					value >= 60
+				}
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+		}
+	}
+
+	option = { #Dislike
+		trigger = {
+			OR = {
+				opinion = {
+					target = scope:dead_character
+					value < 10
+				}
+				AND = {
+					has_personality_benevolent_trigger = no
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = lunatic
+						has_trait = possessed
+						has_trait = leper
+						has_trait = disfigured
+						has_trait = beauty_bad_2
+						has_trait = beauty_bad_3
+						has_trait = intellect_bad_2
+						has_trait = intellect_bad_3
+						has_trait = clubfooted
+						has_trait = hunchbacked
+						has_trait = dwarf
+						has_trait = inbred
+					}
+				}
+			}
+		}
+		name = death_management.3008.b
+		custom_tooltip = death_management.3008.a.tt
+
+		stress_impact = {
+			base = medium_stress_impact_loss
+		}
+	}
+}
+
+
+######################################################
+# NOTIFICATION EVENTS - HOUSE ARREST DEATH
+# 4000-4999
+######################################################
+
+#Notification about dead spouse - House arrest
+death_management.4000 = {
+	type = character_event
+	title = death_management.4000.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = {
+					desc = death_management.4000.like_opening
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4000.like_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4000.like
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 40
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = {
+					desc = death_management.4000.neutral_opening
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4000.neutral_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4000.neutral
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = {
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4000.dislike_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4000.dislike
+						}
+					}
+				}
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	#My beloved spouse!
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value >= 40
+			}
+		}
+		name = death_management.4000.a
+		custom_tooltip = death_management.4000.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = spouse
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = spouse
+			}
+		}
+	}
+
+	#That's a shame
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value < 40
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.4000.b
+		custom_tooltip = death_management.4000.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = spouse
+			}
+		}
+	}
+	
+	#What a relief!
+	option = {
+		trigger = {
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.4000.c
+		custom_tooltip = death_management.4000.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = minor_stress_impact_loss
+			}
+		}
+		else = {
+			stress_impact = {
+				base = medium_stress_impact_loss
+			}
+		}
+	}
+}
+
+#Dead heir - House arrest
+death_management.4007 = {
+	type = character_event
+	title = death_management.4007.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					this = scope:house_arrest_holder
+				}
+				desc = death_management.4007.start_my_prison
+			}
+			triggered_desc = {
+				trigger = {
+					NOT = { this = scope:house_arrest_holder }
+				}
+				desc = death_management.4007.start
+			}
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					OR = {
+						AND = {
+							is_male = yes
+							scope:dead_character = { is_male = yes }
+						}
+						AND = {
+							is_female = yes
+							scope:dead_character = { is_female = yes }
+						}
+					}
+				}
+				desc = death_management.4007.mytitle
+			}
+			desc = death_management.4007.ruler
+		}
+		desc = death_management.4007.end
+		desc = death_management.4007.end.heir
+	}
+	theme = death
+	left_portrait = scope:dead_character
+	right_portrait = scope:new_heir
+
+	immediate = {
+		play_music_cue = mx_cue_death
+		if = {
+			limit = {
+				exists = player_heir
+			}
+			player_heir = {
+				save_scope_as = new_heir
+			}
+		}
+	}
+
+	
+	option = {
+		name = death_management.4007.a
+		trigger = {
+			NOT = { this = scope:house_arrest_holder }
+		}
+		custom_tooltip = death_management.4007.a.tt
+		if = {
+			limit = { exists = scope:new_heir }
+			custom_tooltip = death_management.4007.a.tt.heir
+		}
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+	}
+
+	option = {
+		name = death_management.4007.b
+		trigger = {
+			this = scope:house_arrest_holder
+		}
+		custom_tooltip = death_management.4007.a.tt
+		if = {
+			limit = { exists = scope:new_heir }
+			custom_tooltip = death_management.4007.a.tt.heir
+		}
+
+		stress_impact = {
+			base = minor_stress_impact_gain
+		}
+	}
+}
+
+#Notification for parent of dead child - House arrest
+death_management.4001 = {
+	type = character_event
+	title = death_management.4001.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:dead_character = {
+						# Warcraft
+						age_in_relation_to_humans_less_than_trigger = { age = 16 }
+					}
+				}
+				desc = {
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4001.child_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4001.child
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = {
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4001.like_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4001.like
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 40
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = {
+					desc = death_management.4001.neutral_opening
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4001.neutral_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4001.neutral
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = {
+					desc = death_management.4001.dislike_opening
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4001.dislike_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4001.dislike
+						}
+					}
+					desc = death_management.4001.dislike_end
+				}
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	#Good child
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 50
+			}
+		}
+		name = death_management.4001.a
+		custom_tooltip = death_management.4001.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = child
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = child
+			}
+		}
+	}
+
+	#Neutral
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value < 50
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.4000.b
+		custom_tooltip = death_management.4001.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = child
+			}
+		}
+	}
+	
+	#Relieved
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = yes
+			}
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.4001.c
+		custom_tooltip = death_management.4001.tt
+
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = minor_stress_impact_loss
+			}
+		}
+		else = {
+			stress_impact = {
+				base = medium_stress_impact_loss
+			}
+		}
+	}
+
+	#Little child...
+	option = {
+		trigger = {
+			scope:dead_character = {
+				is_adult = no
+			}
+		}
+		name = death_management.4001.d
+		custom_tooltip = death_management.4001.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = child
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = child
+			}
+		}
+	}
+}
+
+
+#Dead parent - House arrest
+death_management.4002 = {
+	type = character_event
+	title = death_management.4002.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { # Warcraft
+					age_in_relation_to_humans_less_than_trigger = { age = 14 } 
+				}
+				desc = death_management.4002.child
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = {
+					desc = death_management.4002.like_opening
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4002.like_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4002.like
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 40
+					}
+					opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+				}
+				desc = {
+					desc = death_management.4002.neutral_opening
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4002.neutral_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4002.neutral
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value < 0
+					}
+				}
+				desc = {
+					desc = death_management.4002.dislike_opening
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4002.dislike_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4002.dislike
+						}
+					}
+				}
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+	
+	#Like
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value >= 40
+			}
+		}
+		name = death_management.4002.a
+		custom_tooltip = death_management.4002.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = parent
+			}
+		}
+	}
+
+	#Neutral
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value < 40
+			}
+			opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+		name = death_management.4002.b
+		custom_tooltip = death_management.4002.tt
+	}
+	
+	#Dislike
+	option = {
+		trigger = {
+			# Warcaft
+			age >= age_14_value
+			opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+		name = death_management.4002.c
+		custom_tooltip = death_management.4002.tt
+
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = minor_stress_impact_loss
+			}
+		}
+		else = {
+			stress_impact = {
+				base = medium_stress_impact_loss
+			}
+		}
+	}
+
+	#Child reacts
+	option = {
+		trigger = {
+			# Warcraft
+			age_in_relation_to_humans_less_than_trigger = { age = 14 }
+		}
+		name = death_management.4002.d
+		custom_tooltip = death_management.4002.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = parent
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = parent
+			}
+		}
+	}
+}
+
+#Dead betrothed - House arrest
+death_management.4008 = {
+	type = character_event
+	title = death_management.4008.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+				}
+				desc = {
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4008.desc.like_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4008.desc.like
+						}
+					}
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						opinion = {
+							target = scope:dead_character
+							value < 10
+						}
+						AND = {
+							has_personality_benevolent_trigger = no
+							OR = {
+								has_trait = callous
+								has_trait = sadistic
+								has_trait = lunatic
+								has_trait = possessed
+								has_trait = leper
+								has_trait = disfigured
+								has_trait = beauty_bad_2
+								has_trait = beauty_bad_3
+								has_trait = intellect_bad_2
+								has_trait = intellect_bad_3
+								has_trait = clubfooted
+								has_trait = hunchbacked
+								has_trait = dwarf
+								has_trait = inbred
+							}
+						}
+					}
+				}
+				desc = {
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								this = scope:house_arrest_holder
+							}
+							desc = death_management.4008.desc.dislike_my_prison
+						}
+						triggered_desc = {
+							trigger = {
+								NOT = { this = scope:house_arrest_holder }
+							}
+							desc = death_management.4008.desc.dislike
+						}
+					}
+				}
+			}
+			desc = {
+				first_valid = {
+					triggered_desc = {
+						trigger = {
+							this = scope:house_arrest_holder
+						}
+						desc = death_management.4008.desc.neutral_my_prison
+					}
+					triggered_desc = {
+						trigger = {
+							NOT = { this = scope:house_arrest_holder }
+						}
+						desc = death_management.4008.desc.neutral
+					}
+				}
+			}
+		}
+	}
+	theme = death
+	left_portrait = scope:dead_character
+
+	immediate = {
+		play_music_cue = mx_cue_death
+	}
+
+	option = { #Like/neutral
+		trigger = {
+			NOR = {
+				opinion = {
+					target = scope:dead_character
+					value < 10
+				}
+				AND = {
+					has_personality_benevolent_trigger = no
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = lunatic
+						has_trait = possessed
+						has_trait = leper
+						has_trait = disfigured
+						has_trait = beauty_bad_2
+						has_trait = beauty_bad_3
+						has_trait = intellect_bad_2
+						has_trait = intellect_bad_3
+						has_trait = clubfooted
+						has_trait = hunchbacked
+						has_trait = dwarf
+						has_trait = inbred
+					}
+				}
+			}
+		}
+		name = death_management.4008.a
+		custom_tooltip = death_management.4008.a.tt
+
+		if = {
+			limit = {
+				opinion = {
+					target = scope:dead_character
+					value >= 60
+				}
+			}
+			if = {
+				limit = {
+					NOT = { this = scope:house_arrest_holder }
+				}
+				stress_impact = {
+					base = medium_stress_impact_gain
+				}
+			}
+			else = {
+				stress_impact = {
+					base = minor_stress_impact_gain
+				}
+			}
+		}
+		else = {
+			if = {
+				limit = {
+					NOT = { this = scope:house_arrest_holder }
+				}
+				stress_impact = {
+					base = minor_stress_impact_gain
+				}
+			}
+		}
+	}
+
+	option = { #Dislike
+		trigger = {
+			OR = {
+				opinion = {
+					target = scope:dead_character
+					value < 10
+				}
+				AND = {
+					has_personality_benevolent_trigger = no
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = lunatic
+						has_trait = possessed
+						has_trait = leper
+						has_trait = disfigured
+						has_trait = beauty_bad_2
+						has_trait = beauty_bad_3
+						has_trait = intellect_bad_2
+						has_trait = intellect_bad_3
+						has_trait = clubfooted
+						has_trait = hunchbacked
+						has_trait = dwarf
+						has_trait = inbred
+					}
+				}
+			}
+		}
+		name = death_management.4008.b
+		custom_tooltip = death_management.4008.a.tt
+
+		if = {
+			limit = {
+				NOT = { this = scope:house_arrest_holder }
+			}
+			stress_impact = {
+				base = minor_stress_impact_loss
+			}
+		}
+		else = {
+			stress_impact = {
+				base = medium_stress_impact_loss
+			}
+		}
+	}
+}
+
+
+######################################################
+# OTHER DEATH MAINTENANCE EVENTS
+# 4000-4999
+######################################################
+
+#Sets a variable on the pregnant mother so that the dead spouse will be assumed to be the child's father
+death_management.0099 = {
+	type = character_event
+	hidden = yes
+	
+	trigger = {
+		any_spouse = {
+			is_pregnant = yes
+			this = prev.primary_spouse
+			pregnancy_real_father = {
+				NOT = { is_consort_of = prev }
+			}
+		}
+	}
+
+	immediate = {
+		save_scope_as = dead_spouse
+		random_spouse = {
+			limit = {
+				is_pregnant = yes
+				pregnancy_real_father = {
+					NOT = { is_consort_of = prev }
+				}
+			}
+			save_scope_as = spouse_with_secret
+		}
+		scope:spouse_with_secret = {
+			set_variable = {
+				name = dead_spouse
+				value = scope:dead_spouse
+				days = 730
+			}
+		}
+	}
+}
+
+#Removes rejected_from_marriage_bed_modifier from spouses
+death_management.0098 = {
+	type = character_event
+	hidden = yes
+	
+	trigger = {
+		any_spouse = {
+			this = prev.primary_spouse
+			has_character_modifier = rejected_from_marriage_bed_modifier
+		}
+	}
+
+	immediate = {
+		every_spouse = {
+			remove_character_modifier = rejected_from_marriage_bed_modifier
+		}
+	}
+}
+
+
+#Sets a flag if the dead one was someone you loved (to make suicide available)
+death_management.0097 = {
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		save_scope_as = dead_character
+		every_parent = {
+			limit = {
+				NOT = { is_in_list = loved_ones_left_behind }
+				NOT = { has_trait = callous }
+				exists = player_heir
+				player_heir = scope:dead_character
+				OR = {
+					opinion = {
+						target = scope:dead_character
+						value >= 70
+					}
+					reverse_opinion = {
+						target = scope:dead_character
+						value >= 70
+					}
+				}
+				NOR = {
+					has_relation_rival = scope:dead_character
+					has_relation_potential_rival = scope:dead_character
+				}
+			}
+			add_to_list = loved_ones_left_behind
+		}
+		every_relation = {
+			type = soulmate
+			limit = {
+				NOT = { is_in_list = loved_ones_left_behind }
+				NOT = { has_trait = callous }
+				OR = {
+					opinion = {
+						target = scope:dead_character
+						value >= 70
+					}
+					reverse_opinion = {
+						target = scope:dead_character
+						value >= 70
+					}
+				}
+				NOR = {
+					has_relation_rival = scope:dead_character
+					has_relation_potential_rival = scope:dead_character
+				}
+			}
+			add_to_list = loved_ones_left_behind
+		}
+		every_relation = {
+			type = best_friend
+			limit = {
+				NOT = { is_in_list = loved_ones_left_behind }
+				NOT = { has_trait = callous }
+				OR = {
+					opinion = {
+						target = scope:dead_character
+						value >= 70
+					}
+					reverse_opinion = {
+						target = scope:dead_character
+						value >= 70
+					}
+				}
+				NOR = {
+					has_relation_rival = scope:dead_character
+					has_relation_potential_rival = scope:dead_character
+				}
+			}
+			add_to_list = loved_ones_left_behind
+		}
+
+		#Add flag
+		every_in_list = {
+			list = loved_ones_left_behind
+			add_character_flag = {
+				flag = make_suicide_available
+				years = 10
+			}
+		}
+	}
+}
+
+# Flags that we need to update the opinions of any other spouses (if they exist) of our spouse/concubine after we die.
+death_management.0096 = {
+	type = character_event
+	hidden = yes
+	
+	immediate = {
+		every_consort = {
+			save_scope_as = surviving_consort
+			every_consort = {
+				limit = { NOT = { this = root }}
+				trigger_event = {
+					id = death_management.0095
+					days = 1
+				}
+			}
+		}
+	}
+}
+
+# Actually updates the opinions of other spouses/concubines.
+death_management.0095 = {
+	type = character_event
+	hidden = yes
+	
+	immediate = {
+		update_active_consort_opinion_effect = { PARTNER = scope:surviving_consort }
+	}
+}
+
+### KNOW THYSELF PERK: Death is coming soon
+death_management.9998 = {
+	type = character_event
+	title = death_management.9998.t
+	desc = death_management.9998.desc
+	theme = death
+	left_portrait = root
+	trigger = {
+		NOT = { has_character_flag = had_death_management_9998_recently }
+	}
+	option = {
+		name = death_management.9998.a
+		flavor = death_management.9998.a.tt
+		hidden_effect = {
+			add_character_flag = {
+				flag = had_death_management_9998_recently
+				days = 370
+			}
+		}
+	}
+}
+
+
+### NATURAL DEATH BY EVENT
+death_management.9999 = {
+	hidden = yes
+
+	immediate = {
+		death = natural
+	}
+}

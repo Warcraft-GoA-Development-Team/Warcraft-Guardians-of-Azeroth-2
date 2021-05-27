@@ -18,7 +18,7 @@ holy_order.0001 = {
 		first_valid = {
 			triggered_desc = {
 				trigger = {
-					has_any_relation_trigger = {CHARACTER = scope:recipient }
+					has_any_relation_trigger = { CHARACTER = scope:recipient }
 				}
 				desc = holy_order.0001.desc_relation
 			}
@@ -377,7 +377,24 @@ holy_order.0202 = {
 	}
 
 	option = { #Pretty please give me more time?
-		name = holy_order.0202.b
+		name = {
+			trigger = {
+				# Warcraft
+				faith = {
+					trait_is_virtue = patient
+				}
+			}
+			text = holy_order.0202.b_christian
+		}
+		name = {
+			trigger = {
+				# Warcraft
+				faith = {
+					NOT = { trait_is_virtue = patient }
+				}
+			}
+			text = holy_order.0202.b
+		}
 		trigger = {
 			piety_level >= 3
 		}
@@ -412,42 +429,13 @@ holy_order.0202 = {
 				target = root
 			}
 		}
-		add_piety_level = -1
-		remove_character_flag = borrow_from_holy_order
-	}
-
-	option = { #I have no option available
-		name = holy_order.0202.d
-		trigger = {
-			NOR = {
-				any_held_title = {
-					tier = tier_barony
-					barony_is_valid_for_holy_order_lease_trigger = { CHARACTER = root }
-				}
-				any_child = {
-					holy_order_request_child_trigger = yes
-				}
-			}
-		}
-		scope:recipient.faith.religious_head = {
-			add_opinion = {
-				modifier = not_repay_loan_opinion
-				target = root
-			}
-		}
-		scope:recipient = {
-			add_opinion = {
-				modifier = not_repay_loan_opinion
-				target = root
-			}
-		}
 		if = { #are we still of the same faith?
 			limit = {
 				scope:recipient.faith = root.faith
 			}
 			add_piety_level = -1
-			remove_character_flag = borrow_from_holy_order
 		}
+		remove_character_flag = borrow_from_holy_order
 	}
 
 	after = { #Consequences for not paying back
@@ -700,23 +688,11 @@ scripted_trigger holy_order_1000_target_barony_trigger = {
 	tier = tier_barony
 	barony_is_valid_for_holy_order_lease_trigger = { CHARACTER = $CHARACTER$ }
 	#Don't grab something that's held by a vassal player of the one receiving the event.
-	OR = {
-		AND = {
-			holder = { is_ai = no }
-			NOT = { holder = root }
+	trigger_if = {
+		limit = {
+			NOT = { holder = $CHARACTER$ }
 		}
-		holder = {
-			any_liege_or_above = {
-				is_ai = no
-				NOR = {
-					this = root
-					save_temporary_scope_as = root_liege
-					root = {
-						any_liege_or_above = { this = scope:root_liege }
-					}
-				}
-			}
-		}
+		holder = { is_ai = yes }
 	}
 }
 
@@ -730,7 +706,7 @@ scripted_trigger holy_order_1000_request_target_trigger = {
 		has_character_flag = holy_order_recently_received_land
 	}
 	save_temporary_scope_as = ruler
-	any_held_title = {
+	any_sub_realm_barony = {
 		holy_order_1000_target_barony_trigger = { CHARACTER = scope:ruler }
 	}
 }
@@ -882,32 +858,6 @@ holy_order.1000 = {
 
 
 #Holy Order requests a Barony for Gold
-scripted_trigger holy_order_1001_alternative_barony_trigger = {
-	tier = tier_barony
-	barony_is_valid_for_holy_order_lease_trigger = { CHARACTER = root }
-	#Don't grab something that's held by a vassal player of the one receiving the event.
-	OR = {
-		AND = {
-			holder = { is_ai = no }
-			NOT = { holder = root }
-		}
-		holder = {
-			any_liege_or_above = {
-				is_ai = no
-				NOR = {
-					this = root
-					save_temporary_scope_as = root_liege
-					root = {
-						any_liege_or_above = { this = scope:root_liege }
-					}
-				}
-			}
-		}
-	}
-
-	NOT = { this = scope:target_barony }	
-}
-
 holy_order.1001 = {
 	type = letter_event
 	opening = {
@@ -928,19 +878,28 @@ holy_order.1001 = {
 		if = {
 			limit = {
 				any_sub_realm_barony = {
-					holy_order_1001_alternative_barony_trigger = yes
-
+					holy_order_1000_target_barony_trigger = { CHARACTER = root }
+					NOT = { this = scope:target_barony }
 					holy_order_barony_value_calculation <= scope:target_barony.holy_order_barony_value_calculation
 				}
 			}
 			random_sub_realm_barony = {
 				limit = {
-					holy_order_1001_alternative_barony_trigger = yes
+					holy_order_1000_target_barony_trigger = { CHARACTER = root }
+					NOT = { this = scope:target_barony }
 					holy_order_barony_value_calculation < scope:target_barony.holy_order_barony_value_calculation
 				}
-				alternative_limit = {
-					holy_order_1001_alternative_barony_trigger = yes
-					holy_order_barony_value_calculation < scope:target_barony.holy_order_barony_value_calculation
+				weight = {
+					base = 1
+					
+					# Warcraft
+					# # Jomsvikings prefer to ask for coastal locations if they can.
+					# modifier = {
+						# add = 1000
+						# exists = global_var:jomsvikings_title
+						# scope:grandmaster.primary_title = global_var:jomsvikings_title
+						# this.title_province = { is_coastal = yes }
+					# }
 				}
 				save_scope_as = alternative_barony
 			}
@@ -949,10 +908,23 @@ holy_order.1001 = {
 
 	option = {
 		name = holy_order.1001.a
+		trigger = {
+			# fixing rare edge case where a character has become a baron/unlanded and would attempt to give away their last title
+			is_landed = yes
+			highest_held_title_tier > tier_barony
+			# fixing rare edge case where a title is leased out twice
+			scope:target_barony = { is_leased_out = no }
+		}
 
 		add_gold = scope:target_barony.holy_order_barony_value_calculation
 		
 		scope:target_barony = {
+			if = { #To make sure the effect works properly we have to have the title when we lease it out
+				limit = {
+					NOT = { holder = root }
+				}
+				root = { get_title = prev }
+			}
 			lease_out_to = scope:holy_order
 		}
 		scope:grandmaster = {
@@ -993,6 +965,12 @@ holy_order.1001 = {
 		add_gold = scope:alternative_barony.holy_order_barony_value_calculation
 
 		scope:alternative_barony = {
+			if = { #To make sure the effect works properly we have to have the title when we lease it out
+				limit = {
+					NOT = { holder = root }
+				}
+				root = { get_title = prev }
+			}
 			lease_out_to = scope:holy_order
 		}
 		scope:grandmaster = {
@@ -1447,8 +1425,9 @@ holy_order.2002 = {
 
 scripted_trigger holy_order_2003_candidate_trigger = {
 	is_adult = no
-	age < 15
-	age > 7
+	# Warcraft
+	age_in_relation_to_humans_less_than_trigger = { age = 15 }
+	age > age_7_value
 	is_available = yes
 	is_ruler = no
 	is_ai = yes

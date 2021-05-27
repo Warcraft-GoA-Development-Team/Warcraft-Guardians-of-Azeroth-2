@@ -1,0 +1,363 @@
+﻿
+
+#Effects relating to pregnancy
+
+#unmarried_mother_pregnancy_effect
+#pregnancy_termination_attempt_effect
+
+
+
+unmarried_mother_pregnancy_effect = {
+	add_trait_force_tooltip = pregnant
+	add_fornicator_trait_or_nothing_effect = yes
+	hidden_effect = {
+		set_known_bastard_on_pregnancy = yes #The bastard status is already known since the mother is unmarried.
+		hidden_effect = {
+			if = {
+				limit = {
+					NOT = {
+						any_owned_story = {
+							story_type = story_peasant_affair
+							var:peasant_character = scope:mother.pregnancy_real_father
+						}
+					}
+				}
+				trigger_event = { #This parses whether the mother is planning to confess to a real_father, and checks if there are characters out there who should suspect that they might be the real father
+					id = adultery.1101
+					days = 20
+				}
+			}
+		}
+	}
+}
+
+
+married_mother_pregnancy_effect = {
+	add_trait_force_tooltip = pregnant
+	if = {
+		limit = {
+			NOT = { exists = scope:spouse }
+			exists = primary_spouse
+		}
+		primary_spouse = {
+			save_scope_as = spouse
+		}
+	}
+	if = {
+		limit = { exists = scope:spouse }
+		scope:spouse = {
+			pregnancy_spouse_suspicion_chance_effect = yes
+		}
+	}
+	hidden_effect = {
+		if = {
+			limit = {
+				NOT = {
+					any_owned_story = {
+						story_type = story_peasant_affair
+						var:peasant_character = {
+							this = scope:real_father
+						}
+					}
+				}
+			}
+			trigger_event = { #This parses whether the mother is planning to confess to a real_father, and checks if there are characters out there who should suspect that they might be the real father
+				id = adultery.1101
+				days = 20
+			}
+		}
+	}
+}
+
+
+#This effect is used to handle all the tings that should ALWAYS be done at birth.
+pregnancy_maintainance_effect = {
+	hidden_effect = {
+		remove_trait = pregnant
+
+		#Save twin as child_2
+		scope:child = {
+			if = {
+				limit = { has_trait = twin }
+				random_sibling = {
+					limit = { is_twin_of = scope:child }
+					save_scope_as = child_2
+				}
+				
+				#Identical twins
+				if = {
+					limit = { sex_same_as = scope:child_2 }
+					random = {
+						chance = 50
+						copy_inheritable_appearance_from = scope:child_2
+					}
+				}
+			}
+		}
+
+		#BASTARD OR NOT? TO HANDLE NON-COMPLICATED BIRTH EVENTS
+		#It is a bastard!
+		if = {
+			limit = {
+				OR = {
+					has_character_flag = unmarried_bastard_pregnancy
+					has_character_flag = bastard_pregnancy
+				}
+			}
+
+			#To see if the assumed father has died while pregnant with unknown bastard
+			if = {
+				limit = {
+					scope:mother = {
+						NOT = { has_character_flag = pregnancy_real_father_of_bastard_is_known_flag }
+						exists = var:dead_spouse
+					}
+				}
+				var:dead_spouse = {
+					save_scope_as = father
+				}
+				scope:child = {
+					set_father = scope:father
+				}
+				scope:mother = {
+					remove_variable = dead_spouse
+				}
+			}
+
+			#To fire the right event for the mother if the child secretly is a bastard
+			if = {
+				limit = {
+					NOT = { has_character_flag = pregnancy_real_father_of_bastard_is_known_flag }
+					has_character_flag = bastard_pregnancy
+					secret_disputed_heritage_is_valid_trigger = {
+						TARGET = scope:child
+					}
+				}
+				add_secret = { #Set up a new secret about the child
+					type = secret_disputed_heritage
+					target = scope:child
+				}
+				random_secret = { #Find the secret
+					limit = {
+						secret_type = secret_disputed_heritage
+						secret_target = scope:child
+					}
+					save_scope_as = new_secret
+				}
+
+				#If the real_father knows they're the father they will get an event about the bastard being born
+				if = {
+					limit = {
+						has_character_flag = pregnancy_real_father_knows
+					}
+					scope:child.real_father = {
+						add_to_list = illegitimacy_secret_knowers
+					}
+				}
+				#If the spouse knows they're NOT the father they will get an event about the bastard being born
+				if = {
+					limit = {
+						has_character_flag = pregnancy_spouse_knows_of_bastardy
+					}
+					scope:child.father = {
+						add_to_list = illegitimacy_secret_knowers
+					}
+				}
+				every_in_list = {
+					list = illegitimacy_secret_knowers
+					#A secret bastard is born - Share the news with everyone who knew that it was a bastard
+					trigger_event = secret_bastard.0001
+				}
+			}
+			
+			#Check for unmarried mother bastardy flag
+			else_if = {
+				limit = {
+					NOT = { has_character_flag = pregnancy_real_father_of_bastard_is_known_flag }
+					has_character_flag = unmarried_bastard_pregnancy
+
+					# Must be able to have the illegitimate child secret.
+					secret_unmarried_illegitimate_child_is_valid_trigger = {
+						TARGET = scope:child
+					}
+				}
+				add_secret = { #Set up a new secret about the child
+					type = secret_unmarried_illegitimate_child
+					target = scope:child
+				}
+				random_secret = { #Find the secret
+					limit = {
+						secret_type = secret_unmarried_illegitimate_child
+						secret_target = scope:child
+					}
+					save_scope_as = new_secret
+				}
+				#If the real father knows he is the father, let him in on the Secret
+				if = {
+					limit = {
+						has_character_flag = pregnancy_real_father_knows
+					}
+					scope:child.real_father = {
+						trigger_event = secret_bastard.0002 #Announces that a child is born, and lets the recipient learn the unmarried_illegitimate_child secret
+					}
+				}
+			}
+		}
+
+		#Mother married real_father while pregnant - make sure he's set as the father
+		if = {
+			limit = {
+				scope:mother = {
+					NOR = {
+						has_character_flag = unmarried_bastard_pregnancy
+						has_character_flag = bastard_pregnancy
+					}
+					any_consort = { this = scope:child.real_father }
+					NOT = { exists = scope:child.father }
+				}
+			}
+			scope:child = {
+				set_father = scope:child.real_father
+			}
+		}
+	}
+}
+
+pregnancy_cleanup_effect = {
+	hidden_effect = {
+		if = {
+			limit = {
+				has_character_flag = unmarried_bastard_pregnancy
+			}
+			remove_character_flag = unmarried_bastard_pregnancy
+		}
+		if = {
+			limit = {
+				has_character_flag = bastard_pregnancy
+			}
+			remove_character_flag = bastard_pregnancy
+		}
+		if = {
+			limit = {
+				has_character_flag = pregnancy_real_father_of_bastard_is_known_flag
+			}
+			remove_character_flag = pregnancy_real_father_of_bastard_is_known_flag
+		}
+		if = {
+			limit = {
+				has_character_flag = pregnancy_spouse_knows_of_bastardy
+			}
+			remove_character_flag = pregnancy_spouse_knows_of_bastardy
+		}
+		if = {
+			limit = {
+				has_character_flag = pregnancy_real_father_knows
+			}
+			remove_character_flag = pregnancy_real_father_knows
+		}
+		if = {
+			limit = {
+				has_character_flag = birth_will_go_smoothly
+			}
+			remove_character_flag = birth_will_go_smoothly
+		}
+		if = {
+			limit = {
+				has_character_flag = birth_child_will_become_sickly
+			}
+			remove_character_flag = birth_child_will_become_sickly
+		}
+		if = {
+			limit = {
+				has_character_flag = birth_mother_will_become_ill
+			}
+			remove_character_flag = birth_mother_will_become_ill
+		}
+	}
+	if = {
+		limit = {
+			has_trait = pregnant
+		}
+		remove_trait = pregnant
+	}
+}
+
+
+
+pregnancy_termination_attempt_effect = {
+	random_list = {
+		100 = { #Pregnancy ends, no negative consequence
+			#custom_tooltip = pregnancy_treatment_succeeds_tt
+			show_as_tooltip = {
+				end_pregnancy = yes
+			}
+			hidden_effect = {
+				trigger_event = {
+					id = pregnancy.2003
+					days = { 3 10 }
+				}
+			}
+		}
+		30 = { #Pregnancy ends, mother becomes Ill
+			trigger = {
+				NOT = { has_trait = ill }
+			}
+			show_as_tooltip = {
+				end_pregnancy = yes
+				add_trait = ill
+			}
+			#custom_tooltip = pregnancy_treatment_succeeds_tt
+			#custom_tooltip = pregnancy_treatment_fall_ill_tt
+			hidden_effect = {
+				trigger_event = {
+					id = pregnancy.2004
+					days = { 3 10 }
+				}
+			}
+		}
+		100 = { #The pregnancy continues
+			custom_tooltip = pregnancy_treatment_fails_tt	
+			hidden_effect = {
+				trigger_event = {
+					id = pregnancy.2005
+					days = { 3 10 }
+				}
+			}
+		}
+		10 = { #The mother dies
+			show_as_tooltip = {
+				death = {
+					death_reason = death_attempted_treatment
+				}
+			}
+			hidden_effect = {
+				trigger_event = {
+					id = pregnancy.2007
+					days = { 3 10 }
+				}
+			}
+		}
+	}
+}
+
+
+#Effects to use in birth 3001-3999
+#Requires scope:child (scope:child_2, scope:child_3, and twin_list optional)
+kill_child_and_possible_twins_effect = {
+	scope:child = {
+		death = {
+			death_reason = death_delivery
+		}
+	}
+	if = {
+		limit = {
+			exists = scope:child_2
+		}
+		scope:child_2 = {
+			death = {
+				death_reason = death_delivery
+			}
+		}
+	}
+}
+

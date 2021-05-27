@@ -1,0 +1,896 @@
+﻿namespace = fp1_tbc
+
+##################################################
+# #Scope:actor-side Events
+# 0001 - 0040	Bout Maintenance & Setup
+# 0041 - 0060	Scope:actor Results
+#
+# #Scope:recipient-side Events
+# 0101 - 0110	Champion Selection
+# 0111 - 0130	Scope:recipient Results
+##################################################
+
+
+
+
+
+##################################################
+# SCOPE:ACTOR-SIDE EVENTS
+
+##################################################
+# Bout Maintenance & Setup
+# by Ewan Cowhig Croft
+# 0001 - 0040
+##################################################
+
+#	Everything is set for the bout to begin!
+fp1_tbc.0001 = {
+	type = character_event
+	title = fp1_tbc.0001.t
+	desc = {
+		desc = fp1_tbc.0001.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:champion = scope:recipient }
+				desc  = fp1_tbc.0001.desc.recipient_fighting
+			}
+			desc = fp1_tbc.0001.desc.recipient_has_champion
+		}
+		desc = fp1_tbc.0001.desc.outro
+	}
+	theme = prison
+	left_portrait = {
+		character = scope:actor
+		animation = anger
+	}
+	right_portrait = {
+		character = scope:champion
+		animation = disgust
+	}
+	override_background = { event_background = terrain_scope }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# If, for any reason, scope:recipient has died or been imprisoned, then the bout is cancelled.
+		scope:recipient = {
+			is_alive = yes
+			is_imprisoned = no
+		}
+		# Check that scope:actor is still in a valid state to fight.
+		trial_by_combat_shown_and_not_invalid_trigger = yes
+		# And scope:champion likewise.
+		scope:champion = {
+			OR = {
+				this = scope:recipient
+				eligible_knight_to_champion_trial_by_combat_trigger = yes
+			}
+		}
+	}
+
+	on_trigger_fail = {
+		# Inform both parties that the duel has invalidated.
+		scope:actor = {
+			send_interface_toast = {	
+				title = fp1_tbc.0001.trigger_failure.actor
+				left_icon = scope:recipient
+			}
+		}
+		scope:recipient = {
+			send_interface_toast = {	
+				title = fp1_tbc.0001.trigger_failure.recipient
+				left_icon = scope:actor
+			}
+		}
+		# Reset scope:actor's cooldowns against scope:recipient.
+		scope:actor = {
+			remove_interaction_cooldown = challenge_to_trial_by_combat_interaction
+			remove_interaction_cooldown_against = {
+				interaction = challenge_to_trial_by_combat_interaction
+				target = scope:recipient
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_combat_stinger"
+		# Nab scope:champion's location for terrain.
+		scope:champion.location = {
+			save_scope_as = background_terrain_scope
+			# And scope:champion's location name for loc.
+			barony = { save_scope_as = duel_location }
+		}
+	}
+
+	# Almost there.
+	option = {
+		name = fp1_tbc.0001.a
+
+		# Inform scope:actor that the bout will begin immediately.
+		custom_tooltip = fp1_tbc.0001.a.tt
+		# Configure the bout.
+		## Tribals strip to the waist.
+		single_combat_apply_default_shirtlessness_effect = {
+			ATTACKER = scope:actor
+			DEFENDER = scope:champion
+		}
+		## Deadly fights.
+		if = {
+			limit = { scope:tbc_death = yes }
+			configure_start_single_combat_effect = {
+				SC_INITIATOR = scope:actor
+				SC_ATTACKER = scope:actor
+				SC_DEFENDER = scope:champion
+				FATALITY = always
+				FIXED = no
+				LOCALE = terrain_scope
+				OUTPUT_EVENT = fp1_tbc.0011
+				INVALIDATION_EVENT = fp1_tbc.0021
+			}
+		}
+		## Non-deadly fights.
+		else = {
+			configure_start_single_combat_effect = {
+				SC_INITIATOR = scope:actor
+				SC_ATTACKER = scope:actor
+				SC_DEFENDER = scope:champion
+				FATALITY = no
+				FIXED = no
+				LOCALE = terrain_scope
+				OUTPUT_EVENT = fp1_tbc.0011
+				INVALIDATION_EVENT = fp1_tbc.0021
+			}
+		}
+		# No stress for single-option events.
+		ai_chance = {
+			# AI will always choose single option.
+			base = 100
+		}
+	}
+}
+
+scripted_effect fp1_tbc_non_lethal_results_effect = {
+	if = {
+		limit = {
+			scope:recipient = { is_alive = yes }
+		}
+		# TbC ends in cash settlement.
+		if = {
+			limit = { scope:tbc_gold = yes }
+			fp1_tbc_gold_effect = {
+				TBC_VICTOR = scope:actor
+				TBC_LOSER = scope:recipient
+			}
+		}
+		# TbC ends in favour settlement.
+		if = {
+			limit = { scope:tbc_weak_hook = yes }
+			fp1_tbc_hook_effect = {
+				TBC_VICTOR = scope:actor
+				TBC_LOSER = scope:recipient
+			}
+		}
+		# TbC ends in mandated humiliation.
+		if = {
+			limit = { scope:tbc_humiliation = yes }
+			fp1_tbc_humiliation_effect = { TBC_LOSER = scope:recipient }
+		}
+	}
+}
+
+scripted_effect fp1_tbc_consume_imprisonment_reasons_effect = {
+	if = {
+		limit = {
+			scope:actor = { is_alive = yes }
+			scope:recipient = { is_alive = yes }
+		}
+		scope:actor = { consume_imprisonment_reasons = scope:recipient }
+	}
+}
+
+#	Bout has ended, inform affected parties.
+fp1_tbc.0011 = {
+	hidden = yes
+
+	immediate = {
+		# If any clothes were stripped, put 'em back on.
+		single_combat_clean_shirtlessness_effect = {
+			ATTACKER = scope:actor
+			DEFENDER = scope:champion
+		}
+		# Did scope:actor win?
+		if = {
+			limit = { scope:sc_victor = scope:actor }
+			# Apply effects; we do this separately so that there's not a weird day's delay.
+			fp1_tbc_non_lethal_results_effect = yes
+			# And send out the ending events.
+			scope:actor = {
+				trigger_event = {
+					id = fp1_tbc.0041
+					days = 1
+				}
+			}
+			scope:recipient = {
+				trigger_event = {
+					id = fp1_tbc.0121
+					days = 1
+				}
+			}
+		}
+		# Or was it scope:champion?
+		else_if = {
+			limit = { scope:sc_victor = scope:champion }
+			# If scope:actor is still alive, they gain stress.
+			if = {
+				limit = {
+					scope:actor = { is_alive = yes }
+				}
+				fp1_tbc_actor_defeated_effect = { TBC_LOSER = scope:actor }
+			}
+			# And send out the ending events.
+			scope:actor = {
+				trigger_event = {
+					id = fp1_tbc.0051
+					days = 1
+				}
+			}
+			scope:recipient = {
+				trigger_event = {
+					id = fp1_tbc.0111
+					days = 1
+				}
+			}
+		}
+		# If both parties are alive, and aren't good losers/don't have good reasons to forgive each other, then we mark them as potential rivals.
+		if = {
+			limit = {
+				scope:actor = {
+					is_alive = yes
+					NOR = {
+						has_trait = humble
+						has_trait = content
+						has_trait = just
+						has_trait = forgiving
+					}
+				}
+				scope:recipient = {
+					is_alive = yes
+					NOR = {
+						has_trait = humble
+						has_trait = content
+						has_trait = just
+						has_trait = forgiving
+					}
+					can_set_relation_potential_rival_trigger = { CHARACTER = scope:actor }
+				}
+			}
+			scope:actor = { set_relation_potential_rival = scope:recipient }
+		}
+	}
+}
+
+#	Bout has invalidated, inform affected parties.
+fp1_tbc.0021 = {
+	hidden = yes
+
+	immediate = {
+		# Put your shirts back on.
+		single_combat_clean_shirtlessness_effect = {
+			ATTACKER = scope:actor
+			DEFENDER = scope:recipient
+		}
+		# Inform both parties that the duel has invalidated.
+		scope:actor = {
+			send_interface_toast = {	
+				title = fp1_tbc.0021.trigger_failure.actor
+				left_icon = scope:recipient
+			}
+		}
+		scope:recipient = {
+			send_interface_toast = {	
+				title = fp1_tbc.0021.trigger_failure.recipient
+				left_icon = scope:actor
+			}
+		}
+		# Reset scope:actor's cooldowns against scope:recipient.
+		scope:actor = {
+			remove_interaction_cooldown = challenge_to_trial_by_combat_interaction
+			remove_interaction_cooldown_against = {
+				interaction = challenge_to_trial_by_combat_interaction
+				target = scope:recipient
+			}
+		}
+	}
+}
+
+#	Scope:recipient has declined.
+fp1_tbc.0031 = {
+	type = letter_event
+	opening = fp1_tbc.0031.opening
+	desc = fp1_tbc.0031.desc
+	sender = scope:recipient
+
+	option = { name = fp1_tbc.0031.a }
+}
+
+##################################################
+# Scope:actor Results
+# by Ewan Cowhig Croft
+# 0041 - 0060
+##################################################
+
+#	Scope:actor has won the bout.
+fp1_tbc.0041 = {
+	type = character_event
+	title = fp1_tbc.0041.t
+	desc = {
+		desc = fp1_tbc.0041.desc.intro
+		# Scope:champion died in the fighting; no need to loc for a separate scope:champion, as they can't fight to the death.
+		triggered_desc = {
+			trigger = {
+				scope:champion = { is_alive = no }
+			}
+			desc = fp1_tbc.0041.desc.opponent_died
+		}
+		# Scope:champion is still alive.
+		triggered_desc = {
+			trigger = {
+				scope:champion = { is_alive = yes}
+			}
+			desc = {
+				first_valid = {
+					# Scope:recipient fought for themselves.
+					triggered_desc = {
+						trigger = { scope:champion = scope:recipient }
+						desc = fp1_tbc.0041.desc.opponent_lives.recipient_fighting
+					}
+					# Scope:recipient had a designated champion instead.
+					desc = fp1_tbc.0041.desc.opponent_lives.recipient_has_champion
+				}
+			}
+		}
+		# Reward, if anything.
+		first_valid = {
+			# Gold.
+			triggered_desc = {
+				trigger = { scope:tbc_gold = yes }
+				desc = fp1_tbc.0041.desc.reward.gold
+			}
+			# Weak hook.
+			triggered_desc = {
+				trigger = { scope:tbc_weak_hook = yes }
+				desc = fp1_tbc.0041.desc.reward.weak_hook
+			}
+			# Humiliation.
+			triggered_desc = {
+				trigger = { scope:tbc_humiliation = yes }
+				desc = fp1_tbc.0041.desc.reward.humiliation
+			}
+			# No outcome for death, since that's handled more succinctly above.
+		}
+		desc = fp1_tbc.0041.desc.outro
+	}
+	theme = prison
+	left_portrait = {
+		character = scope:actor
+		animation = personality_bold
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = shock
+	}
+	override_background = { event_background = throne_room }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Juuuust need to double-check that they're actually alive.
+		is_alive = yes
+	}
+
+	immediate = {
+		# Show duel results from the player's POV.
+		show_as_tooltip = { fp1_tbc_non_lethal_results_effect = yes }
+		# Sadly, we have to apply some effects here instead of in the initial output event in order to not break tooltips.
+		single_combat_have_slain_kin_effect = {
+			ATTACKER = scope:actor
+			DEFENDER = scope:champion
+		}
+		fp1_tbc_consume_imprisonment_reasons_effect = yes
+	}
+
+	# The bout closes.
+	option = {
+		name = fp1_tbc.0041.a
+
+		# No stress for single-option events.
+		ai_chance = {
+			# AI will always choose single option.
+			base = 100
+		}
+	}
+}
+
+#	Scope:actor has lost the bout.
+fp1_tbc.0051 = {
+	type = character_event
+	title = fp1_tbc.0051.t
+	desc = {
+		desc = fp1_tbc.0051.desc.intro
+		# Scope:actor is still alive (alternatives not included because, well...).
+		first_valid = {
+			# Scope:recipient fought for themselves.
+			triggered_desc = {
+				trigger = { scope:champion = scope:recipient }
+				desc = fp1_tbc.0051.desc.opponent_lives.recipient_fighting
+			}
+			# Scope:recipient had a designated champion instead.
+			desc = fp1_tbc.0051.desc.opponent_lives.recipient_has_champion
+		}
+		desc = fp1_tbc.0051.desc.outro
+	}
+	theme = prison
+	left_portrait = {
+		character = scope:actor
+		animation = shock
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = personality_bold
+	}
+	override_background = { event_background = throne_room }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Juuuust need to double-check that they're actually alive.
+		is_alive = yes
+	}
+
+	immediate = {
+		# Show duel results from the player's POV.
+		if = {
+			limit = {
+				scope:actor = { is_alive = yes }
+			}
+			fp1_tbc_actor_defeated_effect = { TBC_LOSER = scope:actor }
+		}
+		show_as_tooltip = {
+			fp1_tbc_consume_imprisonment_reasons_effect = yes
+			single_combat_have_slain_kin_effect = {
+				ATTACKER = scope:actor
+				DEFENDER = scope:champion
+			}
+		}
+	}
+
+	# The bout closes.
+	option = {
+		name = fp1_tbc.0051.a
+
+		# No stress for single-option events.
+		ai_chance = {
+			# AI will always choose single option.
+			base = 100
+		}
+	}
+}
+
+##################################################
+# SCOPE:RECIPIENT-SIDE EVENTS
+
+##################################################
+# Champion Selection
+# by Ewan Cowhig Croft
+# 0101 - 0110
+##################################################
+
+scripted_trigger fp1_tbc_knights_with_high_opinion_filter_trigger = {
+	# Has a ludicrously high opinion of scope:recipient.
+	opinion = {
+		target = scope:recipient
+		value >= 95
+	}
+	# And isn't one of the other knights presented.
+	NOR = {
+		AND = {
+			exists = scope:knight_best
+			this = scope:knight_best
+		}
+		AND = {
+			exists = scope:knight_exotic
+			this = scope:knight_exotic
+		}
+		AND = {
+			exists = scope:knight_alternative
+			this = scope:knight_alternative
+		}
+	}
+}
+
+#	Scope:recipient has accepted a challenge to a Trial-by-Combat & must designate a champion due to ineligibility.
+fp1_tbc.0101 = {
+	type = character_event
+	title = fp1_tbc.0101.t
+	desc = fp1_tbc.0101.desc
+	theme = prison
+	left_portrait = {
+		character = scope:recipient
+		animation = disbelief
+	}
+	right_portrait = {
+		character = scope:knight_best
+		animation = personality_honorable
+	}
+	lower_left_portrait = scope:knight_alternative
+	lower_center_portrait = scope:knight_exotic
+	lower_right_portrait = scope:knight_opinion
+	override_background = { event_background = throne_room }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		# First, grab all available knights that are suitable for the Trial-by-Combat.
+		every_knight = {
+			limit = { eligible_knight_to_champion_trial_by_combat_trigger = yes }
+			add_to_list = fp1_tbc_valid_knights_list
+		}
+		# Then, sort through the list, selecting the knight with the highest prowess.
+		ordered_in_list = {
+			list = fp1_tbc_valid_knights_list
+			order_by = prowess
+			save_scope_as = knight_best
+		}
+		# After that, we grab the most interesting knight (looking at assorted prowess-ish pecial traits and factoring for those) who isn't scope:knight_best.
+		ordered_in_list = {
+			list = fp1_tbc_valid_knights_list
+			limit = {
+				NOT = {
+					exists = scope:knight_best
+					this = scope:knight_best
+				}
+				has_relevant_special_single_combat_trait_trigger = yes
+			}
+			order_by = sce_has_single_combat_special_traits_value
+			save_scope_as = knight_exotic
+		}
+		# Then take the second highest-prowess knight who isn't scope:knight_best or scope:knight_exotic.
+		ordered_in_list = {
+			list = fp1_tbc_valid_knights_list
+			limit = {
+				NOR = {
+					this = scope:knight_best
+					AND = {
+						exists = scope:knight_exotic
+						this = scope:knight_exotic
+					}
+				}
+			}
+			order_by = prowess
+			save_scope_as = knight_alternative
+		}
+		# Next, if we've got any knight who isn't scope:knight_best, scope:knight_exotic, or scope:knight_alternative, and who would literally murder for you, we grab them.
+		if = {
+			limit = {
+				any_in_list = {
+					list = fp1_tbc_valid_knights_list
+					fp1_tbc_knights_with_high_opinion_filter_trigger = yes
+				}
+			}
+			# First, add them to a sub-list.
+			every_in_list = {
+				list = fp1_tbc_valid_knights_list
+				limit = { fp1_tbc_knights_with_high_opinion_filter_trigger = yes }
+				add_to_list = fp1_tbc_high_opinion_knights_list
+			}
+			# Next, try to pluck out knightly soulmates.
+			if = {
+				limit = {	
+					any_in_list = {
+						list = fp1_tbc_high_opinion_knights_list
+						any_relation = {
+							type = soulmate
+							this = scope:recipient
+						}
+					}
+				}
+				random_in_list = {
+					list = fp1_tbc_high_opinion_knights_list
+					limit = {
+						any_relation = {
+							type = soulmate
+							this = scope:recipient
+						}
+					}
+					save_scope_as = knight_opinion
+				}
+			}
+			# Otherwise, order by prowess and select the best.
+			else = {
+				ordered_in_list = {
+					list = fp1_tbc_high_opinion_knights_list
+					order_by = prowess
+					save_scope_as = knight_opinion
+				}
+			}
+		}
+		# Finally, if shenanigans have somehow deprived us of a scope:knight_best, then we want to generate someone to fill that minimum slot.
+		if = {
+			limit = {
+				NOT = { exists = scope:knight_best }
+			}
+			create_character = {
+				gender_female_chance = root_soldier_female_chance
+				location = scope:recipient_location
+				template = new_warrior_character
+				faith = scope:recipient.capital_county.faith
+				culture = scope:recipient.capital_county.culture
+				save_scope_as = knight_best
+			}
+			add_courtier = scope:knight_best
+		}
+	}
+
+	# Take the most skilled knight.
+	option = {
+		name = fp1_tbc.0101.a
+
+		# Select scope:knight_best to represent you in the bout.
+		scope:knight_best = { save_scope_as = champion }
+		custom_tooltip = fp1_tbc.0101.a.tt
+		custom_tooltip = fp1_tbc.0101.bout_moves_forward
+		highlight_portrait = scope:knight_best
+
+		# RP/functional choice: no stress charge.
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_rationality = 0.75
+				ai_boldness = -0.5
+			}
+		}
+	}
+
+	# Take the next most skilled knight.
+	option = {
+		name = fp1_tbc.0101.b
+		trigger = { exists = scope:knight_alternative }
+
+		# Select scope:knight_best to represent you in the bout.
+		scope:knight_alternative = { save_scope_as = champion }
+		custom_tooltip = fp1_tbc.0101.b.tt
+		custom_tooltip = fp1_tbc.0101.bout_moves_forward
+		highlight_portrait = scope:knight_alternative
+
+		# RP/functional choice: no stress charge.
+		ai_chance = {
+			# There's no reason for the AI to ever take this option, we offer it entirely for players who dislike/wish to preserve their best knight.
+			base = 0
+		}
+	}
+
+	# Take the knight with the most special traits that *isn't* the most skilled knight.
+	option = {
+		name = fp1_tbc.0101.c
+		trigger = { exists = scope:knight_opinion }
+
+		# Select scope:knight_best to represent you in the bout.
+		scope:knight_exotic = { save_scope_as = champion }
+		custom_tooltip = fp1_tbc.0101.c.tt
+		custom_tooltip = fp1_tbc.0101.bout_moves_forward
+		highlight_portrait = scope:knight_exotic
+
+		# RP/functional choice: no stress charge.
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_rationality = 0.5
+				ai_boldness = 0.25
+			}
+		}
+	}
+
+	# Take the knight who likes me the most.
+	option = {
+		name = fp1_tbc.0101.d
+		trigger = { exists = scope:knight_opinion}
+
+		# Select scope:knight_best to represent you in the bout.
+		scope:knight_opinion = { save_scope_as = champion }
+		custom_tooltip = fp1_tbc.0101.d.tt
+		custom_tooltip = fp1_tbc.0101.bout_moves_forward
+		highlight_portrait = scope:knight_opinion
+
+		# RP/functional choice: no stress charge.
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_sociability = 0.5
+				ai_rationality = -0.75
+			}
+		}
+	}
+
+	# Then, we skip over to scope:actor to inform them what's up.
+	after = {
+		# Clean up any errant scopes we no longer need to avoid debug bloat.
+		clear_saved_scope = knight_best
+		if = {
+			limit = { exists = scope:knight_exotic }
+			clear_saved_scope = knight_exotic
+		}
+		if = {
+			limit = { exists = scope:knight_alternative }
+			clear_saved_scope = knight_alternative
+		}
+		if = {
+			limit = { exists = scope:knight_opinion }
+			clear_saved_scope = knight_opinion
+		}
+		# And transition.
+		scope:actor = { trigger_event = fp1_tbc.0001 }
+	}
+}
+
+##################################################
+# Scope:recipient Results
+# by Ewan Cowhig Croft
+# 0111 - 0130
+##################################################
+
+#	Scope:recipient has won the bout.
+fp1_tbc.0111 = {
+	type = character_event
+	title = fp1_tbc.0111.t
+	desc = {
+		desc = fp1_tbc.0111.desc.intro
+		# Scope:actor died in the fighting; we don't account for
+		triggered_desc = {
+			trigger = {
+				scope:actor = { is_alive = no }
+			}
+			desc = fp1_tbc.0111.desc.opponent_died.recipient_fighting
+		}
+		# Scope:actor is still alive.
+		triggered_desc = {
+			trigger = {
+				scope:actor = { is_alive = yes}
+			}
+			desc = {
+				first_valid = {
+					# Scope:recipient fought for themselves.
+					triggered_desc = {
+						trigger = { scope:champion = scope:recipient }
+						desc = fp1_tbc.0111.desc.opponent_lives.recipient_fighting
+					}
+					# Scope:recipient had a designated champion instead.
+					desc = fp1_tbc.0111.desc.opponent_lives.recipient_has_champion
+				}
+			}
+		}
+		desc = fp1_tbc.0111.desc.outro
+	}
+	theme = prison
+	left_portrait = {
+		character = scope:recipient
+		animation = personality_bold
+	}
+	right_portrait = {
+		character = scope:actor
+		animation = shock
+	}
+	override_background = { event_background = throne_room }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Juuuust need to double-check that they're actually alive.
+		is_alive = yes
+	}
+
+	immediate = {
+		# Show duel results from the player's POV.
+		if = {
+			limit = {
+				scope:actor = { is_alive = yes }
+			}
+			fp1_tbc_actor_defeated_effect = { TBC_LOSER = scope:actor }
+		}
+		# Sadly, we have to apply some effects here instead of in the initial output event in order to not break tooltips.
+		single_combat_have_slain_kin_effect = {
+			ATTACKER = scope:actor
+			DEFENDER = scope:champion
+		}
+		fp1_tbc_consume_imprisonment_reasons_effect = yes
+	}
+
+	# The bout closes.
+	option = {
+		name = fp1_tbc.0111.a
+
+		# No stress for single-option events.
+		ai_chance = {
+			# AI will always choose single option.
+			base = 100
+		}
+	}
+}
+
+#	Scope:recipient has lost the bout.
+fp1_tbc.0121 = {
+	type = character_event
+	title = fp1_tbc.0121.t
+	desc = {
+		desc = fp1_tbc.0121.desc.intro
+		# We don't need to account for scope:champion dying in the fighting; if it was scope:recipient, then they're dead, and a separate champion cannot be challenged to a fight to the death.
+		# Scope:champion is still alive.
+		first_valid = {
+			# Scope:recipient fought for themselves.
+			triggered_desc = {
+				trigger = { scope:champion = scope:recipient }
+				desc = fp1_tbc.0121.desc.champion_lives.recipient_fighting
+			}
+			# Scope:recipient had a designated champion instead.
+			desc = fp1_tbc.0121.desc.champion_lives.recipient_has_champion
+		}
+		# Reward, if anything.
+		first_valid = {
+			# Gold.
+			triggered_desc = {
+				trigger = { scope:tbc_gold = yes }
+				desc = fp1_tbc.0121.desc.reward.gold
+			}
+			# Weak hook.
+			triggered_desc = {
+				trigger = { scope:tbc_weak_hook = yes }
+				desc = fp1_tbc.0121.desc.reward.weak_hook
+			}
+			# Humiliation.
+			triggered_desc = {
+				trigger = { scope:tbc_humiliation = yes }
+				desc = fp1_tbc.0121.desc.reward.humiliation
+			}
+			# No outcome for death, since that's handled more succinctly above.
+		}
+		desc = fp1_tbc.0121.desc.outro
+	}
+	theme = prison
+	left_portrait = {
+		character = scope:recipient
+		animation = shock
+	}
+	right_portrait = {
+		character = scope:actor
+		animation = personality_bold
+	}
+	override_background = { event_background = throne_room }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Juuuust need to double-check that they're actually alive.
+		is_alive = yes
+	}
+
+	immediate = {
+		# Show duel results from the player's POV.
+		show_as_tooltip = { fp1_tbc_non_lethal_results_effect = yes }
+		# Sadly, we have to apply some effects here instead of in the initial output event in order to not break tooltips.
+		fp1_tbc_consume_imprisonment_reasons_effect = yes
+	}
+
+	# The bout closes.
+	option = {
+		name = fp1_tbc.0121.a
+
+		# No stress for single-option events.
+		ai_chance = {
+			# AI will always choose single option.
+			base = 100
+		}
+	}
+}

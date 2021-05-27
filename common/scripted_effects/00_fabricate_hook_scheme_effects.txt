@@ -1,0 +1,295 @@
+﻿#Scripted effects relating to Fabricate Hook Schemes
+
+#####################################################################
+# EFFECT LIST
+#####################################################################
+# !!! Remember to add all new effects with a short description here !!!
+
+# fabricate_hook_assign_appropriate_type_effect - parameters: TYPE - Sets a correct type of Hook, depending on Hook Type and whether the target is a Ruler
+# fabricate_hook_discovery_effect - Effect notifying the target Court Owner and blocking further Scheming against them
+# fabricate_hook_success_effect - parameters: TYPE - Effect for successful execution (run when the Scheme is Successful AND the cost is paid)
+# fabricate_hook_decline_execution_effect - Resets the Scheme with a bonus
+######################################################################
+# EFFECTS
+######################################################################
+
+fabricate_hook_assign_appropriate_type_effect = {
+	debug_log = "Running Fabricate Hook's Assign Appropriate Hook effect"
+	assert_if = {
+		limit = {
+			scope:owner = {
+				has_strong_hook = scope:target
+			}
+		}
+		text = "The Fabricate Hook Scheme Owner already has a Strong Hook on the Target! Why is this effect running?"
+	}
+	assert_if = {
+		limit = {
+			scope:target = { is_ruler = yes }
+			NOT = { exists = scope:strong_hook_against_ruler }
+			scope:owner = { has_hook = scope:target }
+		}
+		text = "The Owner has a hook against a ruler target, and the strong hook roll failed. Something has gone wrong to get here!"
+	}
+
+	save_scope_value_as = {
+		name = hook_type
+		value = flag:$TYPE$
+	}
+	# Go through the Hook types, and assign the appropriate one
+	if = {
+		limit = {
+			scope:hook_type = flag:loyalty_hook
+		}
+		# Check rulers first (to give weaker Hooks)
+		if = {
+			limit = {
+				scope:target = { is_ruler = yes }
+				NOT = { exists = scope:strong_hook_against_ruler } # Set by on_ready in the Scheme
+			}
+			send_interface_toast = {
+				title = fabricate_hook_gained_indebted_title
+				left_icon = scope:target
+				add_hook = {
+					type = indebted_hook
+					target = scope:target
+				}
+			}
+		}
+		else = {
+			send_interface_toast = {
+				title = fabricate_hook_gained_loyalty_title
+				left_icon = scope:target
+				add_hook = {
+					type = loyalty_hook
+					target = scope:target
+				}
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:hook_type = flag:fabrication_hook
+		}
+		# Check rulers first (to give weaker Hooks)
+		if = {
+			limit = {
+				scope:target = { is_ruler = yes }
+				NOT = { exists = scope:strong_hook_against_ruler } # Set by on_ready in the Scheme
+			}
+			send_interface_toast = {
+				title = fabricate_hook_gained_manipulation_title
+				left_icon = scope:target
+				add_hook = {
+					type = manipulation_hook
+					target = scope:target
+				}
+			}
+		}
+		else = {
+			send_interface_toast = {
+				title = fabricate_hook_gained_indebted_title
+				left_icon = scope:target
+				add_hook = {
+					type = fabrication_hook
+					target = scope:target
+				}
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:hook_type = flag:life_threat_hook
+		}
+		debug_log = "Attempting to set life threat hook"
+		# Check rulers first (to give weaker Hooks)
+		if = {
+			limit = {
+				scope:target = { is_ruler = yes }
+				NOT = { exists = scope:strong_hook_against_ruler } # Set by on_ready in the Scheme
+			}
+			debug_log = "Trying to set regular threat hook against ruler"
+			send_interface_toast = {
+				title = fabricate_hook_gained_threat_title
+				left_icon = scope:target
+				add_hook = {
+					type = threat_hook
+					target = scope:target
+				}
+				scope:target = {
+					add_opinion = {
+						target = scope:owner
+						modifier = fabricate_hook_threatened_me
+						years = 10
+					}
+				}
+			}
+		}
+		else = {
+			if = {
+				limit = { exists = scope:strong_hook_against_ruler }
+				debug_log = "Trying to set life_threat_hook against a ruler"
+			}
+			else = {
+				debug_log = "Setting life_threat_hook against non-ruler"
+				assert_if = {
+					limit = { scope:target = { is_ruler = yes } }
+					text = "There is no ruler strong hook roll, but we're still trying to set a life_threat_hook on them!"
+				}
+			}
+			send_interface_toast = {
+				title = fabricate_hook_gained_indebted_title
+				left_icon = scope:target
+				add_hook = {
+					type = life_threat_hook
+					target = scope:target
+				}
+				scope:target = {
+					add_opinion = {
+						target = scope:owner
+						modifier = fabricate_hook_threatened_me
+						years = 10
+					}
+				}
+			}
+		}
+	}
+	# Error catch
+	else = {
+		assert_if = {
+			limit = { always = yes } # It should never get here
+			text = "Fabricate Hook assignment effect did not have a Hook type set when trying to assign a Hook!"
+		}
+	}
+}
+
+fabricate_hook_block_scheme_owner_from_further_schemes_effect = {
+	add_opinion = {
+		target = scope:owner
+		modifier = fabricated_hook_against_court_opinion
+		years = 5
+	}
+	custom_tooltip = fabricate_hook_i_may_not_fabricate_again
+}
+
+fabricate_hook_discovery_effect = {
+	show_as_tooltip = { # Target dislikes you
+		custom_tooltip = fabricate_hook_i_may_not_fabricate_again
+		scope:target = {
+			add_opinion = {
+				target = scope:owner
+				modifier = fabricated_hook_against_court_opinion
+				years = 5
+			}
+		}
+		if = {
+			limit = {
+				exists = scope:target.court_owner
+				NOT = { scope:target = scope:target.court_owner }
+			}
+			scope:target.court_owner = {
+				add_opinion = {
+					target = scope:owner
+					modifier = fabricated_hook_against_court_opinion
+					years = 5
+				}
+			}
+		}
+	}
+
+	hidden_effect  = {
+		# Set a blocker for Fabricating further Hooks against Court in question
+		if = {
+			limit = {
+				exists = scope:target.court_owner
+			}
+			scope:target.court_owner = {
+				send_interface_message = {
+					type = fabricate_hook_blocked
+					left_icon = scope:owner
+
+					fabricate_hook_block_scheme_owner_from_further_schemes_effect = yes
+				}
+			}
+		}
+		if = {
+			limit = {
+				OR = {
+					NOT = { exists = scope:target.court_owner }
+					NOT = { scope:target.court_owner = scope:target }
+				}
+			}
+			scope:target = {
+				add_opinion = {
+					target = scope:owner
+					modifier = fabricated_hook_against_court_opinion
+					years = 5
+				}
+			}
+		}
+	}
+}
+
+
+#Used in event options
+fabricate_hook_success_effect = {
+	fabricate_hook_assign_appropriate_type_effect = {
+		TYPE = $TYPE$ # Sets the correct hook type to give
+	}
+	if = {
+		limit = { exists = scope:target.court_owner }
+		scope:target.court_owner = { save_scope_as = court_owner }
+	}
+	if = {
+		limit = {
+			scope:target = scope:court_owner
+		}
+		if = {
+			limit = {
+				exists = scope:scheme_discovered
+			}
+			custom_tooltip = fabricate_hook_i_may_not_fabricate_again
+			scope:target = {
+				add_opinion = {
+					target = scope:owner
+					modifier = fabricated_hook_against_court_opinion
+					years = 5
+				}
+			}
+		}
+	}
+	else = {
+		fabricate_hook_discovery_effect = yes
+	}
+
+	if = {
+		limit = { exists = scope:scheme }
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+
+fabricate_hook_decline_execution_effect = {
+	scope:scheme = {
+		add_scheme_modifier = {
+			type = fabricate_hook_building_influence_modifier
+		}
+		custom_tooltip = restart_scheme_tt
+		hidden_effect = {
+			add_scheme_progress = -10
+		}
+	}
+}
+
+fabricate_hook_success_notification_event_effect = {
+	custom_tooltip = fabricate_hook_hook_gained_on_you
+	if = {
+		limit = {
+			exists = scope:scheme_discovered
+			scope:target = scope:target.court_owner
+		}
+		fabricate_hook_block_scheme_owner_from_further_schemes_effect = yes
+	}
+}

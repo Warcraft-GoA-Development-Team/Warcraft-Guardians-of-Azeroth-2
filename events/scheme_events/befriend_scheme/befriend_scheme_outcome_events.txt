@@ -1,0 +1,2936 @@
+﻿# The outcome of a befriend scheme
+
+namespace = befriend_outcome
+
+# NOTE: To set up a new scheme outcome, make sure that you make an event for each category below, and add them to their relevant on_actions.
+# If there has been no Early Outcome Setup, the order goes:
+# - Fire befriend_outcome.0001 to check that a method has not yet been set.
+# - befriend_outcome.0001 is fired on the on_ready pulse (when the scheme reaches 100% progress). This event checks the chance of success or failure of the scheme and then sends a randomized flavor event describing the outcome.
+# - Regardless of whether the roll was successful or not, if the scheme's target is a player character, he will receive befriend_outcome.0002, allowing him to go against the schemer's roll and refuse the friendship in exchange for a stress increase.
+# - Regarding the outcome events: A setup is randomly selected, weighted by modifiers defined in the befriend_outcome events with an ID within the ranges listed below.
+
+# 0000-0999: Maintenance & check events
+# 1000-1999: Setup events
+# 2000-2999: Success events for scheme owner
+# 4000-4999: Failure events for scheme owner
+# 6000-6999: Great success events for scheme owner
+# 8000-8999: Miserable failure events for scheme owner
+
+###0000-9301: Befriend Outcome events, written by Petter Vilberg
+###9800-9999: Rival events, written by Mathilda Bjarnehed
+
+
+######################################################
+# MAINTENANCE EVENTS
+# 0000-0999
+######################################################
+
+### SETUP ROLLS AND SUCCESS CHECK EVENTS
+
+#Rolls success and discovery, and triggers on_actions (or sends "player's choice" event)
+befriend_outcome.0001 = {
+	type = character_event
+
+	hidden = yes
+
+	immediate = {
+		#SUCCESS ROLL
+		if = { #Guaranteed success if you're potential friends already
+			limit = {
+				scope:owner = { has_relation_potential_friend = scope:target }
+			}
+			save_scope_value_as = { #Save scheme success as friends
+				name = scheme_successful
+				value = flag:friends
+			}
+		}
+		else = {
+			random = {
+				chance = scope:scheme.scheme_success_chance
+
+				#Friendship or potential friendship?
+				random_list = {
+					80 = {
+						trigger = {
+							NOT = {
+								scope:owner = { has_relation_rival = scope:target } #Get over rivalry first.
+							}
+						}
+						modifier = {
+							num_of_relation_friend = 0
+							add = 10
+						}
+						opinion_modifier = {
+							who = scope:target
+							opinion_target = scope:owner
+							multiplier = 0.75
+						}
+						modifier = {
+							ai_values_divergence = {
+								target = scope:target
+								value <= low_ai_values_divergence
+							}
+							add = 15
+						}
+						save_scope_value_as = { #Save scheme success as friends
+							name = scheme_successful
+							value = flag:friends
+						}
+					}
+					20 = {
+						trigger = {
+							NOT = { #Should give guaranteed friend
+								scope:owner = { has_relation_potential_friend = scope:target }
+							}
+						}
+						modifier = {
+							num_of_relation_friend >= 3
+							add = 10
+						}
+						modifier = {
+							num_of_relation_friend >= 6
+							add = 10
+						}
+						modifier = {
+							num_of_relation_friend >= 9
+							add = 10
+						}
+						save_scope_value_as = {  #Save scheme success as potential friend
+							name = scheme_successful
+							value = flag:potential
+						}
+					}
+				}
+			}
+		}
+		#Set Failure flag.
+		if = {
+			limit = {
+				NOT = { exists = scope:scheme_successful }
+			}
+			random_list = {
+				15 = {
+					modifier = {
+						num_of_relation_rival = 0
+						add = 10
+					}
+					modifier = {
+						ai_values_divergence = {
+							target = scope:target
+							value >= low_ai_values_divergence
+						}
+						add = 15
+					}
+					save_scope_value_as = { #Small chance to fail disastrously
+						name = scheme_failed
+						value = flag:terrible
+					}
+				}
+				85 = {
+					compare_modifier = {
+							value = scope:owner.diplomacy
+							multiplier = 0.5
+					}
+					opinion_modifier = {
+						who = scope:target
+						opinion_target = scope:owner
+						multiplier = 0.75
+					}
+					modifier = {
+						num_of_relation_rival >= 3
+						add = 20
+					}
+					modifier = {
+						num_of_relation_rival >= 6
+						add = 20
+					}
+					modifier = {
+						num_of_relation_rival >= 9
+						add = 20
+					}
+					save_scope_value_as = {  #Regular failure
+						name = scheme_failed
+						value = flag:regular
+					}
+				}
+			}
+		}
+
+		#FOR AI TARGETS, SEND ON_ACTIONS
+		if = {
+			limit = { scope:target = { is_ai = yes } }
+			if = {
+				limit = {
+					exists = scope:scheme_successful
+					scope:scheme_successful = flag:friends
+				}
+				trigger_event = {
+					on_action = befriend_critical_success
+				}
+			}
+			else_if = {
+				limit = {
+					exists = scope:scheme_successful
+					scope:scheme_successful = flag:potential
+				}
+				trigger_event = {
+					on_action = befriend_success
+				}
+			}
+			else = {
+				if = {
+					limit = {
+						exists = scope:scheme_failed
+						scope:scheme_failed = flag:terrible
+					}
+					trigger_event = {
+						on_action = befriend_critical_failure
+					}
+				}
+				else_if = {
+					limit = {
+						exists = scope:scheme_failed
+						scope:scheme_failed = flag:regular
+					}
+					trigger_event = {
+						on_action = befriend_failure
+					}
+				}
+			}
+		}
+		#FOR PLAYER CHARACTER, SEND CHOICE EVENT
+		else = {
+			scope:target = {
+				trigger_event = befriend_outcome.0002
+			}
+		}
+	}
+}
+
+#Player scheme target selects outcome
+befriend_outcome.0002 = { #by Mathilda Bjarnehed and Linnéa Thimrén
+	type = character_event
+	title = befriend_outcome.0002.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:scheme_successful
+					scope:scheme_successful = flag:friends
+				}
+				desc = befriend_outcome.0002.critsucc.desc
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:scheme_successful
+					scope:scheme_successful = flag:potential
+				}
+				desc = befriend_outcome.0002.succ.desc
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:scheme_failed
+					scope:scheme_failed = flag:regular
+				}
+				desc = befriend_outcome.0002.fail.desc
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:scheme_failed
+					scope:scheme_failed = flag:terrible
+				}
+				desc = befriend_outcome.0002.critfail.desc
+			}
+		}
+	}
+	
+	theme = befriend_scheme
+	left_portrait = scope:owner
+	
+	#Success: Okay, we can become friends
+	option = {
+		trigger = {
+			exists = scope:scheme_successful
+			scope:scheme_successful = flag:friends
+		}
+		name = befriend_outcome.0002.a
+		show_as_tooltip = {
+			successful_befriend_critical_change_effect = { CHARACTER = scope:owner }
+		}
+		hidden_effect = {
+			scope:owner = {
+				trigger_event = {
+					on_action = befriend_critical_success
+				}
+			}
+		}
+		stress_impact = {
+			shy = medium_stress_impact_gain
+			callous = medium_stress_impact_gain
+		}
+	}
+
+	#Success: Okay, I like you more
+	option = {
+		trigger = {
+			trigger_if = {
+				limit = {
+					exists = scope:scheme_successful
+				}
+				NOT = { scope:scheme_successful = flag:friends }
+			}
+		}
+		name = {
+			trigger = {
+				exists = scope:scheme_successful
+			}
+			text = befriend_outcome.0002.b.success
+		}
+		name = {
+			trigger = {
+				exists = scope:scheme_failed
+			}
+			text = befriend_outcome.0002.b.failure
+		}
+		show_as_tooltip = {
+			successful_befriend_potential_friend_effect = { CHARACTER = scope:owner }
+		}
+		hidden_effect = {
+			scope:owner = {
+				trigger_event = {
+					on_action = befriend_success
+				}
+			}
+		}
+		if = {
+			limit = {
+				exists = scope:scheme_failed
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+				shy = minor_stress_impact_gain
+				callous = minor_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				shy = minor_stress_impact_gain
+				callous = minor_stress_impact_gain
+			}
+		}
+	}
+	
+	#Failure: let down easy
+	option = {
+		name = {
+			trigger = {
+				exists = scope:scheme_successful
+			}
+			text = befriend_outcome.0002.c.success
+		}
+		name = {
+			trigger = {
+				exists = scope:scheme_failed
+			}
+			text = befriend_outcome.0002.c.failure
+		}
+		show_as_tooltip = {
+			failed_befriend_opinion_change_effect = { CHARACTER = scope:owner }
+		}
+		hidden_effect = {
+			scope:owner = {
+				trigger_event = {
+					on_action = befriend_failure
+				}
+			}
+		}
+		if = {
+			limit = {
+				exists = scope:scheme_successful
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+				gregarious = minor_stress_impact_gain
+				compassionate = minor_stress_impact_gain
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = { exists = scope:scheme_successful }
+			}
+			stress_impact = {
+				gregarious = minor_stress_impact_gain
+				compassionate = minor_stress_impact_gain
+			}
+		}
+	}
+
+	#Failure: be mean
+	option = {
+		name = befriend_outcome.0002.d
+		show_as_tooltip = {
+			failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:owner }
+		}
+		hidden_effect = {
+			scope:owner = {
+				trigger_event = {
+					on_action = befriend_critical_failure
+				}
+			}
+		}
+		if = {
+			limit = {
+				liege = scope:owner
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+				compassionate = medium_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				compassionate = medium_stress_impact_gain
+			}
+		}
+	}
+}
+
+######################################################
+# OWNER SUCCESS OUTCOME EVENTS
+# 2000-2999
+######################################################
+
+##########
+# Outcome: Visiting a manor
+##########
+befriend_outcome.2001 = {
+	type = character_event
+	title = befriend_outcome.2001.t
+	desc = {
+		desc = befriend_outcome.1001.desc
+		desc = befriend_outcome.2001.desc
+	}
+	theme = befriend_scheme
+	override_background = {
+		event_background = feast
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		any_sub_realm_barony = {
+			NOR = {
+				holder = scope:owner
+				holder = scope:target
+			}
+		}
+	}
+
+	immediate = {
+		random_sub_realm_barony = {
+			limit = {
+				NOR = {
+					holder = scope:owner
+					holder = scope:target
+				}
+			}
+			save_scope_as = barony
+		}
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2001.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Attending a dance
+##########
+befriend_outcome.2002 = {
+	type = character_event
+	title = befriend_outcome.2002.t
+	desc = {
+		desc = befriend_outcome.1002.desc
+		desc = befriend_outcome.2002.desc
+	}
+	
+
+	theme = befriend_scheme
+	override_background = {
+		event_background = throne_room
+	}
+	right_portrait = scope:target
+	left_portrait = scope:owner
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		OR = {
+			AND = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+				scope:target.liege = {
+					any_sub_realm_barony = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+				}
+			}
+			exists = scope:target.location.barony
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+			}
+			scope:target.liege = {
+				random_sub_realm_barony = {
+					limit = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+					save_scope_as = barony
+				}
+			}
+		}
+		else = {
+			scope:target.location.barony = {
+				save_scope_as = barony
+			}
+		}
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2002.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Common interests
+##########
+befriend_outcome.2003 = {
+	type = character_event
+	title = befriend_outcome.2003.t
+	desc = {
+		triggered_desc = {
+			# Do not trigger if scheme owner is deceitful and the two characters have nothing of note in common.
+			trigger = {
+				scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+				NOT = {
+					has_trait = deceitful
+					AND = {
+						has_same_fame_as_compare_character_trigger = no
+						has_same_lifestyle_as_compare_character_trigger = no
+						has_same_education_as_compare_character_trigger = no
+					}
+				}
+			}
+			desc = befriend_outcome.2003.opening
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_fame_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.2003.same_fame
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_lifestyle_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.2003.same_lifestyle
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_education_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.2003.same_education
+			}
+			triggered_desc = {
+				trigger = { has_trait = deceitful }
+				desc = befriend_outcome.2003.deceitful
+			}
+			desc = befriend_outcome.2003.fallback
+		}
+		desc = befriend_outcome.2003.great_time
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme = {
+			scheme_target = {
+				save_temporary_scope_as = compare_character
+			}
+			scheme_owner = {
+				OR = {
+					has_same_education_as_compare_character_trigger = yes
+					has_same_lifestyle_as_compare_character_trigger = yes
+					has_same_fame_as_compare_character_trigger = yes
+					AND = {
+						has_trait = deceitful
+						OR = {
+							diplomacy > medium_skill_rating
+							intrigue > high_skill_rating
+						}
+					}
+				}
+			}
+		}
+	}
+
+	immediate = {
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2003.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Generic Success
+##########
+befriend_outcome.2004 = {
+	type = character_event
+	title = befriend_outcome.2004.t
+	desc = {
+		desc = befriend_outcome.2004.opening
+		# Spouse/Concubine
+		# Close relative
+		# Vassal
+		# Liege
+		# Outsider
+		# Fallback
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						OR = {
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.2004.spouse
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_close_or_extended_family_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.2004.relative
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_vassal_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.2004.vassal
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:owner.liege
+					scope:owner.liege = scope:target
+				}
+				desc = befriend_outcome.2004.liege
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						NOR = {
+							target_is_liege_or_above = scope:owner
+							AND = {
+								exists = scope:owner.liege
+								scope:owner.liege = scope:target
+							}
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+							is_close_or_extended_family_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.2004.outsider
+			}
+			desc = befriend_outcome.2004.fallback
+		}
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+	}
+
+	immediate = {
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2003.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Generic End Rivalry Success
+##########
+befriend_outcome.2005 = {
+	type = character_event
+	title = befriend_outcome.2005.t
+	desc = {
+		# Relative
+		# Vassal
+		# Liege
+		# Fallback
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						OR = {
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+							is_close_or_extended_family_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.2005.relative
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_vassal_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.2005.vassal
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:owner.liege
+					scope:owner.liege = scope:target
+				}
+				desc = befriend_outcome.2005.liege
+			}
+			desc = befriend_outcome.2005.fallback
+		}
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:owner = {
+			has_relation_rival = scope:target
+		}
+	}
+
+	immediate = {
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+		if = {
+			limit = {
+				has_relation_rival = scope:target
+			}
+			remove_relation_rival = scope:target
+		}
+	}
+
+	option = {
+		name = befriend_outcome.2005.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Success vs Faction member
+##########
+befriend_outcome.2006 = {
+	type = character_event
+	title = befriend_outcome.2006.t
+	desc = befriend_outcome.2006.desc
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		exists = scope:target.liege
+		scope:target.liege = scope:owner
+		scope:target = {
+			is_ai = yes
+		}
+		scope:owner = {
+			any_targeting_faction = {
+				any_faction_member = {
+					this = scope:target
+				}
+			}
+		}
+	}
+
+	immediate = {
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+		scope:owner = {
+			random_targeting_faction = {
+				limit = {
+					any_faction_member = {
+						this = scope:target
+					}
+				}
+				save_scope_as = targeting_faction
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.2006.a
+		scope:target = {
+			leave_faction_with_cooldown_effect = {
+				FACTION = scope:targeting_faction
+				YEARS = 10
+			}
+		}
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+####################
+# Dislike Success Outcomes
+# 2200-2299
+####################
+##########
+# Success Outcome: A Formal Meeting
+##########
+befriend_outcome.2201 = {
+	type = character_event
+	title = befriend_outcome.2201.t
+	desc = {
+		desc = befriend_outcome.1201.desc
+		desc = befriend_outcome.2201.desc
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value < -20
+			}
+			is_landed = yes
+			NOT = { is_consort_of = scope:owner }
+		}
+	}
+
+	immediate = {
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2201.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+###############
+# Close Relation Success Outcomes
+# 2300-2399
+###############
+
+#Estate visit
+befriend_outcome.2301 = {
+	type = character_event
+	title = befriend_outcome.1301.t
+	desc = {
+		desc = befriend_outcome.1301.desc
+		desc = befriend_outcome.2301.desc
+		desc = befriend_outcome.2301.increase_opinion
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = farmland
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		befriend_target_is_close_to_owner_trigger = yes
+		any_sub_realm_barony = {
+			NOT = {
+				holder = scope:target
+			}
+		}
+	}
+
+	immediate = {
+		random_sub_realm_barony = {
+			limit = {
+				NOT = { holder = scope:target }
+			}
+			save_scope_as = barony
+		}
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2301.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+######################################################
+# OWNER FAILURE OUTCOMES
+# 4000-4999
+######################################################
+
+# Failure outcome: Visiting a manor
+befriend_outcome.4001 = {
+	type = character_event
+	title = befriend_outcome.4001.t
+	desc = {
+		desc = befriend_outcome.1001.desc
+		desc = befriend_outcome.4001.desc
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = feast
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		any_sub_realm_barony = {
+			NOR = {
+				holder = scope:owner
+				holder = scope:target
+			}
+		}
+	}
+
+	immediate = {
+		random_sub_realm_barony = {
+			limit = {
+				NOR = {
+					holder = scope:owner
+					holder = scope:target
+				}
+			}
+			save_scope_as = barony
+		}
+	}
+
+	option = {
+		name = befriend_outcome.4001.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+# Failure outcome: Attending a dance
+befriend_outcome.4002 = {
+	type = character_event
+	title = befriend_outcome.4002.t
+	desc = {
+		desc = befriend_outcome.1002.desc
+		desc = befriend_outcome.4002.desc
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = market
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		OR = {
+			AND = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+				scope:target.liege = {
+					any_sub_realm_barony = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+				}
+			}
+			exists = scope:target.location.barony
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+			}
+			scope:target.liege = {
+				random_sub_realm_barony = {
+					limit = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+					save_scope_as = barony
+				}
+			}
+		}
+		else = {
+			scope:target.location.barony = {
+				save_scope_as = barony
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.4002.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+# Failure outcome: Common interests
+befriend_outcome.4003 = {
+	type = character_event
+	title = befriend_outcome.4003.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_fame_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.4003.same_fame
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_lifestyle_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.4003.same_lifestyle
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_education_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.4003.same_education
+			}
+			triggered_desc = {
+				trigger = { has_trait = deceitful }
+				desc = befriend_outcome.4003.deceitful
+			}
+			desc = befriend_outcome.4003.fallback
+		}
+		desc = befriend_outcome.4003.bad_time
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme = {
+			scheme_target = {
+				save_temporary_scope_as = compare_character
+			}
+			scheme_owner = {
+				OR = {
+					has_same_education_as_compare_character_trigger = yes
+					has_same_lifestyle_as_compare_character_trigger = yes
+					has_same_fame_as_compare_character_trigger = yes
+					AND = {
+						has_trait = deceitful
+						OR = {
+							diplomacy > medium_skill_rating
+							intrigue > high_skill_rating
+						}
+					}
+				}
+			}
+		}
+	}
+
+	immediate = {
+	}
+
+	option = {
+		name = befriend_outcome.4003.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Generic Failure
+##########
+befriend_outcome.4004 = {
+	type = character_event
+	title = befriend_outcome.4004.t
+	desc = {
+		# Spouse/Concubine
+		# Close relative
+		# Vassal
+		# Liege
+		# Outsider
+		# Fallback
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						OR = {
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.4004.spouse
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_close_or_extended_family_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.4004.relative
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_vassal_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.4004.vassal
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:owner.liege
+					scope:owner.liege = scope:target
+				}
+				desc = befriend_outcome.4004.liege
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						NOR = {
+							target_is_liege_or_above = scope:owner
+							AND = {
+								exists = scope:owner.liege
+								scope:owner.liege = scope:target
+							}
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+							is_close_or_extended_family_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.4004.outsider
+			}
+			desc = befriend_outcome.4003.fallback
+		}
+		desc = befriend_outcome.4004.ending
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		if = { #You lose prestige because rumors are going around about you
+			limit = {
+				exists = scope:owner.liege
+				scope:owner.liege = scope:target
+			}
+			add_prestige = minor_prestige_loss
+		}
+	}
+
+	option = {
+		name = befriend_outcome.4003.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+# Failure outcome: A Formal Meeting
+befriend_outcome.4201 = {
+	type = character_event
+	title = befriend_outcome.4201.t
+	desc = {
+		desc = befriend_outcome.1201.desc
+		desc = befriend_outcome.4201.desc
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value < -20
+			}
+			is_landed = yes
+			NOT = { is_consort_of = scope:owner }
+		}
+	}
+
+	immediate = {
+	}
+
+	option = {
+		name = befriend_outcome.4201.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+
+###############
+# Close Relations
+# 4301-4399
+###############
+
+#Estate Visit
+befriend_outcome.4301 = {
+	type = character_event
+	title = befriend_outcome.1301.t
+	desc = {
+		desc = befriend_outcome.1301.desc
+		desc = befriend_outcome.4301.desc
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = farmland
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		befriend_target_is_close_to_owner_trigger = yes
+		any_sub_realm_barony = {
+			NOT = {
+				holder = scope:target
+			}
+		}
+	}
+
+	immediate = {
+		random_sub_realm_barony = {
+			limit = {
+				NOT = { holder = scope:target }
+			}
+			save_scope_as = barony
+		}
+	}
+
+	option = {
+		name = befriend_outcome.4301.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+######################################################
+# OWNER CRITICAL SUCCESS OUTCOME EVENTS
+# 6000-6999
+######################################################
+
+##########
+# Outcome: Visiting a manor
+##########
+befriend_outcome.6001 = {
+	type = character_event
+	title = befriend_outcome.2001.t
+	desc = {
+		desc = befriend_outcome.1001.desc
+		desc = befriend_outcome.2001.desc
+		desc = befriend_outcome.6001.begin_friendship
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = feast
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		OR = {
+			AND = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+				scope:target.liege = {
+					any_sub_realm_barony = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+				}
+			}
+			exists = scope:target.location.barony
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+			}
+			scope:target.liege = {
+				random_sub_realm_barony = {
+					limit = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+					save_scope_as = barony
+				}
+			}
+		}
+		else = {
+			scope:target.location.barony = {
+				save_scope_as = barony
+			}
+		}
+		successful_befriend_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2001.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Attending a dance
+##########
+befriend_outcome.6002 = {
+	type = character_event
+	title = befriend_outcome.2002.t
+	desc = {
+		desc = befriend_outcome.1002.desc
+		desc = befriend_outcome.2002.desc
+		desc = befriend_outcome.6001.begin_friendship
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = throne_room
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		OR = {
+			AND = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+				scope:target.liege = {
+					any_sub_realm_barony = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+				}
+			}
+			exists = scope:target.location.barony
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+			}
+			scope:target.liege = {
+				random_sub_realm_barony = {
+					limit = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+					save_scope_as = barony
+				}
+			}
+		}
+		else = {
+			scope:target.location.barony = {
+				save_scope_as = barony
+			}
+		}
+		successful_befriend_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2002.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+
+##########
+# Outcome: Common interests
+##########
+befriend_outcome.6003 = {
+	type = character_event
+	title = befriend_outcome.2003.t
+	desc = {
+		triggered_desc = {
+			# Do not trigger if scheme owner is deceitful and the two characters have nothing of note in common.
+			trigger = {
+				scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+				NOT = {
+					has_trait = deceitful
+					AND = {
+						has_same_fame_as_compare_character_trigger = no
+						has_same_lifestyle_as_compare_character_trigger = no
+						has_same_education_as_compare_character_trigger = no
+					}
+				}
+			}
+			desc = befriend_outcome.2003.opening
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_fame_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.2003.same_fame
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_lifestyle_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.2003.same_lifestyle
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_education_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.2003.same_education
+			}
+			triggered_desc = {
+				trigger = { has_trait = deceitful }
+				desc = befriend_outcome.2003.deceitful
+			}
+			desc = befriend_outcome.2003.fallback
+		}
+		desc = befriend_outcome.6001.begin_friendship
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:target = {
+			save_temporary_scope_as = compare_character
+		}
+		scope:owner = {
+			OR = {
+				has_same_education_as_compare_character_trigger = yes
+				has_same_lifestyle_as_compare_character_trigger = yes
+				has_same_fame_as_compare_character_trigger = yes
+				AND = {
+					has_trait = deceitful
+					OR = {
+						diplomacy > medium_skill_rating
+						intrigue > high_skill_rating
+					}
+				}
+			}
+		}
+	}
+	
+	immediate = {
+			successful_befriend_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.2003.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Generic Crit Success
+##########
+befriend_outcome.6004 = {
+	type = character_event
+	title = befriend_outcome.2004.t
+	desc = {
+		desc = befriend_outcome.2004.opening
+		# Spouse/Concubine
+		# Close relative
+		# Vassal
+		# Liege
+		# Outsider
+		# Fallback
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						OR = {
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.6004.spouse
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_close_or_extended_family_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.6004.relative
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_vassal_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.6004.vassal
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:owner.liege
+					scope:owner.liege = scope:target
+				}
+				desc = befriend_outcome.6004.liege
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						NOR = {
+							target_is_liege_or_above = scope:owner
+							AND = {
+								exists = scope:owner.liege
+								scope:owner.liege = scope:target
+							}
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+							is_close_or_extended_family_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.6004.outsider
+			}
+			desc = befriend_outcome.6001.begin_friendship
+		}
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		successful_befriend_critical_change_effect = { CHARACTER = scope:target }
+		if = {
+			limit = {
+				exists = scope:owner.liege
+				scope:owner.liege = scope:target
+			}
+			add_prestige = medium_prestige_gain
+		}
+	}
+
+	option = {
+		name = befriend_outcome.2003.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Crit Success vs Faction leader
+##########
+befriend_outcome.6006 = {
+	type = character_event
+	title = befriend_outcome.6006.t
+	desc = befriend_outcome.6006.desc
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		exists = scope:target.liege
+		scope:target.liege = scope:owner
+		scope:target = {
+			is_ai = yes
+		}
+		scope:owner = {
+			any_targeting_faction = {
+				exists = faction_leader
+				faction_leader = {
+					this = scope:target
+				}
+			}
+		}
+	}
+
+	immediate = {
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+		scope:owner = {
+			random_targeting_faction = {
+				limit = {
+					faction_leader = {
+						this = scope:target
+					}
+				}
+				save_scope_as = scoped_faction
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.2006.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+		scope:scoped_faction = {
+			if = {
+				limit = {
+					any_faction_member = { is_ai = no }
+				}
+				every_faction_member = {
+					limit = { is_ai = no }
+					trigger_event = befriend_outcome.6007
+				}
+			}
+			destroy_faction = yes
+		}
+	}
+}
+
+#Players notified of faction dissolving.
+befriend_outcome.6007 = {
+	type = character_event
+	title = befriend_outcome.6006.t
+	desc = befriend_outcome.6007.desc
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	right_portrait = scope:owner
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+
+	option = {
+		name = {
+			trigger = {
+				opinion = {
+					target = scope:owner
+					value <= -0
+				}
+			}
+			text = befriend_outcome.6007.a.a
+		}
+		name = {
+			trigger = {
+				opinion = {
+					target = scope:owner
+					value >= -0
+				}
+			}
+			text = befriend_outcome.6007.a.b
+		}
+	}
+}
+
+###############
+# Close Relations
+# 6301-6399
+###############
+
+#Estate Visit
+befriend_outcome.6301 = {
+	type = character_event
+	title = befriend_outcome.1301.t
+	desc = {
+		desc = befriend_outcome.1301.desc
+		desc = befriend_outcome.2301.desc
+		desc = befriend_outcome.6301.begin_friendship
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = farmland
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		befriend_target_is_close_to_owner_trigger = yes
+		any_sub_realm_barony = {
+			NOT = {
+				holder = scope:target
+			}
+		}
+	}
+	
+	immediate = {
+		random_sub_realm_barony = {
+			limit = {
+				NOT = { holder = scope:target }
+			}
+			save_scope_as = barony
+		}
+	}
+
+	option = {
+		name = befriend_outcome.2301.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		successful_befriend_critical_change_effect = { CHARACTER = scope:target } #In after so the RelationToMe won't return friend 
+	}
+}
+
+
+######################################################
+# OWNER CRITICAL FAILURE EVENTS
+# 8000-8999
+######################################################
+# Failure outcome: Visiting a manor
+befriend_outcome.8001 = {
+	type = character_event
+	title = befriend_outcome.4001.t
+	desc = {
+		desc = befriend_outcome.1001.desc
+		desc = befriend_outcome.4001.desc
+		desc = befriend_outcome.8001.disastrous_time
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = farmland
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		OR = {
+			AND = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+				scope:target.liege = {
+					any_sub_realm_barony = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+				}
+			}
+			exists = scope:target.location.barony
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+			}
+			scope:target.liege = {
+				random_sub_realm_barony = {
+					limit = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+					save_scope_as = barony
+				}
+			}
+		}
+		else = {
+			scope:target.location.barony = {
+				save_scope_as = barony
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.4001.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+}
+
+# Failure outcome: Attending a dance
+befriend_outcome.8002 = {
+	type = character_event
+	title = befriend_outcome.4002.t
+	desc = {
+		desc = befriend_outcome.1002.desc
+		desc = befriend_outcome.4002.desc
+		desc = befriend_outcome.8001.disastrous_time
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = market
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value > -21
+			}
+			NOT = { is_consort_of = scope:owner }
+		}
+		OR = {
+			AND = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+				scope:target.liege = {
+					any_sub_realm_barony = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+				}
+			}
+			exists = scope:target.location.barony
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = scope:target.liege
+				NOT  = { scope:target = scope:target.liege } 
+			}
+			scope:target.liege = {
+				random_sub_realm_barony = {
+					limit = {
+						NAND = {
+							holder = scope:owner
+							holder = scope:target
+						}
+					}
+					save_scope_as = barony
+				}
+			}
+		}
+		else = {
+			scope:target.location.barony = {
+				save_scope_as = barony
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.4002.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+}
+
+###########
+# Failure outcome: Common interests
+###########
+befriend_outcome.8003 = {
+	type = character_event
+	title = befriend_outcome.4003.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_fame_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.4003.same_fame
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_lifestyle_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.4003.same_lifestyle
+			}
+			triggered_desc = {
+				trigger = {
+					scope:scheme.scheme_target = { save_temporary_scope_as = compare_character }
+					has_same_education_as_compare_character_trigger = yes
+				}
+				desc = befriend_outcome.4003.same_education
+			}
+			triggered_desc = {
+				trigger = { has_trait = deceitful }
+				desc = befriend_outcome.4003.deceitful
+			}
+			desc = befriend_outcome.4003.fallback
+		}
+		desc = befriend_outcome.8001.disastrous_time
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme = {
+			scheme_target = {
+				save_temporary_scope_as = compare_character
+			}
+			scheme_owner = {
+				OR = {
+					has_same_education_as_compare_character_trigger = yes
+					has_same_lifestyle_as_compare_character_trigger = yes
+					has_same_fame_as_compare_character_trigger = yes
+					AND = {
+						has_trait = deceitful
+						OR = {
+							diplomacy > medium_skill_rating
+							intrigue > high_skill_rating
+						}
+					}
+				}
+			}
+		}
+	}
+
+	immediate = {
+		scope:scheme.scheme_owner = {
+			save_scope_as = owner
+		}
+	}
+	option = {
+		name = befriend_outcome.4003.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+
+	after = {
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+}
+
+##########
+# Outcome: Generic Crit Failure
+##########
+befriend_outcome.8004 = {
+	type = character_event
+	title = befriend_outcome.4004.t
+	desc = {
+		# Spouse/Concubine
+		# Close relative
+		# Vassal
+		# Liege
+		# Outsider
+		# Fallback
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						OR = {
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.4004.spouse
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_close_or_extended_family_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.4004.relative
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						is_vassal_of = scope:owner
+					}
+				}
+				desc = befriend_outcome.4004.vassal
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:owner.liege
+					scope:owner.liege = scope:target
+				}
+				desc = befriend_outcome.4004.liege
+			}
+			triggered_desc = {
+				trigger = {
+					scope:target = {
+						NOR = {
+							target_is_liege_or_above = scope:owner
+							AND = {
+								exists = scope:owner.liege
+								scope:owner.liege = scope:target
+							}
+							is_spouse_of = scope:owner
+							is_consort_of = scope:owner
+							is_close_or_extended_family_of = scope:owner
+						}
+					}
+				}
+				desc = befriend_outcome.4004.outsider
+			}
+			desc = befriend_outcome.4003.fallback
+		}
+		desc = befriend_outcome.4004.ending
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	immediate = {
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.4003.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Crit Failure vs Rival results in Prestige/Opinion loss.
+##########
+befriend_outcome.8005 = {
+	type = character_event
+	title = befriend_outcome.4003.t
+	desc = befriend_outcome.8005.desc
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:owner = {
+			has_relation_rival = scope:target
+			OR = {
+				num_of_relation_friend = 0
+				has_personality_submissive_trigger = yes
+			}
+		}
+		scope:target = {
+			NOR = {
+				target_is_liege_or_above = scope:owner
+				has_personality_benevolent_trigger = yes
+			}
+		}
+	}
+
+	immediate = {
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+		if = {
+			limit = {
+				exists = scope:owner.liege
+				scope:owner.liege = scope:target
+			}
+			add_prestige = medium_prestige_loss
+		}
+		every_courtier = {
+			limit = {
+				is_available_adult = yes
+			}
+			add_opinion = {
+				target = scope:owner
+				modifier = reputation_opinion
+				opinion = -15
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.8005.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Crit Failure vs Faction leader.
+##########
+scripted_trigger faction_member_befriend_outcome_8006_trigger = {
+	is_powerful_vassal_of = scope:owner
+	this = scope:target
+}
+befriend_outcome.8006 = {
+	type = character_event
+	title = befriend_outcome.8006.t
+	desc = befriend_outcome.8006.desc
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:target.liege = scope:owner
+		scope:owner = {
+			any_targeting_faction = {
+				exists = faction_leader
+				faction_leader = {
+					faction_member_befriend_outcome_8006_trigger = yes
+				}
+				any_faction_member = {
+					count > 2
+				}
+			}
+		}
+	}
+
+	immediate = {
+		random_targeting_faction = {
+			limit = {
+				faction_leader = {
+					faction_member_befriend_outcome_8006_trigger = yes
+				}
+			}
+			save_scope_as = scoped_faction
+			every_faction_member = {
+				custom = befriend_outcome.8006.everyfactionmember.custom
+				add_opinion = {
+					modifier = agitated_opinion
+					target = scope:owner
+				}
+			}
+		}
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+		scope:scoped_faction = { add_faction_discontent = 25 }
+	}
+
+	option = {
+		name = befriend_outcome.8006.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Crit Failure vs Spouse.
+##########
+scripted_trigger valid_secret_befriend_outcome_8007_trigger = {
+	NOT = { is_known_by = scope:target }
+	secret_owner = scope:owner
+	trigger_if = {
+		limit = {
+			exists = secret_target
+		}
+		NOT = { secret_target = scope:target }
+	}
+	is_blackmailable_secret_trigger = { PARTICIPANT = root BLACKMAILER = scope:target }
+}
+
+befriend_outcome.8007 = {
+	type = character_event
+	title = befriend_outcome.8007.t
+	desc = befriend_outcome.8007.desc
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		OR = {
+			any_consort = {
+				this = scope:target
+			}
+		}
+		scope:owner = {
+			NOT = { has_trait = paranoid }
+		}
+		scope:target = {
+			NOT = { has_personality_benevolent_trigger = yes }
+			NOT = {
+				has_hook = scope:owner
+			}
+		}
+		scope:owner = {
+			any_secret = {
+				valid_secret_befriend_outcome_8007_trigger = yes
+			}
+		}
+	}
+
+	immediate = {
+		scope:owner = {
+			random_secret = {
+				limit = {
+					valid_secret_befriend_outcome_8007_trigger = yes
+				}
+				save_scope_as = scoped_secret
+				show_as_tooltip = { reveal_to = scope:target }
+			}
+		}
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = { # Bribe
+		name = befriend_outcome.8007.a
+		pay_short_term_gold = {
+			target = scope:target
+			gold = scope:owner.medium_gold_value
+		}
+
+		scope:scoped_secret = { disable_exposure_by = scope:target }
+
+		stress_impact = {
+			greedy = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 10
+			modifier = {
+				add = -25
+				has_trait = greedy
+			}
+		}
+	}
+
+	option = { # Hook
+		name = befriend_outcome.8007.b
+		hidden_effect = { scope:scoped_secret = { reveal_to = scope:target } }
+		scope:target = {
+			blackmail_target_with_secret_effect = {
+				TARGET = scope:owner
+				SECRET = scope:scoped_secret
+			}
+		}
+		stress_impact = {
+			honest = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 40
+			modifier = {
+				add = 25
+				has_trait = shy
+			}
+		}
+	}
+
+	option = { # Shame
+		name = befriend_outcome.8007.c
+		scope:scoped_secret = {
+			expose_secret = root
+		}
+		stress_impact = {
+			deceitful = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 10
+			modifier = {
+				add = 25
+				has_trait = honest
+			}
+		}
+	}
+	after = {
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Crit Failure vs Bishop.
+##########
+
+befriend_outcome.8008 = {
+	type = character_event
+	title = befriend_outcome.8008.t
+	desc = befriend_outcome.8008.desc
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = temple
+	}
+	left_portrait = scope:scoped_bishop
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		root.faith = { has_doctrine = doctrine_theocracy_temporal }
+		scope:target.liege = scope:owner
+		scope:owner = {
+			is_landed = yes
+			exists = cp:councillor_court_chaplain
+			cp:councillor_court_chaplain = {
+				this = scope:target
+			}
+			capital_county = {
+				holder = scope:owner
+				faith = scope:target.faith
+			}
+		}
+	}
+
+	immediate = {
+		scope:target = {
+			save_scope_as = scoped_bishop
+		}
+		capital_county = {
+			#custom = bishop.2003.countyunrest.custom
+			change_county_control = minor_county_control_loss
+		}
+		add_piety = minor_piety_loss
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.8008.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+##########
+# Outcome: Crit Failure vs Liege.
+##########
+
+befriend_outcome.8009 = {
+	type = character_event
+	title = befriend_outcome.8009.t
+	desc = befriend_outcome.8009.desc
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = throne_room
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		exists = scope:owner.liege
+		scope:owner.liege = scope:target
+		scope:target = {
+			has_personality_malicious_trigger = yes
+		}
+	}
+
+	immediate = {
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+		add_prestige = medium_prestige_loss
+		scope:target = {
+			every_courtier = {
+				limit = {
+					NOT = {
+						this = scope:owner
+					}
+				}
+				custom = befriend_outcome.8009.everycourtier.custom
+				add_opinion = {
+					modifier = laughingstock_opinion
+					target = scope:owner
+				}
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.8009.a
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+# Failure outcome: A Formal Meeting
+befriend_outcome.8201 = {
+	type = character_event
+	title = befriend_outcome.4201.t
+	desc = {
+		desc = befriend_outcome.1201.desc
+		desc = befriend_outcome.4201.desc
+		desc = befriend_outcome.8201.disastrous_time
+	}
+	
+	theme = befriend_scheme
+
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:scheme.scheme_target = {
+			opinion = {
+				target = scope:scheme.scheme_owner
+				value < -20
+			}
+			is_landed = yes
+			NOT = { is_consort_of = scope:owner }
+		}
+	}
+
+	immediate = {
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.4201.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+###############
+# Close Relations
+# 8301-8399
+###############
+
+#Estate Visit
+befriend_outcome.8301 = {
+	type = character_event
+	title = befriend_outcome.1301.t
+	desc = {
+		desc = befriend_outcome.1301.desc
+		desc = befriend_outcome.4301.desc
+		desc = befriend_outcome.8301.disastrous_time
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = farmland
+	}
+	left_portrait = scope:target
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		befriend_target_is_close_to_owner_trigger = yes
+		any_sub_realm_barony = {
+			NOT = {
+				holder = scope:target
+			}
+		}
+	}
+
+	immediate = {
+		random_sub_realm_barony = {
+			limit = {
+				NOT = { holder = scope:target }
+			}
+			save_scope_as = barony
+		}
+		failed_befriend_opinion_critical_change_effect = { CHARACTER = scope:target }
+	}
+
+	option = {
+		name = befriend_outcome.4301.b
+		scope:scheme = {
+			end_scheme = yes
+		}
+	}
+}
+
+######################################################
+# RIVAL SUCCESS EVENTS
+# 9800-9899
+# Written by Mathilda Bjarnehed
+######################################################
+
+#Graveyard visit successful outcome
+befriend_outcome.9800 = {
+	type = character_event
+	title = befriend_outcome.9800.t
+	desc = {
+		desc = befriend_outcome.9800.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target_dead_parent = scope:owner_dead_parent
+				}
+				desc = befriend_outcome.9800.desc_same_parent.our_parent
+			}
+			desc = befriend_outcome.9800.desc_strangers.their_parent
+		}
+		desc = befriend_outcome.9800.mid.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target_dead_parent = scope:owner_dead_parent
+				}
+				desc = befriend_outcome.9800.desc_same_parent.dialogue
+			}
+			desc = befriend_outcome.9800.desc_strangers.dialogue
+		}
+		desc = befriend_outcome.9800.end
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = temple
+	}
+	left_portrait = scope:target
+	lower_left_portrait = scope:parent_portrait_scope_1
+	right_portrait = scope:owner
+	lower_right_portrait = scope:parent_portrait_scope_2
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+	
+	trigger = {
+		scope:target = {
+			opinion = {
+				target = scope:owner
+				value < 0
+			}
+		}
+		OR = {
+			AND = {
+				exists = mother
+				mother = { is_alive = no }
+			}
+			AND = {
+				exists = father
+				father = { is_alive = no }
+			}
+		}
+		scope:target = {
+			OR = {
+				AND = {
+					exists = mother
+					mother = { is_alive = no }
+				}
+				AND = {
+					exists = father
+					father = { is_alive = no }
+				}
+			}
+		}
+	}
+
+	immediate = {
+		hidden_effect = { scope:scheme = { scheme_freeze_days = 365 } }
+		if = {
+			limit = {
+				exists = mother
+				mother = { is_alive = no }
+			}
+			mother = { save_scope_as = owner_dead_parent }
+		}
+		else = {
+			father = { save_scope_as = owner_dead_parent }
+		}
+
+		scope:target = {
+			if = {
+				limit = {
+					exists = mother
+					mother = { is_alive = no }
+				}
+				mother = { save_scope_as = target_dead_parent }
+			}
+			else = {
+				father = { save_scope_as = target_dead_parent }
+			}
+		}
+
+		#For portraits
+		if = {
+			limit = {
+				scope:owner_dead_parent = scope:target_dead_parent
+			}
+			scope:owner_dead_parent = {
+				save_scope_as = parent_portrait_scope_1
+			}
+		}
+		else = {
+			scope:target_dead_parent = {
+				save_scope_as = parent_portrait_scope_1
+			}
+			scope:owner_dead_parent = {
+				save_scope_as = parent_portrait_scope_2
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.9800.a
+	
+		successful_befriend_potential_friend_effect = { CHARACTER = scope:target }
+		if = {
+			limit = {
+				has_relation_rival = scope:target
+			}
+			remove_relation_rival = scope:target
+		}
+		scope:scheme = {
+			end_scheme = yes
+		}
+		ai_chance = {
+			base = 100
+		}
+	}
+}
+
+######################################################
+# RIVAL FAILURE EVENTS
+# 9900-9999
+######################################################
+
+#Graveyard visit failure
+befriend_outcome.9900 = {
+	type = character_event
+	title = befriend_outcome.9900.t
+	desc = {
+		desc = befriend_outcome.9800.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:target_dead_parent = scope:owner_dead_parent
+				}
+				desc = befriend_outcome.9800.desc_same_parent.our_parent
+			}
+			desc = befriend_outcome.9800.desc_strangers.their_parent
+		}
+		desc = befriend_outcome.9800.mid.desc
+		desc = befriend_outcome.9900.end
+	}
+	
+	theme = befriend_scheme
+	override_background = {
+		event_background = temple
+	}
+	left_portrait = scope:target
+	lower_left_portrait = scope:parent_portrait_scope_1
+	right_portrait = scope:owner
+	lower_right_portrait = scope:parent_portrait_scope_2
+	widget = {
+		gui = "event_window_widget_scheme"
+		container = "custom_widgets_container"
+	}
+
+	trigger = {
+		scope:owner = { has_relation_rival = scope:target }
+		OR = {
+			AND = {
+				exists = mother
+				mother = { is_alive = no }
+			}
+			AND = {
+				exists = father
+				father = { is_alive = no }
+			}
+		}
+		scope:scheme.scheme_target = {
+			OR = {
+				AND = {
+					exists = mother
+					mother = { is_alive = no }
+				}
+				AND = {
+					exists = father
+					father = { is_alive = no }
+				}
+			}
+		}
+	}
+
+	immediate = {
+		hidden_effect = { scope:scheme = { scheme_freeze_days = 365 } }
+		if = {
+			limit = {
+				exists = mother
+				mother = { is_alive = no }
+			}
+			mother = { save_scope_as = owner_dead_parent }
+		}
+		else = {
+			father = { save_scope_as = owner_dead_parent }
+		}
+
+		scope:target = {
+			if = {
+				limit = {
+					exists = mother
+					mother = { is_alive = no }
+				}
+				mother = { save_scope_as = target_dead_parent }
+			}
+			else = {
+				father = { save_scope_as = target_dead_parent }
+			}
+		}
+		#For portraits
+		if = {
+			limit = {
+				scope:owner_dead_parent = scope:target_dead_parent
+			}
+			scope:owner_dead_parent = {
+				save_scope_as = parent_portrait_scope_1
+			}
+		}
+		else = {
+			scope:target_dead_parent = {
+				save_scope_as = parent_portrait_scope_1
+			}
+			scope:owner_dead_parent = {
+				save_scope_as = parent_portrait_scope_2
+			}
+		}
+	}
+
+	option = {
+		name = befriend_outcome.9900.b
+
+		scope:scheme = {
+			end_scheme = yes
+		}
+		ai_chance = {
+			base = 20
+		}
+	}
+}

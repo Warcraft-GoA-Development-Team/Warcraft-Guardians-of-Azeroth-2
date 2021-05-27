@@ -69,7 +69,6 @@ scripted_trigger allow_naming_on_birth_of_child_trigger = {
 	exists = $CHILD$
 	is_ai = no
 	OR = {
-		always = yes
 		#I am the only player parent of child
 		NOT = {
 			$CHILD$ = {
@@ -89,9 +88,11 @@ scripted_trigger allow_naming_on_birth_of_child_trigger = {
 			OR = {
 				AND = { #They are of my dynasty, not theirs
 					dynasty = $CHILD$.dynasty
-					any_parent = {
-						NOT = { this = scope:naming_parent }
-						NOT = { dynasty = $CHILD$.dynasty }
+					$CHILD$ = {
+						any_parent = {
+							NOT = { this = scope:naming_parent }
+							NOT = { dynasty = $CHILD$.dynasty }
+						}
 					}
 				}
 				AND = { #I am their mother, and parents are of same dynasty/neither has baby's dynasty
@@ -99,14 +100,30 @@ scripted_trigger allow_naming_on_birth_of_child_trigger = {
 					OR = {
 						$CHILD$.mother.dynasty = $CHILD$.father.dynasty
 						NOR = {
-							mother.dynasty = $CHILD$.dynasty
-							father.dynasty = $CHILD$.dynasty
+							$CHILD$.mother.dynasty = $CHILD$.dynasty
+							$CHILD$.father.dynasty = $CHILD$.dynasty
 						}
 					}
 				}
 			}
 		}
 	}
+}
+
+scripted_trigger allow_naming_on_birth_of_dynasty_child_trigger = {
+	save_temporary_scope_as = naming_dynasty_member
+	exists = $CHILD$
+	is_ai = no
+	#No parent is naming the kid, and it's not your child (at least not officially...)
+	$CHILD$ = {
+		any_parent = {
+			NOR = {
+				allow_naming_on_birth_of_child_trigger = { CHILD = $CHILD$ }
+				this = scope:naming_dynasty_member
+			}
+		}
+	}
+	$CHILD$.host = scope:naming_dynasty_member
 }
 
 #Selects visible birth event based on bastard status and complication rolls (for births without mother and/or child dying)
@@ -161,6 +178,10 @@ birth.0001 = {
 							}
 						}
 						add = 15
+					}
+					modifier = { # Event is less common for AI rulers.
+						scope:child.mother = { is_ai = yes }
+						factor = 0.25
 					}
 					trigger_event = birth.9002
 				}
@@ -320,6 +341,10 @@ birth.0001 = {
 								}
 								add = 15
 							}
+							modifier = { # Event is less common for AI rulers.
+								scope:child.father = { is_ai = yes }
+								factor = 0.25
+							}
 							trigger_event = birth.9002
 						}
 					}
@@ -406,7 +431,7 @@ birth.0001 = {
 					2 = {
 						trigger = {
 							NOR = {
-								has_trait = beauty_good
+								has_trait_beauty_good_trigger = yes
 								has_trait = beauty_bad
 							}
 						}
@@ -415,7 +440,7 @@ birth.0001 = {
 					1 = {
 						trigger = {
 							NOR = {
-								has_trait = beauty_good
+								has_trait_beauty_good_trigger = yes
 								has_trait = beauty_bad
 							}
 						}
@@ -460,6 +485,52 @@ birth.0001 = {
 					1 = { add_trait = dwarf }
 					2 = { add_trait = giant }
 					1 = { add_trait = albino }
+
+					# Warcraft
+					2 = {
+						trigger = {
+							NOR = {
+								has_trait = magic_good
+								has_trait = magic_bad
+							}
+						}
+						add_trait = magic_good_3
+					}
+					1 = {
+						trigger = {
+							NOR = {
+								has_trait = magic_good
+								has_trait = magic_bad
+							}
+						}
+						add_trait = magic_bad_3
+					}
+
+				}
+			}
+		}
+
+
+		#Is a player part of the same dynasty, and my host? Give them the chance to name the child!
+		if = {
+			limit = {
+				exists = scope:child.dynasty
+			}
+			scope:child.dynasty = {
+				if = {
+					limit = {
+						any_dynasty_member = {
+							allow_naming_on_birth_of_dynasty_child_trigger = { CHILD = scope:child }
+							NOT = { is_parent_of = scope:child } # parents should get their own naming event
+						}
+					}
+					random_dynasty_member = {
+						limit = {
+							allow_naming_on_birth_of_dynasty_child_trigger = { CHILD = scope:child }
+							NOT = { is_parent_of = scope:child }
+						}
+						trigger_event = birth.1010
+					}
 				}
 			}
 		}
@@ -1005,6 +1076,9 @@ birth.1002 = {
 		add_character_flag = peasant_affair_already_looking
 		custom_tooltip = search_for_real_father_tt
 	}
+	after = {
+		bastard_real_father_discovery_on_birth_effect = yes
+	}
 }
 
 
@@ -1422,7 +1496,9 @@ birth.1006 = {
 			modifier = { #More likely if the character does not have a player_heir
 				add = 50
 				NOT = { exists = player_heir }
-				age > 25 #Young characters don't care as much
+				# Warcraft
+				#Young characters don't care as much
+				age_in_relation_to_humans_more_than_trigger = { age = 25 } 
 				character_gender_can_rule_title_trigger = {
 					GENDER = scope:child
 					TITLE = primary_title
@@ -1431,7 +1507,8 @@ birth.1006 = {
 			modifier = { #More likely if the character is unlikely to produce any other potential heirs...
 				add = 50
 				NOT = { exists = player_heir }
-				age > 30
+				#Warcraft
+				age > age_30_value
 				fertility <= low_fertility
 				character_gender_can_rule_title_trigger = {
 					GENDER = scope:child
@@ -1444,6 +1521,69 @@ birth.1006 = {
 		}
 	}
 }
+
+#Host of the same dynasty (not ai) get to name the child
+birth.1010 = {
+	type = character_event
+	title = birth.1010.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:child_2 }
+				desc = birth.1010.desc.twin
+			}
+			desc = birth.1010.desc
+		}
+	}
+	theme = pregnancy
+	left_portrait = {
+		character = scope:mother
+		animation = newborn
+	}
+	lower_left_portrait = scope:child
+	lower_right_portrait = scope:child_2
+	right_portrait = scope:spouse_of_mother
+
+	immediate = {
+		play_music_cue_once = { TRACK = mx_cue_birth }
+		if = {
+			limit = {
+				exists = scope:mother.primary_spouse
+			}
+			scope:mother.primary_spouse = {
+				save_scope_as = spouse_of_mother
+			}
+		}
+	}
+
+	#NAMING WIDGET
+	widgets = {
+		widget = {
+			is_shown = {
+				allow_naming_on_birth_of_dynasty_child_trigger = { CHILD = scope:child }
+			}
+			gui = "event_window_widget_name_child"
+			container = "dynamic_birth_name"
+			controller = name_character
+			setup_scope = { scope:child = { save_scope_as = name_character_target } }
+		}
+		widget = {
+			is_shown = {
+				allow_naming_on_birth_of_dynasty_child_trigger = { CHILD = scope:child_2 }
+			}
+			gui = "event_window_widget_name_child"
+			container = "dynamic_birth_name"
+			controller = name_character
+			setup_scope = { scope:child_2 = { save_scope_as = name_character_target } }
+		}
+	}
+
+	option = {
+		name = birth.1003.b
+	}
+}
+
+
 
 # Sends good omen notification
 birth.1100 = {
@@ -1679,7 +1819,8 @@ birth.2001 = {
 						scope:child = { is_male = yes }
 					}
 				}
-				age > 45
+				# Warcraft
+				age > age_45_value
 				factor = 50
 			}
 			modifier = {
@@ -2305,7 +2446,14 @@ birth.3022 = {
 	#NO NAMING WIDGET
 
 	option = {
-		name = birth.3022.a
+		name = {
+			trigger = { NOT = { like_buddhism_religion_trigger = yes } }
+			text = birth.3022.a
+		}
+		name = {
+			trigger = { like_buddhism_religion_trigger = yes }
+			text = birth.3022.a.buddhism
+		}
 		add_stress = medium_stress_gain
 	}
 }
@@ -2616,18 +2764,39 @@ birth.8001 = { #by Mathilda Bjarnehed
 	}
 }		
 
-# Born in the Purple allocation
-#	by Ewan Cowhig Croft
-birth.8011 = {
-	type = character_event
-	hidden = yes
+# Warcraft
+# # Born in the Purple allocation
+# #	by Ewan Cowhig Croft
+# birth.8011 = {
+	# type = character_event
+	# hidden = yes
 	
-	trigger = {
-		always = no
-	}
+	# trigger = {
+		# any_parent = {
+			# OR = {
+				# has_title = title:e_byzantium	#Must be the current emperor.
+				# has_title = title:e_roman_empire	#Or the other emperor.
+			# }
+			# capital_county = title:c_byzantion	#Must rule from the Bucoleon Palace.
+		# }
+		# mother = {
+			# OR = {
+				# AND = {	#Landless mothers must be actually at court to use the chamber.
+					# is_ruler = no
+					# location = title:c_byzantion.title_province
+				# }
+				# AND = {	#Landed rulers can be assumed to make the journey, unless they have some extremely pressing reason not to.
+					# is_ruler = yes
+					# NOT = { is_at_war_with = root.father }
+				# }
+			# }
+			# is_imprisoned = no	#Cannot use the purple chamber from prison.
+			# is_commanding_army = no	#Cannot use the purple chamber whilst commanding an army.
+		# }
+	# }
 
-	immediate = {  }
-}
+	# immediate = { add_trait = born_in_the_purple }
+# }
 
 
 #################
@@ -3310,6 +3479,9 @@ birth.9002 = {
 						}
 					}
 				}
+				
+				# Warcraft
+				
 				20 = { #Lunatic names
 					trigger = { scope:suggester = { has_trait = lunatic } }
 					random_list = {
@@ -3461,10 +3633,14 @@ birth.9002 = {
 				20 = {
 					trigger = { scope:suggester = { has_trait = possessed } }
 					random_list = {
+						# Warcraft
+						
 						1 = { save_scope_value_as = { name = name_suggestion value = flag:Deceiver } }
 						1 = { save_scope_value_as = { name = name_suggestion value = flag:Whisperer } }
 						1 = { save_scope_value_as = { name = name_suggestion value = flag:Reaper } }
-						1 = { save_scope_value_as = { name = name_suggestion value = flag:Katla } }
+						
+						# 1 = { save_scope_value_as = { name = name_suggestion value = flag:Tengil } }
+						# 1 = { save_scope_value_as = { name = name_suggestion value = flag:Katla } }
 					}
 					save_scope_value_as = {
 						name = name_type
@@ -3586,6 +3762,10 @@ birth.9002 = {
 		custom_tooltip = birth.9002.b.tt
 
 		trigger_event = birth.9003
+	}
+	
+	after = {
+		bastard_real_father_discovery_on_birth_effect = yes
 	}
 }
 

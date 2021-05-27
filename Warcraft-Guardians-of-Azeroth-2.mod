@@ -1,5 +1,5 @@
 name="Warcraft: Guardians of Azeroth Reforged (Pre-Alpha)"
-supported_version="1.0.3"
+supported_version="1.3.*"
 path="mod/Warcraft-Guardians-of-Azeroth-2"
 
 version="0.0.0"
