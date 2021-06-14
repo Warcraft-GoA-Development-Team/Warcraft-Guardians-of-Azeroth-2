@@ -3,7 +3,6 @@
 
 	leaders_allowed_to_leave = no
 	player_can_join = no
-	power_threshold = 80
 
 	sort_order = 3
 
@@ -47,6 +46,13 @@
 				has_perk = hard_rule_perk
 			}
 			desc = "FACTION_POWER_HARD_RULE"
+		}
+
+		#Lower the threshold depending on the state of other factions
+		dynamic_power_threshold_scripted_modifier = {
+			FACTION_TYPE1 = claimant_faction
+			FACTION_TYPE2 = independence_faction
+			FACTION_TYPE3 = liberty_faction
 		}
 	}
 
@@ -335,6 +341,13 @@
 			}
 		}
 
+		# Block characters from joining if they have a high opinion of the target
+		modifier = {
+			add = -1000
+			save_temporary_opinion_value_as = { name = target_opinion target = scope:faction.faction_target }
+			scope:target_opinion >= 80
+		}
+
 		# Opinion of the Liege
 		opinion_modifier = {
 			who = root
@@ -342,13 +355,30 @@
 			multiplier = -1
 		}
 
-		# Not a de jure vassal
+		# Not a de jure vassal or consequent part of the realm is out of the De Jure
 		modifier = {
-			add = 100
-			NOT = {
-				scope:faction.faction_target = {
-					any_held_title = {
-						is_de_jure_liege_or_above_target = root.primary_title
+			add =	{
+				value = 125
+				# Larger realms are inherently more rebellious.
+				add = {
+					value = sub_realm_size
+					multiply = 2
+				}
+			}
+			OR = {
+				NOT = {
+					is_rightful_liege_of_trigger = {
+						VASSAL = root
+						LIEGE = scope:faction.faction_target
+					}
+				}
+				any_sub_realm_county = {
+					percent <= 0.5
+					save_temporary_scope_as = current_county
+					scope:faction.faction_target.primary_title = {
+						any_in_de_jure_hierarchy = {
+							this = scope:current_county
+						}
 					}
 				}
 			}
@@ -397,9 +427,11 @@
 			}
 		}
 
-		# Dread
+		# Dread. Does not apply if the faction is above the power threshold
 		intimidated_from_faction_modifier = {
 			TARGET = scope:faction.faction_target
+			POWER =  scope:faction.faction_power
+			THRESHOLD = scope:faction.faction_power_threshold
 		}
 
 		# Leader never leaves
@@ -433,6 +465,28 @@
 			scope:faction.faction_power >= scope:faction.faction_power_threshold
 			factor = faction_weight_factor_power_exceeds_threshold
 		}
+
+		# Small multiplier for my neighbors already in the Faction
+		modifier = {
+			factor = {
+				value = 1
+		    	every_faction_member = {
+		    		if = {
+		    			limit = {
+			    			any_neighboring_realm_same_rank_owner = {
+			    				this = root
+			    			}
+						}
+		    			add = 0.25
+		    		}		
+		    	}
+	    	}
+	    }
+
+	     modifier = {
+	    	factor = 2
+			is_powerful_vassal_of = scope:faction.faction_target
+	    }
 	}
 
 	on_creation = {
@@ -466,7 +520,12 @@
 						}
 						has_variable = peasant_title
 					}
-					destroy_title = this.var:peasant_title
+					if = {
+						limit = {
+							has_variable = peasant_title
+						}
+						destroy_title = this.var:peasant_title
+					}
 					if = {
 						limit = { # To make sure we aren't in debt
 							gold > 0
