@@ -18,4 +18,4 @@ tags={
 	"Graphics"
 }
 name="Warcraft: Guardians of Azeroth 2"
-supported_version="1.2.*"
+supported_version="1.4.*"
