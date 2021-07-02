@@ -1,6 +1,6 @@
 ---
 name: Re-Localization Request
-about: Report about localization problems
+about: Report about localization problems.
 title: Issue Title
 labels: "bug :beetle:, localisation :page_facing_up:, priority low :grey_exclamation:"
 assignees: ''
