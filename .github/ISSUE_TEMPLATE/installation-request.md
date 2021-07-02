@@ -2,7 +2,7 @@
 name: Installation Problem
 about: Report about installation problems
 title: Issue Title
-labels: ":grey_exclamation: priority low"
+labels: "priority low :grey_exclamation:"
 assignees: ''
 
 ---
