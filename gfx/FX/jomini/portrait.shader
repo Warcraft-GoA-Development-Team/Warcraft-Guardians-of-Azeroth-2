@@ -535,15 +535,6 @@ PixelShader =
 				return float( Blend > 0.5f ) * ( 1.0f - ( 2.0f * ( 1.0f - Target ) * ( 1.0f - Blend ) ) ) +
 					   float( Blend <= 0.5f ) * ( 2.0f * Target * Blend );
 			}
-			
-			// Warcraft
-			// Replaced by function since it's easier to track
-			float GetRandomColorNumber ( float seed ) {
-				seed = seed + 0.5;
-				seed = seed * seed;
-				seed = clamp(seed - 0.5, 0, 1);
-				return (seed);
-			}
 
 			float4 BlendDecal( uint BlendMode, float4 Target, float4 Blend, float Weight )
 			{
@@ -556,20 +547,20 @@ PixelShader =
 					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
 					{
 						Result = float4( 
-							OverlayDecal( Target.r, GetRandomColorNumber(vPaletteColorHair.r) ),
-							OverlayDecal( Target.g, GetRandomColorNumber(vPaletteColorHair.g) ),
-							OverlayDecal( Target.b, GetRandomColorNumber(vPaletteColorHair.b) ),
+							OverlayDecal( Target.r, vPaletteColorHair.r ),
+							OverlayDecal( Target.g, vPaletteColorHair.g ),
+							OverlayDecal( Target.b, vPaletteColorHair.b ),
 							OverlayDecal( Target.a, Blend.a ) 
 						);
 					}
 					
 					else
 					{
-  					Result = float4( 
-						OverlayDecal( Target.r, Blend.r ),
-						OverlayDecal( Target.g, Blend.g ),
-						OverlayDecal( Target.b, Blend.b ),
-						OverlayDecal( Target.a, Blend.a ) 
+						Result = float4( 
+							OverlayDecal( Target.r, Blend.r ),
+							OverlayDecal( Target.g, Blend.g ),
+							OverlayDecal( Target.b, Blend.b ),
+							OverlayDecal( Target.a, Blend.a ) 
 						);
 					}
 				}
@@ -580,16 +571,15 @@ PixelShader =
 					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
 					{
 						Result = float4(
-							GetRandomColorNumber(vPaletteColorHair.r),
-							GetRandomColorNumber(vPaletteColorHair.g),
-							GetRandomColorNumber(vPaletteColorHair.b),
+							vPaletteColorHair.r,
+							vPaletteColorHair.g,
+							vPaletteColorHair.b,
 							Target.a
 						);
 					}
-					
 					else
 					{
- 					Result = Blend;
+ 						Result = Blend;
 					}
 				}
 
@@ -600,20 +590,20 @@ PixelShader =
 					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
 					{
 						Result = float4(
-							HardLightDecal( Target.r, GetRandomColorNumber(vPaletteColorHair.r) ),
-							HardLightDecal( Target.g, GetRandomColorNumber(vPaletteColorHair.g) ),
-							HardLightDecal( Target.b, GetRandomColorNumber(vPaletteColorHair.b) ),
+							HardLightDecal( Target.r, vPaletteColorHair.r ),
+							HardLightDecal( Target.g, vPaletteColorHair.g ),
+							HardLightDecal( Target.b, vPaletteColorHair.b ),
 							HardLightDecal( Target.a, Blend.a )
   						);
 					}
 					
 					else
 					{
- 					 Result = float4(
- 				   		HardLightDecal( Target.r, Blend.r ),
-  						HardLightDecal( Target.g, Blend.g ),
-   						HardLightDecal( Target.b, Blend.b ),
-   						HardLightDecal( Target.a, Blend.a )
+						Result = float4(
+							HardLightDecal( Target.r, Blend.r ),
+							HardLightDecal( Target.g, Blend.g ),
+							HardLightDecal( Target.b, Blend.b ),
+							HardLightDecal( Target.a, Blend.a )
   						);
 					}
 				}
@@ -626,16 +616,16 @@ PixelShader =
 					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
 					{
 						Result = float4(
-							( Target.r * GetRandomColorNumber(vPaletteColorHair.r) ),
-							( Target.g * GetRandomColorNumber(vPaletteColorHair.g) ),
-							( Target.b * GetRandomColorNumber(vPaletteColorHair.b) ),
+							( Target.r * vPaletteColorHair.r ),
+							( Target.g * vPaletteColorHair.g ),
+							( Target.b * vPaletteColorHair.b ),
 							( Target.a * Blend.a )
 						);
 					}
 					
 					else
 					{
- 					Result = Target * Blend;
+						Result = Target * Blend;
 					}
 				}
 				else if ( BlendMode == BLEND_MODE_OVERLAY_NORMAL )
