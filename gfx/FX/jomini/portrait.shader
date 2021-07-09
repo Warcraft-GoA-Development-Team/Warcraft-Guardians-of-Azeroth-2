@@ -544,7 +544,7 @@ PixelShader =
 				{
 					// Warcraft
 					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply overlay blending as usual.
-					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
 					{
 						Result = float4( 
 							OverlayDecal( Target.r, vPaletteColorHair.r ),
@@ -568,7 +568,7 @@ PixelShader =
 				{
 					// Warcraft
 					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply replace blending as usual.
-					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
 					{
 						Result = float4(
 							vPaletteColorHair.r,
@@ -587,7 +587,7 @@ PixelShader =
 				{
 					// Warcraft
 					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply hard light blending as usual.
-					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
 					{
 						Result = float4(
 							HardLightDecal( Target.r, vPaletteColorHair.r ),
@@ -613,7 +613,7 @@ PixelShader =
 				{
 					// Warcraft
 					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply multiply blending as usual.
-					if(all(Blend.rgb == float3(1.0f, 0.0f, 0.0f)))
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
 					{
 						Result = float4(
 							( Target.r * vPaletteColorHair.r ),
