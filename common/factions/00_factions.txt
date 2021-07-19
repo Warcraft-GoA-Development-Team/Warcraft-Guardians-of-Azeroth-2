@@ -42,6 +42,12 @@
 			}
 			desc = "FACTION_POWER_HARD_RULE"
 		}
+
+		dynamic_power_threshold_scripted_modifier = {
+			FACTION_TYPE1 = claimant_faction
+			FACTION_TYPE2 = liberty_faction
+			FACTION_TYPE3 = populist_faction
+		}
 	}
 
 	is_character_valid = {
@@ -64,7 +70,7 @@
 			}
 		}
 	}
-
+	
 	demand = {
 		save_scope_as = faction
 
@@ -108,16 +114,22 @@
 			}
 		}
 
-
 		# Do not join a new faction if I am already at war.
 		modifier = {
 			add = -1000
 			is_at_war = yes
 		}
 
+		# Block characters from joining if they have a high opinion of the target
+		modifier = {
+			add = -1000
+			save_temporary_opinion_value_as = { name = target_opinion target = scope:target }		
+			scope:target_opinion >= 80
+		}
+
 		# If a suitable Populist Faction already exists, prefer to side with it
 		modifier = {
-			add = -50
+			add = -1000
 			scope:target = {
 				any_targeting_faction = {
 	  				faction_is_type = populist_faction
@@ -127,7 +139,7 @@
 		  	}
 		}
 		modifier = {
-			add = -50
+			add = -1000
 			scope:target = {
 				any_targeting_faction = {
 	  				faction_is_type = populist_faction
@@ -140,19 +152,11 @@
 		#######################
 		# Standard AI Weights #
 
-		# +40 join weight at -100 opinion
+		# +/- 40 join weight at -/+100 opinion
 		opinion_modifier = {
 			who = root
 			opinion_target = scope:target
 			multiplier = -0.4
-			min = 0
-		}
-		# -150 join weight at +100 opinion
-		opinion_modifier = {
-			who = root
-			opinion_target = scope:target
-			multiplier = -1.5
-			max = 0
 		}
 
 		# for each character.religion != factionTarget.religion add X join-score
@@ -177,36 +181,55 @@
 			}
 		}
 		modifier = { # Electors are less likely to join independence factions, if they're the same faith
-			add = -50
+			add = -150
 			scope:target.primary_title = {
 				has_order_of_succession = election
 				any_elector = {
-					this = root
+					this = root	
 				}
 			}
 			scope:target.faith = root.faith
 		}
 
-		# Liege is not my Rightful Liege
+		# Liege is not my Rightful Liege or a consequent par of my Realm is outside of their De Jure
 		modifier = {
-			add = 125
-			NOT = {
-				is_rightful_liege_of_trigger = {
-					VASSAL = root
-					LIEGE = scope:target
+			add =	{
+				value = 125
+				# Larger realms are inherently more rebellious.
+				add = {
+					value = sub_realm_size
+					multiply = 2
+				}
+			}
+			OR = {
+		 		NOT = {
+					is_rightful_liege_of_trigger = {
+						VASSAL = root
+						LIEGE = scope:target
+					}
+				}
+				any_sub_realm_county = {
+					percent <= 0.5
+					save_temporary_scope_as = current_county
+					scope:target.primary_title = {
+						any_in_de_jure_hierarchy = {
+							this = scope:current_county
+						}
+					}
 				}
 			}
 		}
 
-		# Larger realms are inherently more rebellious.
-		modifier = {
-			add = sub_realm_size
-		}
-
 		# Kingdoms gain an additional boost to independence, as they don't like being under the thumb of others.
 		modifier = {
-			add = 25
+			add = 50
 			highest_held_title_tier = tier_kingdom
+		}
+
+		# Lowers independence wishes from Counts.
+		modifier = {
+			add = -25
+			highest_held_title_tier = tier_county
 		}
 
 		# Toe the Line Perk
@@ -234,9 +257,11 @@
 			SCORE_PER_TRAIT = 25
 		}
 
-		# -100 join chance from intimidation, -1000 join chance from terrified
+		# -100 join chance from intimidation, -1000 join chance from terrified. This modifier doesn't apply if a faction is above the power threshold
 		intimidated_from_faction_modifier = {
 			TARGET = scope:target
+			POWER =  0
+			THRESHOLD = 80
 		}
 
 		# Debt: +10 to +60 join chance depending on how far in debt the top liege is
@@ -260,10 +285,29 @@
 				is_ai = no
 			}
 		}
+
+		#safe guard to avoid Factions being created when the game starts
+		modifier = {
+			add = -10000
+			years_from_game_start < 1
+			scope:target.primary_title.tier = tier_duchy
+		}
+
+		modifier = {
+			add = -10000
+			years_from_game_start < 5
+			scope:target.primary_title.tier = tier_kingdom
+		}
+
+		modifier = {
+			add = -10000
+			years_from_game_start < 10
+			scope:target.primary_title.tier = tier_empire
+		}
 	}
 
 	ai_join_score = {
-		base = -150 # Base reluctance value we must overcome to start an Independence Faction.
+		base = -150 # Base reluctance value we must overcome to join an Independence Faction.
 
 		############
 		# BLOCKERS #
@@ -278,31 +322,25 @@
 						exists = joined_faction
 					}
 					NOT = { joined_faction = scope:faction }
-				}
+				}	
 			}
 		}
+
+		modifier = {
+			add = -1000
+			save_temporary_opinion_value_as = { name = target_opinion target = scope:faction.faction_target }
+			scope:target_opinion >= 80
+		}
+
 
 		#######################
 		# Standard AI Weights #
 
-		# +50 join weight at -100 opinion
+		# +40 join weight at -100 opinion
 		opinion_modifier = {
 			who = root
 			opinion_target = scope:faction.faction_target
 			multiplier = -0.4
-			min = 0
-		}
-		# -150 join weight at +100 opinion
-		opinion_modifier = {
-			who = root
-			opinion_target = scope:faction.faction_target
-			multiplier = -1.5
-			max = 0
-		}
-
-		# Dread
-		intimidated_from_faction_modifier = {
-			TARGET = scope:faction.faction_target
 		}
 
 		# for each character.religion != factionTarget.religion add X join-score
@@ -327,7 +365,7 @@
 			}
 		}
 		modifier = { # Electors are less likely to join independence factions, if they're the same faith
-			add = -50
+			add = -150
 			scope:faction.faction_target.primary_title = {
 				has_order_of_succession = election
 				any_elector = {
@@ -337,26 +375,46 @@
 			scope:faction.faction_target.faith = root.faith
 		}
 
-		# Liege is not my Rightful Liege
+		# Liege is not my Rightful Liege or a consequent par of my Realm is outside of their De Jure
 		modifier = {
-			add = 125
-			NOT = {
-				is_rightful_liege_of_trigger = {
-					VASSAL = root
-					LIEGE = scope:faction.faction_target
+			add =	{
+				value = 125
+				# Larger realms are inherently more rebellious.
+				add = {
+					value = sub_realm_size
+					multiply = 2
+				}
+			}
+			OR = {
+		 		NOT = {
+					is_rightful_liege_of_trigger = {
+						VASSAL = root
+						LIEGE = scope:faction.faction_target
+					}
+				}
+				any_sub_realm_county = {
+					percent <= 0.5
+					save_temporary_scope_as = current_county
+					scope:faction.faction_target.primary_title = {
+						any_in_de_jure_hierarchy = {
+							this = scope:current_county
+						}
+					}
 				}
 			}
 		}
 
-		# Larger realms are inherently more rebellious.
-		modifier = {
-			add = sub_realm_size
-		}
 
 		# Kingdoms gain an additional boost to independence, as they don't like being under the thumb of others.
 		modifier = {
-			add = 25
+			add = 50
 			highest_held_title_tier = tier_kingdom
+		}
+
+		# Lowers independence wishes from Counts.
+		modifier = {
+			add = -25
+			highest_held_title_tier = tier_county
 		}
 
 		# Toe the Line Perk
@@ -384,9 +442,11 @@
 			SCORE_PER_TRAIT = 25
 		}
 
-		# -100 join chance from intimidation, -1000 join chance from terrified
+		# -100 join chance from intimidation, -1000 join chance from terrified. This modifier doesn't apply if a faction is above the power threshold
 		intimidated_from_faction_modifier = {
 			TARGET = scope:faction.faction_target
+			POWER =  scope:faction.faction_power
+			THRESHOLD = scope:faction.faction_power_threshold
 		}
 
 		# Debt: +10 to +60 join chance depending on how far in debt the top liege is
@@ -411,45 +471,27 @@
 			}
 		}
 
-		##########################
-		# Faction 'Stacking' Factors, attempts to cluster AI rulers into several powerful factions instead of many weak ones.
+		# Small multiplier for my neighbors already in the Faction
 		modifier = {
-			scope:faction.faction_power < scope:faction.faction_power_minimal
-			liege = {
-				any_targeting_faction = {
-					OR = {
-						faction_is_type = liberty_faction
-						AND = {
-							faction_is_type = claimant_faction
-							special_character = {
-								reverse_opinion = {
-									target = root
-									value >= -20
-								}	
-							}	
+			factor = {
+				value = 1
+		    	every_faction_member = {
+		    		if = {
+		    			limit = {
+			    			any_neighboring_realm_same_rank_owner = {
+			    				this = root
+			    			}
 						}
-						AND = {
-							faction_is_type = populist_faction
-							var:faction_faith = root.faith
-						}
-					}
-					faction_power >= faction_power_minimal
-				}
-			}
-			factor = faction_weight_factor_power_minimal_penalty
-		}
-		modifier = {
-			scope:faction.faction_power >= scope:faction.faction_power_halfway_threshold
-			factor = faction_weight_factor_power_halfway_threshold
-		}
-		modifier = {
-			scope:faction.faction_power >= scope:faction.faction_power_pushing_threshold
-			factor = faction_weight_factor_power_pushing_threshold
-		}
-		modifier = {
-			scope:faction.faction_power >= scope:faction.faction_power_threshold
-			factor = faction_weight_factor_power_exceeds_threshold
-		}
+		    			add = 0.25
+		    		}		
+		    	}
+	    	}
+	    }
+
+	    modifier = {
+	    	factor = 2
+			is_powerful_vassal_of = scope:faction.faction_target
+	    }
 	}
 
 	ai_demand_chance = {
@@ -600,6 +642,13 @@ liberty_faction = {
 			}
 			desc = "FACTION_POWER_HARD_RULE"
 		}
+
+		#Lower the threshold depending on the state of other factions
+		dynamic_power_threshold_scripted_modifier = {
+			FACTION_TYPE1 = claimant_faction
+			FACTION_TYPE2 = independence_faction
+			FACTION_TYPE3 = populist_faction
+		}
 	}
 
 	is_character_valid = {
@@ -659,7 +708,7 @@ liberty_faction = {
 		# BLOCKERS #
 
 		modifier = {
-			add = -100
+			add = -1000
 			scope:faction.faction_target = {
 				has_character_flag = recent_liberty_faction_war
 			}
@@ -667,7 +716,7 @@ liberty_faction = {
 
 		# Do not join a new faction if I am already at war.
 		modifier = {
-			add = -100
+			add = -1000
 			AND = {
 				is_at_war = yes
 				trigger_if = {
@@ -679,9 +728,15 @@ liberty_faction = {
 			}
 		}
 
+		modifier = {
+			add = -1000
+			save_temporary_opinion_value_as = { name = target_opinion target = scope:faction.faction_target }
+			scope:target_opinion >= 80
+		}
+		
 		#######################
 		# Standard AI Weights #
-		#
+		#AI
 		# Modifiers for Liberty Factions are inherently small.
 		# This is because Liberty is the 'Default Faction' that vassals are join if they don't want/can't join any other faction.
 
@@ -693,9 +748,11 @@ liberty_faction = {
 			max = 0
 		}
 
-		# Dread
+		# Dread. Does not apply if the faction is above the power threshold
 		intimidated_from_faction_modifier = {
 			TARGET = scope:faction.faction_target
+			POWER =  scope:faction.faction_power
+			THRESHOLD = scope:faction.faction_power_threshold
 		}
 
 		# 'Base Join Weight' depends on the current Crown Authority level.
@@ -712,7 +769,7 @@ liberty_faction = {
 			}
 		}
 		modifier = {
-			add = 30 # AI won't join at +30 Opinion
+			add = 40 # AI won't join at +40 Opinion
 			scope:faction.faction_target = {
 				has_realm_law = crown_authority_3
 			}
@@ -749,21 +806,6 @@ liberty_faction = {
 				is_ai = no
 			}
 		}
-
-		##########################
-		# Faction 'Stacking' Factors, attempts to cluster AI rulers into several powerful factions instead of many weak ones.
-		modifier = {
-			scope:faction.faction_power >= scope:faction.faction_power_halfway_threshold
-			factor = faction_weight_factor_power_halfway_threshold
-		}
-		modifier = {
-			scope:faction.faction_power >= scope:faction.faction_power_pushing_threshold
-			factor = faction_weight_factor_power_pushing_threshold
-		}
-		modifier = {
-			scope:faction.faction_power >= scope:faction.faction_power_threshold
-			factor = faction_weight_factor_power_exceeds_threshold
-		}
 	}
 
 	ai_create_score = {
@@ -771,9 +813,10 @@ liberty_faction = {
 
 		############
 		# BLOCKERS #
+		############
 
 		modifier = {
-			add = -100
+			add = -1000
 			scope:target = {
 				has_character_flag = recent_liberty_faction_war
 			}
@@ -781,8 +824,15 @@ liberty_faction = {
 
 		# Do not join a new faction if I am already at war.
 		modifier = {
-			add = -100
+			add = -1000
 			is_at_war = yes
+		}
+
+		# Block characters from joining if they have a high opinion of the target
+		modifier = {
+			add = -1000
+			save_temporary_opinion_value_as = { name = target_opinion target = scope:target}
+			scope:target_opinion >= 80
 		}
 
 		#######################
@@ -799,9 +849,11 @@ liberty_faction = {
 			max = 0
 		}
 
-		# Dread
+		# Dread. Doesn't apply if the faction is above the power threshold
 		intimidated_from_faction_modifier = {
 			TARGET = scope:target
+			POWER =  0
+			THRESHOLD = 80
 		}
 
 		# 'Base Join Weight' depends on the current Crown Authority level.
@@ -818,7 +870,7 @@ liberty_faction = {
 			}
 		}
 		modifier = {
-			add = 30 # AI won't join at +30 Opinion
+			add = 40 # AI won't join at +40 Opinion
 			scope:target = {
 				has_realm_law = crown_authority_3
 			}
@@ -854,6 +906,25 @@ liberty_faction = {
 			scope:target = {
 				is_ai = no
 			}
+		}
+
+		#safe guard to avoid Factions being created when the game starts
+		modifier = {
+			add = -10000
+			years_from_game_start < 1
+			scope:target.primary_title.tier = tier_duchy
+		}
+
+		modifier = {
+			add = -10000
+			years_from_game_start < 5
+			scope:target.primary_title.tier = tier_kingdom
+		}
+
+		modifier = {
+			add = -10000
+			years_from_game_start < 10
+			scope:target.primary_title.tier = tier_empire
 		}
 	}
 
@@ -1017,11 +1088,18 @@ claimant_faction = {
 		base = 80
 
 		modifier = {
-			add = 20
+			add = 20 
 			faction_target = {
 				has_perk = hard_rule_perk
 			}
 			desc = "FACTION_POWER_HARD_RULE"
+		} 
+
+		#Lower the threshold depending on the state of other factions
+		dynamic_power_threshold_scripted_modifier = {
+			FACTION_TYPE1 = liberty_faction
+			FACTION_TYPE2 = independence_faction
+			FACTION_TYPE3 = populist_faction
 		}
 	}
 
@@ -1255,6 +1333,13 @@ claimant_faction = {
 			}
 		}
 
+		# Block characters from joining if they have a high opinion of the target
+		modifier = {
+			add = -1000
+			save_temporary_opinion_value_as = { name = target_opinion target = scope:target }
+			scope:target_opinion >= 80
+		}
+
 		####
 		# AI modifiers
 		####
@@ -1310,11 +1395,25 @@ claimant_faction = {
 			opinion_target = scope:target
 			multiplier = -1.5
 		}
+
+		#powerful vassals will be even more motivated to create claimant if unhappy with liege
+		opinion_modifier = {
+			trigger = {
+				is_powerful_vassal_of = scope:target
+			}
+			who = root
+			opinion_target = scope:target
+			multiplier = -2
+			min = 0
+		}
+
+
 		# Liege is too young to rule
 		modifier = {
 			add = 25
 			scope:target = { is_adult = no }
 		}
+
 
 		# Opinion of the potential Claimant (not self)
 		opinion_modifier = {
@@ -1327,13 +1426,21 @@ claimant_faction = {
 		}
 		modifier = {
 			add = { # Claimant is too old
-				value = scope:claimant.age
+				# Warcraft
+				value = {
+					value = scope:claimant.age
+					divide = scope:claimant.racial_age_multiplier_value
+				}
+				
 				subtract = 45
 				multiply = -2
 			}
 			AND = {
 				NOT = {	scope:claimant = root }
-				scope:claimant.age > 45
+				scope:claimant = {
+					# Warcraft
+					age_in_relation_to_humans_more_than_trigger = { age = 45 }
+				}
 			}
 		}
 		modifier = {
@@ -1402,7 +1509,7 @@ claimant_faction = {
 		}
 		# Best Friends & Soulmates really want to support their claimants!
 		modifier = {
-			add = 75
+			add = 100
 			OR = {
 				has_relation_soulmate = scope:claimant
 				has_relation_best_friend = scope:claimant
@@ -1414,18 +1521,18 @@ claimant_faction = {
 			NOT = { culture = scope:target.culture }
 			has_same_culture_group_as = scope:claimant
 			add = {
-				value = 25
+				value = 50
 				if = {
 					limit = {
 						culture = scope:claimant.culture
 					}
-					add = 25
+					add = 50
 				}
 				if = {
 					limit = {
 						NOT = { has_same_culture_group_as = scope:target }
 					}
-					add = 25
+					add = 50
 				}
 			}
 		}
@@ -1438,6 +1545,7 @@ claimant_faction = {
 			BASE_FAITH = faith
 			TARGET_FAITH = scope:target.faith
 		}
+
 		modifier = {
 			add = 100
 			NOT = { faith = scope:target.faith }
@@ -1464,21 +1572,12 @@ claimant_faction = {
 					is_de_jure_liege_or_above_target = root.primary_title
 				}
 			}
-			scope:target = {
-				any_held_title = {
-					NOT = { this = scope:title }
-					OR = {
-						this.tier >= scope:target.primary_title.tier
-						this.tier >= tier_kingdom
-					}
-					is_de_jure_liege_or_above_target = root.primary_title
-				}
-			}
+			
 		}
 
 		# If another Claimant Faction already exists, prefer to side with it
 		modifier = {
-			add = -50
+			add = -100
 			scope:target = {
 				any_targeting_faction = {
 			  		faction_is_type = claimant_faction
@@ -1493,7 +1592,7 @@ claimant_faction = {
 
 		# If I'm not a de jure vassal of my liege, and my liege is independent, prefer to create an independence faction
 		modifier = {
-			add = -50
+			add = -200
 			liege = { is_independent_ruler = yes }
 			NOT = {
 				is_rightful_liege_of_trigger = {
@@ -1503,9 +1602,11 @@ claimant_faction = {
 			}
 		}
 
-		# Dread
+		# Dread. Does not apply if the faction is above the power threshold
 		intimidated_from_faction_modifier = {
 			TARGET = scope:target
+			POWER =  0
+			THRESHOLD = 80
 		}
 		
 		# Legacy
@@ -1534,6 +1635,25 @@ claimant_faction = {
 				is_ai = no
 			}
 		}
+
+		#safe guard to avoid Factions being created when the game starts
+		modifier = {
+			add = -10000
+			years_from_game_start < 1
+			scope:target.primary_title.tier = tier_duchy
+		}
+
+		modifier = {
+			add = -10000
+			years_from_game_start < 5
+			scope:target.primary_title.tier = tier_kingdom
+		}
+
+		modifier = {
+			add = -10000
+			years_from_game_start < 10
+			scope:target.primary_title.tier = tier_empire
+		}
 	}
 
 	ai_join_score = { # How likely is an AI to join an existing faction?
@@ -1555,11 +1675,18 @@ claimant_faction = {
 
 		# Do not join if I put my current liege on the throne in a different claimant faction.
 		modifier = {
-			add = -100
+			add = -1000
 			has_opinion_modifier = {
 				modifier = claimant_faction_member_opinion
 				target = scope:faction.faction_target
 			}
+		}
+
+		# Block characters from joining if they have a high opinion of the target
+		modifier = {		
+			add = -1000
+			save_temporary_opinion_value_as = { name = target_opinion target = scope:faction.faction_target }
+			scope:target_opinion >= 80
 		}
 
 		# Avoid factions for certain claimants
@@ -1625,6 +1752,17 @@ claimant_faction = {
 			multiplier = -1.0
 		}
 
+		#powerful vassals will be even more motivated to create claimant if unhappy with liege
+		opinion_modifier = {
+			trigger = {
+				is_powerful_vassal_of = scope:faction.faction_target
+			}
+			who = root
+			opinion_target = scope:faction.faction_target
+			multiplier = -1
+			min = 0
+		}
+
 		# Opinion of the potential Claimant
 		opinion_modifier = {
 			trigger = {
@@ -1677,7 +1815,7 @@ claimant_faction = {
 		
 		# Best Friends & Soulmates really want to support their claimants!
 		modifier = {
-			add = 75
+			add = 100
 			OR = {
 				has_relation_soulmate = scope:faction.special_character
 				has_relation_best_friend = scope:faction.special_character
@@ -1689,18 +1827,18 @@ claimant_faction = {
 			NOT = { culture = scope:faction.faction_target.culture }
 			has_same_culture_group_as = scope:faction.special_character
 			add = {
-				value = 25
+				value = 50
 				if = {
 					limit = {
 						culture = scope:faction.special_character.culture
 					}
-					add = 25
+					add = 50
 				}
 				if = {
 					limit = {
 						NOT = { has_same_culture_group_as = scope:faction.faction_target }
 					}
-					add = 25
+					add = 50
 				}
 			}
 		}
@@ -1713,24 +1851,28 @@ claimant_faction = {
 			BASE_FAITH = faith
 			TARGET_FAITH = scope:faction.faction_target.faith
 		}
+
 		modifier = {
 			add = 100
 			NOT = { faith = scope:faction.faction_target.faith }
 			faith = scope:faction.special_character.faith
 		}
+
 		legalism_virtue_and_sin_modifier = {
 			TARGET = scope:faction.faction_target
 			SCORE_PER_TRAIT = 25
 		}
 
-		# Dread
+		# Dread. Does not apply if the faction is above the power threshold
 		intimidated_from_faction_modifier = {
 			TARGET = scope:faction.faction_target
+			POWER =  scope:faction.faction_power
+			THRESHOLD = scope:faction.faction_power_threshold
 		}
 
 		# If I'm not a de jure vassal of my liege, perfer to join an independence faction if one exists
 		modifier = {
-			add = -50
+			add = -100
 			# An Independence Faction that I can join exists.
 			scope:faction.faction_target = {
 				any_targeting_faction = {
@@ -1743,6 +1885,15 @@ claimant_faction = {
 					VASSAL = root
 					LIEGE = scope:faction.faction_target
 				}
+			}
+		}
+
+		#If I'm de jure of the Claimant, I want to support them
+		 modifier = {
+			add = 100
+			is_rightful_liege_of_trigger = {
+				VASSAL = root
+				LIEGE = scope:faction.special_character
 			}
 		}
 
@@ -1763,6 +1914,15 @@ claimant_faction = {
 			add = 20
 			scope:faction.faction_target = {
 				has_realm_law = crown_authority_3
+			}
+		}
+
+		# When joining a Faction, primarily care about Claims on Titles de jure above my primary title
+		modifier = {
+			factor = 2
+			exists = scope:faction.special_title
+			scope:faction.special_title = {
+				is_de_jure_liege_or_above_target = root.primary_title
 			}
 		}
 		
@@ -1816,6 +1976,7 @@ claimant_faction = {
 
 	can_county_join = {
 		# Counties can only join if the De Jure belong to the title being claimed.
+		exists = scope:faction.special_title
 		target_is_de_jure_liege_or_above = scope:faction.special_title
 	}
 
