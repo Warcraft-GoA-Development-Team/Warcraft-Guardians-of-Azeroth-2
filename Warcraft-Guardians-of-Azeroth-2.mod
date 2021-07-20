@@ -1,5 +1,5 @@
 name="Warcraft: Guardians of Azeroth Reforged (Pre-Alpha)"
-supported_version="1.3.*"
+supported_version="1.4.*"
 path="mod/Warcraft-Guardians-of-Azeroth-2"
 
 version="0.0.0"
@@ -24,6 +24,8 @@ tags={
 
 replace_path = "common/culture/cultures"
 replace_path = "common/dynasties"
-replace_path = "common/religion"
-replace_path = "history/characters"
-replace_path = "history/cultures"
+replace_path = "common/religion/religions"
+replace_path = "common/religion/religion_families"
+replace_path = "common/religion/holy_sites"
+replace_path = "common/bookmark_portraits"
+replace_path = "common/bookmarks"
