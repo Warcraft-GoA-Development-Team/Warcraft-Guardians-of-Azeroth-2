@@ -735,6 +735,29 @@ PixelShader =
 		]]
 	}
 	
+	# Warcraft
+	MainCode PS_skin_attachment
+	{
+		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
+		Output = "PDX_COLOR"
+		Code
+		[[
+			PDX_MAIN
+			{
+				float2 UV0 = Input.UV0;
+				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
+				float4 Properties = PdxTex2D( SpecularMap, UV0 );
+				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
+				
+				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, Diffuse.a );
+				
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				
+				return float4( Color, Diffuse.a );
+			}
+		]]
+	}
+	
 	MainCode PS_eye
 	{
 		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
@@ -1083,10 +1106,10 @@ Effect portrait_skin
 }
 
 # Warcraft
-Effect portrait_skin_alpha_to_coverage
+Effect portrait_skin_attachment_alpha_to_coverage
 {
 	VertexShader = "VS_portrait_blend_shapes"
-	PixelShader = "PS_skin"
+	PixelShader = "PS_skin_attachment"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
 	Defines = { "FAKE_SSS_EMISSIVE" }
