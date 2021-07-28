@@ -749,7 +749,7 @@ PixelShader =
 				float4 Properties = PdxTex2D( SpecularMap, UV0 );
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 				
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, Diffuse.a );
+				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
 				
