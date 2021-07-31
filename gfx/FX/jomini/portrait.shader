@@ -542,21 +542,91 @@ PixelShader =
 
 				if ( BlendMode == BLEND_MODE_OVERLAY )
 				{
-					Result = float4( OverlayDecal( Target.r, Blend.r ), OverlayDecal( Target.g, Blend.g ),
-									 OverlayDecal( Target.b, Blend.b ), OverlayDecal( Target.a, Blend.a ) );
+					// Warcraft
+					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply overlay blending as usual.
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
+					{
+						Result = float4( 
+							OverlayDecal( Target.r, vPaletteColorHair.r ),
+							OverlayDecal( Target.g, vPaletteColorHair.g ),
+							OverlayDecal( Target.b, vPaletteColorHair.b ),
+							OverlayDecal( Target.a, Blend.a ) 
+						);
+					}
+					
+					else
+					{
+						Result = float4( 
+							OverlayDecal( Target.r, Blend.r ),
+							OverlayDecal( Target.g, Blend.g ),
+							OverlayDecal( Target.b, Blend.b ),
+							OverlayDecal( Target.a, Blend.a ) 
+						);
+					}
 				}
 				else if ( BlendMode == BLEND_MODE_REPLACE )
 				{
-					Result = Blend;
+					// Warcraft
+					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply replace blending as usual.
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
+					{
+						Result = float4(
+							vPaletteColorHair.r,
+							vPaletteColorHair.g,
+							vPaletteColorHair.b,
+							Target.a
+						);
+					}
+					else
+					{
+ 						Result = Blend;
+					}
 				}
+
 				else if ( BlendMode == BLEND_MODE_HARD_LIGHT )
 				{
-					Result = float4( HardLightDecal( Target.r, Blend.r ), HardLightDecal( Target.g, Blend.g ),
-									 HardLightDecal( Target.b, Blend.b ), HardLightDecal( Target.a, Blend.a ) );
+					// Warcraft
+					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply hard light blending as usual.
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
+					{
+						Result = float4(
+							HardLightDecal( Target.r, vPaletteColorHair.r ),
+							HardLightDecal( Target.g, vPaletteColorHair.g ),
+							HardLightDecal( Target.b, vPaletteColorHair.b ),
+							HardLightDecal( Target.a, Blend.a )
+  						);
+					}
+					
+					else
+					{
+						Result = float4(
+							HardLightDecal( Target.r, Blend.r ),
+							HardLightDecal( Target.g, Blend.g ),
+							HardLightDecal( Target.b, Blend.b ),
+							HardLightDecal( Target.a, Blend.a )
+  						);
+					}
 				}
+
+
 				else if ( BlendMode == BLEND_MODE_MULTIPLY )
 				{
-					Result = Target * Blend;
+					// Warcraft
+					// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply multiply blending as usual.
+					if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
+					{
+						Result = float4(
+							( Target.r * vPaletteColorHair.r ),
+							( Target.g * vPaletteColorHair.g ),
+							( Target.b * vPaletteColorHair.b ),
+							( Target.a * Blend.a )
+						);
+					}
+					
+					else
+					{
+						Result = Target * Blend;
+					}
 				}
 				else if ( BlendMode == BLEND_MODE_OVERLAY_NORMAL )
 				{
@@ -651,13 +721,15 @@ PixelShader =
 				
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
 				
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, Diffuse.a );
+				//Warcraft
+				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
 
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
 				
-				return float4( Color, 1.0f );
+				//Warcraft
+				return float4( Color, Diffuse.a );
 			}
 			
 		]]
@@ -1009,6 +1081,17 @@ Effect portrait_skin
 	PixelShader = "PS_skin"
 	Defines = { "FAKE_SSS_EMISSIVE" }
 }
+
+# Warcraft
+Effect portrait_skin_alpha_to_coverage
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_skin"
+	BlendState = "alpha_to_coverage"
+	RasterizerState = "rasterizer_no_culling"
+	Defines = { "FAKE_SSS_EMISSIVE" }
+}
+
 Effect portrait_skinShadow
 {
 	VertexShader = "VS_portrait_blend_shapes_shadow"
