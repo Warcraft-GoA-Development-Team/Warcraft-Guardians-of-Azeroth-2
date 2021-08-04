@@ -472,6 +472,16 @@ PixelShader =
 				SssColor = HSVtoRGB(SkinColor) * SssMask * 0.5f * MaterialProps._DiffuseColor;
 				Color += SssColor;
 			#endif
+
+			//EK2 EMISSIVE SHADER
+			float3 EmissiveColor = vec3(0.0f);
+			float EmissiveMask =  PdxTex2D( NormalMap, Input.UV0 ).b;
+			#ifdef EMISSIVE
+				EmissiveColor = Diffuse.rgb * EmissiveMask * MaterialProps._DiffuseColor ;
+				Color += EmissiveColor;
+
+			#endif
+			//EK2 EMISSIVE SHADER
 			
 			Color = ApplyDistanceFog( Color, Input.WorldSpacePos );
 			
@@ -1102,7 +1112,7 @@ Effect portrait_skin
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" }
+	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE" }
 }
 
 # Warcraft
@@ -1112,7 +1122,7 @@ Effect portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin_attachment"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "FAKE_SSS_EMISSIVE" }
+	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE" }
 }
 
 Effect portrait_skinShadow
@@ -1126,7 +1136,7 @@ Effect portrait_skin_face
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" }
+	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" "EMISSIVE"}
 }
 Effect portrait_skin_faceShadow
 {
@@ -1140,6 +1150,7 @@ Effect portrait_eye
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
+	Defines = { "EMISSIVE" }
 }
 
 Effect portrait_eyeShadow
@@ -1153,6 +1164,7 @@ Effect portrait_attachment
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
+	Defines = { "EMISSIVE" }
 }
 
 Effect portrait_attachmentShadow
@@ -1167,7 +1179,7 @@ Effect portrait_attachment_pattern
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
-	Defines = { "VARIATIONS_ENABLED" }
+	Defines = { "VARIATIONS_ENABLED" "EMISSIVE"}
 }
 
 Effect portrait_attachment_patternShadow
@@ -1183,7 +1195,7 @@ Effect portrait_attachment_pattern_alpha_to_coverage
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "VARIATIONS_ENABLED" }
+	Defines = { "VARIATIONS_ENABLED" "EMISSIVE"}
 }
 
 Effect portrait_attachment_pattern_alpha_to_coverageShadow
@@ -1206,6 +1218,7 @@ Effect portrait_attachment_alpha_to_coverage
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
+	Defines = { "EMISSIVE" }
 }
 
 Effect portrait_attachment_alpha_to_coverageShadow
@@ -1262,7 +1275,7 @@ Effect portrait_hair_opaque
 	VertexShader = "VS_standard"
 	PixelShader = "PS_hair"
 	
-	Defines = { "WRITE_ALPHA_ONE" }
+	Defines = { "WRITE_ALPHA_ONE"}
 }
 
 Effect portrait_hair_opaqueShadow
