@@ -797,11 +797,15 @@ PixelShader =
 				float4 Properties = PdxTex2D( SpecularMap, UV0 );
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 				
+				#ifdef DECALS
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+				#endif
 				
 				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorEyes.rgb, Diffuse.a );
 				
+				#ifdef DECALS
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
 				
@@ -1167,6 +1171,12 @@ Effect portrait_skin_faceShadow
 }
 
 Effect portrait_eye
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_eye"
+	Defines = { "EMISSIVE" "DECALS" }
+}
+Effect portrait_eye_no_decal
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
