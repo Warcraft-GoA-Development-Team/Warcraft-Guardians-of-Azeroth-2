@@ -721,15 +721,40 @@ PixelShader =
 				
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
 				
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, Diffuse.a );
+				//Warcraft
+				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
 
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
 				
-				return float4( Color, 1.0f );
+				//Warcraft
+				return float4( Color, Diffuse.a );
 			}
 			
+		]]
+	}
+	
+	# Warcraft
+	MainCode PS_skin_attachment
+	{
+		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
+		Output = "PDX_COLOR"
+		Code
+		[[
+			PDX_MAIN
+			{
+				float2 UV0 = Input.UV0;
+				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
+				float4 Properties = PdxTex2D( SpecularMap, UV0 );
+				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
+				
+				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
+				
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				
+				return float4( Color, Diffuse.a );
+			}
 		]]
 	}
 	
@@ -1079,6 +1104,17 @@ Effect portrait_skin
 	PixelShader = "PS_skin"
 	Defines = { "FAKE_SSS_EMISSIVE" }
 }
+
+# Warcraft
+Effect portrait_skin_attachment_alpha_to_coverage
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_skin_attachment"
+	BlendState = "alpha_to_coverage"
+	RasterizerState = "rasterizer_no_culling"
+	Defines = { "FAKE_SSS_EMISSIVE" }
+}
+
 Effect portrait_skinShadow
 {
 	VertexShader = "VS_portrait_blend_shapes_shadow"
