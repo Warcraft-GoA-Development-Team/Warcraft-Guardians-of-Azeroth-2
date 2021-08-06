@@ -719,12 +719,16 @@ PixelShader =
 					NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 				}
 				
+				#ifdef DECALS
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+				#endif
 				
 				//Warcraft
 				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
 
+				#ifdef DECALS
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
 				
@@ -732,29 +736,6 @@ PixelShader =
 				return float4( Color, Diffuse.a );
 			}
 			
-		]]
-	}
-	
-	# Warcraft
-	MainCode PS_skin_attachment
-	{
-		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Output = "PDX_COLOR"
-		Code
-		[[
-			PDX_MAIN
-			{
-				float2 UV0 = Input.UV0;
-				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
-				float4 Properties = PdxTex2D( SpecularMap, UV0 );
-				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
-				
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, Diffuse.a );
-				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				
-				return float4( Color, Diffuse.a );
-			}
 		]]
 	}
 	
@@ -1102,14 +1083,14 @@ Effect portrait_skin
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" }
+	Defines = { "FAKE_SSS_EMISSIVE" "DECALS" }
 }
 
 # Warcraft
 Effect portrait_skin_attachment_alpha_to_coverage
 {
 	VertexShader = "VS_portrait_blend_shapes"
-	PixelShader = "PS_skin_attachment"
+	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
 	Defines = { "FAKE_SSS_EMISSIVE" }
@@ -1126,7 +1107,7 @@ Effect portrait_skin_face
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" }
+	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" "DECALS" }
 }
 Effect portrait_skin_faceShadow
 {
