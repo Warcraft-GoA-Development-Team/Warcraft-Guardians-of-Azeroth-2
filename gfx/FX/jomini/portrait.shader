@@ -724,7 +724,11 @@ PixelShader =
 				#endif
 				
 				//Warcraft
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
+				#ifdef HAIR_COLOR_OVERRIDE
+					Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * (vPaletteColorSkin.rgb * (1 - Properties.r) + vPaletteColorHair.rgb * Properties.r), 1.0f );
+				#else
+					Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
+				#endif
 
 				#ifdef DECALS
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
@@ -1093,7 +1097,7 @@ Effect portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "FAKE_SSS_EMISSIVE" }
+	Defines = { "HAIR_COLOR_OVERRIDE" }
 }
 
 Effect portrait_skinShadow
