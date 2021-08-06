@@ -1105,7 +1105,7 @@ Effect portrait_skin
 	Defines = { "FAKE_SSS_EMISSIVE" }
 }
 
-// Warcraft
+# Warcraft
 Effect portrait_skin_attachment_alpha_to_coverage
 {
 	VertexShader = "VS_portrait_blend_shapes"
