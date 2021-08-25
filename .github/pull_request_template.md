@@ -17,7 +17,7 @@ Before the merge, we recommend you to do these tests with your branch.
 -->
 ## Tests:
 - [ ] There are no errors in `wc` files in `Documents\Paradox Interactive\Crusader Kings III\logs\error.log`
-- [ ] The mod takes less than 4.5 GB in the Task Manager (Windows)
+- [ ] The mod takes less than 5.5 GB in the Task Manager (Windows)
 
 <!--
 If you need to explain something to testers. Otherwise, delete this part.
