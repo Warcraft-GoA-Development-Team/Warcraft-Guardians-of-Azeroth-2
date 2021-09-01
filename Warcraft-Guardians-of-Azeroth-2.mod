@@ -22,6 +22,12 @@ tags={
 	"Graphics"
 }
 
+replace_path = "history/characters"
+replace_path = "history/cultures"
+replace_path = "history/province_mapping"
+replace_path = "history/provinces"
+replace_path = "history/titles"
+replace_path = "history/wars"
 replace_path = "common/culture/cultures"
 replace_path = "common/dynasties"
 replace_path = "common/religion/religions"
