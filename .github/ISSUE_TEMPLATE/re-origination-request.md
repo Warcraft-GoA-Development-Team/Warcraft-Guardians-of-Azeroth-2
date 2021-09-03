@@ -1,8 +1,8 @@
 ---
 name: Re-Origination Request
-about: Bug Report
+about: Report a bug.
 title: Issue Title
-labels: ":beetle: bug :beetle:, :grey_exclamation: priority low"
+labels: "bug :bug:, priority low :grey_exclamation:"
 assignees: ''
 
 ---
