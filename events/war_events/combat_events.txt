@@ -679,6 +679,9 @@ combat_event.1001 = {
 						trigger = {
 							is_alive = yes # Don't kill knights who are already dead! They will be accounted for later.
 						}
+						
+						# Warcraft
+						dark_frenzy_resurrect_modifier = { MASTER = scope:combat_winner }
 
 						# Modifiers influencing chance to occur.
 						modifier = {
@@ -732,9 +735,6 @@ combat_event.1001 = {
 							}
 						}
 
-						# For messaging purposes.
-						add_to_list = slain_combatants
-
 						# Log a battle event so that the imprisonment shows up in the battle summary screen.
 						save_temporary_scope_as = this_combatant
 
@@ -767,34 +767,85 @@ combat_event.1001 = {
 							limit = {
 								exists = scope:enemy_knight
 							}
-							root = {
-								battle_event = {
-									key = "combatant_killed_in_battle"
-									left_portrait = scope:enemy_knight
-									right_portrait = scope:this_combatant
-									type = death
-									target_right = yes
+							
+							if = {
+								limit = {
+									can_become_undead_trigger = yes
+									
+									exists = scope:combat_winner
+									scope:combat_winner = { government_has_flag = government_resurrect_knights }
 								}
-							}
+								
+								# For messaging purposes.
+								add_to_list = resurrected_combatants
+								
+								root = {
+									battle_event = {
+										key = "combatant_resurrected_in_battle"
+										left_portrait = scope:enemy_knight
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
 
-							death = {
-								death_reason = death_battle
-								killer = scope:enemy_knight
+								raise_undead_by_effect = { MASTER = scope:combat_winner }
+							}
+							else = {
+								# For messaging purposes.
+								add_to_list = slain_combatants
+								
+								root = {
+									battle_event = {
+										key = "combatant_killed_in_battle"
+										left_portrait = scope:enemy_knight
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
+
+								override_death_killer_effect = { DEATH_REASON = death_battle KILLER = scope:enemy_knight }
 							}
 						}
 						else = {
-							root = {
-								battle_event = {
-									key = "combatant_killed_in_battle_no_killer"
-									left_portrait = scope:combat_winner
-									right_portrait = scope:this_combatant
-									type = death
-									target_right = yes
+							if = {
+								limit = {
+									can_become_undead_trigger = yes
+									
+									exists = scope:combat_winner
+									scope:combat_winner = { government_has_flag = government_resurrect_knights }
 								}
-							}
+								# For messaging purposes.
+								add_to_list = resurrected_combatants
+								
+								root = {
+									battle_event = {
+										key = "combatant_resurrected_in_battle_no_killer"
+										left_portrait = scope:combat_winner
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
 
-							death = {
-								death_reason = death_battle
+								raise_undead_by_effect = { MASTER = scope:combat_winner }
+							}
+							else = {
+								# For messaging purposes.
+								add_to_list = slain_combatants
+								
+								root = {
+									battle_event = {
+										key = "combatant_killed_in_battle_no_killer"
+										left_portrait = scope:combat_winner
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
+
+								override_death_effect = { DEATH_REASON = death_battle }
 							}
 						}
 						clear_saved_scope = enemy_knight
@@ -810,6 +861,13 @@ combat_event.1001 = {
 				add_to_list = slain_combatants
 			}
 			clear_variable_list = slain_side_knights
+			
+			# Warcraft
+			every_in_list = {
+				variable = resurrected_side_knights
+				add_to_list = resurrected_combatants
+			}
+			clear_variable_list = resurrected_side_knights
 		}
 		
 		# Also record who already died on the winning side, so the victor knows their own casualty count.
@@ -819,6 +877,13 @@ combat_event.1001 = {
 				add_to_list = victorious_slain_combatants
 			}
 			clear_variable_list = slain_side_knights
+			
+			# Warcraft
+			every_in_list = {
+				variable = resurrected_side_knights
+				add_to_list = victorious_resurrected_combatants
+			}
+			clear_variable_list = resurrected_side_knights
 		}
 
 
@@ -901,7 +966,45 @@ combat_event.1001 = {
 				}
 				trigger_event = combat_event.1004
 			}
-		}		
+		}
+		
+		# Warcraft
+		# Inform about resurrected_combatants
+		if = {
+			limit = {
+				OR = {			
+					any_in_list = { list = resurrected_combatants exists = this }
+					any_in_list = { list = victorious_resurrected_combatants exists = this }
+				}
+			}
+			# Inform both sides
+			scope:combat_winner = { trigger_event = combat_event.2012 }
+			scope:combat_loser = { trigger_event = combat_event.2013 }
+
+			# Send a message to all other players who may be concerned about the fate of the slain combatants.
+			every_player = {
+				limit = {
+					NOR = {
+						this = scope:combat_winner
+						this = scope:combat_loser
+					}
+
+					save_temporary_scope_as = notification_target
+
+					OR = {				
+						any_in_list = {
+							list = resurrected_combatants
+							combat_event_1001_character_is_relevant_to_target_trigger = { TARGET = scope:notification_target }
+						}
+						any_in_list = {
+							list = victorious_resurrected_combatants
+							combat_event_1001_character_is_relevant_to_target_trigger = { TARGET = scope:notification_target }
+						}
+					}
+				}
+				trigger_event = combat_event.2014
+			}
+		}
 	}
 }
 
@@ -1503,9 +1606,7 @@ combat_event.1012 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { DEATH_REASON = death_battle }
 					}
 				}
 			}
@@ -1549,9 +1650,7 @@ combat_event.1012 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { DEATH_REASON = death_battle }
 					}
 				}
 			}
@@ -1603,9 +1702,7 @@ combat_event.1013 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { DEATH_REASON = death_battle }
 					}
 				}
 			}
@@ -1649,9 +1746,7 @@ combat_event.1013 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { DEATH_REASON = death_battle }
 					}
 				}
 			}
@@ -1717,13 +1812,92 @@ combat_event.1014 = {
 					every_in_list = {
 						list = relevant_slain_combatants
 						
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { DEATH_REASON = death_battle }
 					}
 				}
 			}
 		}
+	}
+
+	after = {
+		clear_relevant_slain_combatants_list_effect = yes
+	}
+}
+
+# Warcraft
+#####################
+# Resurrected Combatants	
+
+# Casualty notification event for combat winner.
+combat_event.2012 = {
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		# Generate a list of relevant slain characters on the enemy's side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = resurrected_combatants
+			LIST_ALL_CHARACTERS = no
+		}	
+		try_to_send_resurrected_message_effect = { TYPE = good TITLE = good DESC = good }
+		clear_relevant_slain_combatants_list_effect = yes
+
+		# Repeat the above, but for casualties on our own side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = victorious_resurrected_combatants
+			LIST_ALL_CHARACTERS = yes
+		}
+		try_to_send_resurrected_message_effect = { TYPE = bad TITLE = bad DESC = bad }
+		clear_relevant_slain_combatants_list_effect = yes
+	}
+}
+
+# Casualty notification event for combat loser.
+combat_event.2013 = {
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		# Generate a list of relevant slain characters on the enemy's side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = victorious_resurrected_combatants
+			LIST_ALL_CHARACTERS = no
+		}	
+		try_to_send_resurrected_message_effect = { TYPE = good TITLE = good DESC = good }
+		clear_relevant_slain_combatants_list_effect = yes
+
+		# Repeat the above, but for casualties on our own side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = resurrected_combatants
+			LIST_ALL_CHARACTERS = yes
+		}
+		try_to_send_resurrected_message_effect = { TYPE = bad TITLE = bad DESC = bad }
+		clear_relevant_slain_combatants_list_effect = yes
+	}		
+}
+
+# Casualty notification event for other relevant characters (sends a personalized notification to a player about characters of interest who were captured in battle.)
+combat_event.2014 = {
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		every_in_list = {
+			list = resurrected_combatants
+			add_to_list = all_slain_combatants
+		}
+		every_in_list = {
+			list = victorious_resurrected_combatants
+			add_to_list = all_slain_combatants
+		}
+
+		# Generate a list of all relevant slain combatants on both sides.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = all_slain_combatants
+			LIST_ALL_CHARACTERS = no
+		}
+		
+		try_to_send_resurrected_message_effect = { TYPE = neutral TITLE = neutral DESC = bad }
 	}
 
 	after = {
