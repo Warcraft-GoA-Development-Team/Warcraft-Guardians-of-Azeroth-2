@@ -16,7 +16,7 @@ A changelog where you can describe more complicated things to other developers a
 Before the merge, we recommend you to do these tests with your branch.
 -->
 ## Tests:
-- [ ] There are no errors in `wc` files in `Documents\Paradox Interactive\Crusader Kings III\logs\error.log`
+- [ ] There are no errors in `wc` files in `Documents\Paradox Interactive\Crusader Kings III\logs\error.log` except `portrait_decals.cpp:101`
 - [ ] The mod takes less than 5.5 GB in the Task Manager (Windows)
 
 <!--
