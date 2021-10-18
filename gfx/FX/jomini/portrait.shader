@@ -976,16 +976,20 @@ PixelShader =
 						SPatternOutput PatternOutput = ApplyPattern( Input.UV1, Mask[i], GetPatternDesc( Input.InstanceIndex, i ), RandomNumber, Diffuse, Properties, NormalSample, i );
 						
 						PatternDiffuse.rgb	= lerp( PatternDiffuse.rgb, PatternOutput._Diffuse.rgb, Mask[i] );
+						#ifdef PROP_AND_NORMAL_VARIATIONS_ENABLED
 						PatternNormal	 	= lerp( PatternNormal, PatternOutput._Normal.rgb, Mask[i] );
 						PatternProperties	= lerp( PatternProperties, PatternOutput._Properties, Mask[i] );
+						#endif
 					}
 				}
 				
 				Diffuse.rgb *= PatternDiffuse.rgb;
+				#ifdef PROP_AND_NORMAL_VARIATIONS_ENABLED
 				Diffuse.rgb *= PatternProperties.rrr; // pattern AO
 				
 				NormalSample = OverlayNormal( NormalSample, PatternNormal );
 				Properties = PatternProperties;
+				#endif
 			}
 			#endif
 			
@@ -1208,6 +1212,13 @@ Effect portrait_attachment_pattern
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
+	Defines = { "VARIATIONS_ENABLED" "PROP_AND_NORMAL_VARIATIONS_ENABLED" }
+}
+
+Effect portrait_attachment_pattern_diffuse
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_attachment"
 	Defines = { "VARIATIONS_ENABLED" }
 }
 
@@ -1224,7 +1235,7 @@ Effect portrait_attachment_pattern_alpha_to_coverage
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "VARIATIONS_ENABLED" }
+	Defines = { "VARIATIONS_ENABLED" "PROP_AND_NORMAL_VARIATIONS_ENABLED" }
 }
 
 Effect portrait_attachment_pattern_alpha_to_coverageShadow
