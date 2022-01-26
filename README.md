@@ -1,2 +1,1 @@
-# Warcraft-Guardians-of-Azeroth-2-private
-This is a private repo of the public repo. "Guardians of Azeroth" is a mod for Crusader Kings 3 with a worldwide development team, based on the Warcraft universe by Blizzard Entertainment. In this mod, our team is working to recreate the world of Azeroth in all of its glory, particularly focusing on the story of the classic Warcraft strategy games and World of Warcraft Classic.
+If you are a developer, please read [These Guidelines](https://github.com/Warcraft-GoA-Development-Team/Warcraft-Guardians-of-Azeroth-2/wiki/How-to-be-Tinker-(Developer)-(For-CK3)).

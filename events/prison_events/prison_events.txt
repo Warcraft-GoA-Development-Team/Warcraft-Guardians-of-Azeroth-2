@@ -1,0 +1,1610 @@
+﻿namespace = prison
+
+
+#1001-1019 Torture
+#1020-1029 Blind & castrate
+
+#9000-9999 Attempt escape!
+
+
+# Remove imprisoned_me modifier, consume imprisonment reasons the imprisonder had
+prison.0001 = {
+	hidden = yes
+
+	trigger = {
+		scope:imprisoner = {
+			is_alive = yes
+		}
+	}
+
+	immediate = {
+		remove_opinion = {
+			target = scope:imprisoner
+			modifier = imprisoned_me
+		}
+		scope:imprisoner = {
+			consume_imprisonment_reasons = root
+		}
+	}
+}
+
+
+####################
+#  TORTURE EVENTS  #
+####################
+
+#I am getting tortured, but I have a secret
+prison.1001 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1001.t
+	desc = {
+		desc = prison.1001.start.desc
+		#Method
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rack }
+				desc = prison.1001.rack.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:whip }
+				desc = prison.1001.whip.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rats }
+				desc = prison.1001.rats.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:poetry }
+				desc = prison.1001.poetry.desc
+			}
+		}
+		#My or someone else's secret
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:reveal_secret_owner }
+				desc = prison.1001.anothers_secret.desc
+			}
+			desc = prison.1001.my_secret.desc
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = worry
+
+	}
+	right_portrait = {
+		character = scope:actor
+		animation = schadenfreude
+	}
+	lower_left_portrait = scope:reveal_secret_owner
+
+	trigger = {
+		scope:recipient = {
+			is_imprisoned_by = scope:actor
+			OR = {
+				any_secret = {
+					torture_secret_trigger = { PARTICIPANT = scope:recipient }
+				}
+				any_known_secret = {
+					secret_owner = { save_temporary_scope_as = torture_secret_owner }
+					torture_secret_trigger = { PARTICIPANT = scope:torture_secret_owner }
+				}
+			}
+		}
+	}
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+		if = { #They no longer have a secret
+			limit = {
+				scope:recipient = {	
+					NOR = {
+						any_secret = {
+							torture_secret_trigger = { PARTICIPANT = scope:recipient }
+						}
+						any_known_secret = {
+							secret_owner = { save_temporary_scope_as = torture_secret_owner }
+							torture_secret_trigger = { PARTICIPANT = scope:torture_secret_owner }
+						}
+					}
+				}
+			}
+			scope:actor = {
+				trigger_event = prison.1010
+			}
+		}
+	}
+	
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		hidden_effect = {
+			every_secret = {
+				limit = { torture_secret_trigger = { PARTICIPANT = scope:recipient } }
+				add_to_list = torture_secrets
+			}
+			every_known_secret = {
+				limit = {
+					secret_owner = { save_temporary_scope_as = torture_secret_owner }
+					torture_secret_trigger = { PARTICIPANT = scope:torture_secret_owner }
+				}
+				add_to_list = torture_secrets
+			}
+			random_in_list = {
+				list = torture_secrets
+				weight = {
+					base = 1
+					modifier = {
+						secret_owner = {
+							OR = {
+								has_relation_rival = scope:actor
+								has_relation_lover = scope:actor
+								is_close_or_extended_family_of = scope:actor
+								is_spouse_of = scope:actor
+								AND = {
+									is_vassal_of = scope:actor
+									highest_held_title_tier >= tier_county
+								}
+								any_vassal_or_below = { this = scope:actor }
+							}
+						}
+						add = 20
+					}
+					modifier = {
+						secret_owner = { is_ruler = yes }
+						add = 10
+					}
+					modifier = {
+						secret_owner = { this = scope:recipient }
+						add = 10
+					}
+				}
+				save_scope_as = secret_to_reveal
+			}
+
+			if = {
+				limit = {
+					NOT = { scope:secret_to_reveal = { secret_owner = root } }
+				}
+				scope:secret_to_reveal = { secret_owner = { save_scope_as = reveal_secret_owner } }
+			}
+		}
+	}
+
+	#Tell actor
+	option = {
+		name = prison.1001.a
+		show_as_tooltip = { scope:secret_to_reveal = { reveal_to = scope:actor } }
+
+		if = {
+			limit = {
+				NOR = {
+					has_trait = honest
+					has_trait = deceitful
+				}
+			}
+			add_stress = minor_stress_impact_gain
+		}
+		else = {
+			stress_impact = {
+				deceitful = medium_stress_impact_gain
+				brave = medium_stress_impact_gain
+			}
+		}
+
+		scope:actor = { trigger_event = prison.1002 }
+
+		ai_chance = {
+			base = 150
+			modifier = {
+				scope:actor = { has_trait = torturer }
+				add = 100
+			}
+		}
+	}
+
+	#Refuse
+	option = {
+		name = prison.1001.b
+		show_as_tooltip = { torturer_interaction_recipient_effect = yes }
+
+		scope:actor = { trigger_event = prison.1003 }
+
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = 1
+				min = -99
+			}
+			modifier = {
+				any_secret = {
+					this = scope:secret_to_reveal
+					is_blackmailable_secret_trigger = {
+						BLACKMAILER = scope:actor
+						PARTICIPANT = root
+					}
+				}
+				add = 100
+			}
+		}
+	}
+}	
+
+#Torturer discovers secret
+prison.1002 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1001.t
+	desc = {
+		#Method
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rack }
+				desc = prison.1002.rack.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:whip }
+				desc = prison.1002.whip.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rats }
+				desc = prison.1002.rats.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:poetry }
+				desc = prison.1002.poetry.desc
+			}
+		}
+		#Theirs or someone else's secret
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:reveal_secret_owner }
+				desc = prison.1002.anothers_secret.desc
+			}
+			desc = prison.1002.my_secret.desc
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = schadenfreude
+
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = fear
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+	}
+
+	option = {
+		name = prison.1002.a
+		
+		scope:secret_to_reveal = { reveal_to_without_events_effect = { CHARACTER = root } }
+	}
+
+	option = {
+		trigger = {
+			scope:recipient = { is_ai = yes }
+			OR = {
+				has_trait = sadistic
+				has_trait = callous
+				has_trait = arbitrary
+				has_trait = wrathful
+				has_trait = vengeful
+				has_trait = deceitful
+				has_relation_rival = scope:recipient
+			}
+		}
+		trait = sadistic
+		trait = callous
+		trait = arbitrary
+		trait = wrathful
+		trait = vengeful
+		trait = deceitful
+		name = prison.1002.b
+
+		scope:secret_to_reveal = { reveal_to_without_events_effect = { CHARACTER = root } }
+		
+		torturer_interaction_recipient_effect = yes
+
+		stress_impact = {
+			compassionate = minor_stress_impact_gain
+			forgiving = minor_stress_impact_gain
+		}
+	}
+
+	after = { # Remove the flag blocking other prison interactions
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+}
+
+#Torturer does not discover secret (but there was a secret)
+prison.1003 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1003.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rack }
+				desc = prison.1003.rack.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:whip }
+				desc = prison.1003.whip.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rats }
+				desc = prison.1003.rats.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:poetry }
+				desc = prison.1003.poetry.desc
+			}
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = schadenfreude
+
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = fear
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+	
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+	}
+
+	option = {
+		name = {
+			trigger = {
+				OR = {
+					has_trait = sadistic
+					has_relation_rival = scope:recipient
+				}
+			}
+			text = prison.1003.a
+		}
+		name = {
+			trigger = {
+				NOR = {
+					has_trait = sadistic
+					has_relation_rival = scope:recipient
+				}
+			}
+			text = prison.1003.b
+		}
+			
+		torturer_interaction_recipient_effect = yes
+	}
+}
+
+
+
+#Torturer does not discover secret (because there was no secret)
+prison.1010 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1003.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rack }
+				desc = prison.1003.rack.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:whip }
+				desc = prison.1003.whip.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rats }
+				desc = prison.1003.rats.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:poetry }
+				desc = prison.1003.poetry.desc
+			}
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = schadenfreude
+
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = fear
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+	}
+	
+	option = {
+		name = {
+			trigger = {
+				OR = {
+					has_trait = sadistic
+					has_relation_rival = scope:recipient
+				}
+			}
+			text = prison.1003.a
+		}
+		name = {
+			trigger = {
+				NOR = {
+					has_trait = sadistic
+					has_relation_rival = scope:recipient
+				}
+			}
+			text = prison.1003.b
+		}
+		
+		show_as_tooltip = { torturer_interaction_recipient_effect = yes }
+		scope:recipient = { trigger_event = prison.1011 }
+	}
+}
+
+#Recipient gets tortured (no secret version)
+prison.1011 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1003.t
+	desc = {
+		desc = prison.1001.start.desc
+		#Method
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rack }
+				desc = prison.1010.rack.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:whip }
+				desc = prison.1010.whip.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:rats }
+				desc = prison.1010.rats.desc
+			}
+			triggered_desc = {
+				trigger = { scope:torture_method = flag:poetry }
+				desc = prison.1010.poetry.desc
+			}
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = fear
+
+	}
+	right_portrait = {
+		character = scope:actor
+		animation = schadenfreude
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+	
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+	}
+
+	option = {
+		name = prison.1010.a
+		torturer_interaction_recipient_effect = yes
+	}
+}
+
+
+##################
+#  BLIND EVENTS  #
+##################
+
+#I blind someone
+prison.1020 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1020.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:recipient = { is_adult = yes } }
+				desc = {
+					desc = prison.1020.start.desc
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								OR = {
+									ai_compassion < 0
+									has_relation_rival = scope:recipient
+								}
+							}
+							desc = prison.1020.cruel.desc
+						}
+						desc = prison.1020.compassionate.desc
+					}
+				}
+			}
+			desc = prison.1020.child.desc
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = schadenfreude
+
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = fear
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+
+		hidden_effect = {
+			# For the portrait
+			scope:recipient = {
+				add_character_flag = temporarily_blinded
+			}	
+			#For the text
+			save_court_physician_as_effect = { SCOPE_NAME = physician }
+			if = {
+				limit = { NOT = { exists = scope:physician } }
+				random_dummy_gender_physician_effect = yes
+				scope:dummy_physician_gender = { save_scope_as = physician }
+			}
+		}
+	}
+	
+	option = {
+		name = {
+			trigger = {
+				OR = {
+					has_trait = sadistic
+					has_relation_rival = scope:recipient
+				}
+				scope:recipient = { is_adult = yes }
+			}
+			text = prison.1020.a
+		}
+		name = {
+			trigger = {
+				NAND = {
+					OR = {
+						has_trait = sadistic
+						has_relation_rival = scope:recipient
+					}
+					scope:recipient = { is_adult = yes }
+				}
+			}
+			text = prison.1020.b
+		}
+		show_as_tooltip = { blind_recipient_effect = yes }
+		scope:recipient = {
+			trigger_event = prison.1021
+		}
+	}
+
+	after = {
+		remove_character_flag = temporarily_blinded
+	}
+}
+
+#I am blinded
+prison.1021 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1020.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:recipient = { is_adult = yes } }
+				desc = {
+					desc = prison.1021.start.desc
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								scope:actor = {
+									OR = {
+										ai_compassion < 0
+										has_relation_rival = scope:recipient
+									}
+								}
+							}
+							desc = prison.1021.cruel.desc
+						}
+						desc = prison.1021.compassionate.desc
+					}
+				}
+			}
+			desc = prison.1021.child.desc
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = fear
+
+	}
+	right_portrait = {
+		character = scope:actor
+		animation = schadenfreude
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+	}
+	
+	option = {
+		name = {
+			trigger = { is_adult = yes }
+			text = prison.1021.a
+		}
+		name = {
+			trigger = { is_adult = no }
+			text = prison.1021.b
+		}
+		blind_recipient_effect = yes
+	}
+}
+
+#####################
+#  CASTRATE EVENTS  #
+#####################
+
+#I blind someone
+prison.1025 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1025.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:recipient = { is_adult = yes } }
+				desc = {
+					desc = prison.1020.start.desc
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								OR = {
+									ai_compassion < 0
+									has_relation_rival = scope:recipient
+								}
+							}
+							desc = prison.1025.cruel.desc
+						}
+						desc = prison.1020.compassionate.desc
+					}
+				}
+			}
+			desc = prison.1020.child.desc
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = scope:actor
+		animation = schadenfreude
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = fear
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		hidden_effect = {
+			#For the text
+			save_court_physician_as_effect = { SCOPE_NAME = physician }
+			if = {
+				limit = { NOT = { exists = scope:physician } }
+				random_dummy_gender_physician_effect = yes
+				scope:dummy_physician_gender = { save_scope_as = physician }
+			}
+		}
+	}
+	
+	option = {
+		name = {
+			trigger = {
+				OR = {
+					has_trait = sadistic
+					has_relation_rival = scope:recipient
+				}
+				scope:recipient = { is_adult = yes }
+			}
+			text = prison.1020.a
+		}
+		name = {
+			trigger = {
+				NAND = {
+					OR = {
+						has_trait = sadistic
+						has_relation_rival = scope:recipient
+					}
+					scope:recipient = { is_adult = yes }
+				}
+			}
+			text = prison.1020.b
+		}
+		show_as_tooltip = { castrate_recipient_effect = yes }
+		scope:recipient = {
+			trigger_event = prison.1026
+		}
+	}
+}
+
+#I am castrated
+prison.1026 = { #by Mathilda Bjarnehed
+	type = character_event
+	title = prison.1025.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:recipient = { is_adult = yes } }
+				desc = {
+					desc = prison.1021.start.desc
+					first_valid = {
+						triggered_desc = {
+							trigger = {
+								scope:actor = {
+									OR = {
+										ai_compassion < 0
+										has_relation_rival = scope:recipient
+									}
+								}
+							}
+							desc = prison.1026.cruel.desc
+						}
+						desc = prison.1026.compassionate.desc
+					}
+				}
+			}
+			desc = prison.1021.child.desc
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = fear
+
+	}
+	right_portrait = {
+		character = scope:actor
+		animation = schadenfreude
+	}
+
+	trigger = { scope:recipient = { is_imprisoned_by = scope:actor } }
+
+	on_trigger_fail = {
+		scope:recipient = {
+			if = {
+				limit = { has_character_flag = is_being_tortured }
+				remove_character_flag = is_being_tortured
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+	}
+	
+	option = {
+		name = {
+			trigger = { is_adult = yes }
+			text = prison.1026.a
+		}
+		name = {
+			trigger = { is_adult = no }
+			text = prison.1021.b
+		}
+		castrate_recipient_effect = yes
+	}
+}
+
+
+#############################################
+#
+#	Attempt Escape
+#
+#############################################
+
+#Does your attempt succeed or not?
+#by Linnéa Thimrén
+prison.9000 = {
+	hidden = yes
+	
+	immediate = {
+		imprisoner = {
+			save_scope_as = imprisoner
+		}
+		random_list = {
+			50 = {
+				trigger_event = {
+					on_action = escape_from_prison_success
+				}
+				modifier = {
+					add = {
+						value = prowess
+						subtract = average_skill_rating
+						multiply = 2
+					}
+				}
+				ai_value_modifier = {
+					ai_energy = 0.5
+				}
+			}
+			50 = {
+				trigger_event = {
+					on_action = escape_from_prison_failure
+				}
+				modifier = {
+					add = {
+						value = scope:imprisoner.intrigue
+						subtract = average_skill_rating
+						multiply = 2
+					}
+				}
+				modifier = {
+					add = 25
+					scope:imprisoner = {
+						any_courtier = { suitable_shieldmaiden_gaoler_trigger = yes }
+					}
+				}
+				modifier = {
+					add = 25
+					OR = {
+						has_trait = weak
+						has_trait = craven
+						has_trait = physique_bad_1
+					}
+				}
+				modifier = {
+					add = 50
+					OR = {
+						has_trait = physique_bad_2
+						has_trait = physique_bad_3
+					}
+				}
+			}
+		}
+	}
+}
+
+#####################################
+#
+# Success!
+#
+#####################################
+
+#Generic success event
+#by Linnéa Thimrén
+prison.9001 = {
+	type = character_event
+	title = prison.9001.t
+	desc = {
+		#Instead of making a shit-ton of basic escape events we gather them all here as descs
+		random_valid = {
+			desc = prison.9001.desc_1
+			triggered_desc = {
+				trigger = {
+					OR = {
+						has_trait = gregarious
+						has_lifestyle = diplomacy_lifestyle
+						has_diplomacy_lifestyle_trait_trigger = yes
+					}
+				}
+				desc = prison.9001.desc_2
+			}
+			desc = {
+				desc = prison.9001.desc_3_opening
+				first_valid = {
+					triggered_desc = {
+						trigger = {
+							is_in_prison_type = house_arrest
+						}
+						desc = prison.9001.desc_3_house_arrest
+					}
+					desc = prison.9001.desc_3
+				}
+			}
+			triggered_desc = {
+				trigger = {
+					is_in_prison_type = dungeon
+				}
+				desc = prison.9001.desc_4
+			}
+			triggered_desc = {
+				trigger = {
+					is_in_prison_type = house_arrest
+					NOR = {
+						has_trait = intellect_bad_1
+						has_trait = intellect_bad_2
+						has_trait = intellect_bad_3
+						has_trait = dull
+					}
+				}
+				desc = prison.9001.desc_5
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						has_trait = strong
+						has_trait = physique_good_2
+						has_trait = physique_good_3
+					}
+				}
+				desc = prison.9001.desc_6
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						has_lifestyle = intrigue_lifestyle
+						has_intrigue_lifestyle_trait_trigger = yes
+					}
+				}
+				desc = prison.9001.desc_7
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						has_lifestyle = learning_lifestyle
+						has_learning_lifestyle_trait_trigger = yes
+					}
+				}
+				desc = prison.9001.desc_8
+			}
+			triggered_desc = {
+				trigger = {
+					has_trait = seducer
+				}
+				desc = prison.9001.desc_9
+			}
+		}
+		#A random ending
+		desc = {
+			random_valid = {
+				desc = prison.9001.desc_ending_1
+				desc = prison.9001.desc_ending_2
+			}
+		}
+  	}
+	theme = prison
+	override_background = {
+		event_background = wilderness_scope
+	}
+
+	left_portrait = {
+		character = root
+		animation = ecstasy
+	}
+	lower_right_portrait = {
+		character = scope:imprisoner
+	}
+
+
+	immediate = {
+		escape_from_prison_effect = yes
+	}
+
+	option = {
+		name = prison.9001.a
+
+	}
+	after = {
+		remove_character_flag = block_for_prison_release_notification
+		if = { #To inform player imprisoner about the escape
+			limit = {
+				scope:imprisoner = { is_ai = no }
+			}
+			save_scope_as = escapee
+			scope:imprisoner = { trigger_event = prison.9499 }
+		}
+	}
+}
+
+#Prison pet helps you escape
+#by Linnéa Thimrén
+prison.9002 = {
+	type = character_event
+	title = prison.9001.t
+	desc = {
+		desc = prison.9002.desc_opening
+		random_valid = {
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:rat
+				}
+				desc = prison.9002.desc_rat
+			}
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:stone
+				}
+				desc = prison.9002.desc_stone
+			}
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:spoon
+				}
+				desc = prison.9002.desc_spoon
+			}
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:cockroach
+				}
+				desc = prison.9002.desc_cockroach
+			}
+		}
+		desc = prison.9002.desc_end
+	}
+	theme = prison
+	override_background = {
+		event_background = wilderness_scope
+	}
+
+	left_portrait = {
+		character = root
+		animation = ecstasy
+	}
+	lower_right_portrait = {
+		character = scope:imprisoner
+	}
+	trigger = {
+		exists = var:prison_pet_variable
+	}
+
+	immediate = {
+		escape_from_prison_effect = yes
+	}
+
+	option = {
+		name = prison.9002.a
+
+	}
+	after = {
+		remove_character_flag = block_for_prison_release_notification
+		if = { #To inform player imprisoner about the escape
+			limit = {
+				scope:imprisoner = { is_ai = no }
+			}
+			save_scope_as = escapee
+			scope:imprisoner = { trigger_event = prison.9499 }
+		}
+	}
+}
+
+#Escape with friend or close family member
+#by Linnéa Thimrén
+prison.9003 = {
+	type = character_event
+	title = prison.9001.t
+	desc = prison.9003.desc
+	theme = prison
+	override_background = {
+		event_background = wilderness_scope
+	}
+
+	left_portrait = {
+		character = root
+		animation = ecstasy
+	}
+	right_portrait = {
+		character = scope:prison_friend
+		animation = happiness
+	}
+	lower_right_portrait = {
+		character = scope:imprisoner
+	}
+
+	trigger = {
+		imprisoner = {
+			any_prisoner = {
+				is_ai = yes
+
+				# Warcraft
+                age >= age_10_value
+
+				OR = {
+					has_relation_friend = root
+					is_close_family_trigger = {
+						CHARACTER = root
+					}
+				}
+			}
+		}
+	}
+
+	immediate = {
+		imprisoner = {
+			random_prisoner = {
+				limit = {
+					is_ai = yes
+
+					# Warcraft
+                    age >= age_10_value
+
+					OR = {
+						has_relation_friend = root
+						is_close_family_trigger = {
+							CHARACTER = root
+						}
+					}
+				}
+				save_scope_as = prison_friend
+			}
+		}
+		random = {
+			chance = 10
+			increase_wounds_effect = { REASON = fight }
+		}
+		scope:prison_friend = {
+			release_from_prison = yes
+		}
+		escape_from_prison_effect = yes
+	}
+
+	option = {
+		name = prison.9003.a
+
+	}
+	after = {
+		remove_character_flag = block_for_prison_release_notification
+		if = { #To inform player imprisoner about the escape
+			limit = {
+				scope:imprisoner = { is_ai = no }
+			}
+			save_scope_as = escapee
+			scope:imprisoner = { trigger_event = prison.9499 }
+		}
+	}
+}
+
+#Notify the imprisoner about the escape
+#by Linnéa Thimrén
+prison.9499 = {
+	type = character_event
+	title = prison.9499.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					is_in_prison_type = house_arrest
+				}
+				desc = prison.9499.desc_house_arrest
+			}
+			desc = prison.9499.desc_dungeon
+		}
+		desc = prison.9499.desc_ending
+		}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = angry
+	}
+	lower_right_portrait = scope:escapee
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		show_as_tooltip = {
+			scope:escapee = { release_from_prison = yes }
+		}
+	}
+
+	option = {
+		name = prison.9499.a
+	}
+}
+
+
+#########################
+#
+# Failure
+#
+#########################
+
+#Generic failure event
+#by Linnéa Thimrén
+prison.9501 = {
+	type = character_event
+	title = prison.9501.t
+	desc = prison.9501.desc
+	theme = prison
+
+	left_portrait = {
+		character = root
+		animation = shame
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		scope:imprisoner = {
+			add_opinion = {
+				target = root
+				modifier = respect_opinion
+				opinion = -20
+			}
+		}
+	}
+
+	option = {
+		name = prison.9501.a
+		add_character_modifier = {
+			modifier = stress_starvation
+			days = 1825
+		}
+	}
+}
+
+#Prison pet fails you
+#by Linnéa Thimrén
+prison.9502 = {
+	type = character_event
+	title = prison.9502.t
+	desc = {
+		desc = prison.9502.desc_opening
+		random_valid = {
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:rat
+				}
+				desc = prison.9502.desc_rat
+			}
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:stone
+				}
+				desc = prison.9502.desc_stone
+			}
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:spoon
+				}
+				desc = prison.9502.desc_spoon
+			}
+			triggered_desc = {
+				trigger = {
+					var:prison_pet_variable = flag:cockroach
+				}
+				desc = prison.9502.desc_cockroach
+			}
+		}
+	}
+
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = grief
+	}
+
+	trigger = {
+		exists = var:prison_pet_variable
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		random_dummy_gender_soldier_effect = { SCOPE_NAME = dummy_gender }
+		if = {
+			limit = {
+				var:prison_pet_variable = flag:rat
+			}
+			remove_character_modifier = prison_pet_rat_modifier
+		}
+		else_if = {
+			limit = {
+				var:prison_pet_variable = flag:stone
+			}
+			remove_character_modifier = prison_pet_stone_modifier
+		}
+		else_if = {
+			limit = {
+				var:prison_pet_variable = flag:spoon
+			}
+			remove_character_modifier = prison_pet_stone_modifier
+		}
+		else_if = {
+			limit = {
+				var:prison_pet_variable = flag:cockroach
+			}
+			remove_character_modifier = prison_pet_cockroach_modifier
+		}
+	}
+
+	option = {
+		name = prison.9502.a
+		
+	}
+}
+
+#Friend or close family member escapes without you
+#by Linnéa Thimrén
+prison.9503 = {
+	type = character_event
+	title = prison.9503.t
+	desc = prison.9503.desc
+	theme = prison
+
+	left_portrait = {
+		character = root
+		animation = disbelief
+	}
+	lower_right_portrait = scope:prison_friend
+
+	trigger = {
+		imprisoner = {
+			any_prisoner = {
+				OR = {
+					has_relation_friend = root
+					is_close_family_trigger = {
+						CHARACTER = root
+					}
+				}
+				is_ai = yes
+				ai_compassion < 0
+				ai_honor < 0
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 0.5
+		modifier = {
+			add = 0.5
+			imprisoner = {
+				any_prisoner = {
+					OR = {
+						has_relation_friend = root
+						is_close_family_trigger = {
+							CHARACTER = root
+						}
+					}
+					is_ai = yes
+					ai_compassion < 0
+					ai_honor < 0
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = arbitrary
+					}
+				}
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		imprisoner = {
+			random_prisoner = {
+				limit = {
+					OR = {
+						has_relation_friend = root
+						is_close_family_trigger = {
+							CHARACTER = root
+						}
+					}
+					is_ai = yes
+					ai_compassion < 0
+					ai_honor < 0
+				}
+				alternative_limit = {
+					OR = {
+						has_trait = callous
+						has_trait = sadistic
+						has_trait = arbitrary
+					}
+				}
+				save_scope_as = prison_friend
+			}
+		}
+		scope:prison_friend = {
+			release_from_prison = yes
+		}
+		scope:imprisoner = {
+			add_opinion = {
+				target = root
+				modifier = respect_opinion
+				opinion = -20
+			}
+		}
+	}
+
+	option = {
+		name = prison.9503.a
+		increase_wounds_effect = { REASON = beaten }
+		stress_impact = {
+			base = medium_stress_impact_gain
+			compassionate = minor_stress_impact_loss
+		}
+	}
+
+	option = {
+		name = prison.9503.b
+		increase_wounds_effect = { REASON = beaten }
+		if = {
+			limit = {
+				has_relation_friend = scope:prison_friend
+			}
+			remove_relation_friend = scope:prison_friend
+		}
+		else_if = {
+			progress_towards_rival_effect = {
+				CHARACTER = scope:prison_friend
+				OPINION = no
+			}
+		}
+	}
+}
+
+#Rival sabotages escape
+#by Linnéa Thimrén
+prison.9504 = {
+	type = character_event
+	title = prison.9504.t
+	desc = prison.9504.desc
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = fear
+	}
+	right_portrait = {
+		character = scope:prison_rival
+		animation = schadenfreude
+	}
+	lower_right_portrait = scope:imprisoner
+
+	trigger = {
+		imprisoner = {
+			any_prisoner = {
+				has_relation_rival = root
+				is_ai = yes
+			}
+		}
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		imprisoner = {
+			random_prisoner = {
+				limit = {
+					has_relation_rival = root
+					is_ai = yes
+				}
+				save_scope_as = prison_rival
+			}
+		}
+		scope:imprisoner = {
+			add_opinion = {
+				target = root
+				modifier = respect_opinion
+				opinion = -20
+			}
+		}
+	}
+
+	option = {
+		name = prison.9504.a
+		increase_wounds_effect = { REASON = beaten }
+	}
+}
+
+#Become Wounded
+#by Petter Vilberg and Linnéa Thimrén
+prison.9505 = {
+	type = character_event
+	title = prison.9505.t
+	desc = {
+		desc = prison.9505.opening
+		random_valid = {
+			desc = prison.9505.tumble
+			desc = prison.9505.tunnels
+		}
+	}
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = paranoia
+	}
+	
+	trigger = {
+		is_in_prison_type = house_arrest
+		has_trait_rank = {
+			trait = wounded
+			rank < 2
+		}
+	}
+
+
+	immediate = {
+		play_music_cue = "mx_cue_prison"
+		increase_wounds_effect = { REASON = wounds }
+	}
+
+	option = { #I am still alive!
+		name = prison.9505.a
+	}
+}

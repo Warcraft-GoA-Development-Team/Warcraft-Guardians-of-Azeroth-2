@@ -1,0 +1,2001 @@
+﻿#Events run from the yearly_pulse on_action
+namespace = yearly
+
+# List of events in this file:
+#
+# 0001		Skill Tutoring, by Sean Hughes
+# 0002		Indiscreet Councillor, by Sean Hughes
+# 0003		Forbidden Love, by Sean Hughes
+#
+#
+#
+#
+#
+
+#####################################
+# Skill Tutoring					#
+# by Sean Hughes					#
+# 0001								#
+#####################################
+
+#Trigger to check if this character is a valid mentor for this event.
+scripted_trigger yearly_0001_possible_mentor = {
+	is_available_ai_adult = yes
+	opinion = {
+		target = root
+		value > -10
+	}
+	NOR = {
+		#Rivals won't willingly offer you aid.
+		has_relation_rival = root
+
+		#This event is relatively impersonal, and spouses have their own events to aid you.
+		is_spouse_of = root
+	}
+	OR = {
+		#Must have at least one skill which is a higher rating than our own
+		diplomacy > root.diplomacy
+		martial > root.martial
+		stewardship > root.stewardship
+		intrigue > root.intrigue
+		learning > root.learning
+	}
+	OR = {
+		#We also need to either be best friends...
+		has_relation_best_friend = root
+
+		#Or they need to owe us a favor...
+		AND = {
+			save_temporary_scope_as = potential_mentor
+			root = {
+				has_hook_of_type = {
+					target = scope:potential_mentor
+					type = favor_hook
+				}
+			}
+		}
+		
+		#Or we need to be able to owe them a favor.
+		NOT = {
+			has_hook_of_type = {
+				target = root
+				type = favor_hook
+			}
+		}
+	}
+}
+
+#Trigger to check if this character is a councillor whose associated skill is higher than ours.
+scripted_trigger yearly_0001_skilled_councillor = {
+	#If we're not a councillor at all fail automatically.
+	is_councillor_of = root
+
+	#Else check if our associated skill is higher than our own rating in that skill.
+	OR = {
+		AND = {
+			has_council_position = councillor_chancellor
+			diplomacy > root.diplomacy
+		}
+		AND = {
+			has_council_position = councillor_marshal
+			martial > root.martial
+		}
+		AND = {
+			has_council_position = councillor_steward
+			stewardship > root.stewardship
+		}
+		AND = {
+			has_council_position = councillor_spymaster
+			intrigue > root.intrigue
+		}
+		AND = {
+			has_council_position = councillor_court_chaplain
+			learning > root.learning
+		}
+	}
+}
+
+#Trigger to check if you can also (or alternatively) mentor your vassal.
+scripted_trigger yearly_0001_can_mentor_vassal = {
+	OR = {
+		diplomacy > scope:mentor.diplomacy
+		martial > scope:mentor.martial
+		stewardship > scope:mentor.stewardship
+		intrigue > scope:mentor.intrigue
+		learning > scope:mentor.learning	
+	}
+}
+
+yearly.0001 = {
+	type = letter_event
+	opening = {
+		desc = yearly.0001.opening
+	}
+	desc = {
+		#What text we display depends on our relationship to our would-be mentor.
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					has_relation_best_friend = scope:mentor
+				}
+				desc = yearly.0001.desc.friend
+			}
+			triggered_desc = {
+				trigger = {
+					scope:mentor = {
+						has_trait = arrogant
+					}
+				}
+				desc = yearly.0001.desc.arrogant
+			}
+			triggered_desc = {
+				trigger = {
+					scope:mentor = {
+						yearly_0001_skilled_councillor = yes
+					}
+				}
+				desc = yearly.0001.desc.councillor
+			}
+			desc = yearly.0001.desc.default
+		}
+		#If they're not our best friend, we also need to display text indicating...
+		first_valid = {
+			#...that our mentor is doing this to repay a favor they currently owe us.
+			triggered_desc = {
+				trigger = {
+					NOT = {has_relation_best_friend = scope:mentor}
+					has_hook_of_type = {
+						target = scope:mentor
+						type = favor_hook
+					}
+				}
+				desc = yearly.0001.desc.favor
+			}
+			#...or that they will expect a favor in return for this.
+			triggered_desc = {
+				trigger = {
+					NOT = {has_relation_best_friend = scope:mentor}
+				}
+				desc = yearly.0001.desc.nofavor
+			}
+		}
+	}
+	sender = scope:mentor
+	
+	trigger = {
+		NOT = { has_character_flag = had_event_yearly_0001 }
+		OR = {
+			any_vassal = {
+				yearly_0001_possible_mentor = yes
+			}
+			liege = {
+				yearly_0001_possible_mentor = yes
+				any_vassal = {
+					AND = {
+						highest_held_title_tier >= 2 #Only Counts and above
+						yearly_0001_possible_mentor = yes
+					}
+				}
+			}
+		}
+
+	}
+
+	weight_multiplier = {
+		base = 1
+
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_0001
+			years = 10
+		}
+		add_character_flag = {
+			flag = yearly_0001_root
+			days = 1
+		}
+		#Find a valid mentor to tutor us in a skill.
+		every_vassal = {
+			limit = {
+				yearly_0001_possible_mentor = yes
+			}
+			add_to_list = possible_mentors
+		}
+		liege = {
+			if = {
+				limit = {
+					NOT = { this = root } #Don't add ourselves to the mentor list!
+					yearly_0001_possible_mentor = yes
+				}
+				add_to_list = possible_mentors
+			}
+			every_vassal = {
+				limit = {
+					NOT = { this = root } #Don't add ourselves to the mentor list!
+					yearly_0001_possible_mentor = yes
+				}
+				add_to_list = possible_mentors
+			}
+		}
+
+		random_in_list = {
+			list = possible_mentors
+			#If we have a valid best friend, we will always want to use them.
+			limit = {
+				has_relation_best_friend = root
+			}
+			#Otherwise, look for people who can exploit favors on you (powerful vassals and/or councillors).
+			alternative_limit = {
+				OR = {
+					this = liege
+					is_powerful_vassal_of = liege
+					is_powerful_vassal_of = root
+					is_councillor_of = root
+				}
+			}
+			#If none of those are valid, just look for any valid character.
+			alternative_limit = {
+				yearly_0001_possible_mentor = yes
+			}
+			
+			weight = {
+				base = 100
+
+				
+				compare_modifier = {
+					factor = highest_held_title_tier
+					multiplier = 2
+				}
+				compare_modifier = {
+					value = ai_greed
+					multiplier = 1
+				}
+				compare_modifier = {
+					value = ai_compassion
+					multiplier = 0.5
+				}
+				compare_modifier = {
+					value = ai_boldness
+					multiplier = 0.5
+				}
+				modifier = {
+					this = liege
+					factor = 0.25 # Liege is much less likely to personally tutor you.
+				}
+				modifier = {
+					has_trait = arrogant
+					add = 50
+				}
+				modifier = {
+					has_trait = humble
+					add = -25
+				}
+			}
+
+			save_scope_as = mentor
+
+			#If our mentor is a skilled councillor, we will select the skill which matches their council position.
+			if = {
+				limit = {
+					yearly_0001_skilled_councillor = yes
+				}
+				if = {
+					limit = {
+						has_council_position = councillor_chancellor
+
+					}
+					root = {
+						set_variable = {
+							name = yearly_0001_skill
+							value = flag:diplomacy
+						}
+					}
+				}
+				else_if = {
+					limit = {
+						has_council_position = councillor_marshal
+
+					}
+					root = {
+						set_variable = {
+							name = yearly_0001_skill
+							value = flag:martial
+						}
+					}
+				}
+				else_if = {
+					limit = {
+						has_council_position = councillor_steward
+
+					}
+					root = {
+						set_variable = {
+							name = yearly_0001_skill
+							value = flag:stewardship
+						}
+					}
+				}
+				else_if = {
+					limit = {
+						has_council_position = councillor_spymaster
+
+					}
+					root = {
+						set_variable = {
+							name = yearly_0001_skill
+							value = flag:intrigue
+						}
+					}
+				}
+				else_if = {
+					limit = {
+						has_council_position = councillor_court_chaplain
+
+					}
+					root = {
+						set_variable = {
+							name = yearly_0001_skill
+							value = flag:learning
+						}
+					}
+				}
+			}
+			else = {
+				#Otherwise, we will select a random skill that our mentor is better at than us.
+				yearly_0001_set_random_weighted_skill_effect = {
+					MENTEE = root
+					MENTOR = scope:mentor
+				}
+			}
+
+			#If eligible, we can turn the tables and teach the teacher. Select a random skill that we are better at than our mentor.
+			if = {
+				limit = {
+					root = {
+						yearly_0001_can_mentor_vassal = yes
+					}
+				}
+				yearly_0001_set_random_weighted_skill_effect = {
+					MENTEE = scope:mentor
+					MENTOR = root
+				}
+			}
+		}
+	}
+
+	option = {
+		name = yearly.0001.a
+		yearly_0001_improve_skill_effect = {
+			MENTEE = this
+			MENTOR = scope:mentor
+		}
+		scope:mentor = {
+			if = {
+				limit = {
+					can_add_hook = {
+						target = root
+						type = favor_hook
+					}
+				}
+				add_hook = {
+					target = root
+					type = favor_hook
+				}
+			}
+		}
+	}
+
+	option = {
+		name = yearly.0001.b
+		trigger = {
+			diplomacy >= extremely_high_skill_rating
+			NOT = { has_relation_best_friend = scope:mentor }
+			scope:mentor = {
+				has_variable = yearly_0001_skill
+			}
+		}
+		skill = diplomacy
+
+		scope:mentor = {
+			yearly_0001_improve_vassal_skill_effect = yes
+		}
+		if = {
+			limit = {
+				can_add_hook = {
+					target = scope:mentor
+					type = favor_hook
+				}
+			}
+			add_hook = {
+				target = scope:mentor
+				type = favor_hook
+			}
+		}
+	}
+
+	option = {
+		name = yearly.0001.c
+		trigger = {
+			OR = {learning >= high_skill_rating
+				AND = {
+					learning >= decent_skill_rating
+					has_relation_best_friend = scope:mentor
+				}
+			}
+			scope:mentor = {
+				has_variable = yearly_0001_skill
+			}
+		}
+		skill = learning
+
+		yearly_0001_improve_skill_effect = {
+			MENTEE = this
+			MENTOR = scope:mentor
+		}
+		scope:mentor = {
+			yearly_0001_improve_vassal_skill_effect = yes
+		}
+	}
+
+	option = {
+		name = yearly.0001.d
+		add_prestige = medium_prestige_gain
+		scope:mentor = {
+			add_opinion = {
+				target = root
+				modifier = disappointed_opinion
+				opinion = -10
+			}
+		}
+	}
+
+	after = {
+		remove_character_flag = yearly_0001_root
+		remove_variable = yearly_0001_skill
+		scope:mentor = {
+			remove_variable = yearly_0001_skill
+		}
+	}
+}
+
+
+#####################################
+# Indiscreet Councillor				#
+# by Sean Hughes					#
+# 0002								#
+#####################################
+
+#Trigger to ensure one of ROOT's children is valid for the seducee role.
+scripted_trigger yearly_0002_valid_child = {
+	is_available_ai_adult = yes
+	NOT = {
+		has_trait = chaste
+		this = scope:councillor
+	}
+	is_married = no
+	is_concubine = no
+	is_in_the_same_court_as_or_guest = root
+	can_set_relation_lover_trigger = { CHARACTER = scope:councillor }
+}
+
+#Trigger to ensure a councillor is valid for the secuder role.
+scripted_trigger yearly_0002_valid_councillor = {
+	is_available_ai_adult = yes
+	NOR = {
+		has_trait = chaste
+		is_spouse_of = root
+	}
+
+	#We need to make sure that if we pick this councillor, there is a valid child of ROOT they can have a relationship with.
+	save_temporary_scope_as = councillor
+	root = {
+		any_child = {
+			yearly_0002_valid_child = yes
+			save_temporary_scope_as = child
+		}
+	}
+	
+	# Warcraft
+	can_have_sexual_relation_with_and_attracted_to_trigger = { target = scope:child }
+	
+	# Characters must be compatible.
+	is_attracted_to_gender_of = scope:child
+
+	# Councillor must be willing to cheat on their current partners
+	might_cheat_on_every_partner_trigger = yes
+}
+
+
+#One of your councillors has been caught sleeping with one of your children!
+yearly.0002 = {
+	type = character_event
+	title = yearly.0002.t
+	desc = yearly.0002.desc
+	left_portrait = {
+		character = scope:councillor
+		animation = flirtation
+	}
+	right_portrait = {
+		character = scope:child
+		animation = flirtation_left
+	}
+	theme = seduction
+	
+	trigger = {
+		any_councillor = {
+			yearly_0002_valid_councillor = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 0.75
+
+		modifier = {
+			add = 0.5
+			any_councillor = {
+				yearly_0002_valid_councillor = yes
+				has_trait = lustful
+			}
+		}
+		modifier = {
+			add = 0.5
+			any_child = {
+				is_in_the_same_court_as_or_guest = root
+				has_trait = lustful
+			}
+		}
+	}
+
+	immediate = {
+		#Find a valid councillor to use for the seducer.
+		random_councillor = {
+			limit = {
+				yearly_0002_valid_councillor = yes
+			}
+
+			weight = {
+				base = 10
+
+				modifier = {
+					factor = 2
+					has_trait = lustful
+				}
+				modifier = {
+					factor = 2
+					is_married = no
+				}
+			}
+
+			save_scope_as = councillor
+		}
+
+		#Find one of your valid children to be the seducee.
+		random_child = {
+			limit = {
+				yearly_0002_valid_child = yes
+			}
+
+			weight = {
+				base = 10
+
+				modifier = {
+					factor = 2
+					has_trait = lustful
+				}
+			}
+
+			save_scope_as = child
+
+			#Create the relationship between the two characters.
+			set_relation_lover = scope:councillor
+
+			#Chance to get pregnant
+			hidden_effect = {
+				save_scope_as = root_character
+				had_sex_with_effect = {
+					CHARACTER = scope:councillor
+					PREGNANCY_CHANCE = pregnancy_chance
+				}
+			}			
+		}
+
+		#Save the councillor's lover secret.
+		scope:councillor = {
+			random_secret = {
+				limit = {
+					secret_type = secret_lover
+					secret_target = scope:child
+				}
+				hidden_effect = {
+					reveal_to = root
+				}
+				save_scope_as = secret
+			}
+		}
+	}
+
+	#Option A: Imprison the councillor.
+	option = {
+		name = yearly.0002.c
+		imprison_character_effect = {
+			TARGET = scope:councillor
+			IMPRISONER = root
+		}
+		scope:councillor = {
+			remove_relation_lover = scope:child
+		}
+	}
+
+	#Option B: Keep the secret to yourself... for now.
+	option = {
+		name = yearly.0002.d
+		scope:secret = {
+			reveal_to = root
+		}
+	}
+}
+
+#####################################
+# Forbidden Love 					#
+# by Sean Hughes					#
+# 0003								#
+#####################################
+
+scripted_trigger yearly_0003_valid_child = {
+	is_available_ai_adult = yes
+	#So we can imprison them
+	any_liege_or_above = { this = root }
+	save_temporary_scope_as = this_child
+	NOR = {
+		# Child must be able to be in a relationship.
+		has_trait = celibate
+		has_sexuality = asexual
+
+		# Child must not already be in or have been in a (known) incestuous relationship.
+		has_trait = incestuous
+		AND = {
+			any_secret = {
+				secret_type = secret_lover
+				is_known_by = root
+				secret_target = {
+					relation_with_character_is_incestuous_in_my_faith_trigger = { CHARACTER = scope:this_child }
+				}
+			}
+		}
+	}
+}
+
+scripted_trigger yearly_0003_valid_relative = {
+	# Must be available and in our court (so we have control over them)
+	is_available_ai_adult = yes
+	NOR = {
+		this = root
+		this = scope:child
+	}
+	NOR = {
+		# Relative must be able to be in a relationship in general.
+		has_trait = celibate
+		has_sexuality = asexual
+	}
+
+	# Relative must specifically be able to be in a incestuous relationship with our selected child.
+	save_temporary_scope_as = valid_relative_check
+	matching_gender_and_sexuality_trigger = {
+		CHARACTER_1 = scope:child
+		CHARACTER_2 = scope:valid_relative_check
+	}
+	relation_with_character_is_incestuous_in_my_faith_trigger = { CHARACTER = scope:child }
+}
+
+scripted_trigger yearly_0003_can_approve_of_incest_trigger = {
+	OR = {
+		has_trait = deviant
+		any_secret = {
+			secret_type = secret_deviant
+		}
+		has_trait = incestuous
+		any_secret = {
+			secret_type = secret_incest
+		}
+		has_trait = lustful
+	}
+}
+
+#One of your children has engaged in forbidden love with a close relative!
+yearly.0003 = {
+	type = character_event
+	title = yearly.0003.t
+	desc = {
+		desc = yearly.0003.start.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = { yearly_0003_can_approve_of_incest_trigger = yes }
+				desc = yearly.0003.likes_incest.desc
+			}
+			desc = yearly.0003.dislikes_incest.desc
+		}
+	}
+	theme = seduction
+	left_portrait = {
+		character = scope:child
+		animation = flirtation
+	}
+	right_portrait = {
+		character = scope:relative
+		animation = flirtation_left
+	}
+	
+	trigger = {
+		any_child = {
+			yearly_0003_valid_child = yes
+			save_temporary_scope_as = child
+
+			any_close_or_extended_family_member = {
+				yearly_0003_valid_relative = yes
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 0.5
+
+		modifier = {
+			add = 0.5
+			any_child = {
+				yearly_0003_valid_child = yes
+				has_trait = lustful
+			}
+		}
+
+		modifier = {
+			add = 0.5
+			any_child = {
+				yearly_0003_valid_child = yes
+				OR = {
+					has_trait = deviant
+					any_secret = {
+						secret_type = secret_deviant
+					}
+				}
+				
+			}
+		}
+
+		modifier = {
+			add = 5
+			is_ai = no
+		}
+	}
+
+	immediate = {
+		#Picks the child
+		random_child = {
+			limit = {
+				save_temporary_scope_as = child
+				any_relation = {
+					type = lover
+					relation_with_character_is_incestuous_in_faith_trigger = { CHARACTER = scope:child FAITH = root.faith }
+				}
+				yearly_0003_valid_child = yes
+				any_close_or_extended_family_member = {
+					yearly_0003_valid_relative = yes
+				}
+			}
+			alternative_limit = {
+				yearly_0003_valid_child = yes
+				save_temporary_scope_as = child
+				any_close_or_extended_family_member = {
+					yearly_0003_valid_relative = yes
+				}
+			}
+
+			weight = {
+				base = 10
+				modifier = {
+					add = 30
+					has_trait = lustful
+				}
+				modifier = {
+					add = 70
+					OR = {
+						has_trait = deviant
+					}
+					any_secret = {
+						secret_type = secret_deviant
+					}
+				}
+				#More dramatic if your heir is one of the partipants.
+				modifier = {
+					add = 50
+					is_player_heir_of_trigger = { CHARACTER = root }
+				}
+			}
+
+			save_scope_as = child
+
+			#Picks the relative
+			random_close_or_extended_family_member = {
+				limit = {
+					yearly_0003_valid_relative = yes
+					any_secret = {
+						secret_type = secret_lover
+						secret_target = scope:child
+					}
+				}
+				alternative_limit = {
+					yearly_0003_valid_relative = yes
+				}
+
+				weight = {
+					base = 10
+					modifier = {
+						add = 30
+						has_trait = lustful
+					}
+					modifier = {
+						add = 70
+						OR = {
+							has_trait = deviant
+							has_trait = incestuous
+							any_secret = {
+								OR = {
+									secret_type = secret_deviant
+									secret_type = secret_incest
+								}
+							}
+						}
+					}
+					opinion_modifier = {
+						who = scope:child
+						opinion_target = this
+						multiplier = 0.5
+					}
+					opinion_modifier = {
+						opinion_target = scope:child
+						multiplier = 0.5
+					}
+
+					# Try to find relatives close to their own age.
+					modifier = {
+						OR = {
+							this.age <= { value = scope:child.age add = 10 }
+							this.age >= { value = scope:child.age subtract = 10 }
+						}
+						factor = 0.1
+					}
+
+					# More likely to pick a relative in the same court (if any such relatives exist).
+					modifier = {
+						court_owner = scope:child.court_owner
+						factor = 5
+					}
+				}
+
+				save_scope_as = relative
+
+				#Set relation & reveal secret
+				hidden_effect = {
+					if = {
+						limit = {
+							can_set_relation_lover_trigger = { CHARACTER = scope:child }
+						}
+						set_relation_lover = scope:child
+					}
+				}
+
+				random_secret = {
+					limit = {
+						secret_type = secret_lover
+						secret_target = scope:child
+					}
+					save_scope_as = secret
+				}
+			}
+		}
+		scope:secret = { reveal_to_without_events_effect = { CHARACTER = root } }
+	}
+
+	# Protect them!
+	option = {
+		name = yearly.0003.b
+		scope:child = {
+			add_character_modifier = {
+				modifier = yearly_0003_protected_by_liege
+				years = 15
+			}
+			add_opinion = {
+				modifier = grateful_opinion
+				target = root
+				opinion = 50
+			}
+		}
+		scope:relative = {
+			if = {
+				limit = {
+					exists = liege
+					liege = root
+				}
+				add_character_modifier = {
+					modifier = yearly_0003_protected_by_liege
+					years = 15
+				}
+			}
+			add_opinion = {
+				modifier = grateful_opinion
+				target = root
+				opinion = 50
+			}
+		}
+
+		stress_impact = {
+			zealous = minor_stress_gain
+			vengeful = minor_stress_gain
+		}
+	}
+	
+	# Expose them!
+	option = {
+		name = yearly.0003.a
+
+		add_piety = minor_piety_gain
+		scope:secret = {
+			expose_secret = root
+		}
+
+		stress_impact = {
+			cynical = minor_stress_gain
+			lustful = minor_stress_gain
+		}
+	}
+
+	# Imprison them!
+	option = {
+		name = yearly.0003.c
+
+		add_dread = minor_dread_gain
+		scope:child = {
+			if = {
+				limit = {
+					is_imprisoned = no
+					any_liege_or_above = { this = root }
+				}
+			}
+			# Checks for tyranny gain independently of actual criminal reasons (as the secret hasn't been exposed *yet*)
+			pick_imprisonment_effect_based_on_sexual_relation_effect = {
+				TARGET = scope:child
+				PARTNER = scope:relative
+				IMPRISONER = root
+			}
+		}
+		scope:relative = {
+			if = {
+				limit = {
+					is_imprisoned = no
+					any_liege_or_above = { this = root }
+				}
+			}
+			# Checks for tyranny gain independently of actual criminal reasons (as the secret hasn't been exposed *yet*)
+			pick_imprisonment_effect_based_on_sexual_relation_effect = {
+				TARGET = scope:relative
+				PARTNER = scope:child
+				IMPRISONER = root
+			}
+		}
+
+		# Happens last for tooltip ordering
+		scope:secret = {
+			expose_secret = root
+		}
+
+		stress_impact = {
+			lustful = minor_stress_gain
+			forgiving = minor_stress_gain
+			compassionate = minor_stress_gain
+		}
+	}
+
+	# Join in on the fun
+	option = {
+		name = yearly.0003.d
+		trigger = {
+			yearly_0003_can_approve_of_incest_trigger = yes
+		}
+		trait = deviant
+		trait = lustful
+		trait = incestuous
+
+		if = {
+			limit = {
+				NOT = { has_relation_lover = scope:child }
+				matching_gender_and_sexuality_trigger = {
+					CHARACTER_1 = scope:child
+					CHARACTER_2 = root
+				}
+			}
+			set_relation_lover = scope:child
+		}
+		had_sex_with_effect = { CHARACTER = scope:child PREGNANCY_CHANCE = seduce_pregnancy_chance }
+		if = {
+			limit = {
+				NOT = { has_relation_lover = scope:relative }
+				matching_gender_and_sexuality_trigger = {
+					CHARACTER_1 = scope:relative
+					CHARACTER_2 = root
+				}
+			}
+			set_relation_lover = scope:relative
+		}
+		had_sex_with_effect = { CHARACTER = scope:relative PREGNANCY_CHANCE = seduce_pregnancy_chance }
+
+		stress_impact = {
+			chaste = major_stress_gain
+			zealous = medium_stress_gain
+		}
+	}
+}
+
+
+
+##################################################
+# Comet Sighted
+# by Ewan Cowhig Croft
+# #0011
+##################################################
+
+scripted_effect comet_reaction_list_builder_effect = {
+	random_list = {
+		10 = {
+			trigger = {
+				has_trait = lustful
+				NOT = { has_character_flag = comet_reaction_event_lustful }
+			}
+			add_character_flag = comet_reaction_event_lustful
+		}
+		10 = {
+			trigger = {
+				has_trait = chaste
+				NOT = { has_character_flag = comet_reaction_event_chaste }
+			}
+			add_character_flag = comet_reaction_event_chaste
+		}
+		10 = {
+			trigger = {
+				has_trait = gluttonous
+				NOT = { has_character_flag = comet_reaction_event_gluttonous }
+			}
+			add_character_flag = comet_reaction_event_gluttonous
+		}
+		10 = {
+			trigger = {
+				has_trait = temperate
+				NOT = { has_character_flag = comet_reaction_event_temperate }
+			}
+			add_character_flag = comet_reaction_event_temperate
+		}
+		10 = {
+			trigger = {
+				has_trait = greedy
+				NOT = { has_character_flag = comet_reaction_event_greedy }
+			}
+			add_character_flag = comet_reaction_event_greedy
+		}
+		10 = {
+			trigger = {
+				has_trait = generous
+				NOT = { has_character_flag = comet_reaction_event_generous }
+			}
+			add_character_flag = comet_reaction_event_generous
+		}
+		10 = {
+			trigger = {
+				has_trait = lazy
+				NOT = { has_character_flag = comet_reaction_event_lazy }
+			}
+			add_character_flag = comet_reaction_event_lazy
+		}
+		10 = {
+			trigger = {
+				has_trait = diligent
+				NOT = { has_character_flag = comet_reaction_event_diligent }
+			}
+			add_character_flag = comet_reaction_event_diligent
+		}
+		10 = {
+			trigger = {
+				has_trait = wrathful
+				NOT = { has_character_flag = comet_reaction_event_wrathful }
+			}
+			add_character_flag = comet_reaction_event_wrathful
+		}
+		10 = {
+			trigger = {
+				has_trait = calm
+				NOT = { has_character_flag = comet_reaction_event_calm }
+			}
+			add_character_flag = comet_reaction_event_calm
+		}
+		10 = {
+			trigger = {
+				has_trait = patient
+				NOT = { has_character_flag = comet_reaction_event_patient }
+			}
+			add_character_flag = comet_reaction_event_patient
+		}
+		10 = {
+			trigger = {
+				has_trait = impatient
+				NOT = { has_character_flag = comet_reaction_event_impatient }
+			}
+			add_character_flag = comet_reaction_event_impatient
+		}
+		10 = {
+			trigger = {
+				has_trait = arrogant
+				NOT = { has_character_flag = comet_reaction_event_arrogant }
+			}
+			add_character_flag = comet_reaction_event_arrogant
+		}
+		10 = {
+			trigger = {
+				has_trait = humble
+				NOT = { has_character_flag = comet_reaction_event_humble }
+			}
+			add_character_flag = comet_reaction_event_humble
+		}
+		10 = {
+			trigger = {
+				has_trait = deceitful
+				NOT = { has_character_flag = comet_reaction_event_deceitful }
+			}
+			add_character_flag = comet_reaction_event_deceitful
+		}
+		10 = {
+			trigger = {
+				has_trait = honest
+				NOT = { has_character_flag = comet_reaction_event_honest }
+			}
+			add_character_flag = comet_reaction_event_honest
+		}
+		10 = {
+			trigger = {
+				has_trait = craven
+				NOT = { has_character_flag = comet_reaction_event_craven }
+			}
+			add_character_flag = comet_reaction_event_craven
+		}
+		10 = {
+			trigger = {
+				has_trait = brave
+				NOT = { has_character_flag = comet_reaction_event_brave }
+			}
+			add_character_flag = comet_reaction_event_brave
+		}
+		10 = {
+			trigger = {
+				has_trait = shy
+				NOT = { has_character_flag = comet_reaction_event_shy }
+			}
+			add_character_flag = comet_reaction_event_shy
+		}
+		10 = {
+			trigger = {
+				has_trait = gregarious
+				NOT = { has_character_flag = comet_reaction_event_gregarious }
+			}
+			add_character_flag = comet_reaction_event_gregarious
+		}
+		10 = {
+			trigger = {
+				has_trait = ambitious
+				NOT = { has_character_flag = comet_reaction_event_ambitious }
+			}
+			add_character_flag = comet_reaction_event_ambitious
+		}
+		10 = {
+			trigger = {
+				has_trait = content
+				NOT = { has_character_flag = comet_reaction_event_content }
+			}
+			add_character_flag = comet_reaction_event_content
+		}
+		10 = {
+			trigger = {
+				has_trait = arbitrary
+				NOT = { has_character_flag = comet_reaction_event_arbitrary }
+			}
+			add_character_flag = comet_reaction_event_arbitrary
+		}
+		10 = {
+			trigger = {
+				has_trait = just
+				NOT = { has_character_flag = comet_reaction_event_just }
+			}
+			add_character_flag = comet_reaction_event_just
+		}
+		10 = {
+			trigger = {
+				has_trait = cynical
+				NOT = { has_character_flag = comet_reaction_event_cynical }
+			}
+			add_character_flag = comet_reaction_event_cynical
+		}
+		10 = {
+			trigger = {
+				has_trait = zealous
+				NOT = { has_character_flag = comet_reaction_event_zealous }
+			}
+			add_character_flag = comet_reaction_event_zealous
+		}
+		10 = {
+			trigger = {
+				has_trait = paranoid
+				NOT = { has_character_flag = comet_reaction_event_paranoid }
+			}
+			add_character_flag = comet_reaction_event_paranoid
+		}
+		10 = {
+			trigger = {
+				has_trait = trusting
+				NOT = { has_character_flag = comet_reaction_event_trusting }
+			}
+			add_character_flag = comet_reaction_event_trusting
+		}
+		10 = {
+			trigger = {
+				has_trait = compassionate
+				NOT = { has_character_flag = comet_reaction_event_compassionate }
+			}
+			add_character_flag = comet_reaction_event_compassionate
+		}
+		10 = {
+			trigger = {
+				has_trait = callous
+				NOT = { has_character_flag = comet_reaction_event_callous }
+			}
+			add_character_flag = comet_reaction_event_callous
+		}
+		10 = {
+			trigger = {
+				has_trait = sadistic
+				NOT = { has_character_flag = comet_reaction_event_sadistic }
+			}
+			add_character_flag = comet_reaction_event_sadistic
+		}
+		10 = {
+			trigger = {
+				has_trait = stubborn
+				NOT = { has_character_flag = comet_reaction_event_stubborn }
+			}
+			add_character_flag = comet_reaction_event_stubborn
+		}
+		10 = {
+			trigger = {
+				has_trait = fickle
+				NOT = { has_character_flag = comet_reaction_event_fickle }
+			}
+			add_character_flag = comet_reaction_event_fickle
+		}
+		10 = {
+			trigger = {
+				has_trait = vengeful
+				NOT = { has_character_flag = comet_reaction_event_vengeful }
+			}
+			add_character_flag = comet_reaction_event_vengeful
+		}
+		10 = {
+			trigger = {
+				has_trait = forgiving
+				NOT = { has_character_flag = comet_reaction_event_forgiving }
+			}
+			add_character_flag = comet_reaction_event_forgiving
+		}
+	}
+}
+
+scripted_effect comet_reaction_standard_effect = {
+	#But what does it *mean*?
+	random_list = {
+		50 = {
+			desc = yearly.0011.gain_stress
+			send_interface_toast = {
+				title = yearly.0011.gain_stress
+				left_icon = root
+				add_stress = major_stress_gain
+			}
+		}
+		50 = {
+			desc = yearly.0011.lose_stress
+			send_interface_toast = {
+				title = yearly.0011.lose_stress
+				left_icon = root
+				add_stress = major_stress_loss
+			}
+		}
+	}
+}
+
+#	Haley's Comet turns up!
+#		by Ewan Cowhig Croft
+yearly.0011 = {
+	type = character_event
+	title = yearly.0011.t
+	desc = yearly.0011.desc
+	theme = learning_scholarship_focus
+	left_portrait = {
+		character = root
+		animation = worry
+	}
+	override_background = { event_background = corridor_night }
+
+	trigger = {
+		is_available_at_peace_adult = yes
+		NOT = { has_character_flag = had_event_yearly_0011 }
+		
+		#Only for players.
+		is_ai = no
+
+		#The comet appears within ten years, either side, of Halley's Comet's historical appearances.
+		# Warcraft
+		# Made it 100% random event
+		# OR = {
+			# #837 appearance.
+			# AND = {
+				# current_date > 827.1.1
+				# current_date < 847.1.1
+			# }
+			# #912 appearance.
+			# AND = {
+				# current_date > 902.1.1
+				# current_date < 922.1.1
+			# }
+			# #989 appearance.
+			# AND = {
+				# current_date > 979.1.1
+				# current_date < 999.1.1
+			# }
+			# #1066 appearance.
+			# AND = {
+				# current_date > 1056.1.1
+				# current_date < 1076.1.1
+			# }
+			# #1145 appearance.
+			# AND = {
+				# current_date > 1135.1.1
+				# current_date < 1155.1.1
+			# }
+			# #1222 appearance.
+			# AND = {
+				# current_date > 1212.1.1
+				# current_date < 1232.1.1
+			# }
+			# #1301 appearance.
+			# AND = {
+				# current_date > 1291.1.1
+				# current_date < 1311.1.1
+			# }
+			# #1378 appearance.
+			# AND = {
+				# current_date > 1368.1.1
+				# current_date < 1388.1.1
+			# }
+			# #1456 appearance.
+			# AND = {
+				# current_date > 1446.1.1
+				# current_date < 1466.1.1
+			# }
+		# }
+	}
+
+	weight_multiplier = {
+		base = 1
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_yearly_0011
+			days = 27375	#75 years.
+		}
+		
+		#Build the list of available options.
+		comet_reaction_list_builder_effect = yes
+		comet_reaction_list_builder_effect = yes
+		comet_reaction_list_builder_effect = yes
+	}
+
+	#Friends out there...
+	option = {
+		name = yearly.0011.new_friends
+		#Only trigger for kindred spirits.
+		trigger = {
+			#Must be friendly.
+			has_trait = gregarious
+			#Must be lonely.
+			has_trait = reclusive
+			any_relation = {
+				type = friend
+				count = 0
+			}
+			#Must be repugnant.
+			has_trait_rank = {
+				trait = beauty_bad
+				rank >= 3
+			}
+		}
+
+		#But what if it contains friends?
+		##Get the stress loss by default.
+		add_stress = major_stress_loss
+		##And some help from your friends.
+		add_character_modifier = { modifier = yearly_0011_friends_in_high_places }
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Lustful response
+	option = {
+		name = yearly.0011.lustful
+		trigger = { has_character_flag = comet_reaction_event_lustful }
+		trait = lustful
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Chaste response
+	option = {
+		name = yearly.0011.chaste
+		trigger = { has_character_flag = comet_reaction_event_chaste }
+		trait = chaste
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Gluttonous response
+	option = {
+		name = yearly.0011.gluttonous
+		trigger = { has_character_flag = comet_reaction_event_gluttonous }
+		trait = gluttonous
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Temperate response
+	option = {
+		name = yearly.0011.temperate
+		trigger = { has_character_flag = comet_reaction_event_temperate }
+		trait = temperate
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Greedy response
+	option = {
+		name = yearly.0011.greedy
+		trigger = { has_character_flag = comet_reaction_event_greedy }
+		trait = greedy
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Generous response
+	option = {
+		name = yearly.0011.generous
+		trigger = { has_character_flag = comet_reaction_event_generous }
+		trait = generous
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Lazy response
+	option = {
+		name = yearly.0011.lazy
+		trigger = { has_character_flag = comet_reaction_event_lazy }
+		trait = lazy
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Diligent response
+	option = {
+		name = yearly.0011.diligent
+		trigger = { has_character_flag = comet_reaction_event_diligent }
+		trait = diligent
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Wrathful response
+	option = {
+		name = yearly.0011.wrathful
+		trigger = { has_character_flag = comet_reaction_event_wrathful }
+		trait = wrathful
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Calm response
+	option = {
+		name = yearly.0011.calm
+		trigger = { has_character_flag = comet_reaction_event_calm }
+		trait = calm
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Patient response
+	option = {
+		name = yearly.0011.patient
+		trigger = { has_character_flag = comet_reaction_event_patient }
+		trait = patient
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Impatient response
+	option = {
+		name = yearly.0011.impatient
+		trigger = { has_character_flag = comet_reaction_event_impatient }
+		trait = impatient
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Arrogant response
+	option = {
+		name = yearly.0011.arrogant
+		trigger = { has_character_flag = comet_reaction_event_arrogant }
+		trait = arrogant
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Humble response
+	option = {
+		name = yearly.0011.humble
+		trigger = { has_character_flag = comet_reaction_event_humble }
+		trait = humble
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Deceitful response
+	option = {
+		name = yearly.0011.deceitful
+		trigger = { has_character_flag = comet_reaction_event_deceitful }
+		trait = deceitful
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Honest response
+	option = {
+		name = yearly.0011.honest
+		trigger = { has_character_flag = comet_reaction_event_honest }
+		trait = honest
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Craven response
+	option = {
+		name = yearly.0011.craven
+		trigger = { has_character_flag = comet_reaction_event_craven }
+		trait = craven
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Brave response
+	option = {
+		name = yearly.0011.brave
+		trigger = { has_character_flag = comet_reaction_event_brave }
+		trait = brave
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Shy response
+	option = {
+		name = yearly.0011.shy
+		trigger = { has_character_flag = comet_reaction_event_shy }
+		trait = shy
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Gregarious response
+	option = {
+		name = yearly.0011.gregarious
+		trigger = { has_character_flag = comet_reaction_event_gregarious }
+		trait = gregarious
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Ambitious response
+	option = {
+		name = yearly.0011.ambitious
+		trigger = { has_character_flag = comet_reaction_event_ambitious }
+		trait = ambitious
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Content response
+	option = {
+		name = yearly.0011.content
+		trigger = { has_character_flag = comet_reaction_event_content }
+		trait = content
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Arbitrary response
+	option = {
+		name = yearly.0011.arbitrary
+		trigger = { has_character_flag = comet_reaction_event_arbitrary }
+		trait = arbitrary
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Just response
+	option = {
+		name = yearly.0011.just
+		trigger = { has_character_flag = comet_reaction_event_just }
+		trait = just
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Cynical response
+	option = {
+		name = yearly.0011.cynical
+		trigger = { has_character_flag = comet_reaction_event_cynical }
+		trait = cynical
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Zealous response
+	option = {
+		name = yearly.0011.zealous
+		trigger = { has_character_flag = comet_reaction_event_zealous }
+		trait = zealous
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Paranoid response
+	option = {
+		name = yearly.0011.paranoid
+		trigger = { has_character_flag = comet_reaction_event_paranoid }
+		trait = paranoid
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Trusting response
+	option = {
+		name = yearly.0011.trusting
+		trigger = { has_character_flag = comet_reaction_event_trusting }
+		trait = trusting
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Compassionate response
+	option = {
+		name = yearly.0011.compassionate
+		trigger = { has_character_flag = comet_reaction_event_compassionate }
+		trait = compassionate
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Callous response
+	option = {
+		name = yearly.0011.callous
+		trigger = { has_character_flag = comet_reaction_event_callous }
+		trait = callous
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Sadistic response
+	option = {
+		name = yearly.0011.sadistic
+		trigger = { has_character_flag = comet_reaction_event_sadistic }
+		trait = sadistic
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Stubborn response
+	option = {
+		name = yearly.0011.stubborn
+		trigger = { has_character_flag = comet_reaction_event_stubborn }
+		trait = stubborn
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Fickle response
+	option = {
+		name = yearly.0011.fickle
+		trigger = { has_character_flag = comet_reaction_event_fickle }
+		trait = fickle
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Vengeful response
+	option = {
+		name = yearly.0011.vengeful
+		trigger = { has_character_flag = comet_reaction_event_vengeful }
+		trait = vengeful
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+	
+	#Forgiving response
+	option = {
+		name = yearly.0011.forgiving
+		trigger = { has_character_flag = comet_reaction_event_forgiving }
+		trait = forgiving
+
+		#No one particularly likes seeing comets.
+		comet_reaction_standard_effect = yes
+
+		ai_chance = {
+			#Not for the AI.
+			base = 100
+		}
+	}
+
+	#Cleanup the flags involved.
+	after = {
+		remove_character_flag = comet_reaction_event_lustful
+		remove_character_flag = comet_reaction_event_chaste
+		remove_character_flag = comet_reaction_event_gluttonous
+		remove_character_flag = comet_reaction_event_temperate
+		remove_character_flag = comet_reaction_event_greedy
+		remove_character_flag = comet_reaction_event_generous
+		remove_character_flag = comet_reaction_event_lazy
+		remove_character_flag = comet_reaction_event_diligent
+		remove_character_flag = comet_reaction_event_wrathful
+		remove_character_flag = comet_reaction_event_calm
+		remove_character_flag = comet_reaction_event_patient
+		remove_character_flag = comet_reaction_event_impatient
+		remove_character_flag = comet_reaction_event_arrogant
+		remove_character_flag = comet_reaction_event_humble
+		remove_character_flag = comet_reaction_event_deceitful
+		remove_character_flag = comet_reaction_event_honest
+		remove_character_flag = comet_reaction_event_craven
+		remove_character_flag = comet_reaction_event_brave
+		remove_character_flag = comet_reaction_event_shy
+		remove_character_flag = comet_reaction_event_gregarious
+		remove_character_flag = comet_reaction_event_ambitious
+		remove_character_flag = comet_reaction_event_content
+		remove_character_flag = comet_reaction_event_arbitrary
+		remove_character_flag = comet_reaction_event_just
+		remove_character_flag = comet_reaction_event_cynical
+		remove_character_flag = comet_reaction_event_zealous
+		remove_character_flag = comet_reaction_event_paranoid
+		remove_character_flag = comet_reaction_event_trusting
+		remove_character_flag = comet_reaction_event_compassionate
+		remove_character_flag = comet_reaction_event_callous
+		remove_character_flag = comet_reaction_event_sadistic
+		remove_character_flag = comet_reaction_event_stubborn
+		remove_character_flag = comet_reaction_event_fickle
+		remove_character_flag = comet_reaction_event_vengeful
+		remove_character_flag = comet_reaction_event_forgiving
+	}
+}

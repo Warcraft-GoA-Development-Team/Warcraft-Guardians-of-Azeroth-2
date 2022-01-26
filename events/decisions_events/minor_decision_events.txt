@@ -1,0 +1,213 @@
+﻿namespace = minor_decisions
+
+#invite_knights_decision
+# minor_decisions.0001 - invite the knights
+
+#invite_claimants_decision
+# minor_decisions.0001 - invite the claimants
+
+#Inviting knights for invite_knights_decision
+minor_decisions.0001 = {
+	hidden = yes
+
+	trigger = {
+		exists = var:number_of_invite_knights_countdown
+	}
+
+	immediate = {
+		save_temporary_scope_as = host
+
+		#Set up a list of provinces, one per duchy in the realm, find all relevant pool characters there
+		every_realm_province = {
+			if = {
+				limit = {
+					save_temporary_scope_as = potential_province
+					NOT = {
+						any_in_list = {
+							list = pool_provinces
+							county.duchy = scope:potential_province.county.duchy
+						}
+					}
+				}
+				add_to_temporary_list = pool_provinces
+			}
+		}
+
+		every_in_list = {
+			list = pool_provinces
+			save_temporary_scope_as = pool_province
+
+			every_pool_character = {
+				province = scope:pool_province
+				limit = {
+					prowess >= 12 #make sure this matches the tooltip of the decision and all the 12s below
+					guest_knight_candidate_trigger = { HOST = root }
+				}
+				add_to_temporary_list = potential_knights
+			}
+		}
+
+		#Randomize a good knight from the realm pool characters
+		random_in_list = {
+			list = potential_knights
+			limit = { is_alive = yes }
+			weight = {
+				base = 1
+				modifier = {
+					add = {
+						value = prowess
+						subtract = 12
+						multiply = 5
+					}
+				}
+			}
+			save_scope_as = knight
+		}
+
+		#If no one was found, make one
+		if = {
+			limit = { NOT = { exists = scope:knight } }
+
+			create_character = {
+				location = root.capital_province
+				template = pool_repopulate_prowess
+				prowess = { 12 15 }
+				save_scope_as = knight
+			}
+		}
+
+		#Add knight to court
+		add_visiting_courtier = scope:knight
+		send_interface_message = {
+			title = minor_decisions.0001.t
+			desc = minor_decisions.0001.desc
+			type = event_prowess_good_desc
+			left_icon = scope:knight
+		}
+
+
+		#Count down the number of extra knights and either end the chain or resend this event
+		change_variable = {
+			name = number_of_invite_knights_countdown
+			subtract = 1
+		}
+
+		if = {
+			limit = { var:number_of_invite_knights_countdown = 0 }
+			remove_variable = number_of_invite_knights_countdown
+		}
+		else = {
+			clear_saved_scope = knight
+			trigger_event = {
+				id = minor_decisions.0001
+				days = { 100 200 }
+			}
+		}
+	}
+}
+
+
+#Inviting claimants for invite_claimants_decision
+minor_decisions.0002 = {
+	hidden = yes
+
+	trigger = {
+		exists = var:number_of_invite_claimants_countdown
+	}
+
+	immediate = {
+		save_scope_as = host #Must be permanent for courtier_guest_management.1001
+
+
+		#Set up a list of provinces, one per duchy in the realm, find all relevant pool characters there
+		every_realm_province = {
+			if = {
+				limit = {
+					save_temporary_scope_as = potential_province
+					NOT = {
+						any_in_list = {
+							list = pool_provinces
+							county.duchy = scope:potential_province.county.duchy
+						}
+					}
+				}
+				add_to_temporary_list = pool_provinces
+			}
+		}
+
+		every_in_list = {
+			list = pool_provinces
+			save_temporary_scope_as = pool_province
+
+			every_pool_character = {
+				province = scope:pool_province
+				limit = {
+					any_claim = { useful_courtier_or_guest_claim_trigger = { RULER = root } }
+				}
+				add_to_temporary_list = potential_claimants
+			}
+		}
+
+		#Randomize a good claimant from the realm pool characters
+		random_in_list = {
+			list = potential_claimants
+			weight = {
+				base = 0
+				modifier = {
+					add = {
+						if = {
+							limit = {
+								any_claim = {
+									useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
+									tier >= tier_kingdom
+								}
+							}
+							add = 20
+						}
+						else_if = {
+							limit = {
+								any_claim = {
+									useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
+									tier >= tier_duchy
+								}
+							}
+							add = 5
+						}
+						else = {
+							add = 1
+						}
+					}
+				}
+			}
+			save_temporary_scope_as = claimant
+		}
+
+		#Does claimant exist? Send it my way and count down the variable
+		if = {
+			limit = { exists = scope:claimant }
+
+			add_visiting_courtier = scope:claimant
+
+			scope:claimant = {
+				save_scope_as = guest #For courtier_guest_management.1001
+				trigger_event = courtier_guest_management.1001 #For message
+			}
+			change_variable = {
+				name = number_of_invite_claimants_countdown
+				subtract = 1
+			}
+		}
+
+		#Either end the chain or resend this event
+		if = {
+			limit = { var:number_of_invite_claimants_countdown = 0 }
+			remove_variable = number_of_invite_claimants_countdown
+		}
+		else = {
+			trigger_event = {
+				id = minor_decisions.0002
+				days = 25
+			}
+		}
+	}
+}
