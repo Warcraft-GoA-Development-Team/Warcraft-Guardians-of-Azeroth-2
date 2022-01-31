@@ -1,0 +1,526 @@
+﻿#################################################
+# EFFECT LIST 									#
+#################################################
+#
+# Inspiration Generation Effects
+#	grant_inspiration_to_character_effect 			- Creates a new Inspiration and gives it to the scope character. Type of inspiration is weighted based on character skills and personality.
+#	grant_new_inspiration_in_character_realm_effect - Selects a random Pool character from the scope character's realm, then runs the above effect on them. Afterwards, move to visit the scope character's court.
+#	grant_new_inspiration_in_region_effect			- Selects a random Royal Court in a given $GEOLOGICAL_REGION$. The Court's owner then has the above effect run on them.
+# 	grant_new_inspiration_in_world_effect			- Selects a random geological region in the world. The selected region then has the above effect run on it.
+#
+# Inspired Character Movement Effects
+#   inspired_character_travel_to_court_effect			- Moves $INSPIRED_CHARACTER$ to the court of $NEW_HOST$.
+#	inspired_character_seek_out_new_royal_court_effect 	- Forces the scope character to look for a new, different Royal Court to visit as a guest. If one is found, uses the above effect to move there.
+
+#################################################
+# Inspiration Generation Effects 				#
+#################################################
+
+grant_inspiration_to_character_effect = {
+	$CHARACTER$ = { 
+		if = { 
+			limit = { NOT = { exists = inspiration } }
+			# More likely to get an certain Inspiration type if we will produce higher quality Artifacts of that type.
+			random_list = {
+				10 = {
+					compare_modifier = {
+						value = weapon_inspiration_average_skill_value
+						multiplier = 6
+					}
+					create_inspiration = weapon_inspiration
+				}
+				10 = { # =Slightly increased weight due to a low number of Armorers appearing in the world.
+					compare_modifier = {
+						value = armor_inspiration_average_skill_value
+						multiplier = 7.2 # A character with an average of 20 in relevant skills will receive a +120 bonus
+					}
+					create_inspiration = armor_inspiration
+				}
+				10 = { #Adventurers will on average produce better quality items, handle with care.
+					compare_modifier = {
+						value = adventure_inspiration_average_skill_value
+						multiplier = 9
+					}
+					create_inspiration = adventure_inspiration
+				}
+				10 = { # Significantly increased weight due to the wide variety of artifact types this inspiration can produce (regalia, crown, trinket).
+					compare_modifier = {
+						value = smith_inspiration_average_skill_value
+						multiplier = 15
+					}
+					create_inspiration = smith_inspiration
+				}
+				10 = {
+					compare_modifier = {
+						value = book_inspiration_average_skill_value
+						multiplier = 6
+					}
+					modifier = {
+						has_court_position = court_poet_court_position
+						add = 15
+					}
+					create_inspiration = book_inspiration
+				}
+				14 = { # Increased weight due to a low number of Weavers appearing in the world (probably a lack of high-diplomacy courtiers).
+					compare_modifier = {
+						value = weaver_inspiration_average_skill_value
+						multiplier = 8.4
+					}
+					modifier = {
+						has_court_position = court_poet_court_position
+						add = 10
+					}
+					create_inspiration = weaver_inspiration
+				}
+				14 = { # Moderately increased weight due to the variety of artifact types this inspiration can produce (throne, sculpture). 
+					compare_modifier = {
+						value = artisan_inspiration_average_skill_value
+						multiplier = 12
+					}
+					modifier = {
+						has_court_position = court_poet_court_position
+						add = 5
+					}
+					create_inspiration = artisan_inspiration
+				}
+				1 = {
+					modifier = {
+						add = 30
+						has_trait = lifestyle_mystic
+					}
+					modifier = { #Alchemy arrived to Europe in the 13th century, but existed basically everywhere else before that
+						add = -20
+						culture_has_european_heritage_pillar_trigger = yes
+					}
+					compare_modifier = {
+						value = learning
+						multiplier = 2
+					}
+					create_inspiration = alchemy_inspiration
+				}
+			}
+		}
+	}
+}
+
+grant_new_inspiration_in_character_realm_effect = {
+	save_scope_as = royal_court_owner
+	every_sub_realm_barony = {
+		title_province = {
+			every_pool_character = {
+				province = this
+				limit = {
+					ep1_is_valid_character_for_inspiration_trigger = yes
+				}
+				add_to_list = potential_inspired_people
+			}
+		}
+	}
+
+	random_in_list = {
+		list = potential_inspired_people
+		weight = {
+			base = 1
+
+			modifier = { #Poets are more likely to become inspired
+				add = 40
+				has_trait = poet
+			}
+
+			# More learned characters have a greater pool to draw from for their inspirations.
+			compare_modifier = {
+				value = learning
+				multiplier = 5
+			}
+
+			# Older characters are more likely to be inspired from their life's experience.
+			compare_modifier = {
+				value = age
+			}
+
+			# We don't want character dropping dead from old age, injuries, or disease right after they begin work on a project!
+			compare_modifier = {
+				value = health
+				multiplier = 20
+			}
+
+			# 'Ambitious' characters are more likely to get an inspiration/seek patronage
+			ai_value_modifier = {
+				ai_greed = 0.25
+				ai_boldness = 0.25
+				ai_sociability = 0.10
+				ai_rationality = 0.10
+			}
+		}
+		save_scope_as = inspired_person
+	}
+
+	# If we were unable to find a valid pool character, create one.
+	if = {
+		limit = {
+			NOT = { exists = scope:inspired_person }
+		}
+		create_character = {
+			template = inspired_template
+			location = scope:royal_court_owner.capital_province
+			faith = scope:royal_court_owner.faith
+			culture = scope:royal_court_owner.culture
+			gender_female_chance = 50 
+			save_scope_as = inspired_person
+		}
+	}
+	# Clear the list in case this effect gets re-used in the same scope.
+	every_in_list = {
+		list = potential_inspired_people
+		remove_from_list = potential_inspired_people
+	}
+
+	scope:inspired_person = {
+		grant_inspiration_to_character_effect = { CHARACTER = this }
+		# Travel to the new host's court.
+		inspired_character_travel_to_court_effect = {
+			INSPIRED_CHARACTER = scope:inspired_person
+			NEW_HOST = scope:royal_court_owner
+		}
+	}
+	
+}
+
+grant_new_inspiration_in_region_effect = {
+	random_character_with_royal_court = {
+		limit = {
+			exists = capital_province 
+			capital_province = {
+				geographical_region = $GEOGRAPHICAL_REGION$
+			}
+			save_temporary_scope_as = tmp_royal_court_owner # Used in 'inspiration_kingdom_modifier' to calculate draw towards this specific court in the region.
+		}
+
+		weight = {
+			base = 1
+			inspiration_royal_court_grandeur_attraction_modifier = yes
+			inspiration_royal_court_oversaturation_penalty_modifier = yes
+		}
+
+		grant_new_inspiration_in_character_realm_effect = yes
+	}
+}
+
+grant_new_inspiration_in_world_effect = {
+	# When generating new inspired characters, the following criteria are taken into account:
+	#  - The specified region *must* be the home of at least 1 royal court to be eligible.
+	#  - Increased chance for regions which have multiple royal courts.
+	#  - Increased chance for regions which have incredibly prestigious royal courts.
+	#  - Greatly reduced chance for regions which already have multiple inspired people wandering around within them.
+
+	random_list = {
+		# Europe
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_europe_west } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_europe_west }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_europe_west }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_europe_west }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_europe_north } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_europe_north }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_europe_north }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_europe_north }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_europe_south } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_europe_south }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_europe_south }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_europe_south }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_europe_east } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_europe_east }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_europe_east }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_europe_east }
+		}
+		# Middle East/Asia Minor
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_asia_minor } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_asia_minor }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_asia_minor }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_asia_minor }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_middle_east_jerusalem } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_middle_east_jerusalem }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_middle_east_jerusalem }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_middle_east_jerusalem }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_middle_east_arabia } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_middle_east_arabia }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_middle_east_arabia }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_middle_east_arabia }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_middle_east_persia } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_middle_east_persia }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_middle_east_persia }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_middle_east_persia }
+		}
+
+		# India
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_india_deccan } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_india_deccan }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_india_deccan }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_india_deccan }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_india_bengal } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_india_bengal }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_india_bengal }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_india_bengal }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_india_rajastan } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_india_rajastan }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_india_rajastan }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_india_rajastan }
+		}
+
+		# Africa
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_africa_north } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_africa_north }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_africa_north }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_africa_north }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_africa_west } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_africa_west }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_africa_west }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_africa_west }
+		}
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_africa_east } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_africa_east }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_africa_east }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_africa_east }
+		}
+
+		# Steppe
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_steppe } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_steppe }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_steppe }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_steppe }
+		}
+
+		# Tibet
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_tibet } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_tibet }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_tibet }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_tibet }
+		}
+
+		# Burma
+		1 = {
+			trigger = { any_character_with_royal_court = { exists = capital_province capital_province = { geographical_region = world_burma } } }
+			inspiration_region_court_grandeur_attraction_modifier = { GEOGRAPHICAL_REGION = world_burma }
+			inspiration_region_oversaturation_penalty_modifier = { GEOGRAPHICAL_REGION = world_burma }
+			grant_new_inspiration_in_region_effect = { GEOGRAPHICAL_REGION = world_burma }
+		}
+	}
+}
+
+#################################################
+# Inspired Character Movement Effects 			#
+#################################################
+
+inspired_character_travel_to_court_effect = {
+	$INSPIRED_CHARACTER$ = {
+		save_scope_as = ttc_inspired_character
+		inspiration = { save_scope_as = ttc_inspiration }
+		#Save our current host (so we don't return to their court too quickly!).
+		if = {
+			limit = { exists = host }
+			set_variable = {
+				name = last_visited_ruler
+				value = this.host
+				days = 1825
+			}
+		}
+		# If no current host, save as dummy character so we at least have something to compare to.
+		else = {
+			set_variable = {
+				name = last_visited_ruler
+				value = dummy_female
+				days = 1825
+			}
+		}
+
+		visit_court_of = $NEW_HOST$
+		add_character_flag = {
+			flag = inspired_character_recent_arrival
+			months = inspired_character_recent_arrival_duration_value
+		}
+	}
+
+	$NEW_HOST$ = {
+		# TODO_CD: Disable for now due to the addition of an Alert to replace this ( action_has_courtier_or_guest_with_inspiration )
+		# Check if this message is no longer necessary and can be deleted outright.
+		#send_interface_message = {
+		#	type = event_generic_good
+		#	title = ttc_inspired_guest_arrival_title
+		#	right_icon = scope:ttc_inspired_character
+		#	custom_tooltip = ttc_inspired_guest_arrival_desc			
+		#}
+	}
+}
+
+inspired_character_seek_out_new_royal_court_effect = {
+	save_scope_as = inspired_character
+
+	# Look to see if there is a nearby court we can visit that might fund our inspiration.
+	random_character_with_royal_court = {
+		limit = {
+			# Do not travel outside of diplomatic range in a single 'jump'
+			in_diplomatic_range = scope:inspired_character
+
+			# Do not visit the ruler we had just left, unless at least 5 years have passed.
+			trigger_if = {
+				limit = { scope:inspired_character = { has_variable = last_visited_ruler } }
+				NOT = { scope:inspired_character.var:last_visited_ruler = this }
+			}
+
+			# Only visit rulers who do not consider our faith to be hostile, if possible.
+			faith = {
+				faith_hostility_level = {
+					target = scope:inspired_character.faith
+					value <= faith_hostile_level
+				}
+			}
+			exists = capital_province
+			save_temporary_scope_as = tmp_royal_court_owner # Used in 'inspiration_kingdom_modifier' to calculate draw towards this specific court in the region.
+		}
+		alternative_limit = {
+			in_diplomatic_range = scope:inspired_character
+			trigger_if = {
+				limit = { scope:inspired_character = { has_variable = last_visited_ruler } }
+				NOT = { scope:inspired_character.var:last_visited_ruler = this }
+			}
+			# Failing that, if possible do not visit rulers who consider our faith to be outright evil.
+			faith = {
+				faith_hostility_level = {
+					target = scope:inspired_character.faith
+					value <= faith_evil_level
+				}
+			}
+			exists = capital_province
+			save_temporary_scope_as = tmp_royal_court_owner
+		}
+		alternative_limit = {
+			# Failing that, we can visit anyone else in range. 
+			in_diplomatic_range = scope:inspired_character
+			trigger_if = {
+				limit = { scope:inspired_character = { has_variable = last_visited_ruler } }
+				NOT = { scope:inspired_character.var:last_visited_ruler = this }
+			}
+			exists = capital_province
+			save_temporary_scope_as = tmp_royal_court_owner
+		}
+
+		weight = {
+			base = 10
+			inspiration_royal_court_grandeur_attraction_modifier = yes
+			inspiration_royal_court_oversaturation_penalty_modifier = yes
+
+			# Prefer visiting royal courts which are physically closer to us
+			modifier = {
+				factor = 0.9 # Total 90.0% weight
+				capital_province = {
+					squared_distance = {
+						target = scope:inspired_character.location
+						value >= squared_distance_small #150 map-pixels. Roughly one Wales away (top to bottom).
+					}
+				}
+			}
+			modifier = {
+				factor = 0.8 # Total 72.0% weight
+				capital_province = {
+					squared_distance = {
+						target = scope:inspired_character.location
+						value >= squared_distance_medium #250 map-pixels. Roughly one Ireland away (top to bottom).
+					}
+				}
+			}
+			modifier = {
+				factor = 0.6 # Total 43.2% weight
+				capital_province = {			
+					squared_distance = {		
+						target = scope:inspired_character.location
+						value >= squared_distance_large #650 map-pixels. Roughly one France away (top to bottom).
+					}
+				}
+			}
+			modifier = {
+				factor = 0.3 # Total 12.9% weight
+				capital_province = {			
+					squared_distance = {
+						target = scope:inspired_character.location
+						value >= squared_distance_huge #850 map-pixels. Roughly one Holy Roman Empire away (left to right).
+					}
+				}
+			}
+			
+			# Down-prioritize courts with a lot of inspired people already
+			modifier = {
+				factor = 0.9
+				any_courtier_or_guest = {
+					count >= 2
+					exists = inspiration
+				}
+			}
+			modifier = {
+				factor = 0.8
+				any_courtier_or_guest = {
+					count >= 3
+					exists = inspiration
+				}
+			}
+			modifier = {
+				factor = 0.7
+				any_courtier_or_guest = {
+					count >= 4
+					exists = inspiration
+				}
+			}
+			modifier = {
+				factor = 0.6
+				any_courtier_or_guest = {
+					count >= 5
+					exists = inspiration
+				}
+			}
+			modifier = {
+				factor = 0.001
+				any_courtier_or_guest = {
+					count >= 6
+					exists = inspiration
+				}
+			}
+		}
+		save_scope_as = new_host
+	}
+
+	# If we have successfully located a new host...
+	if = {
+		limit = {
+			exists = scope:new_host
+		}
+
+		# ...travel to the new host's court.
+		inspired_character_travel_to_court_effect = {
+			INSPIRED_CHARACTER = scope:inspired_character
+			NEW_HOST = scope:new_host
+		}
+	}	
+}
