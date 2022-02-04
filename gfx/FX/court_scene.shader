@@ -790,9 +790,20 @@ PixelShader =
 			#ifdef FAKE_SSS_EMISSIVE
 				float3 SkinColor = RGBtoHSV( Diffuse.rgb );
 				SkinColor.z = 1.0f;
-				SssColor = HSVtoRGB( SkinColor ) * SssMask * 0.5f * MaterialProps._DiffuseColor;
+				SssColor = HSVtoRGB(SkinColor) * SssMask * 0.5f * MaterialProps._DiffuseColor;
 				Color += SssColor;
 			#endif
+
+			//EK2 EMISSIVE SHADER
+			// Warcraft But I tweaked it
+			float3 EmissiveColor = vec3(0.0f);
+			float EmissiveMask =  Properties.r;
+			#ifdef EMISSIVE
+				EmissiveColor = Diffuse.rgb * EmissiveMask * MaterialProps._DiffuseColor * 5.0f;
+				Color += EmissiveColor;
+
+			#endif
+			//EK2 EMISSIVE SHADER
 
 			DebugReturn( Color, MaterialProps, LightingProps, EnvironmentMap, SssColor, SssMask );
 
@@ -924,13 +935,19 @@ PixelShader =
 				Properties = PdxTex2D( PropertiesMap, UV0 );
 				NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 			#endif
-
+				
+				//Warcraft
+				#ifdef DECALS
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
-
+				#endif
+				
 				float ColorMaskStrength = Diffuse.a;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorSkin.rgb, Input.InstanceIndex, ColorMaskStrength );
-
+				
+				//Warcraft
+				#ifdef DECALS
 				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+				#endif
 
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
 				Out.Color = float4( Color, 1.0f );
@@ -957,8 +974,18 @@ PixelShader =
 				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 
+				//Warcraft
+				#ifdef DECALS
+				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+				#endif
+				
 				float ColorMaskStrength = Diffuse.a;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorEyes.rgb, Input.InstanceIndex, ColorMaskStrength );
+
+				//Warcraft
+				#ifdef DECALS
+				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+				#endif
 
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, 0.f );
 
@@ -1309,7 +1336,24 @@ Effect portrait_skin
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" }
+
+	# Warcraft
+	Defines = { "EMISSIVE" "DECALS" }
+}
+
+Effect wc_portrait_skin_attachment_alpha_to_coverage
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_skin"
+	BlendState = "alpha_to_coverage"
+	RasterizerState = "rasterizer_no_culling"
+	Defines = { "EMISSIVE" "ALPHA_TO_COVERAGE" }
+}
+Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_court_selection"
+	RasterizerState = "rasterizer_no_culling"
 }
 
 Effect portrait_skin_selection
@@ -1329,7 +1373,9 @@ Effect portrait_skin_face
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" }
+
+	# Warcraft
+	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" "DECALS" }
 }
 
 Effect portrait_skin_face_selection
@@ -1350,9 +1396,24 @@ Effect portrait_eye
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
+	
+	# Warcraft
+	Defines = { "EMISSIVE" "DECALS" }
 }
 
 Effect portrait_eye_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court_selection"
+}
+
+Effect wc_portrait_eye_no_decal
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_eye"
+	Defines = { "EMISSIVE" }
+}
+Effect wc_portrait_eye_no_decal_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
