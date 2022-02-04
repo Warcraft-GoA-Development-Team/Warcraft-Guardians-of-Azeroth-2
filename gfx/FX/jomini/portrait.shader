@@ -587,19 +587,19 @@ PixelShader =
 				
 				//Warcraft
 				#ifdef DECALS
-				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
 				#endif
 				
-				float ColorMaskStrength = Diffuse.a;
+				float ColorMaskStrength = 1.0f;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorSkin.rgb, Input.InstanceIndex, ColorMaskStrength );
 				
 				//Warcraft
 				#ifdef DECALS
-				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				Out.Color = float4( Color, 1.0f );
+				Out.Color = float4( Color, Diffuse.a );
 
 				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
 				Out.SSAOColor.rgb *= vPaletteColorSkin.rgb;
