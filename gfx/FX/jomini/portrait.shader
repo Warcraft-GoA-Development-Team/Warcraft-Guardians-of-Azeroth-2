@@ -837,13 +837,13 @@ Effect portrait_skin
 	Defines = { "EMISSIVE" "DECALS" }
 }
 
-Effect portrait_skin_attachment_alpha_to_coverage
+Effect wc_portrait_skin_attachment_alpha_to_coverage
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE" }
+	Defines = { "EMISSIVE" "ALPHA_TO_COVERAGE" }
 }
 
 Effect portrait_skinShadow
@@ -877,7 +877,7 @@ Effect portrait_eye
 	# Warcraft
 	Defines = { "EMISSIVE" "DECALS" }
 }
-Effect portrait_eye_no_decal
+Effect wc_portrait_eye_no_decal
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
