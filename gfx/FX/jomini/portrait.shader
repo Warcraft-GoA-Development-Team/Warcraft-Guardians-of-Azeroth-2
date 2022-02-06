@@ -895,6 +895,10 @@ Effect portrait_attachment
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
+	
+	# Warcraft
+	# Warcraft
+	Defines = { "EMISSIVE" }
 }
 
 Effect portrait_attachmentShadow
