@@ -1,6 +1,6 @@
-name="Warcraft: Guardians of Azeroth Reforged Private (Pre-Alpha)"
+name="Warcraft: Guardians of Azeroth Reforged (Pre-Alpha)"
 supported_version="1.4.*"
-path="mod/Warcraft-Guardians-of-Azeroth-2-private"
+path="mod/Warcraft-Guardians-of-Azeroth-2"
 
 version="0.0.0"
 tags={
