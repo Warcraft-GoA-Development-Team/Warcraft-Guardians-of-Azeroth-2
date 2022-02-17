@@ -590,7 +590,12 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
 				#endif
 				
-				float ColorMaskStrength = 1.0f;
+				#ifdef ALPHA_TO_COVERAGE
+					float ColorMaskStrength = 1.0f;
+				#else
+					float ColorMaskStrength = Diffuse.a;
+				#endif
+
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorSkin.rgb, Input.InstanceIndex, ColorMaskStrength );
 				
 				//Warcraft
@@ -599,7 +604,11 @@ PixelShader =
 				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				Out.Color = float4( Color, Diffuse.a );
+				#ifdef ALPHA_TO_COVERAGE
+					Out.Color = float4( Color, Diffuse.a );
+				#else
+					Out.Color = float4( Color, 1.0f );
+				#endif
 
 				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
 				Out.SSAOColor.rgb *= vPaletteColorSkin.rgb;
