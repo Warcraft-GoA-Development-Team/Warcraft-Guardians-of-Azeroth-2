@@ -1439,6 +1439,20 @@ Effect portrait_attachment_selection
 	PixelShader = "PS_court_selection"
 }
 
+Effect wc_portrait_attachment_emissive
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_attachment"
+	Defines = { "USE_CHARACTER_DATA" }
+}
+
+Effect wc_portrait_attachment_emissive_selection
+{
+	VertexShader = "VS_portrait_blend_shapes"
+	PixelShader = "PS_court_selection"
+	Defines = { "EMISSIVE" }
+}
+
 Effect portrait_attachmentShadow
 {
 	VertexShader = "VS_portrait_blend_shapes_shadow"
