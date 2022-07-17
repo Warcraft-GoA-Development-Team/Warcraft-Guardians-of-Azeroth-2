@@ -525,12 +525,35 @@ raiding.0004 = {
 				years = 10
 			}
 		}
-		scope:sacked_county.holder = {
-			send_interface_message = {
-				type = event_war_good
-				title = raiding.0004.c.feed.t
-				desc = raiding.0004.c.feed.desc
-				right_icon = liege
+		if = {
+			limit = {
+				employs_court_position = royal_architect_court_position
+				any_court_position_holder = {
+					type = royal_architect_court_position
+				}
+			}
+			random_court_position_holder = {
+				type = royal_architect_court_position
+				save_scope_as = architect
+			}
+			custom_tooltip = raiding.0004.c.architect
+			scope:sacked_county.holder = {
+				send_interface_message = {
+					type = event_war_good
+					title = raiding.0004.c.feed.t
+					desc = raiding.0004.c.feed.desc2
+					right_icon = liege
+				}
+			}
+		}
+		else = {
+			scope:sacked_county.holder = {
+				send_interface_message = {
+					type = event_war_good
+					title = raiding.0004.c.feed.t
+					desc = raiding.0004.c.feed.desc
+					right_icon = liege
+				}
 			}
 		}
 		stress_impact = { greedy = medium_stress_impact_gain }
@@ -564,13 +587,37 @@ raiding.0011 = {
 			name = raid_loot
 			value = root.raid_loot
 		}
-		scope:raider = {
-			send_interface_message = {
-				type = event_raid_good
-				title = raiding.0011.t
-				desc = raiding.0011.desc
-				right_icon = root.army_commander
-				hidden_effect = { add_prestige = root.var:raid_loot }
+		if = {
+			limit = {
+				scope:raider = {
+					not_tribal_raid_trigger = yes
+				}
+			}
+			scope:raider = {
+				send_interface_message = {
+					type = event_raid_good
+					title = raiding.0011.t
+					desc = raiding.0011.desc_non_tribal
+					right_icon = root.army_commander
+					hidden_effect = { 
+						add_prestige = {
+							value = root.var:raid_loot
+							multiply = not_tribal_raid_prestige_multiplier
+							multiply = -1
+						}
+					}
+				}
+			}
+		}
+		else = {
+			scope:raider = {
+				send_interface_message = {
+					type = event_raid_good
+					title = raiding.0011.t
+					desc = raiding.0011.desc
+					right_icon = root.army_commander
+					hidden_effect = { add_prestige = root.var:raid_loot }
+				}
 			}
 		}
 	}
@@ -803,8 +850,106 @@ raiding.0013 = {
 		}
 		every_in_list = {
 			list = killed_targets
+			limit = { is_alive = yes }
+			override_death_effect = { death_reason = death_raid }
+		}
+	}
+}
 
-			override_death_effect = { DEATH_REASON = death_raid }
+scripted_trigger raiding_0014_artifact_can_be_stolen = {
+	exists = this
+	OR = {
+		scope:barony.holder = { # If the character is in the province and not leading an army, their stuff is probably valid to steal
+			location = scope:barony.title_province
+			NOR = {
+				exists = commanding_army
+				exists = knight_army
+				is_imprisoned = yes
+			}
+		}
+		is_equipped = no
+		ep1_artifact_is_court_artifact_trigger = yes
+	}
+}
+
+# Chance to steal an artifact from the holding holder.
+raiding.0014 = {
+	hidden = yes
+	scope = army
+
+	trigger = { 
+		scope:barony.holder = {
+			# Can only steal an artifact if this barony is the holder's capital (where they have their treasury/royal court.
+			capital_barony = scope:barony
+
+			# Holder also needs to actually possess an artifact to steal.
+			any_character_artifact = {
+				raiding_0014_artifact_can_be_stolen = yes
+			}
+		}
+	}
+
+	immediate = {
+		scope:barony.holder = {
+			random_character_artifact = {
+				limit = { raiding_0014_artifact_can_be_stolen = yes }
+				weight = {
+					base = 1
+					modifier = {
+						add = 4
+						is_equipped = no
+					}
+					modifier = {
+						add = 4
+						scope:raider = {
+							can_equip_artifact = prev
+						}
+					}
+					modifier = { # Nudge towards taking non-Court artifacts if you don't have a court yourself
+						add = 2
+						scope:raider = {
+							has_royal_court = no
+						}
+						ep1_artifact_is_court_artifact_trigger = no
+					}
+				}
+				save_scope_as = stolen_artifact
+			}
+		}
+		
+		random = {
+			chance = {
+				value = 5
+				scope:barony.holder = {
+					every_character_artifact = {
+						limit = {
+							OR = {
+								is_equipped = no
+								ep1_artifact_is_court_artifact_trigger = yes
+							}
+						}
+						add = 1
+					}
+				}
+				# Lower chances based on Antiquarian aptitude
+				multiply = {
+					value = 1
+					scope:barony.holder = {
+						every_court_position_holder = {
+							type = antiquarian_court_position
+							limit = { is_available_ai_adult = yes }
+							divide = this.aptitude:antiquarian_court_position
+						}
+					}
+				}
+			}
+			steal_artifact_in_siege_effect = {
+				LOCATION = root.location
+				ATTACKER = scope:raider
+				DEFENDER = scope:barony.holder
+				ARTIFACT = scope:stolen_artifact
+				IS_RAID = yes
+			}
 		}
 	}
 }
