@@ -118,17 +118,17 @@ torture_interaction_actor_effect = {
 
 		###STRESS###
 
-		#Stress if they are my rival I hate them
+		#Stress loss if they are my rival I hate them
 		if = {
 			limit = { has_relation_rival = scope:recipient }
 
 			if = {
 				limit = {
 					NOR = {
-						has_trait = sadistic #Extra stress
-						has_trait = vengeful #Extra stress
-						has_trait = compassionate #Lessened impact
-						has_trait = forgiving #Lessened impact
+						has_trait = sadistic
+						has_trait = vengeful
+						has_trait = compassionate
+						has_trait = forgiving
 					}
 				}
 				add_stress = medium_stress_loss
@@ -136,17 +136,65 @@ torture_interaction_actor_effect = {
 			else = {
 				stress_impact = {
 					sadistic = major_stress_impact_loss
-					vengeful = major_stress_impact_loss
+					vengeful = massive_stress_impact_loss
 					compassionate = minor_stress_impact_gain
 					forgiving = minor_stress_impact_gain
 				}
 			}
 		}
-		#Regular stress
+		else_if = { # Torturing infidels is relaxing
+			limit = {
+				has_trait = zealous
+				NOT = { scope:actor.faith = scope:recipient.faith }
+			}
+
+			if = {
+				limit = {
+					NOR = {
+						has_trait = sadistic
+						has_trait = compassionate
+						has_trait = forgiving
+					}
+				}
+				add_stress = medium_stress_loss
+			}
+			else = {
+				stress_impact = {
+					sadistic = major_stress_impact_loss
+					compassionate = minor_stress_impact_gain
+					forgiving = minor_stress_impact_gain
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:recipient = {
+					OR = {
+						is_child_of = scope:actor
+						is_grandchild_of = scope:actor
+						is_great_grandchild_of = scope:actor
+					}
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_loss
+				compassionate = massive_stress_impact_gain
+				craven = major_stress_impact_gain
+				just = medium_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+				family_first = minor_stress_impact_gain
+			}
+		}
 		else = {
 			stress_impact = {
-				sadistic = minor_stress_impact_loss
-				compassionate = massive_stress_impact_gain
+				sadistic = medium_stress_impact_loss
+				compassionate = major_stress_impact_gain
 				craven = major_stress_impact_gain
 				just = medium_stress_impact_gain
 				forgiving = medium_stress_impact_gain
@@ -577,7 +625,6 @@ blind_recipient_effect = {
 			modifier = recently_blinded
 			years = 1
 		}
-
 		blind_and_castrated_recipient_support_effect = yes
 	}
 }
@@ -784,6 +831,20 @@ revocation_tyranny_effect = {
 			title_revocation_is_tyrannical_trigger = yes
 		}
 		add_tyranny = revoke_title_tyranny_gain
+
+		#If my culture is different from the recipients
+		if = {
+			limit = {
+				NOT = { culture = scope:recipient.culture }
+			} 
+			scope:recipient.culture = {
+				change_cultural_acceptance = {
+					target = scope:actor.culture
+					value = revoke_title_culture_acceptance_impact
+					desc = cultural_acceptance_loss_revokation
+				}
+			}
+		}
 	}
 	else = {
 		if = {
@@ -922,7 +983,6 @@ war_for_revoke_effect = {
 									}
 								}
 							}
-
 						}
 						#And finally, vassals that really hate their liege will join regardless (provided that they also do not hate recipient).
 						AND = {
@@ -930,9 +990,20 @@ war_for_revoke_effect = {
 								target = scope:recipient
 								value >= -25
 							}
-							opinion = {
-								target = scope:actor
-								value <= -50
+							OR = {
+								#default threshold
+								opinion = {
+									target = scope:actor
+									value <= -50
+								}
+								#If tyrannical, the default threshold will be reached if at this level
+								AND = {
+									scope:actor = { title_revocation_is_tyrannical_trigger = yes }
+									opinion = {
+										target = scope:actor
+										value <= -30 #revoke_title_tyranny_gain adds -20
+									}
+								}
 							}
 						}
 					}
@@ -949,7 +1020,7 @@ war_for_revoke_effect = {
 									primary_defender = scope:actor
 								}
 							}
-								add_to_list = war_to_join
+							add_to_list = war_to_join
 						}
 					}
 					every_in_list = {
@@ -1147,8 +1218,13 @@ kick_from_court_interaction_warning_tooltip_effect = {
 		custom_tooltip = kick_from_court_knight_warning_tt
 	}
 	if = {
-		limit = { scope:actor = { has_relation_court_physician = scope:kicked } }
-		custom_tooltip = kick_from_court_physician_warning_tt
+		limit = {
+			scope:kicked = {
+				has_any_court_position = yes
+				any_court_position_employer = { this = scope:actor }
+			}
+		}
+		custom_tooltip = kick_from_court_holds_court_title_warning_tt
 	}
 }
 
@@ -1183,6 +1259,19 @@ disinherit_effect = {
 			add_opinion = {
 				modifier = disinherited_house_member_opinion
 				target = $DISINHERITOR$
+			}
+		}
+	}
+	if = {
+		limit = {
+			exists = dynasty
+			NOT = { $DISINHERITOR$ = dynasty.dynast }
+		}
+		$DISINHERITOR$.dynasty.dynast = {
+			add_opinion = {
+				target = $DISINHERITOR$
+				modifier = fp1_usurped_my_authority_opinion
+				years = 20
 			}
 		}
 	}
@@ -2031,7 +2120,7 @@ offer_guardianship_interaction = {
 		if = {
 			limit = {
 				scope:education_hook = yes
-				has_hook = scope:recipient
+				has_usable_hook = scope:recipient
 			}
 			use_hook = scope:recipient
 		}
@@ -2514,6 +2603,107 @@ revoke_title_interaction_effect = {
 				}
 			}
 		}
+
+		if = {
+			limit = {
+				scope:actor.culture = { has_cultural_parameter = penalty_for_revoking_titles_from_house_members }
+				exists = scope:actor.house
+				exists = scope:recipient.house
+				scope:actor.house = scope:recipient.house
+			}
+			if = {
+				limit = {
+					scope:landed_title.tier = tier_county
+				}
+				scope:actor = {
+					add_prestige = medium_prestige_loss
+				}
+			}
+			else_if = {
+				limit = {
+					scope:landed_title.tier = tier_duchy
+				}
+				scope:actor = {
+					add_prestige = major_prestige_loss
+				}
+			}
+			else = { #Empire
+				limit = {
+					scope:landed_title.tier = tier_kingdom
+				}
+				scope:actor = {
+					add_prestige = massive_prestige_loss
+				}
+			}
+		}
+
+		if = {
+			limit = {
+				scope:actor.culture = { has_cultural_parameter = penalty_for_revoking_titles_from_close_family }
+				exists = scope:actor
+				exists = scope:recipient
+				scope:actor = {
+					is_close_family_of = scope:recipient
+				}
+			}
+			if = {
+				limit = {
+					scope:landed_title.tier = tier_county
+				}
+				scope:actor = {
+					add_prestige = medium_prestige_loss
+				}
+			}
+			else_if = {
+				limit = {
+					scope:landed_title.tier = tier_duchy
+				}
+				scope:actor = {
+					add_prestige = major_prestige_loss
+				}
+			}
+			else = { #Empire
+				limit = {
+					scope:landed_title.tier = tier_kingdom
+				}
+				scope:actor = {
+					add_prestige = massive_prestige_loss
+				}
+			}
+		}
+
+		if = {
+			limit = {
+				scope:actor.culture = { has_cultural_parameter = piety_penalty_for_revoking_titles_from_house_members }
+				exists = scope:actor.house
+				exists = scope:recipient.house
+				scope:actor.house = scope:recipient.house
+			}
+			if = {
+				limit = {
+					scope:landed_title.tier = tier_county
+				}
+				scope:actor = {
+					add_prestige = medium_piety_loss
+				}
+			}
+			else_if = {
+				limit = {
+					scope:landed_title.tier = tier_duchy
+				}
+				scope:actor = {
+					add_prestige = major_piety_loss
+				}
+			}
+			else = { #Can't revoke empire titles anyway
+				limit = {
+					scope:landed_title.tier = tier_kingdom
+				}
+				scope:actor = {
+					add_prestige = massive_piety_loss
+				}
+			}
+		}
 	}
 	else = {
 		if = {
@@ -2912,6 +3102,19 @@ hof_ask_for_claim_interaction_effect = {
 	}
 }
 
+vassal_claim_liege_title_interaction_effect = {
+	scope:actor = {
+		add_unpressed_claim = scope:target
+	}
+	scope:recipient = {
+		add_opinion = {
+			target = scope:actor
+			modifier = claimed_my_title_opinion
+			opinion = -50
+		}
+	}
+}
+
 convert_at_war_interaction_effect = {
 	scope:actor = {
 		every_character_war = {
@@ -2960,7 +3163,7 @@ demand_conversion_vassal_ruler_interaction_effect = {
 	if = {
 		limit = {
 			scope:hook = yes
-			scope:actor = { has_hook = scope:recipient }
+			scope:actor = { has_usable_hook = scope:recipient }
 		}
 		scope:actor = {
 			use_hook = scope:recipient
@@ -3007,6 +3210,118 @@ title_revocation_stress_effect = {
 		stress_impact = {
 			generous = medium_stress_impact_gain
 			forgiving = minor_stress_impact_gain
+		}
+	}
+}
+
+revoke_holy_order_lease_effect = {
+	if = {
+		limit = {
+			$CHARACTER$.faith = {
+				any_faith_holy_order = {
+					num_leased_titles = 1
+					title = $BARONY$.lessee_title
+				}
+			}
+		}
+		custom_tooltip = destroy_holy_order_warning
+	}
+
+	$CHARACTER$= {
+		send_interface_message = {
+			type = event_generic_neutral
+			title = revoke_leased_title_interaction_notification
+			right_icon = $TARGET$
+			$BARONY$ = {
+				revoke_lease = yes
+			}
+			# Zealous costs stress if same-faith.
+			if = {
+				limit = { $CHARACTER$.faith = $TARGET$.faith }
+				stress_impact = {
+					zealous = massive_stress_impact_gain
+					generous = medium_stress_impact_gain
+				}
+			}
+			# Bit less but still some if you view the other faith as astray.
+			if = {
+				limit = {
+					$CHARACTER$.faith = {
+						faith_hostility_level = {
+							target = $TARGET$.faith
+							value <= faith_astray_level
+						}
+					}
+				}
+				stress_impact = {
+					zealous = major_stress_impact_gain
+					generous = medium_stress_impact_gain
+				}
+			}
+			# Otherwise, only generous is stressed.
+			else = {
+				stress_impact = {
+					generous = medium_stress_impact_gain
+				}
+			}
+
+			add_piety = {
+				value = 0
+				subtract = cancel_holy_order_piety_cost
+			}
+		}
+	}
+
+	$TARGET$ = {
+		hidden_effect = { #Nudge towards rivalry
+			if = {
+				limit = {
+					NOR = {
+						has_relation_rival = $CHARACTER$
+						has_relation_potential_rival = $CHARACTER$
+					}
+				}
+				set_relation_potential_rival = $CHARACTER$
+			}
+		}
+
+		if = {
+				limit = {
+					NOT = { this = $CHARACTER$ }
+				}
+			add_opinion = {
+				target = $CHARACTER$
+				modifier = angry_opinion
+				opinion = -40
+			}
+		}
+
+		faith = {
+			if = {
+				limit = {
+					exists = religious_head
+					NOT = { religious_head = $CHARACTER$ }
+				}
+				religious_head = {
+					add_opinion = {
+						modifier = angry_opinion
+						target = $CHARACTER$
+						opinion = -20
+					}
+					if = {
+						limit = {
+							has_opinion_modifier = {
+								target = $CHARACTER$
+								modifier = founded_holy_order_opinion
+							}
+						}
+						remove_opinion = {
+							target = $CHARACTER$
+							modifier = founded_holy_order_opinion
+						}
+					}
+				}
+			}
 		}
 	}
 }
