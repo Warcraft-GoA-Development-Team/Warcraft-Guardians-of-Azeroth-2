@@ -15,6 +15,7 @@ namespace = stewardship_wealth
 # As it is currently, this event only exists to stop the game from throwing an error.
 stewardship_wealth.0001 = {
 	hidden = yes
+	orphan = yes
 	immediate = { add_character_flag = is_in_stewardship_wealth_special_event }
 }
 
@@ -193,6 +194,15 @@ stewardship_wealth.1001 = {
 	option = {
 		trigger = {
 			exists = scope:wealthy_vassal
+			OR = {
+				has_usable_hook = scope:wealthy_vassal
+				scope:wealthy_vassal = {
+					can_add_hook = {
+						target = root
+						type = favor_hook
+					}
+				}
+			}
 		}
 		name = {
 			text = stewardship_wealth.1001.b.givehook
@@ -207,31 +217,25 @@ stewardship_wealth.1001 = {
 			text = stewardship_wealth.1001.b.havehook
 		}
 
-		scope:wealthy_vassal = {
-			if = {
-				limit = {
-					has_hook_of_type = {
-						target = scope:wealthy_vassal
-						type = favor_hook
-					}	
-				}
-
-				use_hook = scope:wealthy_Vassal
+		if = {
+			limit = {
+				has_usable_hook = scope:wealthy_vassal
 			}
-			else = {
-				scope:wealthy_vassal = {
-					add_hook = {
-						target = root
-						type = favor_hook
-					}
-				}
-			}
-
+			use_hook = scope:wealthy_vassal
+		}
+		else = {
 			scope:wealthy_vassal = {
-				pay_short_term_gold = {
+				add_hook = {
 					target = root
-					gold = root.medium_gold_value
+					type = favor_hook
 				}
+			}
+		}
+
+		scope:wealthy_vassal = {
+			pay_short_term_gold = {
+				target = root
+				gold = root.medium_gold_value
 			}
 		}
 
@@ -414,8 +418,6 @@ stewardship_wealth.1011 = {
 			ai_value_modifier = {
 				ai_boldness = 2
 			}
-
-			# Warcraft
 		}
 	}
 
@@ -933,7 +935,7 @@ stewardship_wealth.1051 = {
 		}
 		hidden_effect = {
 			scope:freeman = {
-				override_death_effect = { DEATH_REASON = death_disappearance }
+				override_death_effect = { death_reason = death_disappearance }
 			}
 		}
 
@@ -958,7 +960,7 @@ stewardship_wealth.1051 = {
 		}
 		hidden_effect = {
 			scope:freeman = {
-				override_death_effect = { DEATH_REASON = death_disappearance }
+				override_death_effect = { death_reason = death_disappearance }
 			}
 		}
 
@@ -1014,17 +1016,26 @@ scripted_trigger stewardship_wealth_1061_valid_vassal = {
 		value >= -10
 	}
 
-	save_temporary_scope_as = vassal
+	save_temporary_scope_as = temp_vassal
 	
 	# Must not be me.
-	NOT = { root = scope:vassal }
+	NOT = { root = scope:temp_vassal }
 	
 	# Neither of us can have a hook on the other.
 	NOR = {
 		has_hook = root
 		root = {
-			has_hook = scope:vassal
+			has_hook = scope:temp_vassal
 		}
+	}
+}
+
+scripted_trigger stewardship_wealth_1061_valid_writer = {
+	has_no_particular_noble_roots_trigger = yes
+	is_available_healthy_ai_adult = yes
+	NOR = {
+		exists = inspiration
+		has_trait = peasant_leader
 	}
 }
 
@@ -1044,7 +1055,12 @@ stewardship_wealth.1061 = {
 		any_vassal = {
 			stewardship_wealth_1061_valid_vassal = yes
 		}
-		NOT = { has_character_flag = had_stewardship_wealth_1061_event }
+		NOR = { 
+			has_character_flag = had_stewardship_wealth_1061_event 
+			any_character_artifact = {
+				has_artifact_feature = book_topic_stewardship_old_ledger
+			}
+		}
 	}
 
 	weight_multiplier = {
@@ -1116,6 +1132,32 @@ stewardship_wealth.1061 = {
 				save_scope_as = vassal
 			}
 		}
+		if = {
+			limit = {
+				any_pool_character = {
+					province = root.capital_province
+					stewardship_wealth_1061_valid_writer = yes
+				}
+			}
+			random_pool_character = {
+				province = root.capital_province
+				limit = {
+					stewardship_wealth_1061_valid_writer = yes
+				}
+				save_scope_as = anonymous_book_writer
+			}
+		}
+		else = {
+			# Artisan Generation
+			hidden_effect = {
+				create_character = {
+					template = local_artisan_template
+					location = root.capital_province
+					gender_female_chance = root_faith_dominant_gender_adjusted_female_chance
+					save_scope_as = anonymous_book_writer
+				}
+			}
+		}
 	}
 
 	# Option A: Learning challenge to gain a powerful Stewardship modifier.
@@ -1126,42 +1168,73 @@ stewardship_wealth.1061 = {
 			skill = learning
 			value = 10
 
-			50 = {		
+			50 = {
 				compare_modifier = {
 					value = scope:duel_value
 					multiplier = 3.5
 					min = -49
 				}
 				desc = stewardship_wealth.1061.a.success
+				#Make book artifact
+				hidden_effect = {
+					save_scope_as = author
+					#Book is made into trinket if no royal court
+					if = {
+						limit = {
+							has_royal_court = no
+						}
+						save_temporary_scope_value_as = {
+							name = should_be_trinket
+							value = yes
+						}
+					}
+					create_artifact_book_effect = { #using effect to ensure that scope:owner is set properly
+						OWNER = root
+						CREATOR = scope:anonymous_book_writer
+						SET_SUBJECT = flag:stewardship
+						SET_TOPIC = flag:no
+					}
+				}
 				send_interface_toast = {
 					type = event_toast_effect_good
 					title = stewardship_wealth.1061.a.success
 					left_icon = root
-
-					# Add large knowledge bonus
-					add_character_modifier = {
-						modifier = governance_1061_lost_knowledge_modifier
-						years = 5
-					}
+					right_icon = scope:newly_created_artifact
+					custom_tooltip = stewardship_wealth.1061.a.success.good
 				}
 			}
-			50 = {		
+			50 = {
 				compare_modifier = {
 					value = scope:duel_value
 					multiplier = -3.5
 					min = -49
 				}
 				desc = stewardship_wealth.1061.a.failure
+				hidden_effect = {
+					save_scope_as = author
+					save_temporary_scope_value_as = {
+						name = should_be_trinket
+						value = yes
+					}
+					scope:anonymous_book_writer = {
+						add_character_flag = local_artisan #Only set in B since this is what makes it lower quality
+					}
+					create_artifact_book_effect = { #using effect to ensure that scope:owner is set properly
+						OWNER = root
+						CREATOR = scope:anonymous_book_writer
+						SET_SUBJECT = flag:stewardship
+						SET_TOPIC = flag:stewardship_old_ledger
+					}
+					save_scope_as = low_quality
+				}
 				send_interface_toast = {
 					type = event_toast_effect_good
 					title = stewardship_wealth.1061.a.failure
 					left_icon = root
+					right_icon = scope:newly_created_artifact
 					
-					# Add smaller knowledge bonus
-					add_character_modifier = {
-						modifier = governance_1061_old_ledger_modifier
-						years = 5
-					}
+					#Make book artifact, crummy book is always a trinket
+					custom_tooltip = stewardship_wealth.1061.a.success.bad
 				}
 			}
 		}
@@ -1230,6 +1303,20 @@ stewardship_wealth.1061 = {
 				ai_greed = 200
 				ai_compassion = -100
 				ai_rationality = -100
+			}
+		}
+	}
+
+	after = {
+		if = {
+			limit = {
+				scope:anonymous_book_writer = {
+					is_pool_character = no
+				}
+			}
+			scope:anonymous_book_writer = {
+				# Warcraft
+				override_death_effect = { death_reason = death_vanished }
 			}
 		}
 	}
@@ -1337,6 +1424,9 @@ stewardship_wealth.5001 = {
 	}
 	
 	option = { #slaughter and sell
+		trigger = {
+			NOT = { like_hinduism_religion_trigger = yes }
+		}
 		name = stewardship_wealth.5001.c
 		add_gold = medium_gold_value
 		stress_impact = {
@@ -1454,6 +1544,14 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 				}
 			}
 			1 = {
+				trigger = {
+					faith = {
+						NOR = {
+							has_doctrine = tenet_aniconism
+							like_islam_religion_trigger = yes
+						}
+					}
+				}
 				save_scope_value_as = {
 					name = safe_investment
 					value = flag:religious_sculptor
@@ -1484,7 +1582,15 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 				}
 			}
 			1 = {
-				trigger = { NOT = { scope:safe_investment = flag:religious_sculptor } }
+				trigger = {
+					NOT = { scope:safe_investment = flag:religious_sculptor }
+					faith = {
+						NOR = {
+							has_doctrine = tenet_aniconism
+							like_islam_religion_trigger = yes
+						}
+					}
+				}
 				save_scope_value_as = {
 					name = risky_investment
 					value = flag:religious_sculptor
@@ -1511,7 +1617,15 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 			text = stewardship_wealth.5002.a.mason
 		}
 		name = {
-			trigger = { scope:safe_investment = flag:religious_sculptor }
+			trigger = {
+				scope:safe_investment = flag:religious_sculptor
+				faith = {
+					NOR = {
+						has_doctrine = tenet_aniconism
+						like_islam_religion_trigger = yes
+					}
+				}
+			}
 			text = stewardship_wealth.5002.a.religious_sculptor
 		}
 		name = {
@@ -1529,11 +1643,23 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 						modifier = smithy_investment_modifier
 						years = stewardship_wealth_5002_investment_duration
 					}
+					ROOT = {
+						add_character_modifier = {
+							modifier = smithy_investment_character_modifier
+							years = stewardship_wealth_5002_investment_duration
+						}
+					}
 				}
 				flag:mason = {
 					add_province_modifier = {
 						modifier = mason_investment_modifier
 						years = stewardship_wealth_5002_investment_duration
+					}
+					ROOT = {
+						add_character_modifier = {
+							modifier = mason_investment_character_modifier
+							years = stewardship_wealth_5002_investment_duration
+						}
 					}
 				}
 				flag:religious_sculptor = {
@@ -1541,11 +1667,23 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 						modifier = religious_sculptor_investment_modifier
 						years = stewardship_wealth_5002_investment_duration
 					}
+					ROOT = {
+						add_character_modifier = {
+							modifier = religious_sculptor_investment_character_modifier
+							years = stewardship_wealth_5002_investment_duration
+						}
+					}
 				}
 				flag:jeweler = {
 					add_province_modifier = {
 						modifier = jeweler_investment_modifier
 						years = stewardship_wealth_5002_investment_duration
+					}
+					ROOT = {
+						add_character_modifier = {
+							modifier = jeweler_investment_character_modifier
+							years = stewardship_wealth_5002_investment_duration
+						}
 					}
 				}
 			}
@@ -1563,7 +1701,15 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 			text = stewardship_wealth.5002.a.mason
 		}
 		name = {
-			trigger = { scope:risky_investment = flag:religious_sculptor }
+			trigger = {
+				scope:risky_investment = flag:religious_sculptor
+				faith = {
+					NOR = {
+						has_doctrine = tenet_aniconism
+						like_islam_religion_trigger = yes
+					}
+				}
+			}
 			text = stewardship_wealth.5002.a.religious_sculptor
 		}
 		name = {
@@ -1583,11 +1729,23 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 							modifier = great_smithy_investment_modifier
 							years = stewardship_wealth_5002_investment_duration
 						}
+						ROOT = {
+							add_character_modifier = {
+								modifier = great_smithy_investment_character_modifier
+								years = stewardship_wealth_5002_investment_duration
+							}
+						}
 					}
 					flag:mason = {
 						add_province_modifier = {
 							modifier = great_mason_investment_modifier
 							years = stewardship_wealth_5002_investment_duration
+						}
+						ROOT = {
+							add_character_modifier = {
+								modifier = great_mason_investment_character_modifier
+								years = stewardship_wealth_5002_investment_duration
+							}
 						}
 					}
 					flag:religious_sculptor = {
@@ -1595,11 +1753,23 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 							modifier = great_religious_sculptor_investment_modifier
 							years = stewardship_wealth_5002_investment_duration
 						}
+						ROOT = {
+							add_character_modifier = {
+								modifier = great_religious_sculptor_investment_character_modifier
+								years = stewardship_wealth_5002_investment_duration
+							}
+						}
 					}
 					flag:jeweler = {
 						add_province_modifier = {
 							modifier = great_jeweler_investment_modifier
 							years = stewardship_wealth_5002_investment_duration
+						}
+						ROOT = {
+							add_character_modifier = {
+								modifier = great_jeweler_investment_character_modifier
+								years = stewardship_wealth_5002_investment_duration
+							}
 						}
 					}
 				}
@@ -1623,11 +1793,23 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 										modifier = great_smithy_investment_modifier
 										years = stewardship_wealth_5002_investment_duration
 									}
+									ROOT = {
+										add_character_modifier = {
+											modifier = great_smithy_investment_character_modifier
+											years = stewardship_wealth_5002_investment_duration
+										}
+									}
 								}
 								flag:mason = {
 									add_province_modifier = {
 										modifier = great_mason_investment_modifier
 										years = stewardship_wealth_5002_investment_duration
+									}
+									ROOT = {
+										add_character_modifier = {
+											modifier = great_religious_sculptor_investment_character_modifier
+											years = stewardship_wealth_5002_investment_duration
+										}
 									}
 								}
 								flag:religious_sculptor = {
@@ -1635,11 +1817,23 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 										modifier = great_religious_sculptor_investment_modifier
 										years = stewardship_wealth_5002_investment_duration
 									}
+									ROOT = {
+										add_character_modifier = {
+											modifier = great_religious_sculptor_investment_character_modifier
+											years = stewardship_wealth_5002_investment_duration
+										}
+									}
 								}
 								flag:jeweler = {
 									add_province_modifier = {
 										modifier = great_jeweler_investment_modifier
 										years = stewardship_wealth_5002_investment_duration
+									}
+									ROOT = {
+										add_character_modifier = {
+											modifier = great_jeweler_investment_character_modifier
+											years = stewardship_wealth_5002_investment_duration
+										}
 									}
 								}
 							}
@@ -1666,6 +1860,172 @@ stewardship_wealth.5002 = { #by Mathilda Bjarnehed
 		
 		add_gold = stewardship_wealth_5002_one_time_gain
 	}
+}
+
+stewardship_wealth.6001 = {
+	type = character_event
+	title = stewardship_wealth.6001.t
+	desc = stewardship_wealth.6001.desc
+	theme = stewardship_wealth_focus
+	left_portrait = {
+		character = scope:stall_owner
+		animation = happiness
+	}
+
+	override_background = {
+		event_background = market
+	}
+
+	trigger = {
+		is_at_war = no
+		any_held_county = { count >= 1 }
+		NOT = {
+			faith = faith:iconoclast
+		}
+		NOT = {
+			any_character_artifact = {
+				has_variable = small_wooden_carving_artifact
+			}
+		}
+		
+	}
+
+	weight_multiplier = {
+		base = 1
+		upweight_for_focus_modifier = { FOCUS = stewardship_wealth_focus }
+	}
+
+	immediate = {
+		create_character = {
+			gender_female_chance = 50
+			age = {18 50}
+			random_traits = yes
+			save_scope_as = stall_owner
+			template_character = root
+			dynasty = none
+			location = root.capital_province
+			
+			# Warcraft
+			after_creation = {
+				trigger_race_giving_no_gene_effect = yes
+			}
+		}
+
+		random_held_county = {
+			limit = {
+				holder = root
+			}
+			save_scope_as = stall_county
+		}
+	}
+
+	option = { #Buy something
+		name = stewardship_wealth.6001.a
+
+		remove_short_term_gold = medium_gold_value
+
+		random_list = {
+			60 = {
+				create_artifact = {	
+						name = small_religious_carving
+						type = miscellaneous
+						creator = scope:stall_owner
+						description = small_religious_carving_desc 
+						template = small_religious_carving_template
+						visuals = pouch
+						modifier = artifact_monthly_piety_1_modifier
+						wealth = 10
+						quality = 20
+						save_scope_as = newly_created_artifact
+					}	
+
+					scope:newly_created_artifact = {
+						set_variable = {
+							name = relic_religion
+							value = scope:stall_owner.faith.religion
+						}
+
+						set_variable = small_wooden_carving_artifact
+					}
+				desc = stewardship_wealth.6001.a.tt_high
+				send_interface_toast = {
+					title = stewardship_wealth.6001.a.tt_high
+					left_icon = scope:stall_owner
+					right_icon = scope:newly_created_artifact
+					show_as_tooltip = {
+						scope:newly_created_artifact = { set_owner = root }
+					}
+					
+				}
+			}
+			40 = {
+				desc = stewardship_wealth.6001.a.tt_low
+				send_interface_toast = {
+					title = stewardship_wealth.6001.a.tt_low
+					left_icon = scope:stall_owner
+					add_character_modifier = {
+						modifier = supported_local_business_modifier
+						years = 5
+					}
+				}
+			}
+		}
+
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = -0.5
+			}
+		}
+	}
+
+	option = { #Destroy the Stall
+		name = stewardship_wealth.6001.b
+
+		add_gold = minor_gold_value
+		add_dread = minor_dread_gain
+		scope:stall_county = {
+			add_county_modifier = {
+				modifier = destroyed_market_stall_modifier
+				years = 5
+			}
+		}
+
+		stress_impact = {
+			greedy = miniscule_stress_impact_loss
+			generous = minor_stress_impact_gain
+			compassionate = minor_stress_impact_gain
+
+		}
+
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = 0.5
+			}
+		}
+	}
+
+	option = { #Ask the stall owner for business advice
+		name = stewardship_wealth.6001.c
+
+		add_stewardship_lifestyle_xp = medium_lifestyle_xp
+
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_rationality = 0.5
+			}
+		}
+	}
+
+	after = {
+		scope:stall_owner = {
+			silent_disappearance_effect = yes
+		}
+	}
+
+
 }
 
 
