@@ -918,13 +918,6 @@ Effect portrait_attachment_pattern
 {
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
-	Defines = { "VARIATIONS_ENABLED" "PROP_AND_NORMAL_VARIATIONS_ENABLED" }
-}
-
-Effect portrait_attachment_pattern_diffuse
-{
-	VertexShader = "VS_portrait_blend_shapes"
-	PixelShader = "PS_attachment"
 	Defines = { "VARIATIONS_ENABLED" }
 }
 
@@ -941,7 +934,7 @@ Effect portrait_attachment_pattern_alpha_to_coverage
 	VertexShader = "VS_portrait_blend_shapes"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "VARIATIONS_ENABLED" "PROP_AND_NORMAL_VARIATIONS_ENABLED" }
+	Defines = { "VARIATIONS_ENABLED" }
 }
 
 Effect portrait_attachment_pattern_alpha_to_coverageShadow
