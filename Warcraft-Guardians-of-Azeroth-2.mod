@@ -27,4 +27,4 @@ replace_path="common/religion/holy_sites"
 replace_path="common/bookmark_portraits"
 replace_path="common/bookmarks"
 supported_version="1.5.0.2"
-path="mod/Warcraft-Guardians-of-Azeroth-2
+path="mod/Warcraft-Guardians-of-Azeroth-2"
