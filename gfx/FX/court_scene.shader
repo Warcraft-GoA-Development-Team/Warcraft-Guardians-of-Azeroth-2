@@ -1,6 +1,6 @@
 Includes = {
-	"cw/pdxmesh_blendshapes.fxh"
 	"cw/pdxmesh.fxh"
+	"cw/pdxmesh_blendshapes.fxh"
 	"cw/utility.fxh"
 	"cw/shadow.fxh"
 	"cw/camera.fxh"
