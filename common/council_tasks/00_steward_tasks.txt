@@ -348,6 +348,14 @@ task_develop_county = {
 					scope:councillor_liege = {
 						primary_title.tier < tier_duchy
 					}
+					AND = {
+						scope:councillor_liege = {
+							has_character_flag = agenda_towards_deescalation
+						}
+						NOT = {
+							culture = scope:councillor_liege.culture
+						}
+					}
 				}
 			}
 		}
@@ -386,6 +394,19 @@ task_develop_county = {
 		}
 	}
 
+	on_start_task_county = {
+		# save current development_level for catalyst purpose
+		if = {
+			limit = { exists = scope:county }
+			scope:county = {
+				set_variable = {
+					name = current_development_level
+					value = development_level
+				}
+			}
+		}
+	}
+
 	on_finish_task_county = {
 		if = {
 			limit = {
@@ -403,70 +424,110 @@ task_develop_county = {
 			}
 			start_default_task = yes
 		}
-		scope:councillor_liege = {
-			if = { # Try to make relevant AI's focus on Acceptance
-				limit = {
-					exists = primary_title
-					primary_title.tier >= tier_kingdom
-					any_sub_realm_county = {
-						culture = {
-							cultural_acceptance = { target = scope:councillor_liege.culture value < 52 }
-						}
-					}
-					NOT = {
-						has_focus = stewardship_domain_focus
-					}
-				}
-				add_character_flag = {
-					flag = no_ai_increase_development
-					years = 30
-				}
-			}
-			else = {
-				add_character_flag = {
-					flag = no_ai_increase_development
-					years = 10
-				}
-			}
-			add_character_flag = {
-				flag = ai_development_max_years
-				years = 10
-			}
-		}
 	}
 
 	monthly_on_action = task_develop_county_side_effects
 
 	on_monthly_county = {
 		scope:councillor_liege = {
+			# Check development level progress
 			if = {
 				limit = {
-					NOT = {
-						has_character_flag = ai_development_max_years
+					exists = scope:county
+					exists = scope:county.var:current_development_level
+					scope:county = {
+						floored_development_value > floored_current_development_value
 					}
 				}
-				if = { # Try to make relevant AI's focus on Acceptance
-					limit = {
-						exists = primary_title
-						primary_title.tier >= tier_kingdom
-						any_sub_realm_county = {
-							culture = {
-								cultural_acceptance = { target = scope:councillor_liege.culture value < 52 }
+				scope:county = {
+					set_variable = {
+						name = current_development_level
+						value = development_level
+					}
+				}
+				
+				scope:councillor_liege = {
+					if = { # Try to make relevant AI's focus on Acceptance
+						limit = {
+							exists = primary_title
+							primary_title.tier >= tier_kingdom
+							any_sub_realm_county = {
+								culture = {
+									cultural_acceptance = { target = scope:councillor_liege.culture value < 52 }
+								}
+							}
+							NOT = {
+								has_focus = stewardship_domain_focus
 							}
 						}
-						NOT = {
-							has_focus = stewardship_domain_focus
+						add_character_flag = {
+							flag = no_ai_increase_development
+							years = 30
 						}
 					}
-					add_character_flag = {
-						flag = no_ai_increase_development
-						years = 30
+					else = {
+						add_character_flag = {
+							flag = no_ai_increase_development
+							years = 10
+						}
 					}
 				}
-				else = {
-					add_character_flag = {
-						flag = no_ai_increase_development
-						years = 10
+				
+				# Struggle Catalyst
+				if = {
+					limit = {
+						exists = scope:county
+						# target someone from diff faith or culture
+						scope:county = {
+							NAND = {
+								faith = scope:councillor_liege.faith
+								culture = scope:councillor_liege.culture
+							}
+						}
+
+						any_character_struggle = {
+							involvement = involved
+							phase_has_catalyst = catalyst_improve_development_vassal_diff_faith_culture
+						}
+					}
+					scope:councillor_liege = {
+						every_character_struggle = {
+							involvement = involved
+							activate_struggle_catalyst = {
+								catalyst = catalyst_improve_development_vassal_diff_faith_culture
+								character = scope:councillor_liege
+							}
+						}
+					}
+					# Struggle Parameter
+					if = {
+						limit = {
+							NOT = { scope:county.culture  = scope:councillor_liege.culture }
+							any_character_struggle = {
+								involvement = involved
+								has_struggle_phase_parameter = gain_acceptance_when_developing_other_culture_county
+							}
+						}
+						scope:county.culture = {
+							save_scope_as = current_culture
+							change_cultural_acceptance = {
+								target = scope:councillor_liege.culture
+								value =	miniscule_cultural_acceptance_value
+								desc = cultural_acceptance_gain_from_phase_effects
+							}
+						}
+					}
+
+				}
+			}
+			else_if = { # fallback for previous save: the effect would trigger a month later
+				limit = {
+					exists = scope:county
+				}
+				scope:county = {
+					set_variable = {
+						name = current_development_level
+						value = development_level
 					}
 				}
 			}
@@ -476,16 +537,31 @@ task_develop_county = {
 	ai_will_do = {
 		value = 0
 		if = {
+			limit = {
+				scope:councillor = {
+					is_performing_council_task = task_develop_county
+				}
+			}
+			add = 10000 # Always keep going if this is already chosen
+		}
+		if = {
 			# Don't do this too often
 			limit = {
 				scope:councillor_liege = { has_character_flag = no_ai_increase_development }
 			}
+			multiply = 0
 		}
 		else_if = {
 			limit = {
 				scope:councillor_liege.gold >= steward_increase_development_value
 			}
-			add = 100
+			add = 300
+		}
+		if = {
+			limit = {
+				scope:councillor_liege.gold < 10
+			}
+			multiply = 0
 		}
 	}
 }
@@ -657,6 +733,26 @@ task_promote_culture = {
 			multiply = {
 				value = faster_game_rule_value
 				desc = GAME_RULE_FASTER_REASON
+			}
+		}
+		# Faster conversion for FP2 Hostility ending, if county is in Iberia and culture was involved
+		if = {
+			limit = {
+				any_in_global_list = {
+					variable = fp2_struggle_ending_culture_list
+					this = scope:county.culture
+				}
+				scope:county.title_province = { geographical_region = world_europe_west_iberia }
+				scope:councillor.liege.house = {
+					OR = {
+						has_house_modifier = fp2_struggle_hostility_house_culture_modifier
+						has_house_modifier = fp2_struggle_hostility_house_combined_modifier
+					}
+				}
+			}
+			multiply = {
+				value = fp2_struggle_hostility_conversion_value
+				desc = fp2_struggle_hostility_culture_conversion_task_desc
 			}
 		}
 	}
@@ -875,7 +971,16 @@ task_promote_culture = {
 		if = {
 			# Don't do this too often
 			limit = {
-				scope:councillor_liege = { has_character_flag = no_ai_culture_convert }
+				scope:councillor_liege = {
+					has_character_flag = no_ai_culture_convert
+					NAND = { # ignore it if in Hostility with escalation
+						has_character_flag = agenda_towards_escalation
+						any_character_struggle = {
+							involvement = involved
+							is_struggle_phase = struggle_iberia_phase_hostility
+						}
+					}
+				}
 			}
 			multiply = 0
 		}
@@ -1276,7 +1381,10 @@ task_accept_culture = {
 			limit = {
 				scope:councillor_liege = {
 					culture = {
-						has_cultural_tradition = tradition_xenophilic
+						OR = {
+							has_cultural_tradition = tradition_xenophilic
+							has_cultural_tradition = tradition_fp2_malleable_subjects
+						}
 					}
 				}
 			}
