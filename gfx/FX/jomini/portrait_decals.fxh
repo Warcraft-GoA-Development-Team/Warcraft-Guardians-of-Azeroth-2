@@ -124,6 +124,10 @@ PixelShader =
 						if ( Data._DiffuseIndex < MAX_VALUE )
 						{
 							float4 DiffuseSample = PdxTex2D( DecalDiffuseArray, float3( DecalUV, Data._DiffuseIndex ) );
+							if (DiffuseSample.r == 1.0f && DiffuseSample.g == 0.0f && DiffuseSample.b == 0.0f)
+							{
+								DiffuseSample.rgb = vPaletteColorHair.rgb;
+							}
 							Weight = DiffuseSample.a * Weight;
 							Diffuse = BlendDecal( Data._DiffuseBlendMode, float4( Diffuse, 0.0f ), DiffuseSample, Weight ).rgb;
 						}
