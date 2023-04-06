@@ -43,6 +43,14 @@
 		any_faction_county_member = {
 			exists = this
 		}
+		trigger_if = {
+			limit = {
+				exists = special_character
+			}
+			special_character = {
+				is_alive = yes
+			}
+		}
 	}
 
 	###########
@@ -50,22 +58,29 @@
 	is_character_valid = {
 		# Only AIs are allowed to be in popular factions.
 		is_ai = yes
-
-		# Landed rulers can only be in the faction if they are the direct vassal of the faction target.
+		
+		# Landed rulers can only be in the faction...
 		trigger_if = {
 			limit = {
 				is_landed = yes
-				highest_held_title_tier >= tier_county # Barons get kicked out of the faction.
 				exists = liege
 				NOT = { this = liege }
 			}
+			
+			# ... If they are a direct vassal of the faction target.
 			liege = scope:faction.faction_target
+			
+			# ... If they are at least a count. (Barons are not allowed.)
+			highest_held_title_tier >= tier_county
 		}
 
 		# Must not be the same culture & faith as the faction target.
-		OR = {
-			NOT = { faith = scope:faction.faction_target.faith }
-			NOT = { culture = scope:faction.faction_target.culture }
+		custom_tooltip = {
+			text = populist_faction_same_culture_faith_as_liege
+			OR = {
+				NOT = { faith = scope:faction.faction_target.faith }
+				NOT = { culture = scope:faction.faction_target.culture }
+			}
 		}
 
 		# Not forbidden from being in factions.
@@ -120,7 +135,6 @@
 		}
 	}
 
-
 	can_county_join = {
 		# Must share this faction's faith.
 		scope:faction = {
@@ -138,7 +152,6 @@
 
 	can_county_create = {
 		county_opinion < 0
-
 
 		# Can only join factions against our top liege (not direct liege)
 		scope:target = holder.top_liege
@@ -171,7 +184,7 @@
 	county_create_score = {
 		base = -160 # Counties can't create a new faction unless opinion is less than -20 (see summary below).
 
-		# If a suitable Popular Faction already exists( of the same faith), side with it instead.
+		# If a suitable Popular Faction already exists (of the same faith), side with it instead.
 		modifier = {
 			add = -1000
 			scope:target = {
@@ -357,6 +370,9 @@
 			add = -200
 			has_game_rule = extreme_realm_stability
 		}
+
+		# Struggle interaction
+
 	}
 
 	county_power = county_levies_to_raise
@@ -656,8 +672,69 @@
 		special_title = {
 			save_scope_as = target_title
 		}
-
-		# Fire the demand event.
+		
+		# Check for relevant vassals that owns any land targeted by the faction.
+		save_temporary_scope_as = county_faction
+		every_faction_county_member = {
+			limit = {
+				holder = {
+					NOT = { this = scope:faction.faction_target }
+					NAND = {
+						exists = joined_faction
+						joined_faction = {
+							this = scope:county_faction
+						}
+					}
+					OR = {
+						is_vassal_of = scope:faction.faction_target
+						is_ai = no
+					}
+					NOT = { is_in_list = popular_faction_vassal_targets }
+				}
+			}
+			holder = {
+				add_to_list = popular_faction_vassal_targets
+			}
+		}
+		every_faction_county_member = {
+			holder = {
+				every_liege_or_above = {
+					limit = {
+						NOT = { this = scope:faction.faction_target }
+						NAND = {
+							exists = joined_faction
+							joined_faction = {
+								this = scope:county_faction
+							}
+						}
+						OR = {
+							is_vassal_of = scope:faction.faction_target
+							is_ai = no
+						}
+						NOT = { is_in_list = popular_faction_vassal_targets }
+					}
+					add_to_list = popular_faction_vassal_targets
+				}
+			}
+		}
+		
+		# Check if there is a player affected by the faction. AI rulers are blocked from accepting the faction demand if so.
+		if = {
+			limit = {
+				any_in_list = {
+					list = popular_faction_vassal_targets
+					is_ai = no
+				}
+			}
+			scope:faction = {
+				set_variable = {
+					name = faction_targets_player
+					value = yes
+				}
+			}
+		}
+		
+		# Fire the demand event. A follow up event will be sent to affected vassals.
 		scope:faction.faction_target = {
 			trigger_event = faction_demand.1001
 		}
@@ -700,35 +777,56 @@
 
 			# Spawn the faction troops in the designated location.
 			root.faction_leader = {
-				spawn_army = {
-					levies = {
-						value = 0
-						joined_faction = {
-							every_faction_county_member = {
-								limit = {
-									duchy = scope:local_center_of_rebellion.duchy
-								}
-								add = county_levies_to_raise
-							}
-						}
+				spawn_popular_revolt_troops = yes
+			}
+			
+			# Give the populist leader a commander for each stack of troops.
+			create_character = {
+				template = new_commander_character
+				location = scope:local_center_of_rebellion
+				faith = root.faction_leader.faith
+				culture = root.faction_leader.culture
+				save_scope_as = new_populist_commander
+				gender_female_chance = {
+					if = {
+						limit = { root.faction_leader.culture = { has_cultural_parameter = martial_custom_male_only_combatant } }
+						add = 0
 					}
-					location = scope:local_center_of_rebellion
-					war = root.faction_war
-					name = populist_faction_event_troops
+					else_if = {
+						limit = { root.faction_leader.culture = { has_cultural_parameter = martial_custom_female_only_combatant } }
+						add = 100
+					}
+					else = {
+						add = 50
+					}
 				}
+			}
+			scope:new_populist_commander = {
+				set_employer = root.faction_leader
 			}
 		}
 
 		# Give the populist leader a small purse so they don't immediately go bankrupt with army maintenance.
 		every_faction_county_member = {
 			root.faction_leader = {
-				add_gold = 25 
+				add_gold = 25
 			}
 		}
 	}
 
 	leader_leaves = {
 		# Should only trigger when the leader is captured in battle.
+		if = {
+			limit = {
+				special_character = {
+					is_alive = no
+				}
+			}
+			faction_war = {
+				end_war = defender
+			}
+			destroy_faction = yes
+		}
 		if = {
 			limit = {
 				NOT = { has_variable = peasant_destroying }
