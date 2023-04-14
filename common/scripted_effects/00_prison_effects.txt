@@ -85,6 +85,12 @@ ransom_interaction_effect = {
 		limit = {
 			always = scope:favor
 		}
+		scope:prisoner = {
+			add_opinion = {
+				modifier = demanded_hook
+				target = scope:imprisoner
+			}
+		}
 		scope:imprisoner = {
 			add_hook = {
 				target = scope:payer
@@ -111,20 +117,44 @@ execute_prisoner_effect = {
 
 	show_as_tooltip = {
 		$VICTIM$ = {
-			override_death_killer_effect = { DEATH_REASON = death_execution KILLER = $EXECUTIONER$ }
+			override_death_killer_effect = { death_reason = death_execution killer = $EXECUTIONER$ }
 		}
 	}
 
 	scope:executioner = {
+		# Dread gain
 		if = {
 			limit = {
-				OR = {
-					#is_spouse_of = scope:victim
-					is_close_family_of = scope:victim
-					scope:victim = { tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_kingdom } } #Kingdom & empire
+				scope:victim = {
+					time_in_prison = { years > 15 } # No one even remembers who they are anymore
 				}
 			}
-			add_dread = major_dread_gain
+			# No dread for you
+		}
+		else_if = { # Executing Emperors/HoF is quite dreadful
+			limit = {
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_empire
+						scope:executioner.faith.religious_head = scope:victim # Your head of faith
+					}
+				}
+			}
+			add_dread = execute_interaction_massive_dread_gain
+		}
+		else_if = {
+			limit = {
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_kingdom
+						tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_empire }
+						is_powerful_vassal_of = scope:executioner # Is your powerful vassal
+						target_is_vassal_or_below = scope:executioner # Your liege/s
+						is_close_family_of = scope:executioner
+					}
+				}
+			}
+			add_dread = execute_interaction_major_dread_gain
 			
 			# Warcraft
 			if = {
@@ -134,12 +164,25 @@ execute_prisoner_effect = {
 		}
 		else_if = {
 			limit = {
-				OR = {
-					scope:victim = { tier_or_related_liege_tier_equal_trigger = { TIER = tier_duchy } }
-					scope:victim = { tier_or_related_liege_tier_equal_trigger = { TIER = tier_county } }
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_duchy
+						tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_kingdom }
+						AND = { # Is your vassal, and higher than Baron
+							is_vassal_of = scope:executioner
+							primary_title.tier > tier_barony
+						}
+						AND = { # Peer Vassals
+							exists = primary_title
+							primary_title.tier > tier_barony
+							exists = liege
+							liege = scope:executioner.liege
+						}
+						has_trait = peasant_leader
+					}
 				}
 			}
-			add_dread = medium_dread_gain
+			add_dread = execute_interaction_medium_dread_gain
 			
 			# Warcraft
 			if = {
@@ -147,8 +190,29 @@ execute_prisoner_effect = {
 				change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain }
 			}
 		}
-		else = {
-			add_dread = minor_dread_gain
+		else_if = {
+			limit = {
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_county
+						tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_duchy }
+						is_vassal_of = scope:executioner # Is your Baron vassal
+						is_close_or_extended_family_of = scope:executioner
+						
+						scope:executioner = { # Executing close family of your vassals is dreadful...
+							any_vassal = {
+								is_close_family_of = scope:victim
+							}
+						}
+						scope:executioner = { # Executing close family of your liege/s is the same...
+							any_liege_or_above = {
+								is_close_family_of = scope:victim
+							}
+						}
+					}
+				}
+			}
+			add_dread = execute_interaction_minor_dread_gain
 			
 			# Warcraft
 			if = {
@@ -156,6 +220,7 @@ execute_prisoner_effect = {
 				change_dark_frenzy_effect = { VALUE = minor_dark_frenzy_gain }
 			}
 		}
+		
 		# Piety loss (or gain) from executions
 		if = {
 			limit = {
@@ -218,49 +283,186 @@ execute_prisoner_effect = {
 			limit = {
 				faith = scope:victim.faith
 				NOT = { has_perk = divine_retribution_perk }
+				scope:victim = {
+					has_no_particular_noble_roots_trigger = yes
+				}
+			}
+			add_piety = miniscule_piety_loss
+		}
+		else_if = {
+			limit = {
+				faith = scope:victim.faith
+				NOT = { has_perk = divine_retribution_perk }
 			}
 			add_piety = medium_piety_loss
 		}
-		# Stress loss		
+		
+		# Stress loss
 		if = {
-			limit = {
-				has_trait = sadistic
-			}
-			stress_impact = {
-				sadistic = medium_stress_impact_loss
-			}
-		}
-		if = {
-			limit = { #Killing infidels is relaxing
-				has_trait = zealous
-				NOT = { scope:executioner.faith = scope:victim.faith }
-			}
-			stress_impact = {
-				zealous = minor_stress_impact_loss
-			}
-		}
-		if = {
-			limit = {
-				has_relation_rival = scope:victim
-			}
-			add_prestige = medium_prestige_gain
+			limit = { has_relation_rival = scope:victim }
+
 			if = {
 				limit = {
 					NOR = {
+						has_trait = sadistic
 						has_trait = vengeful
+						has_trait = compassionate
 						has_trait = forgiving
 					}
 				}
-				add_stress = major_stress_loss
+				add_stress = medium_stress_loss
 			}
 			else = {
 				stress_impact = {
+					sadistic = major_stress_impact_loss
 					vengeful = massive_stress_impact_loss
-					forgiving = 0 #No stress reduction
+					compassionate = minor_stress_impact_gain
+					forgiving = minor_stress_impact_gain
 				}
 			}
-			
 		}
+		else_if = { #Killing infidels is relaxing
+			limit = {
+				has_trait = zealous
+				NOT = { scope:executioner.faith = scope:victim.faith }
+			}
+
+			if = {
+				limit = {
+					NOR = {
+						has_trait = sadistic
+						has_trait = compassionate
+						has_trait = forgiving
+					}
+				}
+				add_stress = medium_stress_loss
+			}
+			else = {
+				stress_impact = {
+					sadistic = major_stress_impact_loss
+					compassionate = minor_stress_impact_gain
+					forgiving = minor_stress_impact_gain
+				}
+			}
+		}
+		# Stress Gain
+		else_if = {
+			limit = {
+				exists = scope:victim
+				has_execute_reason = scope:victim
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:victim = {
+					OR = {
+						is_child_of = scope:executioner
+						is_grandchild_of = scope:executioner
+						is_great_grandchild_of = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = minor_stress_impact_gain
+				family_first = minor_stress_impact_gain
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:victim = {
+					OR = {
+						is_child_of = scope:executioner
+						is_grandchild_of = scope:executioner
+						is_great_grandchild_of = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+				family_first = minor_stress_impact_gain
+			}
+			if = {
+				limit = {
+					exists = scope:execution_sacrifice
+					NOT = { always = scope:execution_sacrifice }
+				}
+				stress_impact = {
+					just = medium_stress_impact_gain
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:victim = {
+					OR = {
+						has_relation_friend = scope:executioner
+						has_relation_lover = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+			}
+			if = {
+				limit = {
+					exists = scope:execution_sacrifice
+					NOT = { always = scope:execution_sacrifice }
+				}
+				stress_impact = {
+					just = medium_stress_impact_gain
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				exists = scope:victim
+				has_execute_reason = scope:victim
+			}
+			stress_impact = {
+				sadistic = medium_stress_impact_loss
+				compassionate = medium_stress_impact_gain
+				forgiving = minor_stress_impact_gain
+				generous = minor_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				sadistic = medium_stress_impact_loss
+				compassionate = major_stress_impact_gain
+				forgiving = medium_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+			}
+			if = {
+				limit = {
+					exists = scope:execution_sacrifice
+					NOT = { always = scope:execution_sacrifice }
+				}
+				stress_impact = {
+					just = medium_stress_impact_gain
+				}
+			}
+		}
+		
 		#Kinslaying
 		add_kinslayer_trait_or_nothing_effect = { VICTIM = scope:victim }
 
@@ -276,8 +478,8 @@ execute_prisoner_effect = {
 			limit = {
 				OR = {
 					AND = {
-						has_execute_reason = scope:victim
 						NOT = { exists = scope:recipient }
+						has_execute_reason = scope:victim
 					}
 					is_at_war_with = scope:victim
 				}
@@ -361,12 +563,12 @@ execute_prisoner_effect = {
 				}
 			}
 			$VICTIM$ = {
-				override_death_killer_effect = { DEATH_REASON = death_sacrificed_to_gods KILLER = $EXECUTIONER$ }
+				override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
 			}
 		}
 		else = {
 			$VICTIM$ = {
-				override_death_killer_effect = { DEATH_REASON = death_execution KILLER = $EXECUTIONER$ }
+				override_death_killer_effect = { death_reason = death_execution killer = $EXECUTIONER$ }
 			}
 		}
 	}
@@ -671,7 +873,7 @@ sacrifice_prisoner_effect = {
 	execute_opinion_effect = { VICTIM = scope:victim EXECUTIONER = scope:executioner }
 
 	$VICTIM$ = {
-		override_death_killer_effect = { DEATH_REASON = death_sacrificed_to_gods KILLER = $EXECUTIONER$ }
+		override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
 	}
 }
 
@@ -796,91 +998,8 @@ imprison_character_effect = {
 	}
 
 	#Remove them as guardian/ward for any courtiers and give feedback about this
-	scope:imprisoner = {
-		if = {
-			limit = {
-				any_courtier = {
-					has_relation_guardian = scope:imprisonment_target
-				}
-			}
-			every_courtier = {
-				limit = {
-					has_relation_guardian = scope:imprisonment_target
-				}
-				save_scope_as = ward
+	imprison_remove_ward_guardian_effect = { IMPRISONER = scope:imprisoner PRISONER = scope:imprisonment_target }
 
-				scope:imprisoner = {
-					send_interface_message = {
-						type = event_generic_neutral
-						title = remove_guardian_interaction_notification
-						left_icon = scope:imprisonment_target
-						right_icon = scope:ward
-
-						scope:imprisonment_target = { remove_relation_ward = scope:ward }
-						scope:ward = {
-							if = {
-								limit = {
-									NOT = { host = liege }
-								}
-								return_to_court = yes
-							}
-							guardian_remove_opinion_effect = {
-								GUARDIAN = scope:imprisonment_target
-								WARD = this
-								WARD_LIEGE = scope:imprisoner
-							}
-						}
-					}
-				}
-			}
-		}
-		
-		if = {
-			limit = {
-				any_courtier = {
-					has_relation_ward = scope:imprisonment_target
-				}
-			}
-			random_courtier = {
-				limit = {
-					has_relation_ward = scope:imprisonment_target
-				}
-				save_scope_as = guardian
-				scope:imprisoner = {
-					send_interface_message = {
-						type = event_generic_neutral
-						title = remove_guardian_interaction_notification
-						left_icon = scope:imprisonment_target
-						right_icon = scope:guardian
-
-						scope:imprisonment_target = {
-							send_interface_message = {
-								type = event_generic_neutral
-								title = remove_guardian_interaction_notification
-								left_icon = scope:imprisonment_target
-								right_icon = scope:guardian
-
-								scope:guardian = {
-									remove_relation_ward = scope:imprisonment_target
-									if = {
-										limit = {
-											NOT = { host = liege }
-										}
-										return_to_court = yes
-									}
-									guardian_remove_opinion_effect = {
-										GUARDIAN = this
-										WARD = scope:imprisonment_target
-										WARD_LIEGE = scope:imprisoner
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
 }
 
 imprison_character_effect_ignore_reason = {
@@ -980,6 +1099,9 @@ imprison_character_effect_ignore_reason = {
 			}
 		}
 	}
+
+	#Remove them as guardian/ward for any courtiers and give feedback about this
+	imprison_remove_ward_guardian_effect = { IMPRISONER = scope:imprisoner PRISONER = scope:imprisonment_target }
 }
 
 
@@ -1028,6 +1150,9 @@ hard_imprison_character_effect = {
 				}
 			}
 		}
+
+		#Remove them as guardian/ward for any courtiers and give feedback about this
+		imprison_remove_ward_guardian_effect = { IMPRISONER = scope:new_imprisoner  PRISONER = scope:new_target }
 	}
 }
 
@@ -1062,6 +1187,18 @@ rightfully_imprison_character_effect = {
 							NOT = { scope:imprisoner = this }
 						}
 					}
+					hidden_effect = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOT = { scope:imprisoner = this }
+							}
+							add_opinion = {
+								target = scope:imprisoner
+								modifier = imprisoned_family_member
+								opinion = -15
+							}
+						}
+					}
 					custom_tooltip = IMPRISONMENT_RELATIVES_EFFECT_HOUSE_ARREST
 				}
 			}
@@ -1079,6 +1216,18 @@ rightfully_imprison_character_effect = {
 					limit = {
 						any_close_or_extended_family_member = {
 							NOT = { scope:imprisoner = this }
+						}
+					}
+					hidden_effect = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOT = { scope:imprisoner = this }
+							}
+							add_opinion = {
+								target = scope:imprisoner
+								modifier = imprisoned_family_member
+								opinion = -15
+							}
 						}
 					}
 					custom_tooltip = IMPRISONMENT_RELATIVES_EFFECT_DUNGEON
@@ -1136,6 +1285,9 @@ rightfully_imprison_character_effect = {
 			}
 		}
 	}
+
+	#Remove them as guardian/ward for any courtiers and give feedback about this
+	imprison_remove_ward_guardian_effect = { IMPRISONER = scope:imprisoner PRISONER = scope:new_target }
 }
 
 # A lite version of imprison_character_effect without opinion penalties or other consequences (as they were captured in war, not at your command)
@@ -1279,6 +1431,14 @@ escape_from_prison_effect = {
 	hidden_effect = {
 		remove_decision_cooldown = escape_from_prison_decision
 	}
+	if = {
+		limit = { has_character_modifier = allowed_to_go_outside }
+		remove_character_modifier = allowed_to_go_outside
+	}
+	if = {
+		limit = { has_character_modifier = moldy_gruel_diet }
+		remove_character_modifier = moldy_gruel_diet
+	}
 }
 
 #Are you unjustly trying to imprison your bishop? tut-tut
@@ -1384,5 +1544,79 @@ imprison_tyranny_effect = {
 
 	else = {
 		add_tyranny = imprisonment_tyranny_gain
+	}
+}
+
+
+imprison_remove_ward_guardian_effect = {
+	#Remove them as guardian/ward for any courtiers and give feedback about this
+	$PRISONER$ = { save_temporary_scope_as = imprisonment_target }
+	$IMPRISONER$ = { save_temporary_scope_as = imprisoner }
+
+	scope:imprisoner = {
+		#Check for relations
+		if = {
+			limit = {
+				any_courtier = {
+					has_relation_guardian = scope:imprisonment_target
+					has_relation_ward = scope:imprisonment_target
+				}
+			}
+			#Save all those with a ward/guardian relation to the person being imprisoned
+			every_courtier = {
+				limit = {
+					has_relation_guardian = scope:imprisonment_target
+					has_relation_ward = scope:imprisonment_target
+				}
+				add_to_list = ward_or_guardian_list
+			}
+			# Send messages to people that need to know that the ward/guardian relationship is over	
+			every_in_list = {
+				list = ward_or_guardian_list
+				save_scope_as = their_ward_or_guardian #saved for appropriate portrait in message
+				
+				send_interface_message = {
+					type = event_generic_neutral
+					title = remove_guardian_interaction_notification
+					left_icon = scope:imprisonment_target
+					right_icon = scope:their_ward_or_guardian
+
+					scope:imprisonment_target = {
+						send_interface_message = {
+							type = event_generic_neutral
+							title = remove_guardian_interaction_notification
+							left_icon = scope:imprisonment_target
+							right_icon = scope:their_ward_or_guardian
+							#Remove appropriate relationship
+							scope:their_ward_or_guardian = {
+								if = {
+									limit = { has_relation_guardian = scope:imprisonment_target }
+									remove_relation_guardian = scope:imprisonment_target
+									guardian_remove_opinion_effect = {
+										GUARDIAN = this
+										WARD = scope:imprisonment_target
+										WARD_LIEGE = scope:imprisoner
+									}
+								}
+								else = {
+									remove_relation_ward = scope:imprisonment_target
+									guardian_remove_opinion_effect = {
+										GUARDIAN = scope:imprisonment_target
+										WARD = this
+										WARD_LIEGE = scope:imprisoner
+									}
+								}
+								if = {
+									limit = {
+										NOT = { host = liege }
+									}
+									return_to_court = yes
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 }
