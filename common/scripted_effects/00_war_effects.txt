@@ -20,12 +20,25 @@
 #####################################################################
 
 on_declared_war = {
+	###############################
+	##### Attacker music
+	###############################
 	if = {
 		limit = {
 			exists = scope:war # silence error when building description before war exists
 			scope:war = { using_holy_war_cb_trigger = yes } # going CB->war->is this war's CB a certain type->yes
 		}
 		scope:attacker = { play_music_cue = mx_cue_crusade_starts }
+	}
+	else_if = {
+		limit = {
+			exists = scope:war
+			OR = {
+				scope:attacker = { fp2_character_any_involvement_iberian_struggle_trigger = yes }
+				scope:defender = { fp2_character_any_involvement_iberian_struggle_trigger = yes }
+			}
+		}
+		scope:attacker = { play_music_cue = mx_IberiaWar }
 	}
 	else_if = {
 		limit = {
@@ -37,18 +50,40 @@ on_declared_war = {
 	else = {
 		scope:attacker = { play_music_cue = mx_cue_war_declared }
 	}
+	###############################
+	##### Defender music
+	###############################
+	###############################
+	##### Defender music
+	###############################
 	if = {
+		limit = {
+			exists = scope:war
+			OR = {
+				scope:attacker = { fp2_character_any_involvement_iberian_struggle_trigger = yes }
+				scope:defender = { fp2_character_any_involvement_iberian_struggle_trigger = yes }
+			}
+		}
+		scope:defender = { play_music_cue = mx_IberiaWar }
+	}
+	else_if = {
 		limit = {
 			exists = scope:war
 			scope:attacker = { fp1_is_norse_tribal = yes }
 		}
 		scope:defender = { play_music_cue = mx_raid }
 	}
+
 	else = {
 		scope:defender = {
 			play_music_cue = mx_cue_war_declared
 		}
 	}
+
+	###############################
+	##### Effects
+	###############################
+
 	if = {
 		limit = {
 			scope:attacker = {
@@ -70,6 +105,32 @@ on_declared_war = {
 				modifier = broke_truce
 				years = 3
 			}
+
+			# Struggle Catalysts.
+			#if = {
+			#	limit = {
+			#		any_character_struggle = {
+			#			involvement = involved
+			#			activate_struggle_catalyst_secondary_character_involvement_involved_trigger = {
+			#				CATALYST = catalyst_broke_truce_against_important_character
+			#				CHAR = scope:defender
+			#			}
+			#		}
+			#	}
+			#	every_character_struggle = {
+			#		involvement = involved
+			#		limit = {
+			#			activate_struggle_catalyst_secondary_character_involvement_involved_trigger = {
+			#				CATALYST = catalyst_broke_truce_against_important_character
+			#				CHAR = scope:defender
+			#			}
+			#		}
+			#		activate_struggle_catalyst = {
+			#			catalyst = catalyst_broke_truce_against_important_character
+			#			character = scope:attacker
+			#		}
+			#	}
+			#}
 		}
 	}
 	if = {
@@ -226,6 +287,87 @@ conquest_cb_title_transfer = {
 			every_sub_realm_county = {
 				remove_from_list = titles_taken
 			}	
+		}
+	}		
+}
+
+struggle_cb_title_transfer = {
+	save_scope_as = target_title # For the vassalization trigger.
+
+	# Compile a list of all counties in the kingdom we will take from the defender.
+	every_in_de_jure_hierarchy = {
+		continue = {
+			tier > tier_county
+		}
+		limit = {
+			tier = tier_county
+
+			# Current holder must be a (sub)vassal of the defender (no poaching titles from 3rd parties!)
+			exists = holder
+			holder = {
+				OR = {
+					this = scope:defender
+					target_is_liege_or_above = scope:defender
+				}
+			}
+		}
+		add_to_list = titles_taken
+	}
+	
+	every_in_list = {
+		list = target_titles
+		limit = {
+			tier = tier_county
+			exists = holder
+			holder = {
+				highest_held_title_tier < scope:attacker.highest_held_title_tier
+				OR = {
+					this = scope:defender
+					target_is_liege_or_above = scope:defender
+				}
+				any_sub_realm_county = {
+					count = all
+					is_in_list = titles_taken
+				}
+			}
+		}
+		holder = {
+			if = {
+				limit = {
+					NOT = { is_in_list = potential_vassals }
+				}				
+				add_to_list = potential_vassals
+			}
+		}
+	}
+	
+	ordered_in_list = {
+		list = potential_vassals
+		order_by = highest_held_title_tier
+		max = 99
+		check_range_bounds = no
+
+		if = {
+			# If a liege has already been added to the vassalization list, skip us (we will remain our liege's vassal.)
+			limit = {
+				save_temporary_scope_as = this_vassal
+				any_in_list = {
+					list = vassals_taken
+					target_is_vassal_or_below = scope:this_vassal
+				}
+			}
+		}
+		else = {
+			# Flag this character to be vassalized instead of usurped.
+			add_to_list = vassals_taken
+			
+			# Remove the counties this vassal holds from the siezed title list (the vassal gets to keep their land when switching allegiance!)
+			every_held_county = {
+				remove_from_list = titles_taken
+			}
+			every_sub_realm_county = {
+				remove_from_list = titles_taken
+			}
 		}
 	}		
 }
@@ -427,25 +569,36 @@ on_lost_request_revolt_war = {
 
 # Add revoke reason on all faction-members if they white peace a revolt-war
 on_white_peace_faction_revolt_war = {
-	scope:attacker.joined_faction = {
-		every_faction_member = {
+	if = {
+		limit = { exists = scope:attacker.joined_faction  }
+		scope:attacker.joined_faction = {
+			save_scope_as = current_faction
+			every_faction_member = {
+				if = {
+					limit = {
+						exists = scope:current_faction # Can get destroyed as we loop through
+					}
+					leave_faction_with_cooldown_effect = {
+						FACTION = scope:current_faction
+						YEARS = faction_war_white_peace_cooldown
+					}
+				}
+				else = {
+					add_faction_cooldown_effect = { YEARS = faction_war_white_peace_cooldown }
+				}
+				scope:defender = {
+					add_opinion = {
+						target = prev
+						modifier = vassal_wp_faction_revolt_war
+					}
+				}
+			}
+
 			if = {
 				limit = {
-					exists = scope:attacker.joined_faction # Can get destroyed as we loop through
+					exists = this
 				}
-				leave_faction_with_cooldown_effect = {
-					FACTION = scope:attacker.joined_faction
-					YEARS = faction_war_white_peace_cooldown
-				}
-			}
-			else = {
-				add_faction_cooldown_effect = { YEARS = faction_war_white_peace_cooldown }
-			}
-			scope:defender = {
-				add_opinion = {
-					target = prev
-					modifier = vassal_wp_faction_revolt_war
-				}
+				add_faction_discontent = -200
 			}
 		}
 	}
@@ -854,23 +1007,70 @@ send_new_alliance_message = {
 add_truce_attacker_victory_effect = {
 	hidden_effect = {
 		scope:attacker = {
-			if = {
-				limit = {
-					has_perk = flexible_truces_perk
-				}
-				add_truce_one_way = {
-					character = scope:defender
-					days = flexible_truces_perk_truce_duration_days
-					war = root.war
-					result = victory
+			add_truce_one_way = {
+				character = scope:defender
+				days = standard_truce_duration_days
+				war = root.war
+				result = victory
+			}
+		}
+	}
+	scope:attacker = {
+		if = {
+			limit = {
+				exists = house.house_head
+				house.house_head = {
+					house_feud_target_house_trigger = { HOUSE = scope:defender.house }
 				}
 			}
-			else = {
-				add_truce_one_way = {
-					character = scope:defender
-					days = standard_truce_duration_days
-					war = root.war
-					result = victory
+			house.house_head = {
+				random_owned_story = {
+					limit = { story_type = story_cycle_house_feud }
+					change_variable = {
+						name = house_feud_kill_counter
+						add = house_feud_medium_counter_value
+					}
+				}
+			}
+			house = {
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_victory_message
+						left_icon = scope:attacker
+						right_icon = scope:defender
+						custom_tooltip = house_feud_tipped_scales_pos_medium
+					}
+				}
+			}
+		}
+	}
+	scope:defender = {
+		if = {
+			limit = {
+				exists = house.house_head
+				house.house_head = {
+					house_feud_target_house_trigger = { HOUSE = scope:attacker.house }
+				}
+			}
+			house.house_head = {
+				random_owned_story = {
+					limit = { story_type = story_cycle_house_feud }
+					change_variable = {
+						name = house_feud_death_counter
+						add = house_feud_medium_counter_value
+					}
+				}
+			}
+			house = {
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_defeat_message
+						left_icon = scope:defender
+						right_icon = scope:attacker
+						custom_tooltip = house_feud_tipped_scales_neg_medium
+					}
 				}
 			}
 		}
@@ -881,23 +1081,54 @@ add_truce_attacker_victory_effect = {
 add_truce_white_peace_effect = {
 	hidden_effect = {
 		scope:attacker = {
-			if = {
-				limit = {
-					has_perk = flexible_truces_perk
-				}
-				add_truce_one_way = {
-					character = scope:defender
-					days = flexible_truces_perk_truce_duration_days
-					war = root.war
-					result = white_peace
+			add_truce_one_way = {
+				character = scope:defender
+				days = standard_truce_duration_days
+				war = root.war
+				result = white_peace
+			}
+		}
+	}
+	scope:attacker = {
+		if = {
+			limit = {
+				exists = house.house_head
+				house.house_head = {
+					house_feud_target_house_trigger = { HOUSE = scope:defender.house }
 				}
 			}
-			else = {
-				add_truce_one_way = {
-					character = scope:defender
-					days = standard_truce_duration_days
-					war = root.war
-					result = white_peace
+			house = {
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_white_peace_message
+						left_icon = scope:attacker
+						right_icon = scope:defender
+						title = msg_house_feud_white_peace
+						desc = msg_house_feud_white_peace_desc
+					}
+				}
+			}
+		}
+	}
+	scope:defender = {
+		if = {
+			limit = {
+				exists = house.house_head
+				house.house_head = {
+					house_feud_target_house_trigger = { HOUSE = scope:attacker.house }
+				}
+			}
+			house = {
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_white_peace_message
+						left_icon = scope:defender
+						right_icon = scope:attacker
+						title = msg_house_feud_white_peace
+						desc = msg_house_feud_white_peace_desc
+					}
 				}
 			}
 		}
@@ -908,23 +1139,73 @@ add_truce_white_peace_effect = {
 add_truce_attacker_defeat_effect = {
 	hidden_effect = {
 		scope:attacker = {
-			if = {
-				limit = {
-					has_perk = flexible_truces_perk
-				}
-				add_truce_one_way = {
-					character = scope:defender
-					days = flexible_truces_perk_truce_duration_days
-					war = root.war
-					result = defeat
+			add_truce_one_way = {
+				character = scope:defender
+				days = standard_truce_duration_days
+				war = root.war
+				result = defeat
+			}
+		}
+	}
+	scope:attacker = {
+		if = {
+			limit = {
+				exists = house.house_head
+				house.house_head = {
+					house_feud_target_house_trigger = { HOUSE = scope:defender.house }
 				}
 			}
-			else = {
-				add_truce_one_way = {
-					character = scope:defender
-					days = standard_truce_duration_days
-					war = root.war
-					result = defeat
+			house.house_head = {
+				random_owned_story = {
+					limit = { story_type = story_cycle_house_feud }
+					change_variable = {
+						name = house_feud_death_counter
+						add = house_feud_medium_counter_value
+					}
+				}
+			}
+			house = {
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_defeat_message
+						left_icon = scope:attacker
+						right_icon = scope:defender
+						title = msg_house_feud_defeat
+						desc = msg_house_feud_defeat_desc
+						custom_tooltip = house_feud_tipped_scales_neg_medium
+					}
+				}
+			}
+		}
+	}
+	scope:defender = {
+		if = {
+			limit = {
+				exists = house.house_head
+				house.house_head = {
+					house_feud_target_house_trigger = { HOUSE = scope:attacker.house }
+				}
+			}
+			house.house_head = {
+				random_owned_story = {
+					limit = { story_type = story_cycle_house_feud }
+					change_variable = {
+						name = house_feud_kill_counter
+						add = house_feud_medium_counter_value
+					}
+				}
+			}
+			house = {
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_victory_message
+						left_icon = scope:defender
+						right_icon = scope:attacker
+						title = msg_house_feud_victory
+						desc = msg_house_feud_victory_desc
+					}
 				}
 			}
 		}
