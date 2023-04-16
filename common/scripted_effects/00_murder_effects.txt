@@ -25,6 +25,127 @@ murder_consequences_known_or_exposed_effect = {
 			add_piety = medium_piety_loss
 		}
 
+		# Family Feud
+		if = {
+			limit = {
+				has_bp1_dlc_trigger = yes
+				exists = $VICTIM$.house.house_head
+				exists = $MURDERER$.house.house_head
+			}
+			# Notifications
+			# Inform victim house that they have lost score
+			if = {
+				limit = {
+					# Victim's House is targeted by killer's House
+					$VICTIM$.house.house_head = {
+						house_feud_target_house_trigger = { HOUSE = $MURDERER$.house }
+					}
+				}
+				$VICTIM$.house = {
+					house_head = {
+						random_owned_story = {
+							limit = { story_type = story_cycle_house_feud }
+							save_scope_as = house_feud_story
+							change_variable = {
+								name = house_feud_death_counter
+								add = house_feud_medium_counter_value
+							}
+						}
+					}
+					every_house_member = {
+						limit = { is_ai = no }
+						send_interface_message = {
+							type = house_feud_kill_us_message
+							left_icon = $VICTIM$
+							right_icon = $MURDERER$
+							custom_tooltip = house_feud_tipped_scales_neg_medium
+						}
+					}
+				}
+			}
+			if = {
+				limit = {
+					# Victim's House is targeted by killer's House
+					$MURDERER$.house.house_head = {
+						house_feud_target_house_trigger = { HOUSE = $VICTIM$.house }
+					}
+				}
+				# Inform killer house that they have gained score
+				$MURDERER$.house = {
+					house_head = {
+						random_owned_story = {
+							limit = { story_type = story_cycle_house_feud }
+							save_scope_as = house_feud_story
+							change_variable = {
+								name = house_feud_kill_counter
+								add = house_feud_medium_counter_value
+							}
+						}
+					}
+					every_house_member = {
+						limit = { is_ai = no }
+						send_interface_message = {
+							type = house_feud_kill_them_message
+							left_icon = scope:killer
+							right_icon = root
+							custom_tooltip = house_feud_tipped_scales_pos_medium
+						}
+					}
+				}
+			}
+			# Events
+			# Fire Feud start event for victim house
+			if = {
+				limit = {
+					$VICTIM$ = {
+						house.house_head = { house_feud_house_head_trigger = yes }
+						NOT = {
+							has_any_bad_relationship_with_character_trigger = { CHARACTER = $VICTIM$.house.house_head }
+						}
+					}
+					house_feud_attacker_trigger = { VICTIM_HEAD = $VICTIM$.house.house_head }
+				}
+				$VICTIM$ = { save_scope_as = house_feud_victim }
+				house_feud_save_head_and_attacker_effect = yes
+				$VICTIM$.house.house_head = {
+					random = {
+						chance = 25
+						modifier = {
+							add = 25
+							has_trait = vengeful
+						}
+						modifier = {
+							add = -25
+							has_trait = forgiving
+						}
+						modifier = {
+							add = 25
+							has_any_bad_relationship_with_character_trigger = { CHARACTER = $MURDERER$ }
+						}
+						trigger_event = {
+							id = bp1_house_feud.0005
+							days = { 5 15 }
+						}
+					}
+				}
+			}
+			# Fire Feud revenge event for killer house
+			$MURDERER$.house.house_head = {
+				if = {
+					limit = {
+						any_owned_story = {
+							story_type = story_cycle_house_feud
+							OR = {
+								var:house_feud_reason = flag:head_killed
+								var:house_feud_reason = flag:family_killed
+							}
+							var:house_feud_attacker = $VICTIM$
+						}
+					}
+					trigger_event = { id = bp1_house_feud.7001 days = 15 }
+				}
+			}
+		}
 		###OPINION AND DREAD###
 		#Hide this from POV if they're not the murderer
 		if = {
@@ -77,7 +198,7 @@ unknown_murder_effect = {
 	}
 	$VICTIM$ = {
 		#Killed by murder: set this up first to keep the killer hidden.
-		override_death_killer_effect = { DEATH_REASON = $REASON$ KILLER = $MURDERER$ }
+		override_death_killer_effect = { death_reason = $REASON$ killer = $MURDERER$ }
 	}
 	$MURDERER$ = {
 		if = {
@@ -108,7 +229,7 @@ unknown_murder_effect = {
 #If it's a cannibal eating you - so that that fact is saved for future reference
 unknown_cannibal_murder_effect = {
 	$VICTIM$ = {
-		override_death_killer_effect = { DEATH_REASON = death_mysterious KILLER = $MURDERER$ }
+		override_death_killer_effect = { death_reason = death_mysterious killer = $MURDERER$ }
 	}
 	$MURDERER$ = {
 		add_secret = {
@@ -128,11 +249,40 @@ unknown_cannibal_murder_effect = {
 	}
 }
 
+#Your head is turned into a bell chime
+unknown_bell_murder_effect = {
+	$VICTIM$ = {
+		death = {
+			death_reason = death_mysterious
+			killer = $MURDERER$
+		}
+	}
+	$MURDERER$ = {
+		add_secret = {
+			type = secret_murder
+			target = $VICTIM$
+		}
+		random_secret = {
+			limit = {
+				secret_type = secret_murder
+				secret_target = $VICTIM$
+			}
+			save_scope_as = bell_secret
+			set_variable = { #To set the right death reason if the secret is revealed
+				name = was_turned_into_bell_chime 
+				value = yes
+			}
+		}
+	}
+}
+
 
 #KNOWN MURDER
 
 # Exposer can be another character, or the murderer themselves if no specific character makes sense
 known_murder_effect = {
+	$VICTIM$ = { save_scope_as = victim_scope }
+	$MURDERER$ = { save_scope_as = murderer_scope }
 	hidden_effect = {
 		if = {
 			limit = { $VICTIM$ = { has_character_flag = is_party_baron } }
@@ -143,7 +293,60 @@ known_murder_effect = {
 		}
 	}
 	$VICTIM$ = {
-		override_death_killer_effect = { DEATH_REASON = death_murder KILLER = $MURDERER$ }
+		every_close_family_member = {
+			limit = {
+				NOT = { this = $MURDERER$ }
+				trigger_if = {
+					limit = { exists = scope:scheme }
+					NOT = {
+						scope:scheme = { scheme_is_character_agent = prev }
+					}
+				}
+				NOT = {
+					is_scheming_against = {
+						target = $VICTIM$
+						type = murder
+					}
+				}
+				opinion = {
+					target = $VICTIM$
+					value > -50
+				}
+				NOT = {
+					has_any_bad_relationship_with_character_trigger = { CHARACTER = $VICTIM$ }
+				}
+			}
+			random = {
+				chance = 25
+				modifier = {
+		            factor = 2
+		            has_trait = wrathful
+		        }
+		        modifier = {
+		            factor = 2
+		            has_trait = vengeful
+		        }
+		        modifier = {
+		            factor = 2
+		            has_any_good_relationship_with_character_trigger = { CHARACTER = $VICTIM$ }
+		        }
+		        modifier = {
+		        	factor = 2
+		        	OR = {
+		        		is_parent_of = $VICTIM$
+		        		is_child_of = $VICTIM$
+		        	} 	
+		        }
+			    trigger_event = {
+					id = bp1_yearly.8050
+					days = 15
+				}
+			}
+		}
+		death = {
+			death_reason = death_murder
+			killer = $MURDERER$
+		}
 		hidden_effect = { set_killer_public = yes }
 	}
 	$MURDERER$ = {
@@ -172,6 +375,139 @@ known_murder_effect = {
 			MURDERER = $MURDERER$
 			VICTIM = $VICTIM$
 			POV = root
+		}
+	}
+	# Family Feud
+	if = {
+		limit = {
+			has_bp1_dlc_trigger = yes
+			exists = $VICTIM$.house.house_head
+			exists = $MURDERER$.house.house_head
+		}
+		# Notifications
+		if = {
+			limit = {
+				# Victim's House is targeted by killer's House
+				$MURDERER$.house.house_head = {
+					house_feud_target_house_trigger = { HOUSE = $VICTIM$.house }
+				}
+			}
+			# Inform killer house that they have gained score
+			$MURDERER$.house = {
+				house_head = {
+					random_owned_story = {
+						limit = { story_type = story_cycle_house_feud }
+						save_scope_as = house_feud_story
+						change_variable = {
+							name = house_feud_kill_counter
+							add = house_feud_medium_counter_value
+						}
+						if = {
+							limit = {
+								NOT = { has_variable = house_feud_recent_kill }
+							}
+							set_variable = {
+								name = house_feud_recent_kill
+								value = $VICTIM$
+								months = 6
+							}
+						}
+					}
+				}
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_kill_them_message
+						left_icon = $MURDERER$
+						right_icon = $VICTIM$
+						custom_tooltip = house_feud_tipped_scales_pos_medium
+					}
+				}
+			}
+			# Inform victim house that they have lost score
+			$VICTIM$.house = {
+				house_head = {
+					random_owned_story = {
+						limit = { story_type = story_cycle_house_feud }
+						save_scope_as = house_feud_story
+						change_variable = {
+							name = house_feud_death_counter
+							add = house_feud_medium_counter_value
+						}
+						if = {
+							limit = {
+								NOT = { has_variable = house_feud_recent_death }
+							}
+							set_variable = {
+								name = house_feud_recent_death
+								value = $VICTIM$
+								months = 6
+							}
+						}
+					}
+				}
+				every_house_member = {
+					limit = { is_ai = no }
+					send_interface_message = {
+						type = house_feud_kill_us_message
+						left_icon = $VICTIM$
+						right_icon = $MURDERER$
+						custom_tooltip = house_feud_tipped_scales_neg_medium
+					}
+				}
+			}
+		}
+		# Events
+		# Fire Feud revenge event for killer house
+		$MURDERER$.house.house_head = {
+			if = {
+				limit = {
+					any_owned_story = {
+						story_type = story_cycle_house_feud
+						OR = {
+							var:house_feud_reason = flag:head_killed
+							var:house_feud_reason = flag:family_killed
+						}
+						var:house_feud_attacker = $VICTIM$
+					}
+				}
+				trigger_event = { id = bp1_house_feud.7001 days = 15 }
+			}
+		}
+		# Fire Feud start event for victim house
+		if = {
+			limit = {
+				$VICTIM$ = {
+					house.house_head = { house_feud_house_head_trigger = yes }
+					NOT = {
+						has_any_bad_relationship_with_character_trigger = { CHARACTER = $VICTIM$.house.house_head }
+					}
+				}
+				house_feud_attacker_trigger = { VICTIM_HEAD = $VICTIM$.house.house_head }
+			}
+			$VICTIM$ = { save_scope_as = house_feud_victim }
+			house_feud_save_head_and_attacker_effect = yes
+			$VICTIM$.house.house_head = {
+				random = {
+					chance = 25
+					modifier = {
+						add = 25
+						has_trait = vengeful
+					}
+					modifier = {
+						add = -25
+						has_trait = forgiving
+					}
+					modifier = {
+						add = 25
+						has_any_bad_relationship_with_character_trigger = { CHARACTER = $MURDERER$ }
+					}
+					trigger_event = {
+						id = bp1_house_feud.0005
+						days = { 5 15 }
+					}
+				}
+			}
 		}
 	}
 }
@@ -322,12 +658,47 @@ set_local_venomous_creature_effect = {
 			}
 			modifier = {
 				factor = 0
-				# Warcraft
-				NOT = { location = { red_scorpion_region_trigger = yes } }
+				trigger_if = {
+					limit = {
+						exists = location
+					}
+					# Warcraft
+					NOT = { location = { red_scorpion_region_trigger = yes } }
+				}
 			}
 		}
-		
-		# Warcraft
+		1000 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:deathstalker #North Africa or Middle East
+			}
+			modifier = {
+				factor = 0
+				trigger_if = {
+					limit = {
+						exists = location
+					}
+					# Warcraft
+					NOT = { location = { red_scorpion_region_trigger = yes } }
+				}
+			}
+		}
+		500 = {
+			save_scope_value_as = {
+				name = venomous_creature
+				value = flag:fat_tail #Arabia, Middle East, Egypt
+			}
+			modifier = {
+				factor = 0
+				trigger_if = {
+					limit = {
+						exists = location
+					}
+					# Warcraft
+					NOT = { location = { red_scorpion_region_trigger = yes } }
+				}
+			}
+		}
 		1000 = {
 			save_scope_value_as = {
 				name = venomous_creature
@@ -335,8 +706,13 @@ set_local_venomous_creature_effect = {
 			}
 			modifier = {
 				factor = 0
-				# Warcraft
-				NOT = { location = { viper_region_trigger = yes } }
+				trigger_if = {
+					limit = {
+						exists = location
+					}
+					# Warcraft
+					NOT = { location = { viper_region_trigger = yes } }
+				}
 			}
 		}
 		
