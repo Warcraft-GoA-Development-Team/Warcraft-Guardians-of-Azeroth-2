@@ -951,15 +951,12 @@ contract_great_pox_from = {
 risk_of_std_from_effect = {
 	random = {
 		chance = 50
-		
 		# Warcraft
 		lovers_pox_chance_modifier = yes
-		
 		modifier = {
 			add = -30
 			has_perk = wash_your_hands_perk
 		}
-		
 		contract_lovers_pox_from = { PARTNER = $PARTNER$ }
 	}
 	random = {
@@ -1164,7 +1161,7 @@ increase_wounds_effect = {
 				rank = 3
 			}
 		}
-		override_death_effect = { DEATH_REASON = death_$REASON$ }
+		override_death_effect = { death_reason = death_$REASON$ }
 	}
 }
 
@@ -1243,22 +1240,58 @@ target_weight_modifier_effect = {
 ### COURT PHYSICIAN MANAGEMENT ###
 
 set_court_physician_effect = {
-	$PHYSICIAN$ = { custom_tooltip = set_court_physician_effect.tt }
-
+	$PHYSICIAN$ = {
+		if = {
+			limit = { 
+				NOT = { liege = $EMPLOYER$ }
+			}
+			$EMPLOYER$ = { add_courtier = $PHYSICIAN$ }
+		}
+	}
 	$EMPLOYER$ = {
-		hidden_effect = { set_relation_court_physician = $PHYSICIAN$ }
+		#Replace existing court physician if one exists
+		if = {
+			limit = {
+				employs_court_position = court_physician_court_position
+				any_court_position_holder = {
+					type = court_physician_court_position
+					count > 0
+				}
+			}
+			every_court_position_holder = {
+				type = court_physician_court_position
+				save_temporary_scope_as = old_physician
 
-		every_relation = {
-			type = court_physician
-			limit = { NOT = { this = $PHYSICIAN$ } }
-
-			save_temporary_scope_as = old_physician
-			fire_court_physician_effect = {
-				PHYSICIAN = scope:old_physician
-				EMPLOYER = $EMPLOYER$
+				$EMPLOYER$ = {
+					replace_court_position = {
+						recipient = $PHYSICIAN$
+						holder = scope:old_physician
+						court_position = court_physician_court_position
+					}
+					reverse_add_opinion = {
+						target = scope:old_physician
+						modifier = disappointed_opinion
+						opinion = -15
+					}
+					reverse_add_opinion = {
+						target = $PHYSICIAN$
+						modifier = hired_me_opinion
+					}
+				}
 			}
 		}
-
+		#Else just straight up appoint
+		else = {
+			appoint_court_position = {
+				recipient = $PHYSICIAN$
+				court_position = court_physician_court_position
+			}
+			reverse_add_opinion = {
+				target = $PHYSICIAN$
+				modifier = hired_me_opinion
+			}
+		}
+	
 		#Trigger treatments if needed
 		hidden_effect = {
 			if = {
@@ -1304,50 +1337,6 @@ set_court_physician_effect = {
 			}
 		}
 	}
-	
-	#In case we saved someone who shouldn't be a court physician (must be done this way rather than wrapping everything in an if for tooltip reasons when PHYSICIAN isn't your courtier yet)
-	invalidate_physician_effect = {
-		PHYSICIAN = $PHYSICIAN$
-		EMPLOYER = $EMPLOYER$
-	}
-}
-
-
-fire_court_physician_effect = {
-	$PHYSICIAN$ = { custom_tooltip = fire_court_physician_effect.tt }
-	$EMPLOYER$ = {
-		if = {
-			limit = {
-				has_relation_court_physician = $PHYSICIAN$
-			}
-			hidden_effect = { remove_relation_court_physician = $PHYSICIAN$ }
-
-			reverse_add_opinion = {
-				target = $PHYSICIAN$
-				modifier = disappointed_opinion
-				opinion = -15
-			}
-		}
-	}
-}
-
-invalidate_physician_effect = {
-	hidden_effect = {
-		if = {
-			limit = {
-				NOT = { $PHYSICIAN$ = { can_be_court_physician_of = { EMPLOYER = $EMPLOYER$ } } }
-			}
-			$PHYSICIAN$ = { save_scope_as = invalidated_physician }
-			$EMPLOYER$ = {
-				send_interface_message = {
-					type = event_court_physician_bad
-					title = invalidate_physician_effect.t
-					left_icon = scope:invalidated_physician
-					remove_relation_court_physician = $PHYSICIAN$
-				}
-			}
-		}
-	}
 }
 
 save_court_physician_as_effect = {
@@ -1355,17 +1344,11 @@ save_court_physician_as_effect = {
 		if = { 	
 			limit = { exists = court_owner }
 			court_owner = {
-				save_temporary_scope_as = save_physician_employer
-				every_relation = {
-					type = court_physician
-					save_temporary_scope_as = save_physician_physician
-					invalidate_physician_effect = {
-						PHYSICIAN = scope:save_physician_physician
-						EMPLOYER = scope:save_physician_employer
+				random_court_position_holder = {
+					type = court_physician_court_position
+					limit = {
+						is_physically_able = yes
 					}
-				}
-				random_relation = {
-					type = court_physician
 					save_scope_as = $SCOPE_NAME$
 				}
 			}
@@ -1927,8 +1910,15 @@ no_disease_treatment_effect = {
 find_court_physician_effect = {
 	custom_tooltip = health.3101.e.tt
 	hidden_effect = {
-		add_character_flag = { flag = already_sick days = 30 }
-		trigger_event = { id = health.3001 days = { court_physician_search_min court_physician_search_max } }
+		# Stop AI taking physicians via event, since they've got an AI prioritisation system to work with.
+		## We do this in the effect rather than elsewhere for script hygiene.
+		if = {
+			limit = { is_ai = no }
+			add_character_flag = { flag = already_sick days = 30 }
+			trigger_event = {
+				id = health.3001 days = { court_physician_search_min court_physician_search_max }
+			}
+		}
 	}
 }
 
@@ -3860,7 +3850,7 @@ committed_suicide_effect = {
 		}
 	}
 	add_piety_level = -1
-	override_death_effect = { DEATH_REASON = death_suicide }
+	override_death_effect = { death_reason = death_suicide }
 }
 
 #Effect run when you attempt to commit suicide

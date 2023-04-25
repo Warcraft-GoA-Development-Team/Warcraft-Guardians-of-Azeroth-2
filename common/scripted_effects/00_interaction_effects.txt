@@ -118,17 +118,17 @@ torture_interaction_actor_effect = {
 
 		###STRESS###
 
-		#Stress if they are my rival I hate them
+		#Stress loss if they are my rival I hate them
 		if = {
 			limit = { has_relation_rival = scope:recipient }
 
 			if = {
 				limit = {
 					NOR = {
-						has_trait = sadistic #Extra stress
-						has_trait = vengeful #Extra stress
-						has_trait = compassionate #Lessened impact
-						has_trait = forgiving #Lessened impact
+						has_trait = sadistic
+						has_trait = vengeful
+						has_trait = compassionate
+						has_trait = forgiving
 					}
 				}
 				add_stress = medium_stress_loss
@@ -136,17 +136,65 @@ torture_interaction_actor_effect = {
 			else = {
 				stress_impact = {
 					sadistic = major_stress_impact_loss
-					vengeful = major_stress_impact_loss
+					vengeful = massive_stress_impact_loss
 					compassionate = minor_stress_impact_gain
 					forgiving = minor_stress_impact_gain
 				}
 			}
 		}
-		#Regular stress
+		else_if = { # Torturing infidels is relaxing
+			limit = {
+				has_trait = zealous
+				NOT = { scope:actor.faith = scope:recipient.faith }
+			}
+
+			if = {
+				limit = {
+					NOR = {
+						has_trait = sadistic
+						has_trait = compassionate
+						has_trait = forgiving
+					}
+				}
+				add_stress = medium_stress_loss
+			}
+			else = {
+				stress_impact = {
+					sadistic = major_stress_impact_loss
+					compassionate = minor_stress_impact_gain
+					forgiving = minor_stress_impact_gain
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:recipient = {
+					OR = {
+						is_child_of = scope:actor
+						is_grandchild_of = scope:actor
+						is_great_grandchild_of = scope:actor
+					}
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_loss
+				compassionate = massive_stress_impact_gain
+				craven = major_stress_impact_gain
+				just = medium_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+				family_first = minor_stress_impact_gain
+			}
+		}
 		else = {
 			stress_impact = {
-				sadistic = minor_stress_impact_loss
-				compassionate = massive_stress_impact_gain
+				sadistic = medium_stress_impact_loss
+				compassionate = major_stress_impact_gain
 				craven = major_stress_impact_gain
 				just = medium_stress_impact_gain
 				forgiving = medium_stress_impact_gain
@@ -577,7 +625,6 @@ blind_recipient_effect = {
 			modifier = recently_blinded
 			years = 1
 		}
-
 		blind_and_castrated_recipient_support_effect = yes
 	}
 }
@@ -784,6 +831,20 @@ revocation_tyranny_effect = {
 			title_revocation_is_tyrannical_trigger = yes
 		}
 		add_tyranny = revoke_title_tyranny_gain
+
+		#If my culture is different from the recipients
+		if = {
+			limit = {
+				NOT = { culture = scope:recipient.culture }
+			} 
+			scope:recipient.culture = {
+				change_cultural_acceptance = {
+					target = scope:actor.culture
+					value = revoke_title_culture_acceptance_impact
+					desc = cultural_acceptance_loss_revokation
+				}
+			}
+		}
 	}
 	else = {
 		if = {
@@ -922,7 +983,6 @@ war_for_revoke_effect = {
 									}
 								}
 							}
-
 						}
 						#And finally, vassals that really hate their liege will join regardless (provided that they also do not hate recipient).
 						AND = {
@@ -930,9 +990,20 @@ war_for_revoke_effect = {
 								target = scope:recipient
 								value >= -25
 							}
-							opinion = {
-								target = scope:actor
-								value <= -50
+							OR = {
+								#default threshold
+								opinion = {
+									target = scope:actor
+									value <= -50
+								}
+								#If tyrannical, the default threshold will be reached if at this level
+								AND = {
+									scope:actor = { title_revocation_is_tyrannical_trigger = yes }
+									opinion = {
+										target = scope:actor
+										value <= -30 #revoke_title_tyranny_gain adds -20
+									}
+								}
 							}
 						}
 					}
@@ -949,7 +1020,7 @@ war_for_revoke_effect = {
 									primary_defender = scope:actor
 								}
 							}
-								add_to_list = war_to_join
+							add_to_list = war_to_join
 						}
 					}
 					every_in_list = {
@@ -1147,8 +1218,13 @@ kick_from_court_interaction_warning_tooltip_effect = {
 		custom_tooltip = kick_from_court_knight_warning_tt
 	}
 	if = {
-		limit = { scope:actor = { has_relation_court_physician = scope:kicked } }
-		custom_tooltip = kick_from_court_physician_warning_tt
+		limit = {
+			scope:kicked = {
+				has_any_court_position = yes
+				any_court_position_employer = { this = scope:actor }
+			}
+		}
+		custom_tooltip = kick_from_court_holds_court_title_warning_tt
 	}
 }
 
@@ -1183,6 +1259,19 @@ disinherit_effect = {
 			add_opinion = {
 				modifier = disinherited_house_member_opinion
 				target = $DISINHERITOR$
+			}
+		}
+	}
+	if = {
+		limit = {
+			exists = dynasty
+			NOT = { $DISINHERITOR$ = dynasty.dynast }
+		}
+		$DISINHERITOR$.dynasty.dynast = {
+			add_opinion = {
+				target = $DISINHERITOR$
+				modifier = fp1_usurped_my_authority_opinion
+				years = 20
 			}
 		}
 	}
@@ -1592,6 +1681,50 @@ educate_child_interaction_effect = {
 	guardian_add_opinion_effect = { GUARDIAN = scope:guardian WARD_LIEGE = scope:ward_liege WARD = scope:ward }
 }
 
+educate_child_event_effect = {
+	scope:ward = {
+		#Set relation and move character
+		set_relation_guardian = scope:guardian
+
+		if = {
+			limit = {
+				scope:guardian = { is_landed = yes }
+				scope:ward = { is_landed = no }
+				NOT = {
+					scope:guardian = scope:ward.host
+				}
+			}
+			visit_court_of = scope:guardian
+		}
+		else_if = {
+			limit = {
+				scope:guardian = { is_landed = no }
+				scope:ward = { is_landed = yes }
+				NOT = {
+					scope:ward = scope:guardian.host
+				}
+			}
+			scope:guardian = {
+				visit_court_of = scope:ward
+			}
+		}
+		else_if = {
+			limit = {
+				scope:guardian = { is_landed = no }
+				scope:ward = { is_landed = no }
+				exists = scope:guardian.host
+				NOT = {
+					scope:guardian.host = scope:ward.host
+				}
+			}
+			visit_court_of = scope:guardian.host
+		}
+	}
+
+	#Opinions
+	guardian_add_opinion_effect = { GUARDIAN = scope:guardian WARD_LIEGE = scope:ward_liege WARD = scope:ward }
+}
+
 offer_ward_interaction_effect = {
 	scope:ward = {
 		#Set relation and move character
@@ -1864,6 +1997,8 @@ offer_guardianship_interaction = {
 			limit = {
 				scope:guardian = { is_landed = no }
 				scope:ward = { is_landed = no }
+				exists = scope:guardian.host
+				exists = scope:ward.host
 				NOT = {
 					scope:guardian.host = scope:ward.host
 				}
@@ -2031,7 +2166,7 @@ offer_guardianship_interaction = {
 		if = {
 			limit = {
 				scope:education_hook = yes
-				has_hook = scope:recipient
+				has_usable_hook = scope:recipient
 			}
 			use_hook = scope:recipient
 		}
@@ -2097,6 +2232,11 @@ offer_vassalization_interaction_effect = {
 				liege = scope:actor
 				change = scope:change
 			}
+			add_opinion = {
+				modifier = became_vassal
+				target = scope:actor
+				opinion = 10
+			}
 		}
 	}
 	resolve_title_and_vassal_change = scope:change
@@ -2156,6 +2296,19 @@ offer_vassalization_interaction_effect = {
 				custom_tooltip = normal_obligations_taxes
 				custom_tooltip = normal_obligations_levies
 			}		
+		}
+		else_if = {
+			limit = {
+				has_government = clan_government
+				scope:religious_exemption_clan = yes
+			}
+			hidden_effect = {
+				if = {
+					limit = { is_independent_ruler = no } # To avoid errors during tooltip generation (prior to the contract being generated)
+					vassal_contract_set_obligation_level = { type = religious_rights level = 1 }
+				}		
+			}
+			custom_tooltip = religious_protection_tt
 		}
 	}
 }
@@ -2240,6 +2393,19 @@ offer_fealty_interaction_effect = {
 				custom_tooltip = normal_obligations_taxes
 				custom_tooltip = normal_obligations_levies
 			}		
+		}
+		else_if = {
+			limit = {
+				has_government = clan_government
+				scope:religious_exemption_clan = yes
+			}
+			hidden_effect = {
+				if = {
+					limit = { is_independent_ruler = no } # To avoid errors during tooltip generation (prior to the contract being generated)
+					vassal_contract_set_obligation_level = { type = religious_rights level = 1 }
+				}		
+			}
+			custom_tooltip = religious_protection_tt
 		}
 	}
 }
@@ -2514,6 +2680,107 @@ revoke_title_interaction_effect = {
 				}
 			}
 		}
+
+		if = {
+			limit = {
+				scope:actor.culture = { has_cultural_parameter = penalty_for_revoking_titles_from_house_members }
+				exists = scope:actor.house
+				exists = scope:recipient.house
+				scope:actor.house = scope:recipient.house
+			}
+			if = {
+				limit = {
+					scope:landed_title.tier = tier_county
+				}
+				scope:actor = {
+					add_prestige = medium_prestige_loss
+				}
+			}
+			else_if = {
+				limit = {
+					scope:landed_title.tier = tier_duchy
+				}
+				scope:actor = {
+					add_prestige = major_prestige_loss
+				}
+			}
+			else = { #Empire
+				limit = {
+					scope:landed_title.tier = tier_kingdom
+				}
+				scope:actor = {
+					add_prestige = massive_prestige_loss
+				}
+			}
+		}
+
+		if = {
+			limit = {
+				scope:actor.culture = { has_cultural_parameter = penalty_for_revoking_titles_from_close_family }
+				exists = scope:actor
+				exists = scope:recipient
+				scope:actor = {
+					is_close_family_of = scope:recipient
+				}
+			}
+			if = {
+				limit = {
+					scope:landed_title.tier = tier_county
+				}
+				scope:actor = {
+					add_prestige = medium_prestige_loss
+				}
+			}
+			else_if = {
+				limit = {
+					scope:landed_title.tier = tier_duchy
+				}
+				scope:actor = {
+					add_prestige = major_prestige_loss
+				}
+			}
+			else = { #Empire
+				limit = {
+					scope:landed_title.tier = tier_kingdom
+				}
+				scope:actor = {
+					add_prestige = massive_prestige_loss
+				}
+			}
+		}
+
+		if = {
+			limit = {
+				scope:actor.culture = { has_cultural_parameter = piety_penalty_for_revoking_titles_from_house_members }
+				exists = scope:actor.house
+				exists = scope:recipient.house
+				scope:actor.house = scope:recipient.house
+			}
+			if = {
+				limit = {
+					scope:landed_title.tier = tier_county
+				}
+				scope:actor = {
+					add_prestige = medium_piety_loss
+				}
+			}
+			else_if = {
+				limit = {
+					scope:landed_title.tier = tier_duchy
+				}
+				scope:actor = {
+					add_prestige = major_piety_loss
+				}
+			}
+			else = { #Can't revoke empire titles anyway
+				limit = {
+					scope:landed_title.tier = tier_kingdom
+				}
+				scope:actor = {
+					add_prestige = massive_piety_loss
+				}
+			}
+		}
 	}
 	else = {
 		if = {
@@ -2527,7 +2794,10 @@ revoke_title_interaction_effect = {
 
 	scope:actor = {
 		if = {
-			limit = { scope:hook = yes }
+			limit = {
+				scope:hook = yes
+				scope:recipient = { is_alive = yes }
+			}
 			use_hook = scope:recipient
 		}
 	}
@@ -2558,12 +2828,16 @@ revoke_title_interaction_effect = {
 				}
 				remove_relation_potential_rival = scope:actor
 			}
-			set_relation_rival = scope:actor
+			set_relation_rival = {
+				target = scope:actor
+				reason = rival_revoked_title_reversed
+			}
 		}
 		else = {
 			progress_towards_rival_effect = {
 				CHARACTER = scope:actor
-				OPINION = no
+				REASON = rival_revoked_title_progress
+				OPINION = 0
 			}
 		}
 	}
@@ -2912,6 +3186,19 @@ hof_ask_for_claim_interaction_effect = {
 	}
 }
 
+vassal_claim_liege_title_interaction_effect = {
+	scope:actor = {
+		add_unpressed_claim = scope:target
+	}
+	scope:recipient = {
+		add_opinion = {
+			target = scope:actor
+			modifier = claimed_my_title_opinion
+			opinion = -50
+		}
+	}
+}
+
 convert_at_war_interaction_effect = {
 	scope:actor = {
 		every_character_war = {
@@ -2960,7 +3247,7 @@ demand_conversion_vassal_ruler_interaction_effect = {
 	if = {
 		limit = {
 			scope:hook = yes
-			scope:actor = { has_hook = scope:recipient }
+			scope:actor = { has_usable_hook = scope:recipient }
 		}
 		scope:actor = {
 			use_hook = scope:recipient
@@ -3005,8 +3292,113 @@ title_revocation_stress_effect = {
 	}
 	else = {
 		stress_impact = {
-			generous = medium_stress_impact_gain
+			generous = minor_stress_impact_gain
 			forgiving = minor_stress_impact_gain
 		}
+	}
+}
+
+revoke_holy_order_lease_effect = {
+	if = {
+		limit = {
+			$TARGET$.faith = {
+				any_faith_holy_order = {
+					num_leased_titles = 1
+					title = $BARONY$.lessee_title
+				}
+			}
+		}
+		custom_tooltip = destroy_holy_order_warning
+	}
+
+	$CHARACTER$ = {
+		send_interface_message = {
+			type = holy_order_cancled_message
+			title = revoke_leased_title_interaction_notification
+			right_icon = $TARGET$
+
+			# Zealous costs stress if same-faith.
+			if = {
+				limit = { $CHARACTER$.faith = $TARGET$.faith }
+				stress_impact = {
+					zealous = massive_stress_impact_gain
+					generous = medium_stress_impact_gain
+					order_member = minor_stress_impact_gain
+				}
+
+				add_piety = {
+					value = 0
+					subtract = cancel_holy_order_piety_cost
+				}
+			}
+			else_if = {
+				# Bit less but still some if you view the other faith as astray.
+				limit = {
+					$CHARACTER$.faith = {
+						faith_hostility_level = {
+							target = $TARGET$.faith
+							value <= faith_astray_level
+						}
+					}
+				}
+				stress_impact = {
+					zealous = major_stress_impact_gain
+					generous = medium_stress_impact_gain
+				}
+
+				add_piety = {
+					value = -100
+				}
+			}
+			else = {
+
+				if = {
+					limit = { exists =  $CHARACTER$.faith.religious_head  }
+					$CHARACTER$.faith.religious_head = {
+						add_opinion = {
+							modifier = pleased_opinion
+							target = $CHARACTER$
+							opinion = 20
+						}
+					}
+				}
+
+				add_piety = {
+					value = 250
+				}
+
+				$TARGET$.faith = {
+					# Fervor impact: big as it's rare
+					change_fervor = {
+						value = 10
+						desc = fervor_gain_holy_order_expelled_by_force
+					}
+				}
+
+				# If the county has the same faith than the HO, locals are unhappy
+				$BARONY$ = {
+					if = {
+						limit = { title_province.county.faith = $TARGET$.faith }
+						title_province.county = {
+							add_county_modifier = {
+								modifier = lost_holy_order_modifier
+								years = 10
+							}
+						}
+					}
+				}
+			}
+
+			$BARONY$ = {
+				revoke_lease = yes
+			}
+		}
+	}
+}
+
+revoke_holy_order_duel_victor_apply_effects_effect = {
+	scope:sc_victor = { 
+		add_stress = major_stress_loss
+		add_prestige = major_prestige_gain
 	}
 }
