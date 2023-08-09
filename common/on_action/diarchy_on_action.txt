@@ -1,0 +1,548 @@
+﻿# Called when liege just entered the diarchy. Diarchy is already created
+# root - liege who just entered diarchy
+# scope:reason is the reason for starting it
+## scope:reason = flag:new_diarchy is the default case when liege becomes valid for diarchy
+## scope:reason = flag:inheritance when liege inherits a bigger realm with higher tier in a diarchy, and inherits it along the way
+on_entered_diarchy = {
+	effect = {
+		diarch = { save_scope_as = diarch }
+		trigger_event = {
+			id = diarchy.0101
+			months = { 3 9 }
+		}
+
+		# Notify the liege's vassals that they're in a diarchy.
+		every_vassal_or_below = {
+			send_interface_message = {
+				type = msg_mandate_results_neutral_text
+				title = {
+					first_valid = {
+						triggered_desc = {
+							trigger = { this.liege = root }
+							desc = on_entered_diarchy.notification.vassal.t
+						}
+						desc = on_entered_diarchy.notification.vassal.t.higher_liege
+					}
+				}
+				left_icon = root.diarch
+				desc = {
+					# Always give the preamble.
+					desc = on_entered_diarchy.notification.vassal.desc
+					# But then state a rationale, if we can.
+					first_valid = {
+						# Child.
+						triggered_desc = {
+							trigger = {
+								root = { is_adult = no }
+							}
+							desc = on_entered_diarchy.notification.vassal.desc.outro.child
+						}
+						# Incapability.
+						triggered_desc = {
+							trigger = {
+								root = { is_incapable = yes }
+							}
+							desc = on_entered_diarchy.notification.vassal.desc.outro.incapable
+						}
+						# Imprisoned.
+						triggered_desc = {
+							trigger = {
+								root = { is_imprisoned = yes }
+							}
+							desc = on_entered_diarchy.notification.vassal.desc.outro.imprisonment
+						}
+						# Travel.
+						triggered_desc = {
+							trigger = {
+								root = { is_travelling = yes }
+							}
+							desc = on_entered_diarchy.notification.vassal.desc.outro.travel
+						}
+					}
+				}
+			}
+		}
+		# And tell the diarch that they're... now a diarch.
+		diarch = {
+			if = {
+				limit = {
+					NOT = { has_character_flag = has_had_diarch_intro_event_flag }
+				}
+				trigger_event = diarchy.0021
+			}
+		}
+
+		# Object explorer logging for number of diarchs by tier.
+		if = {
+			limit = { always = no }
+			# Empires
+			if = {
+				limit = { highest_held_title_tier = tier_empire }
+				add_to_global_variable_list = {
+					name = current_empire_regencies
+					target = primary_title
+				}
+			}
+			# Kingdoms
+			if = {
+				limit = { highest_held_title_tier = tier_kingdom }
+				add_to_global_variable_list = {
+					name = current_kingdom_regencies
+					target = primary_title
+				}
+			}
+			# Duchies
+			if = {
+				limit = { highest_held_title_tier = tier_duchy }
+				add_to_global_variable_list = {
+					name = current_duchy_regencies
+					target = primary_title
+				}
+			}
+			# Counties
+			if = {
+				limit = { highest_held_title_tier = tier_county }
+				add_to_global_variable_list = {
+					name = current_county_regencies
+					target = primary_title
+				}
+			}
+		}
+		# Invalidate grand weddings
+		invalidate_diarch_grand_wedding_effect = yes
+	}
+}
+
+# Called when liege just left the diarchy. Diarchy is already destroyed
+# It might also be called on liege death or destruction, so check for
+# valid and alive liege if needed. In some cases of inheritance old diarch might
+# even no longer be a vassal of the liege
+# root - liege who just left diarchy
+# scope:old_diarch - character who was the diarch
+on_left_diarchy = {
+	effect = {
+		# Notify the liege's vassals that they're out of a diarchy.
+		every_vassal_or_below = {
+			send_interface_message = {
+				type = msg_mandate_results_neutral_text
+				title = on_left_diarchy.notification.vassal.t
+				left_icon = root.diarch
+				desc = on_left_diarchy.notification.vassal.desc
+			}
+		}
+		scope:old_diarch = {
+			# If scope:old_diarch is still around and was plotting a coup, clear their conspirator list.
+			diarch_clean_up_conspiracy_variables_effect = yes
+			# Reset the cooldown on the intro event.
+			if = {
+				limit = { is_alive = yes }
+				trigger_event = {
+					id = diarchy.0022
+					days = 1
+				}
+			}
+		}
+
+		# Object explorer logging for number of diarchs by tier.
+		if = {
+			limit = { always = no }
+			# Empires
+			if = {
+				limit = { highest_held_title_tier = tier_empire }
+				every_held_title = {
+					remove_list_global_variable = {
+						name = current_empire_regencies
+						target = prev
+					}
+				}
+			}
+			# Kingdoms
+			if = {
+				limit = { highest_held_title_tier = tier_kingdom }
+				every_held_title = {
+					remove_list_global_variable = {
+						name = current_kingdom_regencies
+						target = prev
+					}
+				}
+			}
+			# Duchies
+			if = {
+				limit = { highest_held_title_tier = tier_duchy }
+				every_held_title = {
+					remove_list_global_variable = {
+						name = current_duchy_regencies
+						target = prev
+					}
+				}
+			}
+			# Counties
+			if = {
+				limit = { highest_held_title_tier = tier_county }
+				every_held_title = {
+					remove_list_global_variable = {
+						name = current_county_regencies
+						target = prev
+					}
+				}
+			}
+		}
+	}
+}
+
+# Called when diarch changes. Diarchy already has new diarch
+# root - liege whos diarch changed
+# scope:old_diarch - character who was the diarch
+# scope:reason is the reason for change
+## scope:reason = flag:death means the prior diarch died
+## scope:reason = flag:depose means the prior diarch was deposed via the depose_diarch effect
+## scope:reason = flag:invalid means the prior diarch invalidated out
+## scope:reason = flag:inheritance when character changed diarchy during inheritance when going up the rank
+## scope:reason = flag:regular default reason, should not really be used, but rather help catch special cases
+on_diarch_change = {
+	effect = {
+		# Save some scopes for easy loc.
+		save_scope_as = liege
+		diarch = {
+			save_scope_as = diarch
+			# And if you weren't the old diarch also, then you get the starting event.
+			if = {
+				limit = {
+					NOT = { this = scope:old_diarch }
+				}
+				trigger_event = diarchy.0021
+			}
+		}
+		# First, check what kind of change we're dealing with.
+		## Death.
+		if = {
+			limit = { scope:reason = flag:death }
+			# Notify the liege.
+			send_interface_message = {
+				type = msg_mandate_results_neutral_text
+				title = on_diarch_change.notification.liege.death.t
+				left_icon = root.diarch
+				desc = on_diarch_change.notification.liege.death.desc
+			}
+			# Notify the liege's vassals.
+			every_vassal_or_below = {
+				send_interface_message = {
+					type = msg_mandate_results_neutral_text
+					title = on_diarch_change.notification.vassal.death.t
+					left_icon = root.diarch
+					desc = on_diarch_change.notification.vassal.death.desc
+				}
+			}
+		}
+		## Deposition.
+		else_if = {
+			limit = { scope:reason = flag:depose }
+			# Notify the liege.
+			send_interface_message = {
+				type = msg_mandate_results_neutral_text
+				title = on_diarch_change.notification.liege.deposition.t
+				left_icon = root.diarch
+				desc = on_diarch_change.notification.liege.deposition.desc
+			}
+			# Notify the liege's vassals.
+			every_vassal_or_below = {
+				send_interface_message = {
+					type = msg_mandate_results_neutral_text
+					title = on_diarch_change.notification.vassal.deposition.t
+					left_icon = root.diarch
+					desc = on_diarch_change.notification.vassal.deposition.desc
+				}
+			}
+		}
+		## Invalidation.
+		else_if = {
+			limit = { scope:reason = flag:invalid }
+			# Notify the liege.
+			send_interface_message = {
+				type = msg_mandate_results_neutral_text
+				title = on_diarch_change.notification.liege.invalidation.t
+				left_icon = root.diarch
+				desc = on_diarch_change.notification.liege.invalidation.desc
+			}
+			# Notify the liege's vassals.
+			every_vassal_or_below = {
+				send_interface_message = {
+					type = msg_mandate_results_neutral_text
+					title = on_diarch_change.notification.vassal.invalidation.t
+					left_icon = root.diarch
+					desc = on_diarch_change.notification.vassal.invalidation.desc
+				}
+			}
+		}
+		## Inheritance.
+		else_if = {
+			limit = { scope:reason = flag:inheritance }
+			# Notify the liege.
+			send_interface_message = {
+				type = msg_mandate_results_neutral_text
+				title = on_diarch_change.notification.liege.inheritance.t
+				left_icon = root.diarch
+				desc = on_diarch_change.notification.liege.inheritance.desc
+			}
+			# Notify the liege's vassals.
+			every_vassal_or_below = {
+				send_interface_message = {
+					type = msg_mandate_results_neutral_text
+					title = on_diarch_change.notification.vassal.inheritance.t
+					left_icon = root.diarch
+					desc = on_diarch_change.notification.vassal.inheritance.desc
+				}
+			}
+		}
+		## Fallback.
+		else = {
+			# Notify the liege.
+			send_interface_message = {
+				type = msg_mandate_results_neutral_text
+				title = on_diarch_change.notification.liege.fallback.t
+				left_icon = root.diarch
+				desc = on_diarch_change.notification.liege.fallback.desc
+			}
+			# Notify the liege's vassals.
+			every_vassal_or_below = {
+				send_interface_message = {
+					type = msg_mandate_results_neutral_text
+					title = on_diarch_change.notification.vassal.fallback.t
+					left_icon = root.diarch
+					desc = on_diarch_change.notification.vassal.fallback.desc
+				}
+			}
+		}
+		scope:old_diarch = {
+			# If scope:old_diarch is still around and was plotting a coup, clear their conspirator list.
+			diarch_clean_up_conspiracy_variables_effect = yes
+			# Reset the cooldown on the intro event.
+			if = {
+				limit = { is_alive = yes }
+				trigger_event = {
+					id = diarchy.0022
+					days = 1
+				}
+			}
+		}
+		# Invalidate grand weddings
+		invalidate_diarch_grand_wedding_effect = yes
+	}
+}
+
+# Called when liege manually designates a diarch
+# Diarchy shouldn't exist
+# root - liege whos designated diarch changed
+# scope:former_designated_diarch - character who was previously designated diarch
+# former designated diarch might be empty scope
+on_diarch_designation = {
+	effect = {
+		# Designated_diarch is very happy!
+		reverse_add_opinion = {
+			target = root.designated_diarch
+			modifier = designated_me_regent_opinion
+		}
+		# Has designating a diarch pissed anyone off?
+		## We check to see if they're first in line first, since no one really objects to you picking the best available choice.
+		if = {
+			limit = {
+				any_diarchy_succession_character = { diarchy_regent_succession_score_value > root.designated_diarch.diarchy_regent_succession_score_value }
+			}
+			# Try to annoy people higher up the order.
+			every_diarchy_succession_character = {
+				limit = { diarchy_regent_succession_score_value > root.designated_diarch.diarchy_regent_succession_score_value }
+				# Calc how upset we should be.
+				## We set a variable because we need to account for this in over-dramatic courtly vassals later.
+				set_variable = {
+					name = degree_of_upset
+					value = {
+						# Get the base score
+						## We start in reverse so that we can grok min-maxs easier, and will invert it later.
+						value = diarchy_regent_succession_score_value
+						# Now, subtract their score to see how badly we were screwed.
+						subtract = root.designated_diarch.diarchy_regent_succession_score_value
+						# Sweet, next up, add some extra to act as a decent maximum without smoothing the scores out too much.
+						add = 10
+						# Make sure no one is ever _too_ pissed.
+						max = 40
+						# And, finally, invert.
+						multiply = -1
+					}
+				}
+				# Right, now that we've got our upset score, let's plug that in.
+				add_opinion = {
+					target = root
+					modifier = passed_me_over_for_regent_opinion
+					opinion = var:degree_of_upset
+				}
+			}
+			# Courtlies because the new designatee is...
+			## ... a lowborn non-family member.
+			if = {
+				limit = {
+					root.designated_diarch = {
+						is_lowborn = yes
+						NOT = {
+							any_close_or_extended_family_member = { this = root }
+						}
+					}
+				}
+				every_vassal = {
+					limit = {
+						has_vassal_stance = courtly
+						NOT = { this = root.designated_diarch }
+					}
+					# Account for over-dramatic courtly vassals who are in line for succession.
+					## ... as otherwise they may hate you more than if you'd murdered their child.
+					save_scope_value_as = {
+						name = degree_of_upset
+						value = {
+							value = courtly_offence_scandalise_value
+							if = {
+								limit = { has_variable = degree_of_upset }
+								# Subtract so that we get a double negative.
+								subtract = var:degree_of_upset
+							}
+						}
+					}
+					if = {
+						limit = { scope:degree_of_upset <= -1 }
+						add_opinion = {
+							target = root
+							modifier = designated_bad_regent_opinion
+							opinion = scope:degree_of_upset
+						}
+					}
+				}
+			}
+			## ... a lowborn family member.
+			else_if = {
+				limit = {
+					root.designated_diarch = { is_lowborn = yes }
+				}
+				every_vassal = {
+					limit = {
+						has_vassal_stance = courtly
+						NOT = { this = root.designated_diarch }
+					}
+					# Account for over-dramatic courtly vassals who are in line for succession.
+					## ... as otherwise they may hate you more than if you'd murdered their child.
+					save_scope_value_as = {
+						name = degree_of_upset
+						value = {
+							value = courtly_offence_greatly_offend_value
+							if = {
+								limit = { has_variable = degree_of_upset }
+								# Subtract so that we get a double negative.
+								subtract = var:degree_of_upset
+							}
+						}
+					}
+					if = {
+						limit = { scope:degree_of_upset <= -1 }
+						add_opinion = {
+							target = root
+							modifier = designated_bad_regent_opinion
+							opinion = scope:degree_of_upset
+						}
+					}
+				}
+			}
+			## ... someone with a weak succession score.
+			else_if = {
+				limit = { root.designated_diarch.diarchy_regent_succession_score_value <= courtly_offence_at_succession_threshold_low }
+				every_vassal = {
+					limit = {
+						has_vassal_stance = courtly
+						NOT = { this = root.designated_diarch }
+					}
+					# Account for over-dramatic courtly vassals who are in line for succession.
+					## ... as otherwise they may hate you more than if you'd murdered their child.
+					save_scope_value_as = {
+						name = degree_of_upset
+						value = {
+							value = courtly_offence_offend_value
+							if = {
+								limit = { has_variable = degree_of_upset }
+								# Subtract so that we get a double negative.
+								subtract = var:degree_of_upset
+							}
+						}
+					}
+					if = {
+						limit = { scope:degree_of_upset <= -1 }
+						add_opinion = {
+							target = root
+							modifier = designated_bad_regent_opinion
+							opinion = scope:degree_of_upset
+						}
+					}
+				}
+			}
+			## ... someone with a medium succession score.
+			else_if = {
+				limit = { root.designated_diarch.diarchy_regent_succession_score_value <= courtly_offence_at_succession_threshold_medium }
+				every_vassal = {
+					limit = {
+						has_vassal_stance = courtly
+						NOT = { this = root.designated_diarch }
+					}
+					# Account for over-dramatic courtly vassals who are in line for succession.
+					## ... as otherwise they may hate you more than if you'd murdered their child.
+					save_scope_value_as = {
+						name = degree_of_upset
+						value = {
+							value = courtly_offence_somewhat_offend_value
+							if = {
+								limit = { has_variable = degree_of_upset }
+								# Subtract so that we get a double negative.
+								subtract = var:degree_of_upset
+							}
+						}
+					}
+					if = {
+						limit = { scope:degree_of_upset <= -1 }
+						add_opinion = {
+							target = root
+							modifier = designated_bad_regent_opinion
+							opinion = scope:degree_of_upset
+						}
+					}
+				}
+			}
+			## ... someone with a just-barely adequate succession score.
+			else_if = {
+				limit = { root.designated_diarch.diarchy_regent_succession_score_value <= courtly_offence_at_succession_threshold_high }
+				every_vassal = {
+					limit = {
+						has_vassal_stance = courtly
+						NOT = { this = root.designated_diarch }
+					}
+					# Account for over-dramatic courtly vassals who are in line for succession.
+					## ... as otherwise they may hate you more than if you'd murdered their child.
+					save_scope_value_as = {
+						name = degree_of_upset
+						value = {
+							value = courtly_offence_lightly_offend_value
+							if = {
+								limit = { has_variable = degree_of_upset }
+								# Subtract so that we get a double negative.
+								subtract = var:degree_of_upset
+							}
+						}
+					}
+					if = {
+						limit = { scope:degree_of_upset <= -1 }
+						add_opinion = {
+							target = root
+							modifier = designated_bad_regent_opinion
+							opinion = scope:degree_of_upset
+						}
+					}
+				}
+			}
+			# Finally, clean up all those variables.
+			every_diarchy_succession_character = { remove_variable = degree_of_upset }
+		}
+	}
+}
