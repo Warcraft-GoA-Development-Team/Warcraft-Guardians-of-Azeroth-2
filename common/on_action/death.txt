@@ -1,5 +1,5 @@
 ﻿# character just about to die in root scope
-# if a killer is know, it's set as scope:killer
+# if a killer is known, it's set as scope:killer
 #Triggered by code
 
 on_death = {
@@ -82,7 +82,247 @@ on_death = {
 			hurt_scourge_jailor_consequences_effect = { HURT_JAILOR = root SCOURGE = scope:killer }
 		}
 
+		# Handle regency loyalties.
+		if = {
+			limit = {
+				# We only want to hand this to children.
+				primary_heir ?= { is_adult = no }
+				# Now, what type of regent are we checking?
+				## An actual regency.
+				trigger_if = {
+					limit = {
+						has_active_diarchy = yes
+						has_diarchy_active_parameter = diarchy_is_regency
+					}
+					diarch = { regent_would_remain_loyal_after_death_trigger = yes }
+				}
+				## An organised would-be regency.
+				trigger_else_if = {
+					limit = { exists = designated_diarch }
+					designated_diarch = { regent_would_remain_loyal_after_death_trigger = yes }
+				}
+				## Otherwise, stop the flow.
+				trigger_else = { always = no }
+			}
+			# Nab our affected character.
+			## Actual regents.
+			if = {
+				limit = {
+					has_active_diarchy = yes
+					has_diarchy_active_parameter = diarchy_is_regency
+				}
+				diarch = { save_scope_as = liege_loyalist }
+			}
+			## Designated regents.
+			else = {
+				designated_diarch = { save_scope_as = liege_loyalist }
+			}
+			# Now, give 'em a hook that'll last till their 20th birthday.
+			primary_heir ?= {
+				if = {
+					limit = { is_alive = yes }
+
+					add_hook = {
+						type = predecessor_loyalty_hook
+						target = scope:liege_loyalist
+						years = regent_loyal_after_death_hook_duration_years_value
+					}
+					reverse_add_opinion = {
+						target = scope:liege_loyalist
+						modifier = promise_to_predecessor
+						opinion = 50
+					}
+				}
+			}
+		}
 		invalidate_claimant_factions_on_death_effect = yes
+
+		# EP2 - Handle Grand Wedding betrothals
+		if = {
+			limit = {
+				is_ai = no
+				has_variable = promised_grand_wedding_marriage_countdown
+				exists = player_heir
+			}
+			var:promised_grand_wedding_marriage_countdown = { save_scope_as = temp_marriage_scope }
+			player_heir = {
+				set_variable = {
+					name = promised_grand_wedding_marriage_countdown
+					value = prev.var:promised_grand_wedding_marriage_countdown
+					years = grand_wedding_timeout_alt
+				}
+				# Notification that the countdown has expired (one day before, to avoid getting the variable deleted before we have used it)
+				trigger_event = {
+					id = ep2_wedding.0001
+					days = grand_wedding_timeout_notification_alt
+				}
+			}
+		}
+		if = {
+			limit = {
+				is_ai = no
+				has_variable = promised_grand_wedding_marriage_countdown
+				exists = primary_heir
+				NOT = {
+					primary_heir = {
+						has_variable = promised_grand_wedding_marriage_countdown
+					}
+				}
+			}
+			var:promised_grand_wedding_marriage_countdown = { save_scope_as = temp_marriage_scope }
+			primary_heir = {
+				set_variable = {
+					name = promised_grand_wedding_marriage_countdown
+					value = prev.var:promised_grand_wedding_marriage_countdown
+					years = grand_wedding_timeout_alt
+				}
+				# Notification that the countdown has expired (one day before, to avoid getting the variable deleted before we have used it)
+				trigger_event = {
+					id = ep2_wedding.0001
+					days = grand_wedding_timeout_notification_alt
+				}
+			}
+		}
+		if = {
+			limit = {
+				# You are a spouse to be
+				has_variable = promised_grand_wedding_by
+				# your Grand Wedding has not been organized yet
+				NOR = {
+					exists = involved_activity
+					involved_activity ?= {
+						has_activity_type = activity_wedding
+						OR = {
+							special_guest:spouse_1 ?= root
+							special_guest:spouse_2 ?= root
+						}
+					}
+				}
+			}
+			save_scope_as = dead_spouse
+			# Free the betrothed
+			betrothed = {
+				save_scope_as = alive_spouse
+				trigger_event = ep2_wedding.0003
+			}
+			# Free the host if they were not the betrothed themselves
+			if = {
+				limit = {
+					NOT = { betrothed = { has_variable = promised_grand_wedding_marriage_countdown } }
+				}
+				var:promised_grand_wedding_by = { trigger_event = ep2_wedding.0002 }
+			}
+		}
+
+		# EP2 - Complete murder intents
+		# Complete activity intent if relevant
+		if = {
+			limit = {
+				exists = involved_activity
+				scope:killer.involved_activity ?= root.involved_activity
+				scope:killer = {
+					has_activity_intent = murder_attendee_intent
+					intent_target = root
+				}
+			}
+			scope:killer = {
+				save_scope_as = intent_completer
+				send_interface_toast = {
+					title = activity_intent_complete_toast
+					left_icon = root
+					complete_activity_intent = yes
+				}
+				# Achievements.
+				if = {
+					limit = {
+						is_ai = no
+						exists = global_var:started_hunting_accident_achievement
+					}
+					set_global_variable = {
+						name = finished_hunting_accident_achievement
+						value = yes
+					}
+				}
+			}
+		}
+
+		# EP2 - Death while traveling 
+		# Send relevant event to player heir 
+		if = {
+			limit = {
+				exists = player_heir
+				exists = involved_activity
+				is_travelling = yes 
+				# Tour has their own death invalidation event
+				trigger_if = {
+					limit = {
+						involved_activity ?= {
+							has_activity_type = activity_tour
+						}
+					}
+				}
+				# Hunt has their own death invalidation event at actual hunt
+				NAND = {
+					involved_activity ?= { has_activity_type = activity_hunt }
+					location = involved_activity.activity_location
+				}
+			}
+			# Save a couple things for loc
+			save_scope_as = predecessor
+			scope:predecessor.location = { save_scope_as = predecessor_location }
+			involved_activity.activity_location = { save_scope_as = travel_destination }
+			# Figure out if we were heading to or home from an activity
+			if = {
+				limit = { exists = involved_activity }
+				if = {
+					limit = {
+						exists = scope:predecessor_location
+						scope:predecessor_location = scope:travel_destination
+					}
+					save_scope_as = at_destination
+				}
+				else = {
+					save_scope_as = to_activity
+				}
+			}
+			# Fire event for player heir
+			player_heir = {
+				if = {
+					limit = { is_available = yes }
+					trigger_event = {
+						id = travel_events.0010
+						days = 1
+					}
+				}
+				else_if = {
+					limit = {
+						NOT = { location ?= scope:predecessor_location }
+					}
+					trigger_event = {
+						id = travel_events.0011
+						days = 1
+					}
+				}
+			}
+		}
+
+		#EP2 - Death on a Pilgrimage
+		#Did we like our predecessor?
+		player_heir ?= {
+			if = {
+				limit = {
+					OR = {
+						opinion = {
+							target = root
+							value > 10
+						}
+						has_any_good_relationship_with_root_trigger = yes
+					}
+					is_alive = yes #if the predecessor died during a murder feast/bloody wedding is quite likely that the heir would've died too
+				}
+				add_character_flag = pilgrimage_liked_my_predecessor
+			}
+		}
 
 		# Event Setup
 		## FP1: Rumoured Draugr - fp1_yearly.0051
@@ -218,6 +458,155 @@ on_death = {
 				participants = {
 					dead_relative = root
 				}
+			}
+		}
+
+		# Tournament
+		tournament_versus_qualifier_death_effect = yes
+
+		# Family Feud
+		if = {
+			limit = {
+				has_bp1_dlc_trigger = yes
+				exists = house.house_head
+				exists = scope:killer.house.house_head
+			}
+			# Notifications
+			# Inform victim house that they have lost score
+			if = {
+				limit = {
+					# Victim's House targets killer's House
+					existing_feud_against_target_trigger = { TARGET = scope:killer }
+				}
+				house = {
+					house_head = {
+						random_owned_story = {
+							limit = { story_type = story_cycle_house_feud }
+							save_scope_as = house_feud_story
+							change_variable = {
+								name = house_feud_death_counter
+								add = house_feud_medium_counter_value
+							}
+						}
+					}
+					every_house_member = {
+						limit = { is_ai = no }
+						send_interface_message = {
+							type = house_feud_kill_us_message
+							left_icon = root
+							right_icon = scope:killer
+							custom_tooltip = house_feud_tipped_scales_neg_medium
+						}
+					}
+				}
+			}
+			if = {
+				limit = {
+					# Victim's House is targeted by killer's House
+					scope:killer = {
+						existing_feud_against_target_trigger = { TARGET = root }
+					}
+				}
+				# Inform killer house that they have gained score
+				scope:killer.house = {
+					house_head = {
+						random_owned_story = {
+							limit = { story_type = story_cycle_house_feud }
+							save_scope_as = house_feud_story
+							change_variable = {
+								name = house_feud_kill_counter
+								add = house_feud_medium_counter_value
+							}
+						}
+					}
+					every_house_member = {
+						limit = { is_ai = no }
+						send_interface_message = {
+							type = house_feud_kill_them_message
+							left_icon = scope:killer
+							right_icon = root
+							custom_tooltip = house_feud_tipped_scales_pos_medium
+						}
+					}
+				}
+			}
+			# Events
+			# Fire Feud start event for victim house
+			if = {
+				limit = {
+					# Feud won't start if House Head was rival of victim
+					NOT = {
+						has_any_bad_relationship_with_character_trigger = { CHARACTER = root.house.house_head }
+					}
+					house.house_head = {
+						house_head_can_start_feud_against_trigger = { TARGET = scope:killer }
+					}
+				}
+				save_scope_as = house_feud_victim
+				scope:killer = { house_feud_save_head_and_attacker_effect = yes }
+				house.house_head = {
+					random = {
+						chance = 50
+						modifier = {
+							add = 25
+							has_trait = vengeful
+						}
+						modifier = {
+							add = -25
+							has_trait = forgiving
+						}
+						modifier = {
+							add = 25
+							has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:killer }
+						}
+						trigger_event = {
+							id = bp1_house_feud.0005
+							days = { 5 15 }
+						}
+					}
+				}
+			}
+			# Fire Feud revenge event for killer house
+			if = {
+				limit = {
+					scope:killer.house.house_head = {
+						any_owned_story = {
+							story_type = story_cycle_house_feud
+							exists = var:house_feud_reason
+							OR = {
+								var:house_feud_reason = flag:head_killed
+								var:house_feud_reason = flag:family_killed
+							}
+							exists = var:house_feud_attacker							
+							var:house_feud_attacker = root
+						}
+					}
+				}
+				scope:killer.house.house_head = {
+					trigger_event = { id = bp1_house_feud.7001 days = 15 }
+				}
+			}
+		}
+		#Petition liege invalidation
+		if = {
+			limit = {
+				any_vassal = { var:petition_liege_scope ?= root }
+			}
+			every_vassal = {
+				limit = { var:petition_liege_scope ?= root }
+				trigger_event = { on_action = petition_liege_travel_planner_exit }
+				current_travel_plan = { cancel_travel_plan = yes }
+			}
+		}
+		#Pay homage invalidation
+		if = {
+			limit = {
+				any_vassal = { var:homage_liege_scope ?= root }
+			}
+			every_vassal = {
+				limit = { var:homage_liege_scope ?= root }
+				trigger_event = { on_action = pay_homage_travel_planner_exit }
+				current_travel_plan = { cancel_travel_plan = yes }
 			}
 		}
 	}
