@@ -31,6 +31,16 @@ on_join_war_as_secondary = {
 							enemy = scope:war.primary_defender
 						}
 					}
+					scope:war.primary_attacker = {
+						ordered_memory = {
+							limit = {
+								has_memory_type = offensive_war
+								any_memory_participant = { this = scope:war.primary_defender }
+							}
+							order_by = memory_creation_date
+							save_scope_as = war_memory
+						}
+					}
 				}
 			}
 			else = {
@@ -43,12 +53,55 @@ on_join_war_as_secondary = {
 							enemy = scope:war.primary_attacker
 						}
 					}
+					scope:war.primary_defender = {
+						ordered_memory = {
+							limit = {
+								has_memory_type = defensive_war
+								any_memory_participant = { this = scope:war.primary_attacker }
+							}
+							order_by = memory_creation_date
+							save_scope_as = war_memory
+						}
+					}
 				}
+			}
+			root = {
+				ordered_memory = {
+					limit = {
+						has_memory_type = joined_allys_war
+						any_memory_participant = { this = scope:war.primary_attacker }
+						any_memory_participant = { this = scope:war.primary_defender }
+					}
+					order_by = memory_creation_date
+					if = {
+						limit = { exists = scope:war_memory.var:war_cb }
+						copy_war_memory_casus_belli_effect = { MEMORY = scope:war_memory }
+					}
+					else = { set_war_memory_casus_belli_effect = yes }
+					if = {
+						limit = {
+							root = { is_at_war_with = scope:war.primary_attacker }
+						}
+						set_variable = {
+							name = war_ally
+							value = scope:war.primary_defender
+						}
+					}
+					else = {
+						set_variable = {
+							name = war_ally
+							value = scope:war.primary_attacker
+						}
+					}
+				}
+				# If they're in an activity, let them decide whether or not to cancel 
+				activity_on_war_declared_events_effect  = yes
 			}
 		}
 	}
 	events = {
 		war_event.3000 # Ally gets mad if you do not participate in their wars.
+		religious_decision.0200 # Stop mediation
 	}
 }
 
@@ -78,6 +131,26 @@ on_war_started = {
 				
 				participants = {
 					other_party = scope:defender
+				}
+			}
+			ordered_memory = {
+				limit = {
+					has_memory_type = offensive_war
+					any_memory_participant = { this = scope:defender }
+				}
+				order_by = memory_creation_date
+				save_scope_as = offensive_memory
+				set_war_memory_casus_belli_effect = yes
+			}
+			# If they're in an activity, let them decide whether or not to cancel 
+			activity_on_war_declared_events_effect  = yes
+			# Achievements.
+			## Track whether the player has ever started a war — for various pacifist achievements.
+			if = {
+				limit = { is_ai = no }
+				set_global_variable = {
+					name = player_declared_war
+					value = yes
 				}
 			}
 		}
@@ -113,6 +186,16 @@ on_war_started = {
 					other_party = scope:attacker
 				}
 			}
+			ordered_memory = {
+				limit = {
+					has_memory_type = defensive_war
+					any_memory_participant = { this = scope:attacker }
+				}
+				order_by = memory_creation_date
+				copy_war_memory_casus_belli_effect = { MEMORY = scope:offensive_memory }
+			}
+			# If they're in an activity, let them decide whether or not to cancel 
+			activity_on_war_declared_events_effect  = yes
 		}
 	}
 }
@@ -212,6 +295,12 @@ on_war_won_attacker = {
 					winner = scope:attacker
 				}
 			}
+			set_war_over_memory_casus_belli_effect = {
+				STANCE = offensive
+				OUTCOME = won
+				SELF = attacker
+				OTHER = defender
+			}
 		}
 		
 		scope:defender = {
@@ -221,7 +310,12 @@ on_war_won_attacker = {
 					winner = scope:attacker
 					loser = scope:defender
 				}
-			
+			}
+			set_war_over_memory_casus_belli_effect = {
+				STANCE = defensive
+				OUTCOME = lost
+				SELF = defender
+				OTHER = attacker
 			}
 		}
 	}
@@ -287,6 +381,12 @@ on_war_won_defender = {
 					loser = scope:attacker
 				}
 			}
+			set_war_over_memory_casus_belli_effect = {
+				STANCE = offensive
+				OUTCOME = lost
+				SELF = attacker
+				OTHER = defender
+			}
 		}
 		
 		scope:defender = {
@@ -296,6 +396,12 @@ on_war_won_defender = {
 					loser = scope:attacker
 					winner = scope:defender
 				}
+			}
+			set_war_over_memory_casus_belli_effect = {
+				STANCE = defensive
+				OUTCOME = won
+				SELF = defender
+				OTHER = attacker
 			}
 		}
 	}
@@ -314,6 +420,37 @@ on_war_white_peace = {
 				}
 			}
 			fp2_contract_assistance_war_pay_effect = yes # Pay out Contract Assistance money
+		}
+		scope:attacker = {
+			create_character_memory = {
+				type = war_white_peace_attacker
+				participants = {
+					attacker = scope:attacker
+					defender = scope:defender
+				}
+			}
+			set_war_over_memory_casus_belli_effect = {
+				STANCE = offensive
+				OUTCOME = white_peace_attacker
+				SELF = attacker
+				OTHER = defender
+			}
+		}
+		
+		scope:defender = {
+			create_character_memory = {
+				type = war_white_peace_defender
+				participants = {
+					attacker = scope:attacker
+					defender = scope:defender
+				}
+			}
+			set_war_over_memory_casus_belli_effect = {
+				STANCE = defensive
+				OUTCOME = white_peace_defender
+				SELF = defender
+				OTHER = attacker
+			}
 		}
 	}
 }
@@ -341,6 +478,30 @@ on_war_invalidated = {
 				}
 			}
 			fp2_contract_assistance_invalidated_effect = yes
+		}
+
+		#EP2 Accolade glory gain from ????
+		if = {
+			limit = {
+				scope:attacker = {
+					any_knight = {
+						OR = {
+							is_healthy = no
+							is_imprisoned = yes
+						}
+					}
+				}
+				scope:defender = {
+					any_knight = {
+						OR = {
+							is_healthy = no
+							is_imprisoned = yes
+						}
+					}
+				}
+			}
+			scope:attacker = { accolade_attacker_war_end_glory_gain_low_effect }
+			scope:defender = { accolade_defender_war_end_glory_gain_low_effect }
 		}
 	}
 }
