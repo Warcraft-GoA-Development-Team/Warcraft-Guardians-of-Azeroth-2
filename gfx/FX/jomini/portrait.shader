@@ -8,6 +8,7 @@ Includes = {
 	"jomini/jomini_lighting.fxh"
 	"jomini/jomini_fog.fxh"
 	"jomini/portrait_accessory_variation.fxh"
+	"jomini/portrait_coa.fxh"
 	"jomini/portrait_decals.fxh"
 	"jomini/portrait_user_data.fxh"
 	"constants.fxh"
