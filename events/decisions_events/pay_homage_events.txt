@@ -6,6 +6,65 @@
 # 0201 -> vassal learns of result (end)
 # 0601 -> homage invalidated info
 
+pay_homage.9999 = {
+	hidden = yes
+	immediate = {
+		if = {
+			limit = {
+				scope:homage_liege = {
+					OR = {
+						is_alive = no 
+						is_imprisoned = yes
+					}
+				}
+			}
+			send_interface_toast = {
+				title = pay_homage_costs_refunded
+				left_icon = root 
+				# Remove variable preventing you from paying homage again
+				if = {
+					limit = {
+						has_variable = pay_homage_grace
+						exists = liege
+						var:pay_homage_grace = liege
+					}
+					remove_variable = pay_homage_grace
+				}
+				# refund any costs
+				add_prestige = standard_activity_cost
+				if = {
+					limit = {
+						has_variable = pay_homage_gold_value
+					}
+					add_gold = var:pay_homage_gold_value
+				}
+			}
+			trigger_event = pay_homage.0601
+		}
+		else = {
+			scope:homage_liege = {
+				trigger_event = pay_homage.0001
+			}
+		}
+		current_travel_plan ?= {
+			delay_travel_plan = { days = 90 }
+		}
+	}
+}
+
+scripted_trigger pay_homage_valid_trigger = { # Homage is still valid
+	is_alive = yes
+	is_imprisoned = no
+	has_variable = homage_liege_scope
+	exists = liege
+	liege = var:homage_liege_scope
+	var:homage_liege_scope = {
+		is_alive = yes 
+		is_imprisoned = no 
+		has_royal_court = yes
+	}
+}
+
 scripted_effect pay_homage_0001_refuse_homage_effect = {
 	scope:homage_liege = { 
 		add_prestige = minor_prestige_loss
@@ -20,7 +79,7 @@ scripted_effect pay_homage_0001_refuse_homage_effect = {
 		progress_towards_rival_effect = {
 			CHARACTER = scope:homage_liege
 			REASON = rival_refuse_homage
-			OPINION = 0
+			OPINION = default_rival_opinion
 		}
 	}
 }
@@ -45,15 +104,26 @@ pay_homage.0001 = {
 	sender = scope:homage_vassal
 
 	trigger ={
-		is_available = yes
 		scope:homage_vassal = {
 			is_alive = yes
 			is_imprisoned = no
 		}
 	}
 
+	on_trigger_fail = {
+		scope:homage_vassal = {
+			if = {
+				limit = { is_alive = no }
+				trigger_event = pay_homage.9999
+			}
+		}
+	}
+
 	option = {
 		name = pay_homage.0001.a
+		trigger = {
+			scope:homage_vassal = { pay_homage_valid_trigger = yes }
+		}
 		custom_tooltip = pay_homage.0001.a.tt
 		if = {
 			limit = { scope:homage_vassal.var:homage_type = flag:homage_gold }
@@ -86,7 +156,9 @@ pay_homage.0001 = {
 		name = pay_homage.0001.b
 		custom_tooltip = pay_homage.0001.b.tt
 		pay_homage_0001_refuse_homage_effect = yes
-		scope:homage_vassal = { trigger_event = pay_homage.0009 }
+		scope:homage_vassal = {
+			trigger_event = { on_action = pay_homage_invalid_on_action }
+		}
 		if = {
 			limit = {
 				NOT = { has_relation_rival = scope:homage_vassal }
@@ -116,6 +188,30 @@ pay_homage.0001 = {
 	}
 }
 
+scripted_effect pay_homage_clear_variable_effect = {
+	current_travel_plan ?= {
+		if = {
+			limit = { is_paused = yes }
+			resume_travel_plan = yes 
+		}
+	}
+	# Always
+	if = {
+		limit = { has_variable = homage_type }
+		remove_variable = homage_type
+	}
+	# Contract
+	if = {
+		limit = { has_variable = pay_homage_contract_type }
+		remove_variable = pay_homage_contract_type
+	}
+	# Liege
+	if = {
+		limit = { has_variable = homage_liege_scope }
+		remove_variable = homage_liege_scope
+	}
+}
+
 pay_homage.0009 = {
 	type = letter_event
 	opening = pay_homage.0009.opening
@@ -126,22 +222,21 @@ pay_homage.0009 = {
 
 	immediate = {
 		show_as_tooltip = { pay_homage_0001_refuse_homage_effect = yes }
+		if = {
+			limit = { has_variable = pay_homage_contract_type }
+			hidden_effect = { set_vassal_contract_modification_blocked = no }
+		}
 	}
 
 	option = {
 		name = pay_homage.0009.a
 		if = {
-			limit = { scope:homage_vassal.var:homage_type = flag:homage_gold }
+			limit = { var:homage_type = flag:homage_gold }
 			add_gold = medium_gold_value
 		}
 	}
 
-	after = {
-		if = {
-			limit = { is_in_an_activity = yes }
-			activity = { complete_activity = yes }
-		}
-	}
+	after = { pay_homage_clear_variable_effect = yes }
 }
 
 scripted_effect pay_homage_liege_reward_effect = {
@@ -150,7 +245,7 @@ scripted_effect pay_homage_liege_reward_effect = {
 			limit = { scope:homage_vassal.var:homage_type = flag:homage_submission }
 			change_current_court_grandeur = miniscule_court_grandeur_gain
 			add_prestige = minor_prestige_gain
-			dynasty = { add_dynasty_prestige = miniscule_dynasty_prestige_gain }
+			dynasty ?= { add_dynasty_prestige = miniscule_dynasty_prestige_gain }
 		}
 		else = {
 			change_current_court_grandeur = minor_court_grandeur_gain
@@ -185,7 +280,7 @@ scripted_effect pay_homage_vassal_reward_effect = {
 	scope:homage_vassal = {
 		if = { # No gift
 			limit = { var:homage_type = flag:homage_submission }
-			dynasty = { add_dynasty_prestige = miniscule_dynasty_prestige_gain }
+			dynasty ?= { add_dynasty_prestige = miniscule_dynasty_prestige_gain }
 			if = { # Not embarrassed
 				limit = {
 					NOR = {
@@ -205,7 +300,63 @@ scripted_effect pay_homage_vassal_reward_effect = {
 						opinion = 10
 					}
 				}
-				add_prestige = miniscule_prestige_gain
+				add_prestige = medium_prestige_gain
+			}
+			else = { # Embarrassed
+				# Mocked
+				if = { 
+					limit = { exists = scope:homage_faux_pas_mocked }
+					add_prestige = medium_prestige_loss
+					if = {
+						limit = {
+							scope:homage_liege = { is_ai = yes }
+						}
+						reverse_add_opinion = {
+							target = scope:homage_liege
+							modifier = disappointed_opinion
+							opinion = -10
+						}
+					}
+				}
+				# Brushed off
+				else = { 
+					add_prestige = minor_prestige_loss
+					if = {
+						limit = {
+							scope:homage_liege = { is_ai = yes }
+						}
+						reverse_add_opinion = {
+							target = scope:homage_liege
+							modifier = respect_opinion
+							opinion = 10
+						}
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = { var:homage_type = flag:homage_contract }
+			dynasty = { add_dynasty_prestige = minor_dynasty_prestige_gain }
+			if = { # Not embarrassed
+				limit = {
+					NOR = {
+						exists = scope:homage_faux_pas_language
+						exists = scope:homage_faux_pas_clumsy
+						exists = scope:homage_faux_pas_infatuation
+						exists = scope:homage_faux_pas_delivery
+					}
+				}
+				if = {
+					limit = {
+						scope:homage_liege = { is_ai = yes }
+					}
+					reverse_add_opinion = {
+						target = scope:homage_liege
+						modifier = respect_opinion
+						opinion = 10
+					}
+				}
+				add_prestige = major_prestige_gain
 			}
 			else = { # Embarrassed
 				# Mocked
@@ -240,7 +391,7 @@ scripted_effect pay_homage_vassal_reward_effect = {
 			}
 		}
 		else = { # Gift
-			dynasty = { add_dynasty_prestige = minor_dynasty_prestige_gain }
+			dynasty ?= { add_dynasty_prestige = miniscule_dynasty_prestige_gain }
 			if = { # Not embarrassed
 				limit = {
 					NOR = {
@@ -260,7 +411,7 @@ scripted_effect pay_homage_vassal_reward_effect = {
 						opinion = 20
 					}
 				}
-				add_prestige = medium_prestige_gain
+				add_prestige = major_prestige_gain
 			}
 			else = { # Embarrassed
 				if = { # Mocked
@@ -279,7 +430,7 @@ scripted_effect pay_homage_vassal_reward_effect = {
 					progress_towards_rival_effect = {
 						CHARACTER = scope:homage_liege
 						REASON = rival_faux_pas
-						OPINION = 0
+						OPINION = default_rival_opinion
 					}
 				}
 				else = { # Brushed off
@@ -297,6 +448,7 @@ scripted_effect pay_homage_vassal_reward_effect = {
 				}
 			}
 		}
+		pay_homage_clear_variable_effect = yes
 	}
 }
 
@@ -545,7 +697,7 @@ pay_homage.0101 = {
 	}
 
 	trigger ={
-		is_available = yes
+		#is_available = yes
 		scope:homage_vassal = {
 			is_alive = yes
 			is_imprisoned = no
@@ -949,6 +1101,7 @@ pay_homage.0201 = {
 	court_scene = {
 		button_position_character = scope:homage_liege
 		court_owner = scope:homage_liege
+		show_timeout_info = no
 		roles = {
 		    scope:homage_vassal = {
 				group = petitioners_group
@@ -956,6 +1109,7 @@ pay_homage.0201 = {
 		    }
 		}
 	}
+
 
 	trigger = { pay_homage_valid_trigger = yes }
 
@@ -1056,17 +1210,9 @@ pay_homage.0201 = {
 
 	after = {
 		pay_homage_vassal_reward_effect = yes
-		if = {
-			limit = { is_in_an_activity = yes }
-			activity = { complete_activity = yes }
-		}
 		close_view = {
 			view = royal_court
 		    player = scope:homage_vassal
-		}
-		if = {
-			limit = { has_variable = homage_liege_scope }
-			remove_variable = homage_liege_scope
 		}
 	}
 }
@@ -1120,9 +1266,11 @@ pay_homage.0601 = {
 		}
 		triggered_desc = {
 			trigger = {
-				scope:homage_liege = { is_alive = no }
 				exists = liege
-				NOT = { liege = root }
+				NOR = {
+					liege = root
+					liege = scope:homage_liege
+				}
 			}
 			desc = pay_homage.0601.desc.new_liege
 		}
@@ -1158,9 +1306,11 @@ pay_homage.0601 = {
 		}
 	}
 
-	trigger = {
-		is_alive = yes
-		has_variable = homage_liege_scope
+	trigger = { pay_homage_valid_trigger = no }
+
+	immediate = {
+		# Transfer the variable to a scope for loc & such.
+		var:homage_liege_scope ?= { save_scope_as = homage_liege }
 	}
 
 	option = {
@@ -1187,10 +1337,5 @@ pay_homage.0601 = {
 		}
 	}
 
-	after = {
-		if = {
-			limit = { has_variable = homage_liege_scope }
-			remove_variable = homage_liege_scope
-		}
-	}
+	after = { pay_homage_clear_variable_effect = yes }
 }
