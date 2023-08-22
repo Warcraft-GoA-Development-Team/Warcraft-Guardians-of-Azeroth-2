@@ -235,6 +235,19 @@ diarch_revoke_title_interaction = {
 			# Scope:actor can be hostile again.
 			clear_hostile_actions_lock_flag_effect = yes
 		}
+		# To avoid unlanded regents becoming vassals of the liege's direct vassals, make sure the current liege remains the liege
+		hidden_effect = {
+			scope:actor = {
+				if = {
+					limit = { 
+						is_landed = no
+						NOT = { scope:intermediary = scope:recipient }
+					}
+					# This has a delay of 1 day (if no delay then the liege change doesn't stick) which really isn't ideal and should be looked into/fixed so that it happens when the action goes into effect
+					trigger_event = { id = diarchy.0141 days = 1 }
+				}
+			}
+		}
 
 		# Debug logging.
 		debug_log = debug_log.diarch_revoke_title.accepted
@@ -1601,19 +1614,11 @@ diarch_imprison_interaction = {
 				every_courtier = {
 					limit = { has_relation_guardian = scope:recipient }
 					save_scope_as = ward
-					scope:recipient = { remove_relation_ward = scope:ward }
-					scope:ward = {
-						if = {
-							limit = {
-								NOT = { host = liege }
-							}
-							return_to_court = yes
-						}
-						guardian_remove_opinion_effect = {
-							GUARDIAN = scope:recipient
-							WARD = this
-							WARD_LIEGE = scope:actor
-						}
+					remove_guardian_effect = {
+						GUARDIAN = scope:recipient
+						WARD = scope:ward
+						RETURN_WARD = yes
+						HIDE_OPINION = no
 					}
 					add_to_list = ward_children
 				}
@@ -1625,18 +1630,12 @@ diarch_imprison_interaction = {
 				random_courtier = {
 					limit = { has_relation_ward = scope:recipient }
 					save_scope_as = guardian
-					scope:guardian = { remove_relation_ward = scope:recipient }
-					scope:guardian = {
-						if = {
-							limit = {
-								NOT = { host = liege }
-							}
-							return_to_court = yes
-						}
-						guardian_remove_opinion_effect = {
-							GUARDIAN = this
+					show_as_tooltip = {
+						remove_guardian_effect = {
+							GUARDIAN = scope:guardian
 							WARD = scope:recipient
-							WARD_LIEGE = scope:actor
+							RETURN_WARD = yes
+							HIDE_OPINION = no
 						}
 					}
 					add_to_list = guardian_list
@@ -1648,20 +1647,11 @@ diarch_imprison_interaction = {
 							title = remove_guardian_interaction_notification
 							left_icon = scope:recipient
 							right_icon = scope:guardian
-
-							scope:recipient = { remove_relation_guardian = scope:guardian }
-							scope:guardian = {
-								if = {
-									limit = {
-										NOT = { host = liege }
-									}
-									return_to_court = yes
-								}
-								guardian_remove_opinion_effect = {
-									GUARDIAN = this
-									WARD = scope:recipient
-									WARD_LIEGE = scope:imprisoner
-								}
+							remove_guardian_effect = {
+								GUARDIAN = scope:guardian
+								WARD = scope:recipient
+								RETURN_WARD = yes
+								HIDE_OPINION = no
 							}
 						}
 					}
@@ -4229,7 +4219,10 @@ swing_scales_currency_interaction = {
 					title = swing_scales_interaction_by_liege.t
 					right_icon = scope:actor
 					scope:actor = {
-						change_diarchy_swing = medium_sop_swing_liege_gain
+						update_diarchy_swing_with_perspective_effect = {
+							SWING = medium_sop_swing_liege_gain
+							LIEGE = scope:actor
+						}
 						diarch_swing_scales_guts_effect = yes
 					}
 				}
@@ -4240,7 +4233,10 @@ swing_scales_currency_interaction = {
 					type = msg_mandate_results_bad_effect
 					title = swing_scales_interaction_by_diarch.t
 					right_icon = scope:actor
-					change_diarchy_swing = medium_sop_swing_diarch_gain
+					update_diarchy_swing_with_perspective_effect = {
+						SWING = medium_sop_swing_diarch_gain
+						LIEGE = scope:recipient
+					}
 					scope:actor = { diarch_swing_scales_guts_effect = yes }
 				}
 			}
@@ -4522,7 +4518,10 @@ diarch_swing_scales_currency_interaction = {
 					type = msg_mandate_results_bad_effect
 					title = swing_scales_interaction_by_diarch.t
 					right_icon = scope:actor
-					change_diarchy_swing = medium_sop_swing_diarch_gain
+					update_diarchy_swing_with_perspective_effect = {
+						SWING = medium_sop_swing_diarch_gain
+						LIEGE = scope:recipient
+					}
 					scope:actor = { diarch_swing_scales_guts_effect = yes }
 				}
 			}
@@ -5130,7 +5129,10 @@ liege_dismiss_entrenched_regency_interaction = {
 	on_decline = {
 		scope:actor = {
 			# Attempting to assert authority pushes scope:actor's scales in their favour.
-			change_diarchy_swing = major_sop_swing_liege_gain
+			update_diarchy_swing_with_perspective_effect = {
+				SWING = major_sop_swing_liege_gain
+				LIEGE = scope:actor
+			}
 			# Plus AI don't like being told *no*.
 			if = {
 				limit = { is_ai = no }
@@ -5935,8 +5937,13 @@ overthrow_regent_scheme_interaction = {
 
 	is_valid_showing_failures_only = {
 		# Make sure you wouldn't just cop out immediately.
+		## Disabling is fine, FWIW. You'll de-disable with time.
 		scope:actor = { is_diarch_valid_trigger = yes }
-		# Disabling is fine, FWIW. You'll de-disable with time.
+		# Have we been vetoed from succession due to politicking?
+		custom_tooltip = {
+			text = overthrow_regent_scheme_interaction.tt.filtered_due_to_incumbent_politicking
+			NOT = { scope:actor.var:diarch_succession_filtered_due_to_incumbents_politicking ?= scope:recipient }
+		}
 	}
 
 	# Long specific cooldown. If you give up, you should give it a rest 'less things change.
@@ -5955,6 +5962,18 @@ overthrow_regent_scheme_interaction = {
 					start_scheme = {
 						type = overthrow_regent
 						target = scope:recipient
+					}
+				}
+				if = {
+					limit = {
+						has_trait = education_intrigue_5
+					}
+					random_scheme = {
+						limit = {
+							scheme_type = overthrow_regent
+							scheme_target = scope:recipient
+						}
+						add_scheme_progress = 3
 					}
 				}
 			}
