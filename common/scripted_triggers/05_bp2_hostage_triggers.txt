@@ -1,0 +1,307 @@
+﻿
+##################################################
+# Triggers related to the hostage system
+
+bp2_valid_to_offer_as_hostage_trigger = {
+	# Update if this is changed : offer_hostage_interaction_desc
+
+	# Must not be a hostage already
+	is_hostage = no
+	# Cannot send self as hostage
+	NOT = { this = $SENDER$ }
+	# Must be under sender's control
+	liege ?= $SENDER$
+	# Hostages must be landless and not a ruler
+	is_landed = no
+	is_landless_ruler = no
+	is_married = no
+	is_betrothed = no
+	# If imprisoned, it must be by sender
+	trigger_if = {
+		limit = { is_imprisoned = yes }
+		imprisoner = $SENDER$
+	}
+	# Hostages must be very close relations of sender
+	OR = {
+		is_child_of = $SENDER$
+		is_grandchild_of = $SENDER$
+		is_sibling_of = $SENDER$
+		is_nibling_of = $SENDER$
+	}
+	# Not already offered and travelling
+	NOR = {
+		exists = var:hostage_travelling_to_warden
+		exists = var:guardian_travelling_to_ward
+		exists = var:ward_travelling_to_guardian
+	}
+	# You can't send your diarch away as a hostage.
+	custom_tooltip = {
+		text = hostage_cannot_offer_own_regent_tt
+		NOT = { this = $SENDER$.diarch }
+	}
+	trigger_if = {
+		limit = { exists = scope:war }
+		scope:war = {
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_crusade_tt
+				NOR = {
+					using_cb = undirected_great_holy_war
+					using_cb = directed_great_holy_war
+				}
+			}
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_cb_tt
+				bp2_hostage_exchange_invalid_cb_trigger = no
+			}
+		}
+	}
+}
+
+bp2_valid_to_offer_hostage_ai_trigger = {
+	# AI only cares about neighbors
+	scope:recipient = { character_is_land_realm_neighbor = scope:actor }
+	# Don't waste hostages on those who aren't a threat
+	scope:recipient.current_military_strength >= scope:actor.fifty_percent_of_current_military_strength
+	scope:recipient = { has_any_cb_on = scope:actor }
+	# Don't send hostages to those you seriously hate, or vice versa
+	NOR = {
+		scope:recipient = {
+			has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:actor }
+		}
+		scope:actor.house.house_head ?= {
+			any_owned_story = {
+				story_type = story_cycle_house_feud
+				var:house_feud_house ?= scope:recipient.house
+			}
+		}	
+	}
+}
+
+bp2_valid_to_demand_hostage_ai_trigger = {
+	# AI only cares about neighbors
+	scope:recipient = { character_is_land_realm_neighbor = scope:actor }
+	# Don't waste hostages on those who aren't a threat
+	scope:actor.current_military_strength >= scope:recipient.fifty_percent_of_current_military_strength
+	scope:actor = { has_any_cb_on = scope:recipient }
+	# Don't send hostages to those you seriously hate, or vice versa
+	NOR = {
+		scope:recipient = {
+			has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:actor }
+		}
+		scope:actor.house.house_head = {
+			any_owned_story = {
+				story_type = story_cycle_house_feud
+				var:house_feud_house ?= scope:recipient.house
+			}
+		}
+	}
+}
+
+bp2_valid_to_exchange_hostage_ai_trigger = {
+	# AI only cares about neighbors
+	scope:recipient = { character_is_land_realm_neighbor = scope:actor }
+	# Only exchange with similary strong
+	scope:actor.current_strength_with_allies_seventy_five_percent_value < scope:recipient.current_strength_with_allies_value
+	scope:recipient.current_strength_with_allies_seventy_five_percent_value < scope:actor.current_strength_with_allies_value
+	OR = {
+		scope:actor = { has_any_cb_on = scope:recipient }
+		scope:recipient = { has_any_cb_on = scope:actor }
+	}
+	# Don't send hostages to those you seriously hate, or vice versa
+	NOR = {
+		scope:recipient = {
+			has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:actor }
+		}
+		scope:actor.house.house_head = {
+			any_owned_story = {
+				story_type = story_cycle_house_feud
+				var:house_feud_house ?= scope:recipient.house
+			}
+		}
+	}
+}
+
+bp2_valid_hostage_action_shared_trigger = {
+	# Don't inform of unimportant cases
+	NOR = {
+		is_allied_to = root
+		is_consort_of = root
+	}
+}
+
+bp2_valid_hostage_offer_action_trigger = {
+	# Context checks, e.g. alliance
+	bp2_valid_hostage_action_shared_trigger = yes
+	# Only care about actual threats
+	has_any_cb_on = root
+	save_temporary_scope_as = warden
+	# Does not already have your hostage
+	NOT = {
+		any_warden_hostage = { home_court = root }
+	}
+	root = {
+		# You have a hostage to offer
+		any_close_family_member = {
+			count >= 1
+			bp2_valid_to_offer_as_hostage_trigger = { SENDER = root }
+			save_temporary_scope_as = my_hostage
+		}
+		# Ensure Offer might be accepted
+		is_character_interaction_potentially_accepted = {
+			interaction = offer_hostage_interaction
+			recipient = scope:warden
+			secondary_actor = scope:my_hostage
+		}
+	}
+	# Why Offer when you could Exchange?
+	trigger_if = {
+		limit = {
+			# Only if they don't have your hostage already
+			NOT = {
+				any_home_court_hostage = { warden = root }
+			}
+			any_close_family_member = {
+				bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:warden }
+				save_temporary_scope_as = their_hostage
+			}
+		}
+		NOT = {
+			root = {
+				is_character_interaction_potentially_accepted = {
+					interaction = exchange_hostage_interaction
+					recipient = scope:warden
+					secondary_recipient = scope:their_hostage
+					secondary_actor = scope:my_hostage
+				}
+			}
+		}
+	}
+}
+
+bp2_valid_hostage_demand_action_trigger = {
+	# Context checks, e.g. alliance
+	bp2_valid_hostage_action_shared_trigger = yes	save_temporary_scope_as = home_court
+	NOT = {
+		# Don't already have your hostage
+		any_home_court_hostage = { warden = root }
+	}
+	# Ensure a viable hostage exists
+	any_close_family_member = {
+		count >= 1
+		bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:home_court }
+		save_temporary_scope_as = their_hostage
+	}
+	# Ensure Demand might be accepted
+	root = {
+		is_character_interaction_potentially_accepted = {
+			interaction = demand_hostage_interaction
+			recipient = scope:home_court
+			secondary_recipient = scope:their_hostage
+		}
+	}
+}
+
+bp2_valid_hostage_exchange_action_trigger = {
+	# Context checks, e.g. alliance
+	bp2_valid_hostage_action_shared_trigger = yes
+	save_temporary_scope_as = home_court
+	# Must be at least some threat for an Exchange to be relevant
+	#current_strength_with_allies_value >= root.current_strength_with_allies_fifty_percent_value
+	NOR = {
+		# Don't already have their hostage
+		any_warden_hostage = { home_court = root }
+		# Don't already have your hostage
+		any_home_court_hostage = { warden = root }
+	}
+	# Ensure a viable target exists
+	any_close_family_member = {
+		count >= 1
+		bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:home_court }
+		save_temporary_scope_as = their_hostage
+	}
+	root = {
+		# Why Exchange when you could Demand?
+		NOT = {
+			is_character_interaction_potentially_accepted = {
+				interaction = demand_hostage_interaction
+				recipient = scope:home_court
+				secondary_recipient = scope:their_hostage
+			}
+		}
+		any_close_family_member = {
+			bp2_valid_to_offer_as_hostage_trigger = { SENDER = root }
+			save_temporary_scope_as = my_hostage
+		}
+		# Ensure Exchange might be accepted
+		is_character_interaction_potentially_accepted = {
+			interaction = exchange_hostage_interaction
+			recipient = scope:home_court
+			secondary_recipient = scope:their_hostage
+			secondary_actor = scope:my_hostage
+		}
+	}
+}
+
+bp2_valid_for_standard_interactions_trigger = {
+    # BP2
+	is_hostage = no
+	custom_tooltip = {
+		text = hostage_travelling_tt
+		NOR = {
+			exists = var:hostage_travelling_to_warden
+			exists = var:ward_travelling_to_guardian
+			exists = var:guardian_travelling_to_ward
+		}
+	}
+}
+
+bp2_hostage_benefits_valid_trigger = {
+	NAND = {
+		exists = scope:home_court.dynasty
+		exists = scope:warden.dynasty
+		scope:home_court.dynasty = scope:warden.dynasty
+	}
+}
+
+bp2_warden_dynasty_renown_lower_trigger = {
+	exists = $HOME_COURT$.dynasty
+	exists = $WARDEN$.dynasty
+	$WARDEN$.dynasty.dynasty_prestige_level < $HOME_COURT$.dynasty.dynasty_prestige_level
+}
+
+bp2_warden_title_tier_lower_trigger = {
+	exists = $HOME_COURT$.primary_title
+	exists = $WARDEN$.primary_title
+	$WARDEN$.primary_title.tier < $HOME_COURT$.primary_title.tier
+}
+
+bp2_warden_prestige_level_lower_trigger = {
+	exists = $HOME_COURT$
+	exists = $WARDEN$
+	$WARDEN$.prestige_level < $HOME_COURT$.prestige_level
+}
+
+bp2_hostage_exchange_invalid_cb_trigger = {
+	OR = {
+		using_cb = flowery_war_cb
+		using_cb = excommunication_war
+		#using_cb = fp2_border_raid
+		#using_cb = fp2_expel_interloper
+		using_cb = artifact_war
+		using_cb = reclaim_relic_artifact_war
+		using_cb = diarch_vassalisation_cb
+		using_cb = remove_regent_cb
+		using_cb = independence_faction_war
+		using_cb = liberty_faction_war
+		using_cb = populist_war
+		using_cb = claimant_faction_war
+		using_cb = depose_war
+		using_cb = refused_liege_demand_war
+		using_cb = independence_war
+		using_cb = nation_fracturing_faction_war
+		using_cb = invasion_war
+		#using_cb = norwegian_invasion_cb
+		#using_cb = norman_conquest_cb
+		#using_cb = sons_of_lothbrok_invasion_cb
+	}
+}
