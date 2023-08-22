@@ -364,7 +364,7 @@ diarch_imprison_interaction_intermediary_fail_opinions_effect = {
 			# ... but upset with scope:actor.
 			add_opinion = {
 				target = scope:actor
-				modifier = imprisoned_me
+				modifier = imprisoned_me_past
 			}
 		}
 	}
@@ -1075,9 +1075,14 @@ invalidate_diarch_grand_wedding_effect = {
 		if = {
 			limit = {
 				# scope:diarch is currently an active Diarch
-				liege = { has_active_diarchy = yes }
+				exists = liege
+				is_diarch = yes
+				liege = {
+					diarch = scope:diarch
+					has_active_diarchy = yes
+				}
 				# scope:diarch was promised a Grand Wedding
-				exists = var:promised_grand_wedding_by
+				has_variable = promised_grand_wedding_by
 			}
 			betrothed = { save_scope_as = betrothed }
 			# Save scopes of spouses, and organizers from variables
@@ -1120,4 +1125,359 @@ invalidate_diarch_grand_wedding_effect = {
 			}
 		}
 	}
+}
+
+##################################################
+# Events
+
+# Fire a tooltip saying what effect this'll have on regent opinion.
+## We don't need to use this _every_where, as otherwise it'd have to supplant the opinion effect entirely, but it's cool to use it in any specific regency events where flat opinion might be a nicer gain than usual.
+raise_diarch_opinion_with_loyalty_update_effect = {
+	# Check the current opinion.
+	diarch = {
+		save_opinion_value_as = {
+			name = diarch_old_opinion
+			target = prev
+		}
+	}
+	# Plus, save $OPINION_AMOUNT$ so that we can use it in subsequent script values.
+	save_scope_value_as = {
+		name = opinion_amount
+		value = $OPINION_AMOUNT$
+	}
+	# Process the loyalty update tooltip.
+	diarch = {
+		# Self-interested.
+		## Hates you too much to be able to tell.
+		if = {
+			limit = {
+				diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+				scope:diarch_old_opinion <= -100
+				scope:opinion_amount >= 1
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.overflow_edgecase }
+		}
+		### Since save_opinion_value_as doesn't account for overspill past -100, and as we've got some special conditions that make the move from -100 to -99 very dramatic under certain circumstances, we need to have this vague option to cover up systemic inaccuracies.
+		## Self-interested remains static.
+		else_if = {
+			limit = {
+				diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value <= diarch_loyalty_visibly_disloyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.remains_static }
+		}
+		## Self-interested to selfless.
+		else_if = {
+			limit = {
+				diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value >= diarch_loyalty_visibly_loyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.to_selfless }
+		}
+		## Self-interested to situational.
+		else_if = {
+			limit = { diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold }
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.to_situational }
+		}
+		# Situational.
+		## Situational to selfless.
+		else_if = {
+			limit = {
+				diarch_has_situational_loyalty_trigger = yes
+				raise_diarch_opinion_with_loyalty_update_value >= diarch_loyalty_visibly_loyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.situational.to_selfless }
+		}
+		## Situational to self-interested.
+		else_if = {
+			limit = {
+				diarch_has_situational_loyalty_trigger = yes
+				raise_diarch_opinion_with_loyalty_update_value <= diarch_loyalty_visibly_disloyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.situational.to_self_interested }
+		}
+		## Situational remains static.
+		else_if = {
+			limit = { diarch_has_situational_loyalty_trigger = yes }
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.situational.remains_static }
+		}
+		# Selfless.
+		## Is too loyal to be able to tell.
+		else_if = {
+			limit = {
+				diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+				scope:diarch_old_opinion >= 100
+				scope:opinion_amount <= -1
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.overflow_edgecase }
+		}
+		### As above, we need this vague option to account for overspill.
+		## Selfless remains static.
+		else_if = {
+			limit = {
+				diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value >= diarch_loyalty_visibly_loyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.remains_static }
+		}
+		## Selfless to self-interested.
+		else_if = {
+			limit = {
+				diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value <= diarch_loyalty_visibly_disloyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.to_self_interested }
+		}
+		## Selfless to situational.
+		else_if = {
+			limit = { diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold }
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.to_situational }
+		}
+	}
+	# Now, add the new opinion.
+	reverse_add_opinion = {
+		target = diarch
+		modifier = $OPINION_TYPE$
+		opinion = scope:opinion_amount
+	}
+}
+
+# Diarchy swing can be good or bad for you depending on whether you're the liege, the diarch, or neutral, so we need different tooltips accordingly.
+## Please note: for technical reasons this'll break if you don't use the pre-set script values or update it to include whatever new value you want to use.
+update_diarchy_swing_with_perspective_effect = {
+	$LIEGE$ = {
+		# Sort the effect.
+		hidden_effect = { change_diarchy_swing = $SWING$ }
+		# Grab $LIEGE$'s' scope for loc.
+		## We save a weirdy scope name so we don't accidentally overwrite common scopes.
+		save_scope_as = liege_loc
+	}
+	# Right, now flick out the correct tooltips.
+	## We can't easily access a number that doesn't yet exist as a variable within a custom tooltip, so this is gon' get _real_ gross and I'm sorry you have to watch it happen.
+	## We also don't contain this in the above $LIEGE$ block because otherwise unusual (but valid) uses of the effect cause asserts.
+	## Is the diarch gaining?
+	if = {
+		limit = { $SWING$ >= 1 }
+		## Miniscule swing.
+		if = {
+			limit = { $SWING$ = miniscule_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.miniscule_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.miniscule_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.miniscule_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Minor swing.
+		else_if = {
+			limit = { $SWING$ = minor_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.minor_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.minor_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.minor_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Medium swing.
+		else_if = {
+			limit = { $SWING$ = medium_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.medium_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.medium_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.medium_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Major swing.
+		else_if = {
+			limit = { $SWING$ = major_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.major_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.major_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.major_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Massive swing.
+		else_if = {
+			limit = { $SWING$ = massive_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.massive_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.massive_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.massive_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Monumental swing.
+		else_if = {
+			limit = { $SWING$ = monumental_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.monumental_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.monumental_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.monumental_sop_swing_diarch_gain.tt }
+			}
+		}
+	}
+	## Is the liege gaining?
+	else_if = {
+		limit = { $SWING$ <= -1 }
+		## Miniscule swing.
+		if = {
+			limit = { $SWING$ = miniscule_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.miniscule_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.miniscule_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.miniscule_sop_swing_liege_gain.tt }
+			}
+		}
+		## Minor swing.
+		else_if = {
+			limit = { $SWING$ = minor_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.minor_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.minor_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.minor_sop_swing_liege_gain.tt }
+			}
+		}
+		## Medium swing.
+		else_if = {
+			limit = { $SWING$ = medium_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.medium_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.medium_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.medium_sop_swing_liege_gain.tt }
+			}
+		}
+		## Major swing.
+		else_if = {
+			limit = { $SWING$ = major_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.major_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.major_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.major_sop_swing_liege_gain.tt }
+			}
+		}
+		## Massive swing.
+		else_if = {
+			limit = { $SWING$ = massive_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.massive_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.massive_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.massive_sop_swing_liege_gain.tt }
+			}
+		}
+		## Monumental swing.
+		else_if = {
+			limit = { $SWING$ = monumental_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.monumental_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.monumental_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.monumental_sop_swing_liege_gain.tt }
+			}
+		}
+	}
+	## No gain not accounted for: you should never be swinging by 0.
 }
