@@ -1,0 +1,784 @@
+﻿
+##################################################
+# Effects related to the hostage system
+
+# Execute that hostage
+bp2_execute_hostage_effect = {
+	scope:hostage = { save_scope_as = victim }
+	scope:hostage_warden = { save_scope_as = executioner }
+	show_as_tooltip = {
+		# Kill hostage
+		scope:victim = {
+			override_death_killer_effect = {
+				death_reason = death_hostage_execution
+				killer = scope:executioner
+			}
+		}
+	}
+	# Cancel truce
+	scope:executioner = {
+		if = {
+			limit = {
+				OR = {
+					NOT = { has_variable = recently_executed_hostage }
+					NOT = { has_variable = recently_executed_hostage_home_court }
+				}
+			}
+			set_variable = {
+				name = recently_executed_hostage
+				value = scope:hostage
+				years = 1
+			}
+			set_variable = {
+				name = recently_executed_hostage_home_court
+				value = scope:hostage_home_court
+				years = 1
+			}
+		}
+	}
+	scope:executioner = {
+		# Dread
+		add_dread = minor_dread_gain
+		#Kinslaying
+		add_kinslayer_trait_or_nothing_effect = { VICTIM = scope:victim }
+	}
+	# Opinion
+	scope:victim = {
+		# Victim's family & spouse hates executioner
+		every_close_family_member = {
+			limit = { NOT = { this = scope:executioner } }
+			add_to_temporary_list = victim_family_list
+		}
+		every_spouse = {
+			limit = { NOT = { this = scope:executioner } }
+			add_to_temporary_list = victim_family_list
+		}
+		if = {
+			limit = {
+				any_in_list = { list = victim_family_list count > 0 }
+			}
+			every_in_list = {
+				list = victim_family_list
+				custom = all_close_family_and_spouses
+				limit = {
+					NOT = { this = scope:hostage_home_court }
+				}
+				alternative_limit = { always = yes }
+				add_opinion = {
+					target = scope:executioner
+					modifier = executed_close_family
+				}
+			}
+		}
+		# Victim's dynasty hates executioner
+		if = {
+			limit = {
+				exists = dynasty
+				exists = scope:executioner.dynasty
+				NOT = { dynasty = scope:executioner.dynasty }
+			}
+			dynasty = {
+				every_dynasty_member = {
+					limit = {
+						NOR = {
+							this = scope:victim
+							is_in_list = victim_family_list
+						}
+					}
+					custom = all_dynasty_members
+					add_to_temporary_list = victim_dynasty_list
+					add_opinion = {
+						target = scope:executioner
+						modifier = executed_dynasty_member
+					}
+				}
+			}
+		}
+		# Victim's friends and lovers
+		every_relation = {
+			type = friend
+			type = lover
+			limit = {
+				NOR = {
+					this = scope:victim
+					is_in_list = victim_family_list
+					is_in_list = victim_dynasty_list
+				}
+			}
+			custom = all_friends_and_lovers
+			add_opinion = {
+				target = scope:executioner
+				modifier = executed_close_relation_opinion
+			}
+		}
+	}
+	# Stress
+	scope:executioner = {
+		if = {
+			limit = {
+				NOT = { has_trait = sadistic }
+				scope:victim = {
+					OR = {
+						is_child_of = scope:executioner
+						is_grandchild_of = scope:executioner
+						is_great_grandchild_of = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = minor_stress_impact_gain
+				family_first = minor_stress_impact_gain
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = { has_trait = sadistic }
+				scope:victim = {
+					OR = {
+						has_relation_friend = scope:executioner
+						has_relation_lover = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				sadistic = medium_stress_impact_loss
+				compassionate = medium_stress_impact_gain
+				forgiving = minor_stress_impact_gain
+				generous = minor_stress_impact_gain
+			}
+		}
+	}
+	# Actually kill the hostage once effects are run
+	hidden_effect = {
+		scope:hostage_home_court = {
+			send_interface_toast = {
+				title = hostage_executed_toast
+				left_icon = scope:hostage
+				right_icon = scope:executioner
+				scope:victim = {
+					show_as_tooltip = {
+						override_death_killer_effect = {
+							death_reason = death_hostage_execution
+							killer = scope:executioner
+						}
+					}
+				}
+			}
+		}
+		scope:executioner = {
+			send_interface_toast = {
+				title = hostage_executed_toast
+				left_icon = scope:hostage
+				right_icon = scope:hostage_home_court
+				scope:victim = {
+					override_death_killer_effect = {
+						death_reason = death_hostage_execution
+						killer = scope:executioner
+					}
+				}
+			}
+		}
+	}
+}
+
+bp2_return_hostage_effect = {
+	# Put hostage return at top of tooltip
+	show_as_tooltip = {
+		$HOSTAGE$ = { return_hostage = yes }
+	}
+	$HOSTAGE$.warden ?= {
+		if = {
+			limit = {
+				OR = {
+					bp2_warden_title_tier_lower_trigger = { WARDEN = $HOSTAGE$.warden HOME_COURT = $HOSTAGE$.home_court }
+					bp2_warden_dynasty_renown_lower_trigger = { WARDEN = $HOSTAGE$.warden HOME_COURT = $HOSTAGE$.home_court }
+				}
+			}
+			if = {
+				limit = {
+					$HOSTAGE$.warden.faith ?= {
+						faith_hostility_level = {
+							target = $HOSTAGE$.home_court.faith
+							value >= faith_hostile_level
+						}
+					}
+				}
+				custom_tooltip = hostage_prestige_piety_renown_income_loss_tt
+			}
+			else = { custom_tooltip = hostage_prestige_renown_income_loss_tt }
+		}
+		else = { custom_tooltip = hostage_prestige_income_loss_tt }
+		if = {
+			limit = {
+				$HOSTAGE$.home_court ?= {
+					NOR = {
+						any_warden_hostage = { home_court = $HOSTAGE$.warden }
+						OR = {
+							has_truce = $HOSTAGE$.warden
+							is_allied_to = $HOSTAGE$.warden
+						}
+					}
+				}
+			}
+			if = {
+				limit = {
+					NOT = { exists = scope:actor }
+					NOT = { exists = scope:recipient }
+				}
+				$HOSTAGE$.home_court = { save_scope_as = actor }
+				$HOSTAGE$.warden = { save_scope_as = recipient }
+			}
+			custom_tooltip = hostage_truce_ending_tt
+		}
+	}
+	$HOSTAGE$ = {
+		if = {
+			limit = {
+				hostage_duration = { years < 1 }
+			}
+			set_variable = {
+				name = short_hostage_duration
+				years = 10
+				value = $HOSTAGE$.warden
+			}
+		}
+		else_if = {
+			limit = {
+				hostage_duration = { years >= 5 }
+			}
+			set_variable = {
+				name = long_hostage_duration
+				years = 10
+				value = $HOSTAGE$.warden
+			}
+		}
+		else = {
+			set_variable = {
+				name = hostage_duration
+				years = 10
+				value = $HOSTAGE$.warden
+			}
+		}
+		if = {
+			limit = {
+				exists = $HOSTAGE$.warden.capital_province
+			}
+			$HOSTAGE$.warden.capital_province = { save_scope_as = starting_location }
+		}
+		else_if = {
+			limit = {
+				exists = $HOSTAGE$.warden.location
+			}
+			$HOSTAGE$.warden.location = { save_scope_as = starting_location }
+		}
+		if = {
+			limit = { is_ruler = yes }
+			capital_province = { save_scope_as = destination_province }
+		}
+		else_if = {
+			limit = { exists = $HOSTAGE$.home_court.capital_province }
+			$HOSTAGE$.home_court ?= {
+				save_scope_as = home_court
+				capital_province = { save_scope_as = destination_province }
+			}
+		}
+		else_if = {
+			limit = { exists = $HOSTAGE$.home_court.location }
+			$HOSTAGE$.home_court.location = { save_scope_as = destination_province }
+		}
+		else = {
+			$HOSTAGE$.location = { save_scope_as = destination_province }
+		}
+		# Actually return hostage last
+		hidden_effect = {
+			if = {
+				limit = { is_hostage = yes }
+				return_hostage = yes
+			}
+			if = {
+				limit = {
+					exists = scope:destination_province
+					exists = scope:starting_location
+				}
+				set_location = scope:starting_location
+				start_travel_plan = {
+					players_use_planner = no
+					destination = scope:destination_province
+					on_start_on_action = on_hostage_depart_for_home_court
+					on_travel_planner_cancel_on_action = on_hostage_depart_travel_planner_exit
+					on_arrival_on_action = on_hostage_arrive_at_home_court
+					on_arrival_destinations = last
+					return_trip = no # One way
+				}
+			}
+			else = {
+				set_location = scope:destination_province
+			}
+		}
+	}
+}
+
+bp2_return_hostage_no_travel_effect = {
+	# Put hostage return at top of tooltip
+	show_as_tooltip = {
+		$HOSTAGE$ = { return_hostage = yes }
+	}
+	$HOSTAGE$.warden ?= {
+		if = {
+			limit = {
+				OR = {
+					bp2_warden_title_tier_lower_trigger = { WARDEN = $HOSTAGE$.warden HOME_COURT = $HOSTAGE$.home_court }
+					bp2_warden_dynasty_renown_lower_trigger = { WARDEN = $HOSTAGE$.warden HOME_COURT = $HOSTAGE$.home_court }
+				}
+			}
+			if = {
+				limit = {
+					$HOSTAGE$.warden.faith ?= {
+						faith_hostility_level = {
+							target = $HOSTAGE$.home_court.faith
+							value >= faith_hostile_level
+						}
+					}
+				}
+				custom_tooltip = hostage_prestige_piety_renown_income_loss_tt
+			}
+			else = { custom_tooltip = hostage_prestige_renown_income_loss_tt }
+		}
+		else = { custom_tooltip = hostage_prestige_income_loss_tt }
+		if = {
+			limit = {
+				$HOSTAGE$.home_court ?= {
+					NOR = {
+						any_warden_hostage = { home_court = $HOSTAGE$.warden }
+						OR = {
+							has_truce = $HOSTAGE$.warden
+							is_allied_to = $HOSTAGE$.warden
+						}
+					}
+				}
+			}
+			custom_tooltip = hostage_truce_ending_tt
+		}
+	}
+	$HOSTAGE$ = {
+		if = {
+			limit = {
+				hostage_duration = { years < 1 }
+			}
+			set_variable = {
+				name = short_hostage_duration
+				years = 10
+				value = $HOSTAGE$.warden
+			}
+		}
+		else_if = {
+			limit = {
+				hostage_duration = { years >= 5 }
+			}
+			set_variable = {
+				name = long_hostage_duration
+				years = 10
+				value = $HOSTAGE$.warden
+			}
+		}
+		else = {
+			set_variable = {
+				name = hostage_duration
+				years = 10
+				value = $HOSTAGE$.warden
+			}
+		}
+		# Actually return hostage last
+		hidden_effect = {
+			if = {
+				limit = { is_hostage = yes }
+				return_hostage = yes
+			}
+		}
+	}
+}
+
+bp2_send_hostage_two_way_tooltip_effect = {
+	scope:hostage_sender_1 = {
+		if = {
+			limit = { has_truce = scope:hostage_sender_1 }
+			custom_tooltip = hostage_existing_truce_two_way_1_tt
+		}
+	}
+	scope:hostage_sender_2 = {
+		if = {
+			limit = { has_truce = scope:hostage_sender_1 }
+			custom_tooltip = hostage_existing_truce_two_way_2_tt
+		}
+	}
+}
+
+hostage_depart_effect = {
+	$HOSTAGE$ ?= {
+		# Remove guardian if relevant
+		if = {
+			limit = {
+				any_relation = { type = guardian count >= 1 }
+			}
+			every_relation = {
+				type = guardian
+				remove_guardian_effect = {
+					GUARDIAN = this
+					WARD = $HOSTAGE$
+					RETURN_WARD = no
+					HIDE_OPINION = yes
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				any_relation = { type = ward count >= 1 }
+			}
+			every_relation = {
+				type = ward
+				remove_guardian_effect = {
+					GUARDIAN = $HOSTAGE$
+					WARD = this
+					RETURN_WARD = yes
+					HIDE_OPINION = yes
+				}
+			}
+		}
+		hidden_effect = {
+			$HOME_COURT$ = {
+				send_interface_toast = {
+					title = hostage_departs_title
+					left_icon = $HOSTAGE$
+					right_icon = $WARDEN$
+					# Departure info
+					$HOSTAGE$ = {
+						custom_description = {
+							text = hostage_leaves_home_tt 
+							subject = $HOSTAGE$
+							object = $WARDEN$
+						}
+					}
+				}
+			}
+			# Toast for recipient
+			$WARDEN$ = {
+				send_interface_toast = {
+					title = hostage_departs_title
+					left_icon = $HOSTAGE$
+					right_icon = $HOME_COURT$
+					# Departure info
+					$HOSTAGE$ = {
+						custom_description = {
+							text = hostage_leaves_home_tt 
+							subject = $HOSTAGE$
+							object = $WARDEN$
+						}
+					}
+				}
+			}
+		}
+		show_as_tooltip = {
+			$WARDEN$ = { take_hostage = $HOSTAGE$ }
+		}
+		if = {
+			limit = {
+				OR = {
+					bp2_warden_title_tier_lower_trigger = { WARDEN = $WARDEN$ HOME_COURT = $HOME_COURT$ }
+					bp2_warden_dynasty_renown_lower_trigger = { WARDEN = $WARDEN$ HOME_COURT = $HOME_COURT$ }
+				}
+			}
+			if = {
+				limit = {
+					$WARDEN$.faith = {
+						faith_hostility_level = {
+							target = $HOME_COURT$.faith
+							value >= faith_hostile_level
+						}
+					}
+				}
+				custom_description = {
+					text = hostage_prestige_piety_renown_income_tt
+					subject = $WARDEN$
+				}
+				custom_description_no_bullet = {
+					text = hostage_faith_hostility_tt
+					subject = $WARDEN$
+					object = $HOME_COURT$
+				}
+				if = {
+					limit = {
+						bp2_warden_dynasty_renown_lower_trigger = { WARDEN = $WARDEN$ HOME_COURT = $HOME_COURT$ }
+					}
+					custom_description_no_bullet = {
+						text = warden_lower_dynasty_renown_tt
+						subject = $WARDEN$
+						object = $HOME_COURT$
+					}
+				}
+				if = {
+					limit = {
+						bp2_warden_title_tier_lower_trigger = { WARDEN = $WARDEN$ HOME_COURT = $HOME_COURT$ }
+					}
+					custom_description_no_bullet = {
+						text = warden_lower_title_tier_tt
+						subject = $WARDEN$
+						object = $HOME_COURT$
+					}
+				}
+			}
+			else = {
+				custom_description = {
+					text = hostage_prestige_renown_income_tt
+					subject = $WARDEN$
+				}
+				if = {
+					limit = {
+						bp2_warden_dynasty_renown_lower_trigger = { WARDEN = $WARDEN$ HOME_COURT = $HOME_COURT$ }
+					}
+					custom_description_no_bullet = {
+						text = warden_lower_dynasty_renown_tt
+						subject = $WARDEN$
+						object = $HOME_COURT$
+					}
+				}
+				if = {
+					limit = {
+						bp2_warden_title_tier_lower_trigger = { WARDEN = $WARDEN$ HOME_COURT = $HOME_COURT$ }
+					}
+					custom_description_no_bullet = {
+						text = warden_lower_title_tier_tt
+						subject = $WARDEN$
+						object = $HOME_COURT$
+					}
+				}
+			}
+		}
+		else = {
+			custom_description = {
+				text = hostage_prestige_income_tt
+				subject = $WARDEN$
+			}
+		}
+		remove_character_flag = under_offer_as_hostage_flag
+		set_variable = {
+			name = hostage_travelling_to_warden
+			value = $WARDEN$
+			years = 2
+		}
+		start_travel_plan = {
+			destination = $WARDEN$.capital_province
+			on_start_on_action = on_hostage_depart_for_warden
+			on_travel_planner_cancel_on_action = on_hostage_depart_travel_planner_exit
+			on_arrival_on_action = on_hostage_arrive_at_warden
+			on_arrival_destinations = last
+			return_trip = no # One way
+		}
+	}
+}
+
+# Invalidate travelling hostages
+hostage_travel_invalidation_effect = {
+	if = {
+		limit = {
+			exists = var:hostage_travelling_to_warden
+			OR = {
+				var:hostage_travelling_to_warden = {	
+					OR = {
+						# Warden dies (flag:warden)
+						is_alive = no
+						# Warden loses lands (flag:warden)
+						is_landed = no
+						# War
+						AND = {
+							exists = root.liege
+							is_at_war_with = root.liege
+						}
+					}
+				}
+				# Hostage is jailed (flag:imprisoner)
+				is_imprisoned = yes
+				# Hostage becomes landed (flag:ruler)
+				is_landed = yes
+				# No longer important to home court (flag:invalid)
+				trigger_if = {
+					limit = { exists = liege }
+					NOR = {
+						is_child_of = liege
+						is_grandchild_of = liege
+						is_sibling_of = liege
+						is_nibling_of = liege
+					}
+				}
+				trigger_else = {
+					# Home court no longer landed (flag:home_court)
+					NOT = { exists = liege }
+				}
+			}
+		}
+		save_scope_as = hostage
+		if = {
+			limit = { exists = liege }
+			liege = { save_scope_as = home_court }
+		}
+		var:hostage_travelling_to_warden = {
+			send_interface_toast = {
+				title = hostage_invalidated_during_travel_title
+				left_icon = scope:hostage
+				right_icon = scope:home_court
+                show_as_tooltip = {
+                    scope:hostage = { return_hostage = yes }
+                }
+			}
+		}
+		scope:home_court ?= {
+			send_interface_toast = {
+				title = hostage_invalidated_during_travel_title
+				left_icon = scope:hostage
+				right_icon = scope:hostage.var:hostage_travelling_to_warden
+				show_as_tooltip = {
+                    scope:hostage = { return_hostage = yes }
+                }
+				scope:hostage = {
+					current_travel_plan = { cancel_travel_plan = yes }
+				}
+			}
+		}
+		if = {
+			limit = { is_alive = yes }
+			remove_variable = hostage_travelling_to_warden
+		}
+		debug_log = "Hostage invalidated during travel"
+		debug_log_scopes = yes
+	}
+}
+
+# Invalidate travelling wards
+ward_travel_invalidation_effect = {
+	if = {
+		limit = {
+			exists = var:ward_travelling_to_guardian
+			OR = {
+				# Ward is imprisoned
+				is_imprisoned = yes
+				# Ward becomes landed
+				is_landed = yes
+				var:ward_travelling_to_guardian = {
+					is_alive = no
+					# Guardian is jailed
+					is_imprisoned = yes
+				}
+				NOT = { exists = var:ward_travelling_to_guardian }
+				NOT = { exists = var:character_making_education_request }
+			}
+		}
+		var:ward_travelling_to_guardian ?= { save_scope_as = guardian }
+		save_scope_as = ward
+		if = {
+			limit = { exists = liege }
+			liege = {
+				save_scope_as = ward_liege
+				send_interface_toast = {
+					title = ward_invalidated_during_travel_title
+					left_icon = scope:ward
+					right_icon = scope:guardian
+					show_as_tooltip = {
+						scope:ward = { remove_relation_guardian = scope:guardian }
+					}
+				}
+			}
+		}
+		scope:guardian ?= {
+			send_interface_toast = {
+				title = ward_invalidated_during_travel_title
+				left_icon = scope:ward
+				right_icon = scope:ward_liege
+				show_as_tooltip = {
+					scope:ward = { remove_relation_guardian = scope:guardian }
+				}
+				scope:ward.current_travel_plan = { cancel_travel_plan = yes }
+			}
+		}
+		if = {
+			limit = { is_alive = yes }
+			remove_variable = ward_travelling_to_guardian
+			remove_variable = character_making_education_request
+		}
+		debug_log = "Ward invalidated during travel"
+		debug_log_scopes = yes
+	}
+}
+
+# Invalidate travelling guardians
+guardian_travel_invalidation_effect = {
+	if = {
+		limit = {
+			exists = var:guardian_travelling_to_ward
+			OR = {
+				# Guardian is imprisoned
+				is_imprisoned = yes
+				# Guardian becomes landed
+				is_landed = yes
+				var:guardian_travelling_to_ward = {
+					is_alive = no
+					# Guardian is jailed
+					is_imprisoned = yes
+				}
+				NOT = { exists = var:guardian_travelling_to_ward }
+			}
+		}
+		var:guardian_travelling_to_ward ?= { save_scope_as = ward }
+		save_scope_as = guardian
+		scope:ward ?= {
+			if = {
+				limit = { exists = liege }
+				liege = {
+					save_scope_as = ward_liege
+					send_interface_toast = {
+						title = ward_invalidated_during_travel_title
+						left_icon = scope:guardian
+						right_icon = scope:ward
+						show_as_tooltip = {
+							scope:guardian = { remove_relation_ward = scope:ward }
+						}
+					}
+				}
+			}
+			send_interface_toast = {
+				title = guardian_invalidated_during_travel_title
+				left_icon = scope:guardian
+				show_as_tooltip = {
+					scope:guardian = { remove_relation_ward = scope:ward }
+				}
+				scope:guardian.current_travel_plan = {
+					if = {
+						limit = { can_cancel = yes }
+						cancel_travel_plan = yes
+					}
+				}
+			}
+			if = {
+				limit = { is_alive = yes }
+				remove_variable = character_making_education_request
+			}
+		}
+		if = {
+			limit = { is_alive = yes }
+			remove_variable = guardian_travelling_to_ward
+		}
+		debug_log = "Guardian invalidated during travel"
+		debug_log_scopes = yes
+	}
+}

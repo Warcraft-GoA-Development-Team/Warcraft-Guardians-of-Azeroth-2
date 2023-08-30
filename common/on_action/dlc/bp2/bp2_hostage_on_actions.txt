@@ -1,0 +1,487 @@
+﻿#############################
+## BP2 Hostage on_actions
+#############################
+
+# root = Same as scope:hostage
+# scope:hostage = Hostage being taken
+# scope:warden = Warden of hostage being taken
+# scope:home_court = Original liege of hostage being taken
+on_hostage_taken = {
+	effect = {
+		create_character_memory = {
+			type = hostage_created_hostage
+			participants = {
+				home_court = root.home_court
+				warden = root.warden
+			}
+		}
+		if = {
+			limit = { is_adult = no }
+			scope:new_memory = {
+				set_variable = childhood_memory
+			}
+		}
+		warden ?= {
+			create_character_memory = {
+				type = hostage_created_warden
+				participants = {
+					home_court = root.home_court
+					hostage = root
+				}
+			}
+		}
+		home_court ?= {
+			create_character_memory = {
+				type = hostage_created_home_court
+				participants = {
+					warden = root.warden
+					hostage = root
+				}
+			}
+		}
+
+		if = {
+			limit = {
+				scope:warden = {
+					employs_court_position = wet_nurse_court_position
+					any_court_position_holder = {
+						type = wet_nurse_court_position
+						save_temporary_scope_as = wet_nurse_temp
+					}
+				}
+				scope:hostage = {
+					is_adult = no
+					NOT = { has_relation_wet_nurse = scope:wet_nurse_temp }
+				}
+			}
+			scope:warden = {
+				random_court_position_holder = {
+					type = wet_nurse_court_position
+					save_scope_as = wet_nurse
+				}
+			}
+			scope:hostage = {
+				set_relation_wet_nurse = scope:wet_nurse
+			}
+		}
+	}
+}
+
+# root = Same as scope:hostage
+# scope:hostage = Hostage being released
+# scope:warden = Warden of hostage being released
+# scope:home_court = Liege hostage is being released to
+on_hostage_released = {
+	effect = {
+		create_character_memory = {
+			type = hostage_returned_hostage
+			participants = {
+				warden = scope:warden
+				home_court = scope:home_court
+			}
+		}
+		scope:new_memory = {
+			save_scope_as = hostage_memory
+			if = {
+				limit = { exists = scope:warden.primary_title }
+				set_variable = {
+					name = hostage_realm
+					value = scope:warden.primary_title
+				}
+			}
+			if = {
+				limit = { exists = scope:warden.capital_province }
+				set_variable = {
+					name = hostage_location
+					value = scope:warden.capital_province
+				}
+			}
+			else_if = {
+				limit = { exists = scope:warden.location }
+				set_variable = {
+					name = hostage_location
+					value = scope:warden.location
+				}
+			}
+			if = {
+				limit = { exists = scope:warden.capital_province.culture }
+				set_variable = {
+					name = hostage_location_culture
+					value = scope:warden.capital_province.culture
+				}
+			}
+			else_if = {
+				limit = { exists = scope:warden.culture }
+				set_variable = {
+					name = hostage_location_culture
+					value = scope:warden.culture
+				}
+			}
+			if = {
+				limit = { exists = scope:warden.faith }
+				set_variable = {
+					name = hostage_warden_faith
+					value = scope:warden.faith
+				}
+			}
+			if = {
+				limit = { exists = scope:warden.culture }
+				set_variable = {
+					name = hostage_warden_culture
+					value = scope:warden.culture
+				}
+			}
+		}
+		scope:warden = {
+			create_character_memory = {
+				type = hostage_returned_warden
+				participants = {
+					home_court = scope:home_court
+					hostage = root
+				}
+			}
+		}
+		scope:home_court = {
+			create_character_memory = {
+				type = hostage_returned_home_court
+				participants = {
+					warden = scope:warden
+					hostage = root
+				}
+			}
+		}
+	}
+	random_events = {
+		30 = 0
+		10 = bp2_yearly.6031 #Set up hostage providing a secret from their warden's court
+	}
+}
+
+# root - former hostage
+# scope:warden - former warden
+# scope:home_court - former home court
+# scope:imprisoner - if set, it means hostage was invalidated due to being imprisoned by this person
+# scope:reason is the reason for invalidation
+## scope:reason = flag:invalid - is the default case when liege becomes valid for diarchy because of is_hostage_valid script rule
+## scope:reason = flag:ruler - hostage become landed ruler because of inheritance
+## scope:reason = flag:imprisoner - hostage was imprisoned
+## scope:reason = flag:warden - warden became unlanded and there's noone to inherit their court and hostages
+## scope:reason = flag:home_court - home court owner became unlanded and there's noone to inherit their court and away courtiers
+# hostage can be invalidated for various reasons. This onaction is called
+# and on_hostage_released is skipped
+# warden and home court are always set but might refer to already dead or landless people
+on_hostage_invalidated = {
+	effect = {
+		save_scope_as = hostage
+		debug_log = "Hostage invalidated"
+		debug_log_scopes = yes
+		add_character_flag = {
+			flag = recently_invalidated_hostage
+			days = 1
+		}
+		location = { save_scope_as = starting_location }
+		if = {
+			limit = {
+				scope:home_court = {
+					is_alive = yes
+					is_landed = yes
+					exists = capital_province
+				}
+			}
+			scope:home_court.capital_province = { save_scope_as = destination_province }
+		}
+		else_if = {
+			limit = {
+				scope:home_court = {
+					is_alive = yes
+					exists = location
+				}
+			}
+			scope:home_court.location = { save_scope_as = destination_province }
+		}
+		else_if = {
+			limit = {
+				any_close_family_member = {
+					is_alive = yes
+					is_landed = yes
+				}
+			}
+			random_close_family_member = {
+				limit = {
+					is_alive = yes
+					is_landed = yes
+				}
+				capital_province = { save_scope_as = destination_province }
+			}
+		}
+		if = {
+			limit = {
+				exists = scope:destination_province
+			}
+			start_travel_plan = {
+				players_use_planner = no
+				destination = scope:destination_province
+				on_start_on_action = on_hostage_depart_for_home_court
+				on_travel_planner_cancel_on_action = on_hostage_depart_travel_planner_exit
+				on_arrival_on_action = on_hostage_arrive_at_home_court
+				on_arrival_destinations = last
+				return_trip = no # One way
+			}
+		}
+		else = {
+			set_location = scope:warden.location
+		}
+		# Title flavor
+		if = {
+			limit = { scope:reason = flag:warden }
+			if = {
+				limit = {
+					scope:warden = {
+						any_claim = {
+							any_past_holder = { this = scope:warden }
+							save_temporary_scope_as = title
+							scope:warden = { has_strong_claim_on = scope:title }
+						}
+					}
+				}
+			}
+			scope:warden = {
+				ordered_claim = {
+					limit = {
+						any_past_holder = { this = scope:warden }
+						save_temporary_scope_as = title
+						scope:warden = { has_strong_claim_on = scope:title }
+					}
+					order_by = tier
+					save_scope_as = lost_title
+				}
+			}
+		}
+		else_if = {
+			limit = { scope:reason = flag:home_court }
+			if = {
+				limit = {
+					scope:home_court = {
+						any_claim = {
+							any_past_holder = { this = scope:home_court }
+							save_temporary_scope_as = title
+							scope:home_court = { has_strong_claim_on = scope:title }
+						}
+					}
+				}
+			}
+			scope:home_court = {
+				ordered_claim = {
+					limit = {
+						any_past_holder = { this = scope:home_court }
+						save_temporary_scope_as = title
+						scope:home_court = { has_strong_claim_on = scope:title }
+					}
+					order_by = tier
+					save_scope_as = lost_title
+				}
+			}
+		}
+		else_if = {
+			limit = { scope:reason = flag:ruler }
+			scope:hostage = {
+				trigger_event = {
+					id = bp2_hostage_system.0402
+					days = 1
+				}
+			}
+		}
+		scope:warden ?= { trigger_event = bp2_hostage_system.0400 }
+		scope:home_court ?= { trigger_event = bp2_hostage_system.0401 }
+	}
+}
+
+on_hostage_depart_for_warden = {
+	effect = {
+		if = {
+			limit = {
+				has_bp2_dlc_trigger = yes
+				
+				liege ?= {
+					is_adult = yes
+					NOT = { #to avoid repetition with more hostages
+						has_character_flag = bp2_hostage_blues
+					}
+					any_memory = {
+						has_memory_type = hostage_created_hostage
+						has_variable = childhood_memory
+					}
+					is_parent_of = root
+				}
+				root = {
+					is_adult = no
+					age > 6 #Can ride horses
+				}
+			}
+			liege ?= {
+				set_variable = {
+					name = hostage_kid
+					value = root
+				}
+				save_scope_as = hostage_home_court
+				random_memory = {
+					limit = {
+						has_memory_type = hostage_created_hostage
+						has_variable = childhood_memory
+					}
+					scope:hostage_home_court = {
+						set_variable = {
+							name = hostage_mem
+							value = prev
+						}
+					}
+				}
+				trigger_event = bp2_yearly.4032
+			}
+		}
+	}
+}
+
+on_hostage_depart_for_home_court = {
+	
+}
+
+on_hostage_depart_travel_planner_exit = {
+	effect = {
+		if = {
+			limit = { has_variable = hostage_travelling_to_warden }
+			remove_variable = hostage_travelling_to_warden
+		}
+	}
+}
+
+on_hostage_arrive_at_warden = {
+	effect = {
+		save_scope_as = hostage
+		var:hostage_travelling_to_warden ?= { save_scope_as = hostage_warden }
+		# Liege is still home court until take_hostage effect is called in bp2_hostage_system.0501
+		liege ?= { save_scope_as = hostage_home_court }
+		# Invalidate travelling hostages
+		if = {
+			limit = {
+				exists = var:hostage_travelling_to_warden
+				OR = {
+					var:hostage_travelling_to_warden = {	
+						OR = {
+							# Warden dies (flag:warden)
+							is_alive = no
+							# Warden loses lands (flag:warden)
+							is_landed = no
+							#War
+							AND = {
+								exists = scope:hostage_home_court
+								is_at_war_with = scope:hostage_home_court
+							}
+						}
+					}
+					# Hostage is jailed (flag:imprisoner)
+					is_imprisoned = yes
+					# Hostage becomes landed (flag:ruler)
+					is_landed = yes
+					# No longer important to home court (flag:invalid)
+					trigger_if = {
+						limit = { exists = liege }
+						NOR = {
+							is_child_of = liege
+							is_grandchild_of = liege
+							is_sibling_of = liege
+							is_nibling_of = liege
+						}
+					}
+					trigger_else = {
+						# Home court no longer landed (flag:home_court)
+						NOT = { exists = liege }
+					}
+				}
+			}
+			save_scope_as = hostage
+			if = {
+				limit = { exists = liege }
+				liege = { save_scope_as = home_court }
+			}
+			var:hostage_travelling_to_warden = {
+				send_interface_toast = {
+					title = hostage_invalidated_during_travel_title
+					left_icon = scope:hostage
+					right_icon = scope:home_court
+					show_as_tooltip = {
+						scope:hostage.current_travel_plan = {
+							if = {
+								limit = { is_completed = no }
+								cancel_travel_plan = yes
+							}
+						}
+					}
+				}
+			}
+			scope:home_court ?= {
+				send_interface_toast = {
+					title = hostage_invalidated_during_travel_title
+					left_icon = scope:hostage
+					right_icon = scope:hostage.var:hostage_travelling_to_warden
+					scope:hostage = {
+						remove_variable = hostage_travelling_to_warden
+						current_travel_plan = {
+							if = {
+								limit = { is_completed = no }
+								cancel_travel_plan = yes
+							}
+						}
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				scope:hostage_warden ?= {
+					is_alive = yes
+					is_landed = yes
+				}
+			}
+			if = {
+				limit = { location != var:hostage_travelling_to_warden.capital_province }
+				set_location = var:hostage_travelling_to_warden.capital_province
+			}
+			scope:hostage_warden = { trigger_event = bp2_hostage_system.0500 }
+		}
+		remove_variable = hostage_travelling_to_warden
+		debug_log = "Hostage arrived after travel"
+		debug_log_scopes = yes
+		scope:home_court ?= {
+			trigger_event = {
+				id = bp2_yearly.6170 # your family mad that you sent a hostage to an uncivilized court
+				years = { 1 5 }
+			}
+		}
+	}
+}
+
+on_hostage_arrive_at_home_court = {
+	effect = {
+		save_scope_as = hostage
+		var:short_hostage_duration ?= { save_scope_as = hostage_warden }
+		var:hostage_duration ?= { save_scope_as = hostage_warden }
+		var:long_hostage_duration ?= { save_scope_as = hostage_warden }
+		liege ?= { save_scope_as = hostage_home_court }
+		if = {
+			limit = {
+				scope:hostage_home_court ?= {
+					is_alive = yes
+					is_landed = yes
+				}
+			}
+			if = {
+				limit = { location != scope:hostage_home_court.capital_province }
+				set_location = scope:hostage_home_court.capital_province
+			}
+			scope:home_court = { trigger_event = bp2_hostage_system.0510 }
+		}
+		debug_log = "Hostage returned after travel"
+		debug_log_scopes = yes
+	}
+}

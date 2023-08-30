@@ -65,6 +65,7 @@ faith_creation = {
 				COUNT = 3
 			}
 		}
+		# Warcraft
 	}
 }
 
@@ -140,12 +141,12 @@ is_character_allowed_to_be_player = {
 		}
 		custom_description = {
 			text = "GAME_OVER_CANNOT_PLAY_THEOCRACY"
-			NOT = { has_government = theocracy_government }
+			NOT = { government_has_flag = government_is_theocracy }
 		}
 
 		custom_description = {
 			text = "GAME_OVER_CANNOT_PLAY_REPUBLIC"
-			NOT = { has_government = republic_government }
+			NOT = { government_has_flag = government_is_republic }
 		}
 	}
 }
@@ -269,13 +270,43 @@ is_alliance_valid = {
 		is_parent_of = scope:second
 		is_child_of = scope:second
 		is_sibling_of = scope:second
+		is_grandparent_of = scope:second
+		is_great_grandparent_of = scope:second
+		is_grandchild_of = scope:second
+		is_great_grandchild_of = scope:second
+		is_uncle_or_aunt_of = scope:second
+		is_nibling_of = scope:second
 		scope:second = {
-			has_opinion_modifier = {
-				modifier = perk_negotiated_alliance_opinion
-				target = root
+			OR = {
+				has_opinion_modifier = {
+					modifier = perk_negotiated_alliance_opinion
+					target = root
+				}
+				has_opinion_modifier = {
+					modifier = event_negotiated_alliance_opinion
+					target = root
+				}
 			}
 		}
-		
+		#childhood friendship with hostage event, where they swear to be friends forever
+		AND = {
+			OR = {
+				has_relation_friend = scope:second
+				has_relation_best_friend = scope:second
+			}
+			OR = {
+				any_memory = {
+					has_memory_type = hostage_oath_of_friendship
+					has_memory_participant = scope:second
+				}
+				scope:second = {
+					any_memory = {
+						has_memory_type = hostage_oath_of_friendship
+						has_memory_participant = root
+					}
+				}
+			}
+		}
 		# Warcraft
 		is_in_same_faction_trigger = { TARGET = scope:second }
 		has_historical_alliance_trigger = yes
@@ -291,6 +322,8 @@ can_designate_heir = {
 # Does the character care about having a council position? Used for powerful vassals that have no council position for whether they should get the opinion penalty
 cares_about_powerful_vassal_council_position = {
 	can_be_councillor_basics_trigger = yes
+	NOT = { this = liege.diarch }
+	is_designated_diarch = no
 }
 
 # Does the character approve of succession law changes? Used for the succession law change GUI to designate oppose vs. approve for powerful vassals
@@ -395,18 +428,7 @@ can_start_raid = {
 
 # Can this character cross water (sea, rivers) while on raid?
 # root: the potential raider
-can_raid_across_water = {
-	OR = {
-		culture = {
-			# Warcraft
-			culture_can_raid_at_sea_even_if_feudal_trigger = yes
-		}
-		AND = {
-			exists = dynasty
-			dynasty = { has_dynasty_modifier = fp1_legacy_of_piracy_modifier }
-		}
-	}
-}
+can_raid_across_water = { can_raid_across_water_trigger = yes }
 
 # Can this character traverse rivers using boats?
 # root: the owner of the army
@@ -414,9 +436,8 @@ can_traverse_river = {
 	OR = {
 		culture = {
 			OR = {
-				# Warcraft
-				culture_can_raid_at_sea_even_if_feudal_trigger = yes
-				
+				has_innovation = innovation_longboats
+				#has_innovation = innovation_african_canoes
 				has_cultural_parameter = can_travel_along_rivers
 			}
 		}
@@ -627,6 +648,99 @@ ai_wants_matrilineal_marriage = {
 	}
 }
 
+# Does the AI want to have a grand wedding instead of an instant marriage
+# root: the arranging AI character
+# scope:actor: the arranging AI character
+# scope:secondary_actor: character being married that AI can control
+# scope:recipient: the character who can accept the marriage proposal
+# scope:secondary_recipient: the character to be married
+ai_wants_grand_wedding_promise = {
+	OR = {
+		# Propose grand wedding to the player, the players primary heir, and their oldest child (both sexes)
+		scope:recipient = {
+			is_ai = no
+			scope:secondary_recipient = {
+				OR = {
+					this = scope:recipient
+					is_primary_heir_of = scope:recipient
+					AND = {
+						is_child_of = scope:recipient
+						NOT = {
+							any_sibling = {
+								sex_same_as = scope:secondary_recipient
+								age > scope:secondary_recipient.age
+							}
+						}
+					}
+				}
+			}
+		}
+		# An unmarried ruler wants it for their primary wedding
+		scope:actor = {
+			this = scope:secondary_actor
+			is_married = no
+			is_ruler = yes
+		}
+		# A ruler wants it for their primary heir's primary wedding
+		AND = {
+			scope:actor.primary_title = {
+				place_in_line_of_succession = {
+					target = scope:secondary_actor
+					value <= 1
+				}
+			}
+			scope:secondary_actor = {
+				is_married = no
+			}
+		}
+		# Very prestigious rulers just want to show off
+		AND = {
+			scope:actor = {
+				highest_held_title_tier >= tier_kingdom
+				has_personality_extroverted_trigger = yes
+				ai_greed <= -50
+			}
+			OR = {
+				scope:actor.dynasty = { dynasty_prestige_level >= 4 }
+				scope:actor = { prestige_level >= 4 }
+			}
+		}
+		# Swimming in money and not greedy
+		AND = {
+			scope:actor.ai_greed <= 0
+			scope:actor.gold >= 7000
+		}
+	}
+	# Let's try to prevent the AI from going bankrupt
+	scope:actor = { gold >= ai_wedding_promise_gold_actor }
+	scope:actor = {
+		OR = {
+			# You're getting at least an alliance out of it 
+			yields_alliance = {
+				candidate = scope:secondary_actor
+				target = scope:recipient
+				target_candidate = scope:secondary_recipient
+			}
+			# Or it's an ally you want to strengthen the bonds with
+			is_allied_to = scope:recipient
+			# Or you just have the perfect personality for it!
+			AND = {
+				has_personality_extroverted_trigger = yes
+				ai_greed <= -50
+				ai_rationality <= -25
+				exists = scope:secondary_actor.dynasty
+			}
+		}
+		is_at_war = no
+	}
+	# Only do Grand Weddings for rulers of your tier or above
+	exists = scope:recipient.primary_title
+	OR = {
+		scope:recipient.primary_title.tier >= primary_title.tier
+		scope:recipient.primary_title.tier >= tier_kingdom
+	}
+}
+
 # Is this character blocked from having buildings enabled?
 #Scope it to potential backer
 buildings_enabled = {
@@ -734,5 +848,88 @@ ai_should_repair_artifact = {
 		scope:artifact = {
 			artifact_slot_type = miscellaneous
 		}
+	}
+}
+
+# Can this character be a guest at any activity at all held by the host, checked in the UI and in the invite to activity special interaction type
+# root = character
+# scope:host = the activity host
+can_be_activity_guest = {
+	is_available_allow_travelling = yes
+	OR = {
+		is_travelling = no
+		# If travelling then it must be already to this activity after it has been created
+		AND = {
+			exists = scope:host.involved_activity
+			exists = current_travel_plan.travel_plan_activity
+			scope:host.involved_activity = current_travel_plan.travel_plan_activity
+		}
+	}
+	# Diarchs with official responsibilities can't come out to play, unless within their liege's realm.
+	trigger_if = {
+		limit = {
+			exists = liege
+			OR = {
+				is_diarch = yes
+				is_designated_diarch = yes
+			}
+		}
+		scope:host.involved_activity.activity_location.county.holder ?= {
+			OR = {
+				this = root.liege
+				any_liege_or_above = { this = root.liege }
+			}
+		}
+	}
+}
+
+# Is target character displayed as loyal diarch
+# If both or neither loyal and disloyal, we show unknown loyalty
+# root - Diarch or potential diarch character
+is_diarch_visibly_loyal = {
+	diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+}
+
+# Is target character displayed as disloyal diarch
+# If both or neither loyal and disloyal, we show unknown loyalty
+# root - Diarch or potential diarch character
+is_diarch_visibly_disloyal = {
+	diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+}
+
+# Can the target diarch fulfil their diarch duties
+# root - the diarch whos ability is being tested
+is_diarch_able = { is_diarch_able_trigger = yes }
+
+# Can target character even be considered serving as diarch, or are they
+# completely unable to fulfil their diarch duties and should be replaced
+# root - the diarch whos ability is being tested
+is_diarch_valid = { is_diarch_valid_trigger = yes }
+
+# If ruler should go into diarchy
+# Used in code when people become landed or receive incapacitating traits
+# root - the liege who is tested for diarchy
+should_have_diarchy = {
+	basic_eligible_for_diarchy_trigger = yes
+	regency_for_personal_reasons_trigger = yes
+}
+
+# Does target character fulfil the basic requirements to be an Acclaimed Knight
+# root - Acclaimed Knight, or potential candidate
+can_be_acclaimed_knight = {
+	is_knight = yes
+	highest_held_title_tier <= tier_barony
+}
+
+# Can target character be considered a valuable hostage
+# It's checked on an already taken hostages, so regular links to warden and home court
+# can be used to check the relations between these 3 people
+# root - hostage being evaluated
+is_hostage_valid = {
+	OR = {
+		is_child_of = home_court
+		is_grandchild_of = home_court
+		is_sibling_of = home_court
+		is_nibling_of = home_court
 	}
 }
