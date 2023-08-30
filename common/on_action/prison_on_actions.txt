@@ -6,6 +6,33 @@
 # imprisoning character set as scope:imprisoner
 on_imprison = {
 	effect = { #You no longer make such decisions over your life :(
+		# EP2: Cancel associated activity and travel plan if they exist
+		if = {
+			limit = {
+				exists = involved_activity
+				involved_activity.activity_host = root
+			}
+			invalidate_activity = root.involved_activity
+		}
+		else_if = {
+			limit = {
+				exists = involved_activity
+			}
+			remove_from_activity = involved_activity
+		}
+
+		current_travel_plan ?= {
+			if = {
+				limit = {
+					travel_plan_owner = root
+				}
+				abort_travel_plan = yes
+			}
+			else = {
+				remove_character = root
+		 	}
+		}
+
 		if = {
 			limit = { has_character_modifier = gaining_weight_modifier }
 			remove_character_modifier = gaining_weight_modifier
@@ -68,6 +95,29 @@ on_imprison = {
 				imprisoner = scope:imprisoner
 			}
 		}
+		if = {
+			limit = {
+				is_adult = no
+			}
+			scope:new_memory = {
+				set_variable = childhood_memory
+			}
+		}
+
+		if = {
+			limit = {
+				has_bp2_dlc_trigger = yes
+				is_adult = yes
+				any_memory = {
+					has_memory_type = imprisoned
+					has_variable = childhood_memory
+				}
+			}
+			trigger_event = {
+				id = bp2_yearly.4031
+				days = 10
+			}
+		} #You were imprisoned as a child, and guess what? You are imprisoned as an adult. Congratulations!
 
 		if = {
 			limit = {
@@ -103,12 +153,36 @@ on_imprison = {
 				}
 			}
 		}
+		if = {
+			limit = {
+				has_bp2_dlc_trigger = yes
+				scope:imprisoner = {
+					any_memory = {
+						has_memory_type = relative_died
+						any_memory_participant = {
+							exists = this.killer
+							killer = {
+								is_imprisoned_by = root
+							}
+						}
+						has_variable = childhood_memory
+					}
+				}
+			}
+			scope:imprisoner = {
+				trigger_event = {
+					id = bp2_yearly.4001
+					days = 1
+				}
+			}
+		}
 	}
 	events = {
 		prison_notification.0001
 		stewardship_duty.1066  #You imprison your client and prevent them from working for you.
 		martial_authority.2052 # Right-Hand Person Imprisoned (by you)
 		martial_authority.2053 # Right-Hand Person Imprisoned (by someone else)
+		diarchy.0001			# You're forced into a regency	
 	}
 }
 
@@ -116,11 +190,16 @@ on_imprison = {
 # imprisoning character set as scope:imprisoner
 on_release_from_prison = {
 	effect = {
-		create_character_memory = {
-			type = released_from_prison_memory
-			
-			participants = {
-				imprisoner = scope:imprisoner
+		if = {
+			limit = { # Uses flag to stop escape + release memories being created at same time
+				NOT = { has_character_flag = escaped_from_prison_flag }
+			}
+			create_character_memory = {
+				type = released_from_prison_memory
+				
+				participants = {
+					imprisoner = scope:imprisoner
+				}
 			}
 		}
 		# No prison, no problem.
@@ -147,11 +226,23 @@ on_release_from_prison = {
 			limit = {
 				has_character_flag = rival_on_exit_prison
 			}
-			set_relation_rival = {
-				target = scope:imprisoner
-				reason = rival_was_kept_in_jail
-			}
 			remove_character_flag = rival_on_exit_prison
+
+			# imprisoner has to still be valid and alive
+			if = {
+				limit = {
+					scope:imprisoner ?= { is_alive = yes }
+				}
+
+				set_relation_rival = {
+					target = scope:imprisoner
+					reason = rival_was_kept_in_jail
+				}
+			}
+		}
+		if = {
+			limit = { has_variable = imprisoned_by_diarch }
+			remove_variable = imprisoned_by_diarch
 		}
 
 		# Struggle bonus
@@ -188,7 +279,6 @@ quarterly_prison_maintenance_pulse = {
 		every_prisoner = {
 			limit = {
 				is_in_prison_type = dungeon
-				#TODO_CD check whether I need to do the reformed_dungeon check here to decrease the pulse overall
 			}
 			if = {
 				limit = { this.imprisoner = { has_variable = reformed_dungeon } }
