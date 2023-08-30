@@ -4,77 +4,10 @@ story_cycle_house_feud = {
 	on_setup = {
 		### Scopes
 		save_scope_as = house_feud_story
-		story_owner = {
-			add_character_flag = had_house_feud_story
-			var:house_feud_house.house_head = { save_scope_as = house_feud_rival }
-			remove_variable = house_feud_house
-		}
-
-		### Tracking variables
-		# Save Feud target House
-		set_variable = {
-			name = house_feud_house
-			value = scope:house_feud_rival.house
-		}
-		# Save Feud starter
-		set_variable = {
-			name = house_feud_first_owner
-			value = story_owner
-		}
-		# Save first Feud target House Head
-		set_variable = {
-			name = house_feud_first_rival
-			value = scope:house_feud_rival
-		}
-		# Save feud length counter
-		set_variable = {
-			name = house_feud_length_counter
-			value = 0
-		}
-		# Save feud death counter
-		set_variable = {
-			name = house_feud_death_counter
-			value = 0
-		}
-		# Save feud kill counter
-		set_variable = {
-			name = house_feud_kill_counter
-			value = 0
-		}
-
-		### Effects
-		# Inform House Members feud has started
-		story_owner.house = {
-			every_house_member = {
-				limit = { is_ai = no }
-				send_interface_message = {
-					type = house_feud_begins_message
-					left_icon = scope:story.story_owner
-					right_icon = scope:house_feud_rival
-					show_as_tooltip = {
-						house.house_head = { set_relation_rival = scope:house_feud_rival } #Show as tooltip does not require a reason
-					}
-				}
-				if = {
-					limit = { house_feud_member_ping_trigger = yes }
-					trigger_event = {
-						id = bp1_house_feud.0600
-						days = 5
-					}
-				}
-			}
-		}
-		# Chance to inform target House Head, who can reciprocate
-		story_owner = { save_scope_as = house_feud_attacker }
-		var:house_feud_house.house_head = {
-			trigger_event = {
-				id = bp1_house_feud.0501
-				months = { 1 2 }
-			}
-		}
 	}
 
 	on_end = {
+		var:house_feud_house.house_head ?= { save_scope_as = house_feud_rival }
 		if = {
 			limit = {
 				NAND = {
@@ -86,6 +19,15 @@ story_cycle_house_feud = {
 		}
 		story_owner = {
 			save_scope_as = house_feud_ender
+			if = {
+				limit = { exists = scope:house_feud_rival }
+				create_character_memory = {
+					type = house_feud_ended_memory
+					participants = {
+						house_head = scope:house_feud_rival
+					}
+				}
+			}
 			house = {
 				set_variable = {
 					name = house_feud_cooldown
@@ -232,19 +174,29 @@ story_cycle_house_feud = {
 	# Start AI scheme
 	effect_group = {
 		months = 3
-		chance = 100 # TODO
+		chance = 25
 
 		trigger = {
 			exists = var:house_feud_house.house_head
 			var:house_feud_house.house_head = { is_alive = yes }
 			story_owner.house = {
 				any_house_member = { house_feud_ai_scheme_trigger = yes }
+				# Try to stop crazy numbers of concurrent ai murder schemes
+				any_house_member = {
+					count <= 3
+					any_scheme = { scheme_target.house ?= root.var:house_feud_house }
+				}
 			}
+			NOT = { exists = var:recent_ai_feud_scheme }
 		}
 
 		triggered_effect = {
 			trigger = { always = yes }
 			effect = {
+				set_variable = {
+					name = recent_ai_feud_scheme
+					years = 5
+				}
 				story_owner.house = {
 					random_house_member = {
 						limit = { house_feud_ai_scheme_trigger = yes }
@@ -277,18 +229,6 @@ story_cycle_house_feud = {
 							modifier = {
 								factor = 2
 								ai_honor <= medium_negative_ai_value
-							}
-							modifier = {
-								factor = 0.5
-								ai_honor >= medium_positive_ai_value
-							}
-							modifier = {
-								factor = 0.5
-								ai_honor >= high_positive_ai_value
-							}
-							modifier = {
-								factor = 0.5
-								ai_honor >= very_high_positive_ai_value
 							}
 						}
 						trigger_event = { on_action = house_feud_ai_scheme_pulse }
@@ -389,10 +329,10 @@ story_cycle_house_feud = {
 		days = 1
 
 		trigger = {
-			exists = scope:story.var:house_feud_house.house_head
-			scope:story.var:house_feud_house.house_head = { is_alive = yes }
-			NOT = {
-				story_owner = { in_diplomatic_range = scope:story.var:house_feud_house.house_head }
+			story_owner = { save_temporary_scope_as = story_owner_temp }
+			var:house_feud_house.house_head ?= {
+				is_alive = yes
+				NOT = { in_diplomatic_range = scope:story_owner_temp }
 			}
 		}
 
@@ -458,33 +398,15 @@ story_cycle_house_feud = {
 		months = 6
 
 		trigger = {
-			story_owner.house = {
-				any_house_member = {
-					is_adult = yes
-					in_diplomatic_range = scope:story.story_owner
-					NOR = {
-						this = this.house.house_head
-						AND = {
-							exists = scope:story.var:house_feud_house.house_head
-							has_opinion_modifier = {
-								target = scope:story.var:house_feud_house.house_head
-								modifier = house_feud_opinion
-							}
-						}
-					}
-				}
-			}
+			var:house_feud_house.house_head ?= { save_temporary_scope_as = house_feud_head_temp } 
 		}
 
 		triggered_effect = {
 			trigger = { always = yes }
 			effect = {
+				var:house_feud_house.house_head = { save_scope_as = house_feud_rival }
 				story_owner.house = {
-					every_house_member = {
-						limit = { house_feud_member_ping_trigger = yes }
-						scope:story.var:house_feud_house.house_head = { save_scope_as = house_feud_rival }
-						trigger_event = bp1_house_feud.0600
-					}
+					every_house_member = { trigger_event = bp1_house_feud.0600 }
 				}
 			}
 		}
@@ -494,9 +416,8 @@ story_cycle_house_feud = {
 	effect_group = {
 		months = 6
 		trigger = {
-			exists = scope:story.var:house_feud_house.house_head
-			scope:story.var:house_feud_house.house_head = {
-				house_feud_house_head_trigger = yes
+			scope:story.var:house_feud_house.house_head ?= {
+				house_head_can_start_feud_against_trigger = { TARGET = scope:story.story_owner }
 				trigger_if = {
 					limit = { has_variable = house_feud_reciprocate_cooldown }
 					NOT = { var:house_feud_reciprocate_cooldown = scope:story.story_owner.house }
@@ -592,6 +513,7 @@ story_cycle_house_feud = {
 		}
 	}
 
+	# Cuckoldry inform
 	effect_group = {
 		months = 1
 
@@ -648,6 +570,60 @@ story_cycle_house_feud = {
 						}
 					}
 				}
+			}
+		}
+	}
+
+	# Stop AI feuds from going too hard against players
+	effect_group = {
+		months = 1
+		trigger = { always = yes }
+
+		triggered_effect = {
+			trigger = {
+				story_owner = { is_ai = yes }
+				var:house_feud_house.house.house_head ?= { is_ai = no }
+				# House must be sufficiently large to support a Feud
+				var:house_feud_house.house = {
+					any_house_member = {
+						count < 5
+						is_alive = yes
+						is_adult = yes
+					}
+				}
+			}
+			effect = {
+				story_owner = { save_scope_as = story_owner }
+				debug_log = "House Feud cancelled against player"
+				debug_log_scopes = yes
+				end_story = yes
+			}
+		}
+	}
+
+	# Maintenance group
+	effect_group = {
+		months = 1
+		trigger = { always = yes }
+
+		triggered_effect = {
+			trigger = {
+				OR = {
+					NOT = { exists = var:house_feud_house }
+					NOT = { exists = var:house_feud_first_owner }
+					NOT = { exists = var:house_feud_first_rival }
+					NOT = { exists = var:house_feud_length_counter }
+					NOT = { exists = var:house_feud_death_counter }
+					NOT = { exists = var:house_feud_kill_counter }
+					NOT = { exists = var:house_feud_reason }
+				}
+			}
+			effect = {
+				# Variable is missing! Ending story prematurely.
+				story_owner = { save_scope_as = story_owner }
+				debug_log = "House Feud invalidated"
+				debug_log_scopes = yes
+				end_story = yes
 			}
 		}
 	}

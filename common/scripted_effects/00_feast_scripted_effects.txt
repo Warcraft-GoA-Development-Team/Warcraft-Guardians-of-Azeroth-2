@@ -3,20 +3,10 @@
 
 #feast_end_guest_effect - Effect run for all guests when they leave feasts
 
-feast_concluded_my_events_effect = {
-	save_temporary_scope_as = finished_participant
-	scope:activity = {
-		add_to_variable_list = {
-			name = finished_participants
-			target = scope:finished_participant
-		}
-	}
-}
-
 feast_fire_correct_default_event_effect = {
 	if = {
 		limit = {
-			this = scope:activity.activity_owner
+			this = scope:activity.activity_host
 		}
 		trigger_event = {
 			on_action = feast_default_host_event_selection
@@ -27,56 +17,6 @@ feast_fire_correct_default_event_effect = {
 		trigger_event = {
 			on_action = feast_default_event_selection
 			days = { min_feast_event_spacing max_feast_event_spacing }
-		}
-	}
-}
-
-feast_wrap_up_or_fire_random_event_effect = {
-	if = {
-		limit = {
-			NOT = { exists = local_var:num_of_feast_events }
-		}
-		set_local_variable = {
-			name = num_of_feast_events
-			value = 1
-		}
-		feast_fire_correct_default_event_effect = yes
-	}
-	else = {
-		change_local_variable = {
-			name = num_of_feast_events
-			add = 1
-		}
-		if = {
-			limit = { # Check the number of events fired
-				local_var:num_of_feast_events < max_default_feast_events
-			}
-			# If below the max number check whether to fire more
-			if = {
-				limit = {
-					local_var:num_of_feast_events >= min_default_feast_events
-				}
-				random_list = {
-					0 = {
-						modifier = { add = chance_of_extra_feast_events }
-						feast_fire_correct_default_event_effect = yes
-					}
-					100 = {
-						modifier = {
-							add = {
-								subtract = chance_of_extra_feast_events
-							}
-						}
-						feast_concluded_my_events_effect = yes
-					}
-				}
-			}
-			else = {
-				feast_fire_correct_default_event_effect = yes
-			}
-		}
-		else = {
-			feast_concluded_my_events_effect = yes
 		}
 	}
 }
@@ -132,37 +72,8 @@ add_hosted_feast_modifier_towards_character = {
 		}
 	}
 }
-
+# Deprecated.
 hosted_successful_feast_effect = {
-	#Prestige gain from Food amenities
-	if = {
-		limit = {
-			has_dlc_feature = royal_court
-			has_royal_court = yes
-		}
-		add_prestige = ep1_feast_prestige_per_food_amenities_value
-		#Prestige gain from Tradition
-		if = {
-			limit = {
-				culture = {
-					has_cultural_parameter = refined_feasts
-				}
-			}
-			add_prestige = minor_prestige_gain
-		}
-	}
-	#Prestige gain from Tradition
-	else_if = {
-		limit = {
-			culture = {
-				has_cultural_parameter = refined_feasts
-			}
-		}
-		add_prestige = major_prestige_gain
-	}
-	else = {
-		add_prestige = medium_prestige_gain
-	}
 	if = {
 		limit = {
 			culture = {
@@ -175,7 +86,7 @@ hosted_successful_feast_effect = {
 		}
 	}
 	scope:activity = {
-		every_participant = {
+		every_attending_character = {
 			limit = { NOT = { this = root } }
 			custom = every_guest_scope_tt
 			add_hosted_feast_modifier_towards_character = { CHARACTER = root }
@@ -193,12 +104,122 @@ hosted_successful_feast_effect = {
 	}
 }
 
+hosted_successful_feast_new_effect = {
+	# Renown gain from Tradition.
+	if = {
+		limit = {
+			culture = { has_cultural_parameter = renown_from_feasts }
+		}
+		dynasty ?= { add_dynasty_prestige = minor_dynasty_prestige_value }
+	}
+	# Piety gain from Tenets.
+	if = {
+		limit = {
+			faith = {
+				OR = {
+					has_doctrine_parameter = piety_from_feasts_active
+					AND = {
+						has_doctrine_parameter = summer_festivals_active
+						# Only during 'summer' (May 1st through July 31st).
+						current_month >= 5
+						current_month <= 7
+					}
+				}
+			}
+		}
+		add_piety = {
+			value = 0
+
+			if = {
+				limit = {
+					faith = { has_doctrine_parameter = summer_festivals_active }
+					# Only during 'summer' (May 1st through July 31st).
+					current_month >= 5
+					current_month <= 7
+				}
+				add = major_piety_value
+			}
+			if = {
+				limit = {
+					faith = { has_doctrine = tenet_ritual_celebrations }
+				}
+				add = medium_piety_value
+			}
+			if = {
+				limit = {
+					faith = { has_doctrine = tenet_hedonistic }
+				}	
+				add = medium_piety_value
+			}
+			if = {
+				limit = {
+					has_royal_court = yes
+					amenity_level = { type = court_food_quality value >= 5 }
+				}
+				multiply = 2.5
+			}
+			else_if = {
+				limit = {
+					has_royal_court = yes
+					amenity_level = { type = court_food_quality value >= 4 }
+				}
+				multiply = 2
+			}
+			else_if = {
+				limit = {
+					has_royal_court = yes
+					amenity_level = { type = court_food_quality value >= 3 }
+				}
+				multiply = 1.5
+			}
+			else_if = {
+				limit = {
+					has_royal_court = yes
+					amenity_level = { type = court_food_quality value >= 2 }
+				}
+				multiply = 1
+			}
+			else_if = {
+				limit = {
+					has_royal_court = yes
+					amenity_level = { type = court_food_quality value <= 1 }
+				}
+				multiply = 0.5
+			}
+
+			# Always give some piety, even if you completely cheaped out.
+			min = medium_piety_value
+		}
+	}
+	# County development
+	scope:activity_location.county = {
+		add_county_modifier = {
+			modifier = feast_recent_fest_modifier
+			years = 5
+		}
+	}
+	# Opinion with spouse (various other opinions handled elsewhere).
+	hidden_effect = {
+		if = {
+			limit = { exists = scope:spouse }
+			add_opinion = { #Your opinion of your Spouse increases, considering they did most of the work
+				target = scope:spouse
+				modifier = feast_spouse_hosted_successful_feast_opinion
+			}
+		}
+	}
+}
+
 hosted_successful_feast_interrupted_effect = {
 	add_prestige = medium_prestige_gain
-	every_in_list = {
-		list = feast_participants
-		custom = every_guest_scope_tt
-		add_hosted_feast_modifier_towards_character = { CHARACTER = scope:host }
+	scope:activity = {
+		every_attending_character = {
+			limit = {
+				NOT = { this = scope:host }
+			}
+			custom = every_guest_scope_tt
+			add_hosted_feast_modifier_towards_character = { CHARACTER = scope:host }
+		}
 	}
 	reveler_lifestyle_rank_up_check_effect = yes
 	hidden_effect = {
