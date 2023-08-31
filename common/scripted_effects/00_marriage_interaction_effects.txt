@@ -1,7 +1,7 @@
 ﻿marriage_interaction_on_accept_effect = {
 	#Use hook
 	if = {
-		limit = { always = scope:marriage_hook }
+		limit = { always = scope:hook }
 		scope:actor = {
 			use_hook = scope:recipient
 		}
@@ -49,6 +49,18 @@
 			}
 		}
 	}
+	# A Grand Wedding was promised
+	if = {
+		limit = {
+			scope:grand_wedding_promise = yes
+		}
+		set_grand_wedding_betrothal_variables = {
+			SPOUSE_1 = scope:secondary_actor
+			SPOUSE_2 = scope:secondary_recipient
+			HOST = scope:actor
+			PROMISEE = scope:recipient
+		}
+	}
 
 	#Marriage notification events
 	hidden_effect = {
@@ -63,6 +75,8 @@
 						OR = {
 							scope:secondary_actor = { is_adult = no }
 							scope:secondary_recipient = { is_adult = no }
+							scope:secondary_actor = { has_been_promised_grand_wedding = yes }
+							scope:secondary_recipient = { has_been_promised_grand_wedding = yes }
 						}
 					}
 					send_interface_toast = {
@@ -136,6 +150,53 @@
 						add_opinion = {
 							target = scope:secondary_actor
 							modifier = relative_in_blasphemous_union_opinion
+						}
+					}
+				}
+			}
+		}
+		# Courtly vassals like grand weddings
+		scope:secondary_actor = {
+			if = {
+				limit = {
+					any_vassal = {
+						has_vassal_stance = courtly
+					}
+				}
+				if = {
+					limit = {
+						has_been_promised_grand_wedding = yes
+					}
+					every_vassal = {
+						limit = {
+							has_vassal_stance = courtly
+						}
+						add_opinion = {
+							target = scope:secondary_actor
+							modifier = prestigious_wedding_opinion
+						}
+					}
+				}
+			}
+		}
+		scope:secondary_recipient = {
+			if = {
+				limit = {
+					any_vassal = {
+						has_vassal_stance = courtly
+					}
+				}
+				if = {
+					limit = {
+						has_been_promised_grand_wedding = yes
+					}
+					every_vassal = {
+						limit = {
+							has_vassal_stance = courtly
+						}
+						add_opinion = {
+							target = scope:secondary_recipient
+							modifier = prestigious_wedding_opinion
 						}
 					}
 				}
@@ -1133,5 +1194,236 @@ downgrade_invalid_consort_opinions_effect = {
 			modifier = former_same_sex_with_no_acceptance_opinion
 			target = $PARTNER$
 		}
+	}
+}
+
+##### EP2 - You promised a Grand Wedding and failed to deliver it
+break_grand_wedding_betrothal_effect = {
+	# Uniform the scopes between breaking a betrothal with the interaction and saying no at the altar
+	if = {
+		limit = {
+			exists = scope:spouse_1
+			exists = scope:spouse_2
+		}
+		scope:spouse_1 = { save_scope_as = rejecting_betrothed }
+		scope:spouse_2 = { save_scope_as = rejected_betrothed }
+		root = { save_scope_as = actor }
+	}
+	scope:rejecting_betrothed.var:promised_grand_wedding_by ?= {
+		save_scope_as = promising_host
+	}
+	# Save the offended party
+	scope:rejected_betrothed = {
+		if = {
+			limit = {
+				matchmaker = {
+					NOT = { this = scope:rejected_betrothed }
+				}
+			}
+			matchmaker = { save_scope_as = rejected_betrothal_owner }
+		}
+		else = { #The betrothed accepted the wedding for themselves
+			save_scope_as = rejected_betrothal_owner
+		}
+	}
+	# First of all, the betrothal is broken
+	scope:rejecting_betrothed = {
+		break_betrothal = scope:rejected_betrothed
+	}
+	# If an alliance was connected to this, the alliance is broken
+	if = {
+		limit = {
+			yields_alliance = {
+				candidate = scope:rejecting_betrothed
+				target = scope:rejected_betrothal_owner
+				target_candidate = scope:rejected_betrothed
+			}
+		}
+		break_alliance = scope:rejected_betrothal_owner
+	}
+	# Opinion hit if there were no legitimate reason
+	scope:rejected_betrothed = {
+		if = {
+			limit = {
+				NOR = {
+					has_trait = eunuch
+					scope:rejecting_betrothed = { has_trait = eunuch }
+					scope:rejecting_betrothed = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejected_betrothed
+					}
+					AND = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejecting_betrothed
+					}
+				}
+			}
+			add_opinion = {
+				target = scope:actor
+				modifier = broke_betrothal_grand_wedding_opinion
+				opinion = -50
+			}
+			
+			if = {
+				limit = {
+					scope:rejecting_betrothed = {
+						NOT = { this = scope:actor }
+					}
+				}
+				
+				add_opinion = {
+					target = scope:rejecting_betrothed
+					modifier = broke_betrothal_grand_wedding_opinion
+					opinion = -50
+				}
+			}
+			if = {
+				limit = {
+					NOT = { this = scope:rejected_betrothal_owner }
+				}
+				scope:rejected_betrothal_owner = {
+					add_opinion = {
+						target = scope:actor
+						modifier = broke_betrothal_grand_wedding_opinion
+						opinion = -50
+					}
+						
+					if = {
+						limit = {
+							scope:rejecting_betrothed = {
+								NOT = { this = scope:actor }
+							}
+						}
+						
+						add_opinion = {
+							target = scope:rejecting_betrothed
+							modifier = broke_betrothal_grand_wedding_opinion
+							opinion = -50
+						}
+					}
+				}
+			}
+		}
+	}
+	# Regular Break Betrothal has a standard loss of prestige, but we need more
+	add_prestige_level = -1
+	if = {
+		limit = {
+			OR = {
+				scope:rejected_betrothed = { highest_held_title_tier = tier_empire }
+				scope:rejected_betrothal_owner = { highest_held_title_tier = tier_empire }
+			}
+			
+		}
+		add_prestige = monumental_prestige_loss
+	}
+
+	else_if = {
+		limit = {
+			OR = {
+				scope:rejected_betrothed = { highest_held_title_tier = tier_kingdom }
+				scope:rejected_betrothal_owner = { highest_held_title_tier = tier_kingdom }
+			}
+		}
+		add_prestige = massive_prestige_loss
+	}
+
+	else_if = {
+		limit = {
+			OR = {
+				scope:rejected_betrothed = { highest_held_title_tier = tier_duchy }
+				scope:rejected_betrothal_owner = { highest_held_title_tier = tier_duchy }
+			}
+		}
+		add_prestige = major_prestige_loss
+	}
+
+	else_if = {
+		limit = {
+			OR = {
+				scope:rejected_betrothed = { highest_held_title_tier = tier_county }
+				scope:rejected_betrothal_owner = { highest_held_title_tier = tier_county }
+			}
+		}
+		add_prestige = medium_prestige_loss
+	}
+
+	else_if = {
+		limit = {
+			OR = {
+				scope:rejected_betrothed = { highest_held_title_tier = tier_barony }
+				scope:rejected_betrothal_owner = { highest_held_title_tier = tier_barony }
+			}
+		}
+		add_prestige = minor_prestige_loss
+	}
+	else = { add_prestige = miniscule_prestige_loss }
+	# Start a Feud, if possible!
+	if = {
+		limit = {
+			has_dlc_feature = friends_and_foes
+			exists = scope:rejected_betrothal_owner.house.house_head
+			exists = scope:rejecting_betrothed.house.house_head
+			NOT = { scope:rejected_betrothal_owner.house = scope:rejecting_betrothed.house }
+		}
+		scope:rejected_betrothal_owner.house.house_head = {
+			if = { 
+				limit = { this = scope:rejected_betrothed } # Rejected betrothed is also House Head
+				house_feud_start_effect = {
+					# Feuding House Head
+					ACTOR = scope:rejected_betrothal_owner.house.house_head
+					# Target House Head
+					TARGET = scope:rejecting_betrothed.house.house_head
+					# Feud Reason
+					REASON = head_broke_gw_betrothal
+					# House Member attacker if relevant 
+					ATTACKER = scope:rejecting_betrothed
+					# House Member victim if relevant
+					VICTIM = scope:rejected_betrothed
+				}
+			}
+			else = {
+				house_feud_start_effect = {
+					# Feuding House Head
+					ACTOR = scope:rejected_betrothal_owner.house.house_head
+					# Target House Head
+					TARGET = scope:rejecting_betrothed.house.house_head
+					# Feud Reason
+					REASON = family_broke_gw_betrothal
+					# House Member attacker if relevant 
+					ATTACKER = scope:rejecting_betrothed
+					# House Member victim if relevant
+					VICTIM = scope:rejected_betrothed
+				}
+			}
+		}
+	}
+	# If you say no at the altar, there are some extra consequences
+	if = {
+		limit = {
+			scope:rejecting_betrothed = { has_character_flag = grand_wedding_said_no }
+		}
+		scope:rejecting_betrothed = {
+			give_nickname = nick_the_naysayer
+			if = {
+				limit = {
+					NOT = { this = scope:actor }
+				}
+				reverse_add_opinion = {
+					target = scope:actor
+					modifier = challenged_authority_opinion
+				}
+			}
+		}
+	}
+	# Finally, the promise is wiped off
+	scope:rejecting_betrothed = {
+		var:promised_grand_wedding_by = {
+			remove_variable = promised_grand_wedding_marriage_countdown
+		}
+		remove_variable = promised_grand_wedding_by
+	}
+	scope:rejected_betrothed = {
+		remove_variable = promised_grand_wedding_by
 	}
 }

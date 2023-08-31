@@ -21,7 +21,6 @@
 				is_at_war_with = scope:recipient
 			}
 		}
-		
 	}
 
 	is_valid_showing_failures_only = {
@@ -40,6 +39,12 @@
 			custom_description = {
 				text = "is_not_bankrupt"
 				gold > 0
+			}
+			NOT = {
+				custom_description = {
+					text = "is_in_an_activity"
+					exists = involved_activity
+				}
 			}
 			trigger_if = {
 				limit = {
@@ -288,13 +293,14 @@ end_war_attacker_victory_interaction = {
 	special_interaction = end_war_attacker_victory_interaction
 	hidden = yes
 	use_diplomatic_range = no
+	secondary_scopes_optional = yes
 
 	ai_targets = {
 		ai_recipients = primary_war_enemies
 	}
-	
+
 	ai_frequency = 1
-	
+
 	# Depending on who was the attacker, we need to send a different notification message to the recipient.
 	notification_text = {
 		first_valid = {
@@ -306,11 +312,58 @@ end_war_attacker_victory_interaction = {
 								primary_attacker = scope:actor
 							}
 						}
-					}				}
+					}
+				}
 				desc = end_war_attacker_victory_attacker_desc
 			}
 			desc = end_war_attacker_victory_defender_desc
 		}
+	}
+
+	populate_actor_list = {
+		scope:actor = {
+			every_close_family_member = {
+				limit = {
+					# Unlanded, at sender's court, child/sibling/nibling/grandchild
+					bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:actor }
+				}
+				add_to_list = characters
+			}
+		}
+	}
+
+	populate_recipient_list = {
+		scope:recipient = {
+			every_close_family_member = {
+				limit = {
+					# Unlanded, at sender's court, child/sibling/nibling/grandchild
+					bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:recipient }
+				}
+				add_to_list = characters
+			}
+		}
+	}
+
+	can_be_picked = {
+		scope:war ?= {
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_crusade_tt
+				NOR = {
+					using_cb = undirected_great_holy_war
+					using_cb = directed_great_holy_war
+				}
+			}
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_cb_tt
+				bp2_hostage_exchange_invalid_cb_trigger = no
+			}
+		}
+	}
+
+	redirect = {
+		# secondary recipient is always set, so we need to clear it
+		# if can_send condition depends on the scope being empty
+		clear_saved_scope = secondary_recipient
 	}
 
 	on_accept = {
@@ -325,39 +378,77 @@ end_war_attacker_victory_interaction = {
 
 		release_prisoners_of_war_effect = yes
 
-		#Send notification to vassals
-		scope:attacker_winner = {
+		# Hostages
+		# Save scopes for clarity
+		if = {
+			limit = {
+				scope:war ?= {
+					NOR = {
+						using_cb = undirected_great_holy_war
+						using_cb = directed_great_holy_war
+					}
+					bp2_hostage_exchange_invalid_cb_trigger = no
+				}
+			}
 			if = {
 				limit = {
-					any_vassal = {
-						NOT = { this = scope:defender_loser }
-					}
+					exists = scope:secondary_actor
+					scope:recipient = { is_landed = yes }
 				}
-				every_vassal = {
-					limit = { NOT = { this = scope:defender_loser } }
-					send_interface_toast = {
-						title = war_event.notification_liege_win.t
-						left_icon = scope:attacker_winner
-						left_icon = scope:defender_loser
-						custom_tooltip = war_event.1901
-					}
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_actor
+					WARDEN = scope:recipient
+					HOME_COURT = scope:actor
+				}
+			}
+			if = {
+				limit = {
+					exists = scope:secondary_recipient
+					scope:actor = { is_landed = yes }
+				}
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_recipient
+					WARDEN = scope:actor
+					HOME_COURT = scope:recipient
 				}
 			}
 		}
-		scope:defender_loser = {
-			if = {
-				limit = {
-					any_vassal = { NOT = { this = scope:attacker_winner } }
-				}
-				every_vassal = {
+
+		#Send notification to vassals
+		hidden_effect = {
+			scope:attacker_winner = {
+				if = {
 					limit = {
-						NOT = { this = scope:attacker_winner }
+						any_vassal = {
+							NOT = { this = scope:defender_loser }
+						}
 					}
-					send_interface_toast = {
-						title = war_event.notification_liege_loss.t
-						left_icon = scope:defender_loser
-						right_icon = scope:attacker_winner
-						custom_tooltip = war_event.1902
+					every_vassal = {
+						limit = { NOT = { this = scope:defender_loser } }
+						send_interface_toast = {
+							title = war_event.notification_liege_win.t
+							left_icon = scope:attacker_winner
+							left_icon = scope:defender_loser
+							custom_tooltip = war_event.1901
+						}
+					}
+				}
+			}
+			scope:defender_loser = {
+				if = {
+					limit = {
+						any_vassal = { NOT = { this = scope:attacker_winner } }
+					}
+					every_vassal = {
+						limit = {
+							NOT = { this = scope:attacker_winner }
+						}
+						send_interface_toast = {
+							title = war_event.notification_liege_loss.t
+							left_icon = scope:defender_loser
+							right_icon = scope:attacker_winner
+							custom_tooltip = war_event.1902
+						}
 					}
 				}
 			}
@@ -369,10 +460,10 @@ end_war_attacker_victory_interaction = {
 
 		end_war = attacker
 	}
-	
+
 	on_decline = {
 	}
-	
+
 	ai_potential = {
 		is_at_war = yes
 		any_character_war = {
@@ -394,7 +485,7 @@ end_war_attacker_victory_interaction = {
 
 	ai_will_do = {
 		base = 0
-		
+
 		modifier = {
 			scope:war = {
 				primary_attacker = scope:actor
@@ -409,23 +500,23 @@ end_war_attacker_victory_interaction = {
 							is_ai = yes
 						}
 					}
-				}			
-			}			
+				}
+			}
 			add = 100
 		}
 		modifier = {
 			scope:war = {
 				primary_defender = scope:actor
 				attacker_war_score >= 100
-				days_since_max_war_score >= 180			
-			}			
+				days_since_max_war_score >= 180
+			}
 			add = 100
 		}
 
 		# Warcraft
 		religion_obey_crisis_modifier = { WINNER = primary_attacker LOSER = primary_defender }
 	}
-	
+
 	ai_accept = {
 		base = -99
 
@@ -441,16 +532,28 @@ end_war_attacker_victory_interaction = {
 					NOT = { this = scope:recipient }
 				}
 			}
-			
+
 			add = peacemaker_value
-			
+
 			desc = "PEACEMAKER_PERK_MODIFIER"
+		}
+
+		# Hostages
+		modifier = {
+			exists = scope:secondary_actor
+			add = war_actor_hostage_value
+			desc = WAR_OVERVIEW_HOSTAGE_OFFER_VALUE
+		}
+		modifier = {
+			exists = scope:secondary_recipient
+			add = war_recipient_hostage_value
+			desc = WAR_OVERVIEW_HOSTAGE_DEMAND_VALUE
 		}
 		
 		# Warcraft
 		religion_obey_crisis_modifier = { WINNER = primary_attacker LOSER = primary_defender }
 	}
-	
+
 	auto_accept = {
 		OR = {
 			scope:war = {
@@ -462,14 +565,37 @@ end_war_attacker_victory_interaction = {
 			}
 		}
 	}
-	
+
 	is_valid_showing_failures_only = {
 		scope:war = {
 			has_valid_casus_belli = yes
+			trigger_if = { # Cannot exchange hostages with soon to be landless
+				limit = {
+					OR = {
+						exists = scope:secondary_actor
+						exists = scope:secondary_recipient
+					}
+					casus_belli = {
+						any_target_title = {
+							count >= 1
+							add_to_temporary_list = target_titles
+						}
+					}
+				}
+				custom_tooltip = {
+					text = hostage_no_land_after_war_tt
+					scope:recipient = {
+						any_held_title = {
+							tier = tier_county
+							NOT = {
+								any_this_title_or_de_jure_above = { is_in_list = target_titles }
+							}
+						}
+					}
+				}
+			}
 		}
 	}
-	
-	show_answer_notification = no
 }
 
 end_war_attacker_white_peace_interaction = {
@@ -477,14 +603,15 @@ end_war_attacker_white_peace_interaction = {
 	special_interaction = end_war_white_peace_interaction
 	hidden = yes
 	use_diplomatic_range = no
+	secondary_scopes_optional = yes
 	send_name = "WHITE_PEACE_INTERACTION"
 
 	ai_targets = {
 		ai_recipients = primary_war_enemies
 	}
-	
+
 	ai_frequency = 12
-	
+
 	# Depending on who was the attacker, we need to send a different notification message to the recipient.
 	notification_text = {
 		first_valid = {
@@ -503,6 +630,52 @@ end_war_attacker_white_peace_interaction = {
 			desc = end_war_attacker_white_peace_defender_desc
 		}
 	}
+	
+	redirect = {
+		# secondary recipient is always set, so we need to clear it
+		# if can_send condition depends on the scope being empty
+		clear_saved_scope = secondary_recipient
+	}
+
+	populate_actor_list = {
+		scope:actor = {
+			every_close_family_member = {
+				limit = {
+					# Unlanded, at sender's court, child/sibling/nibling/grandchild
+					bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:actor }
+				}
+				add_to_list = characters
+			}
+		}
+	}
+
+	populate_recipient_list = {
+		scope:recipient = {
+			every_close_family_member = {
+				limit = {
+					# Unlanded, at sender's court, child/sibling/nibling/grandchild
+					bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:recipient }
+				}
+				add_to_list = characters
+			}
+		}
+	}
+
+	can_be_picked = {
+		scope:war ?= {
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_crusade_tt
+				NOR = {
+					using_cb = undirected_great_holy_war
+					using_cb = directed_great_holy_war
+				}
+			}
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_cb_tt
+				bp2_hostage_exchange_invalid_cb_trigger = no
+			}
+		}
+	}
 
 	on_accept = {
 		casus_belli = {
@@ -516,39 +689,77 @@ end_war_attacker_white_peace_interaction = {
 
 		release_prisoners_of_war_effect = yes
 
-		#Send notification to vassals
-		scope:attacker_white_peace = {
+		# Hostages
+		# Save scopes for clarity
+		if = {
+			limit = {
+				scope:war ?= {
+					NOR = {
+						using_cb = undirected_great_holy_war
+						using_cb = directed_great_holy_war
+					}
+					bp2_hostage_exchange_invalid_cb_trigger = no
+				}
+			}
 			if = {
 				limit = {
-					any_vassal = { NOT = { this = scope:defender_white_peace } }
+					exists = scope:secondary_actor
+					scope:recipient = { is_landed = yes }
 				}
-				every_vassal = {
-					limit = {
-						NOT = { this = scope:defender_white_peace }
-					}
-					send_interface_toast = {
-						title = WAR_RESULTS_WHITE_PEACE
-						left_icon = scope:attacker_white_peace
-						right_icon = scope:defender_white_peace
-						custom_tooltip = war_event.1903
-					}
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_actor
+					WARDEN = scope:recipient
+					HOME_COURT = scope:actor
+				}
+			}
+			if = {
+				limit = {
+					exists = scope:secondary_recipient
+					scope:actor = { is_landed = yes }
+				}
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_recipient
+					WARDEN = scope:actor
+					HOME_COURT = scope:recipient
 				}
 			}
 		}
-		scope:defender_white_peace = {
-			if = {
-				limit = {
-					any_vassal = { NOT = { this = scope:attacker_white_peace } }
-				}
-				every_vassal = {
+
+		#Send notification to vassals
+		hidden_effect = {
+			scope:attacker_white_peace = {
+				if = {
 					limit = {
-						NOT = { this = scope:attacker_white_peace }
+						any_vassal = { NOT = { this = scope:defender_white_peace } }
 					}
-					send_interface_toast = {
-						title = WAR_RESULTS_WHITE_PEACE
-						left_icon = scope:defender_white_peace
-						right_icon = scope:attacker_white_peace
-						custom_tooltip = war_event.1904
+					every_vassal = {
+						limit = {
+							NOT = { this = scope:defender_white_peace }
+						}
+						send_interface_toast = {
+							title = WAR_RESULTS_WHITE_PEACE
+							left_icon = scope:attacker_white_peace
+							right_icon = scope:defender_white_peace
+							custom_tooltip = war_event.1903
+						}
+					}
+				}
+			}
+			scope:defender_white_peace = {
+				if = {
+					limit = {
+						any_vassal = { NOT = { this = scope:attacker_white_peace } }
+					}
+					every_vassal = {
+						limit = {
+							NOT = { this = scope:attacker_white_peace }
+						}
+						send_interface_toast = {
+							title = WAR_RESULTS_WHITE_PEACE
+							left_icon = scope:defender_white_peace
+							right_icon = scope:attacker_white_peace
+							custom_tooltip = war_event.1904
+						}
 					}
 				}
 			}
@@ -556,10 +767,10 @@ end_war_attacker_white_peace_interaction = {
 
 		end_war = white_peace
 	}
-	
+
 	on_decline = {
 	}
-	
+
 	ai_potential = {
 		any_character_war = {
 			count >= 1
@@ -570,7 +781,7 @@ end_war_attacker_white_peace_interaction = {
 				}
 			}
 		}
-		
+
 		trigger_if = {
 			limit = {
 				exists = scope:war
@@ -720,7 +931,7 @@ end_war_attacker_white_peace_interaction = {
 			add = {
 				value = debt_level
 				multiply = 20
-				
+
 				if = {
 					limit = { scope:war = { defender_war_score > 0 }}
 					subtract = scope:war.defender_war_score
@@ -780,8 +991,147 @@ end_war_attacker_white_peace_interaction = {
 			}
 			factor = 0
 		}
+		# Can end with hostages of equalish value
+		modifier = {
+			exists = scope:secondary_recipient
+			exists = scope:secondary_actor
+			scope:war = {
+				war_days >= 365
+				NOR = {
+					defender_war_score >= 30
+					attacker_war_score >= 30
+				}
+			}
+			trigger_if = {
+				limit = { scope:war.primary_attacker = scope:actor }
+				interaction_relative_hostage_value > -10
+			}
+			trigger_else = { interaction_relative_hostage_value > -20 }
+			add = {
+				value = 0
+				if = {
+					limit = { interaction_relative_hostage_value < 0 }
+					add = {
+						value = interaction_relative_hostage_value
+						multiply = -1
+					}
+				}
+				else = { add = interaction_relative_hostage_value }
+				if = {
+					limit = { scope:actor.ai_boldness < 0 }
+					add = {
+						value = scope:actor.ai_boldness
+						multiply = -0.25
+					}
+				}
+				if = {
+					limit = { scope:actor.ai_honor < 0 }
+					add = {
+						value = scope:actor.ai_honor
+						multiply = 0.1
+					}
+				}
+				else = {
+					add = {
+						value = scope:actor.ai_honor
+						multiply = 0.25
+					}
+				}
+				if = {
+					limit = { scope:actor.ai_rationality < 0 }
+					add = {
+						value = scope:actor.ai_rationality
+						multiply = 0.1
+					}
+				}
+				else = {
+					add = {
+						value = scope:actor.ai_rationality
+						multiply = 0.25
+					}
+				}
+				if = {
+					limit = { scope:actor.ai_greed > 0 }
+					add = {
+						value = scope:actor.ai_greed
+						multiply = -0.1
+					}
+				}
+				else = {
+					add = {
+						value = scope:actor.ai_greed
+						multiply = -0.25
+					}
+				}
+			}
+		}
+		# Can end with hostage demand
+		modifier = {
+			exists = scope:secondary_recipient
+			NOT = { exists = scope:secondary_actor }
+			scope:war = {
+				war_days >= 365
+				NOR = {
+					defender_war_score >= 30
+					attacker_war_score >= 30
+				}
+			}
+			add = {
+				value = 0
+				add = {
+					value = interaction_recipient_hostage_value
+					multiply = 0.1
+				}
+				if = {
+					limit = { scope:actor.ai_boldness < 0 }
+					add = {
+						value = scope:actor.ai_boldness
+						multiply = -0.25
+					}
+				}
+				if = {
+					limit = { scope:actor.ai_honor < 0 }
+					add = {
+						value = scope:actor.ai_honor
+						multiply = -0.25
+					}
+				}
+				else = {
+					add = {
+						value = scope:actor.ai_honor
+						multiply = 0.25
+					}
+				}
+				if = {
+					limit = { scope:actor.ai_rationality < 0 }
+					add = {
+						value = scope:actor.ai_rationality
+						multiply = 0.25
+					}
+				}
+				else = {
+					add = {
+						value = scope:actor.ai_rationality
+						multiply = 0.25
+					}
+				}
+				if = {
+					limit = { scope:actor.ai_greed > 0 }
+					add = {
+						value = scope:actor.ai_greed
+						multiply = 0.25
+					}
+				}
+				else = {
+					add = {
+						value = scope:actor.ai_greed
+						multiply = -0.1
+					}
+				}
+			}
+		}
 	}
-	
+
 	ai_accept = {
 		base = -30
 		compare_modifier = {
@@ -995,6 +1345,24 @@ end_war_attacker_white_peace_interaction = {
 		#
 		#	desc = "STRUGGLE_INVOLVED_OR_INTERLOPER_PHASE_BONUS"
 		#}
+
+		# Hostages
+		modifier = {
+			exists = scope:secondary_actor
+			add = {
+				value = war_actor_hostage_value
+				multiply = 0.5
+			}
+			desc = WAR_OVERVIEW_WHITE_PEACE_HOSTAGE_OFFER_VALUE
+		}
+		modifier = {
+			exists = scope:secondary_recipient
+			add = {
+				value = war_recipient_hostage_value
+				multiply = 0.5
+			}
+			desc = WAR_OVERVIEW_WHITE_PEACE_HOSTAGE_DEMAND_VALUE
+		}
 		
 		# Warcraft
 		religion_obey_crisis_modifier = { WINNER = primary_attacker LOSER = primary_defender }
@@ -1008,14 +1376,13 @@ end_war_attacker_white_peace_interaction = {
 		}
 		is_white_peace_possible = yes
 	}
-	
-	show_answer_notification = no
 }
 
 end_war_attacker_defeat_interaction = {
 	special_interaction = end_war_attacker_defeat_interaction
 	hidden = yes
 	use_diplomatic_range = no
+	secondary_scopes_optional = yes
 
 	ai_targets = {
 		ai_recipients = primary_war_enemies
@@ -1041,6 +1408,52 @@ end_war_attacker_defeat_interaction = {
 			desc = end_war_attacker_defeat_defender_desc
 		}
 	}
+	
+	populate_actor_list = {
+		scope:actor = {
+			every_close_family_member = {
+				limit = {
+					# Unlanded, at sender's court, child/sibling/nibling/grandchild
+					bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:actor }
+				}
+				add_to_list = characters
+			}
+		}
+	}
+
+	populate_recipient_list = {
+		scope:recipient = {
+			every_close_family_member = {
+				limit = {
+					# Unlanded, at sender's court, child/sibling/nibling/grandchild
+					bp2_valid_to_offer_as_hostage_trigger = { SENDER = scope:recipient }
+				}
+				add_to_list = characters
+			}
+		}
+	}
+
+	can_be_picked = {
+		scope:war ?= {
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_crusade_tt
+				NOR = {
+					using_cb = undirected_great_holy_war
+					using_cb = directed_great_holy_war
+				}
+			}
+			custom_tooltip = {
+				text = hostage_exchange_invalid_for_cb_tt
+				bp2_hostage_exchange_invalid_cb_trigger = no
+			}
+		}
+	}
+
+	redirect = {
+		# secondary recipient is always set, so we need to clear it
+		# if can_send condition depends on the scope being empty
+		clear_saved_scope = secondary_recipient
+	}
 
 	on_accept = {
 		casus_belli = {
@@ -1054,42 +1467,114 @@ end_war_attacker_defeat_interaction = {
 		}
 
 		release_prisoners_of_war_effect = yes
-
-		#Send notification to vassals
-		scope:attacker_loser = {
+		# Hostages
+		# Save scopes for clarity
+		if = {
+			limit = {
+				scope:war ?= {
+					NOR = {
+						using_cb = undirected_great_holy_war
+						using_cb = directed_great_holy_war
+					}
+					bp2_hostage_exchange_invalid_cb_trigger = no
+				}
+			}
 			if = {
 				limit = {
-					any_vassal = {
-						NOT = { this = scope:defender_winner }
-					}
+					exists = scope:secondary_actor
+					scope:recipient = { is_landed = yes }
 				}
-				every_vassal = {
-					limit = {
-						NOT = { this = scope:defender_winner }
-					}
-					send_interface_toast = {
-						title = war_event.notification_liege_loss.t
-						left_icon = scope:attacker_loser
-						right_icon = scope:defender_winner
-						custom_tooltip = war_event.1905 
-					}
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_actor
+					WARDEN = scope:recipient
+					HOME_COURT = scope:actor
+				}
+			}
+			if = {
+				limit = {
+					exists = scope:secondary_recipient
+					scope:actor = { is_landed = yes }
+				}
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_recipient
+					WARDEN = scope:actor
+					HOME_COURT = scope:recipient
 				}
 			}
 		}
-		scope:defender_winner = {
+		# Hostages
+		# Save scopes for clarity
+		if = {
+			limit = {
+				scope:war ?= {
+					NOR = {
+						using_cb = undirected_great_holy_war
+						using_cb = directed_great_holy_war
+					}
+					bp2_hostage_exchange_invalid_cb_trigger = no
+				}
+			}
 			if = {
 				limit = {
-					any_vassal = { NOT = { this = scope:attacker_loser } }
+					exists = scope:secondary_actor
+					scope:recipient = { is_landed = yes }
 				}
-				every_vassal = {
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_actor
+					WARDEN = scope:recipient
+					HOME_COURT = scope:actor
+				}
+			}
+			if = {
+				limit = {
+					exists = scope:secondary_recipient
+					scope:actor = { is_landed = yes }
+				}
+				hostage_depart_effect = {
+					HOSTAGE = scope:secondary_recipient
+					WARDEN = scope:actor
+					HOME_COURT = scope:recipient
+				}
+			}
+		}
+
+		#Send notification to vassals
+		hidden_effect = {
+			scope:attacker_loser = {
+				if = {
 					limit = {
-						NOT = { this = scope:attacker_loser }
+						any_vassal = {
+							NOT = { this = scope:defender_winner }
+						}
 					}
-					send_interface_toast = {
-						title = war_event.notification_liege_win.t
-						left_icon = scope:defender_winner
-						right_icon = scope:attacker_loser
-						custom_tooltip = war_event.1906 
+					every_vassal = {
+						limit = {
+							NOT = { this = scope:defender_winner }
+						}
+						send_interface_toast = {
+							title = war_event.notification_liege_loss.t
+							left_icon = scope:attacker_loser
+							right_icon = scope:defender_winner
+							custom_tooltip = war_event.1905 
+						}
+					}
+				}
+			}
+			scope:defender_winner = {
+				if = {
+					limit = {
+						any_vassal = { NOT = { this = scope:attacker_loser } }
+					}
+					every_vassal = {
+						limit = {
+							NOT = { this = scope:attacker_loser }
+						}
+						send_interface_toast = {
+							title = war_event.notification_liege_win.t
+							left_icon = scope:defender_winner
+							right_icon = scope:attacker_loser
+							custom_tooltip = war_event.1906 
+						}
 					}
 				}
 			}
@@ -1161,7 +1646,7 @@ end_war_attacker_defeat_interaction = {
 			add = 100
 		}
 
-		# Warraft
+		# Warcraft
 		religion_obey_crisis_modifier = { WINNER = primary_defender LOSER = primary_attacker }
 	}
 	
@@ -1206,6 +1691,17 @@ end_war_attacker_defeat_interaction = {
 			
 			desc = "TRADITION_BONUS_DEFENSIVE_WARS"
 		}
+		# Hostages
+		modifier = {
+			exists = scope:secondary_actor
+			add = war_actor_hostage_value
+			desc = WAR_OVERVIEW_HOSTAGE_OFFER_VALUE
+		}
+		modifier = {
+			exists = scope:secondary_recipient
+			add = war_recipient_hostage_value
+			desc = WAR_OVERVIEW_HOSTAGE_DEMAND_VALUE
+		}
 		
 		# Warcraft
 		religion_obey_crisis_modifier = { WINNER = primary_defender LOSER = primary_attacker }
@@ -1228,8 +1724,6 @@ end_war_attacker_defeat_interaction = {
 			has_valid_casus_belli = yes
 		}
 	}
-	
-	show_answer_notification = no
 }
 
 
@@ -1244,8 +1738,8 @@ view_war_interaction = {
 
 	is_shown = {
 		scope:actor = {
-			is_at_war_with = scope:recipient		
-			NOT = {	
+			is_at_war_with = scope:recipient
+			NOT = {
 				any_character_war = {
 					is_war_leader = scope:actor
 					is_participant = scope:recipient
@@ -1259,6 +1753,7 @@ view_war_interaction = {
 offer_peace_interaction = {
 	category = interaction_category_diplomacy
 	common_interaction = yes
+	icon = war_won_icon
 
 	special_interaction = offer_peace_interaction
 	interface = offer_peace
