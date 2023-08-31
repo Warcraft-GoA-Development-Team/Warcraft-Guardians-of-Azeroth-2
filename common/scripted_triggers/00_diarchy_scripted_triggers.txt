@@ -1,0 +1,532 @@
+﻿#############
+# Diarchy Scripted Triggers
+#############
+
+##################################################
+# General Triggers
+
+character_hates_scope_due_to_strife_guts_trigger = {
+	# We've got to share a direct liege for strife to be valid.
+	exists = liege
+	exists = $TARGET$.liege
+	liege = $TARGET$.liege
+	# And $TARGET$ must have accumulated enough strife to aggravate me (which we modulate up or down a little with some traits).
+	$TARGET$.strife_opinion >= strife_harm_threshold_value
+	# Finally, there has to be at least _some_ love lost.
+	opinion = {
+		target = $TARGET$
+		value < 0
+	}
+}
+
+# This is hooked up to the should_invalidate_diarch rule, referenced by Code.
+is_diarch_valid_trigger = {
+	# If you're in an entrenched regency for some reason, you can't manage a regency yourself.
+	is_alive = yes
+	NOT = { has_diarchy_parameter = diarchy_type_is_entrenched_regency }
+	# You need to be mentally & physically sound, to some degree.
+	regency_for_personal_reasons_trigger = no
+	#We cannot be at war with our liege
+	trigger_if = {
+		limit = {
+			exists = liege
+		}
+		NOT = {
+			is_at_war_with = liege
+		}
+	}
+	# If you have somehow managed to get invited to/start an activity outside of your realm (e.g., you're the spouse in a grand wedding), then yeah, you forfeit your position.
+	NAND = {
+		# Is it redundant to check twice?
+		## Yes.
+		### Do the machine spirits demand this thoroughness of us?
+		#### Also yes.
+		##### Do not ask why the God-Machine commands it, merely be glad that it commanded it of you.
+		is_travelling = yes
+		exists = current_travel_plan
+		# We check your liege so that you can attend business within the realm easily.
+		## Schemes are their own special lil guys so we take care of them separately.
+		trigger_if = {
+			limit = {
+				exists = scope:owner
+				exists = scope:target
+			}
+			travel_would_cause_regency_trigger = { REALM_HOLDER = scope:owner.liege }
+		}
+		## Else, we're an ordinary, gods-fearing root scope, so use that.
+		trigger_else = {
+			travel_would_cause_regency_trigger = { REALM_HOLDER = this.liege }
+		}
+	}
+	trigger_if = {
+		limit = {
+			is_ai = yes
+		}
+		NOT = {
+			has_character_flag = cannot_be_diarch
+		}
+	}
+}
+
+# This is hooked up to the is_diarch_able rule, referenced by Code.
+is_diarch_able_trigger = {
+	# You can't possibly manage someone else's realm from prison.
+	is_imprisoned = no
+	# You'd clearly be preoccupied.
+	trigger_if = {
+		limit = { exists = involved_activity }
+		save_temporary_scope_as = diarch_temp
+		involved_activity.activity_location.county.holder = {
+			NOR = {
+				this = scope:diarch_temp.liege
+				NOT = {
+					any_liege_or_above = { this = scope:diarch_temp.liege }
+				}
+			}
+		}
+	}
+	# If you're in a temporary regency for any other reason, you need to chill.
+	NOT = { has_diarchy_active_parameter = diarchy_type_is_temporary_regency }
+}
+
+# And *this* needs to be added to guest activity intents to keep diarchs from showing up to the same parties as their liege.
+bannable_serving_diarch_trigger = {
+	OR = {
+		# Diarchs with official responsibilities can't come out to play.
+		is_diarch = yes
+		is_designated_diarch = yes
+		# Assumed diarchs don't get to either if they're the AI, as the player might be planning around them & the AI may have designated to avoid people after if it'd known they were going to welch.
+		## Assumed-diarch players can make an intelligent choice on whether they want to go to events or not.
+		AND = {
+			is_ai = yes
+			is_diarchy_successor = yes
+		}
+	}
+}
+
+diarch_has_situational_loyalty_trigger = {
+	diarch_loyalty > diarch_loyalty_visibly_disloyal_threshold
+	diarch_loyalty < diarch_loyalty_visibly_loyal_threshold
+}
+
+diarch_callable_in_internal_war_trigger = {
+	OR = {
+		# CBs where the liege doesn't (necessarily) control an internal attacker.
+		using_cb = peasant_war
+		using_cb = populist_war
+		# All other internal CBs.
+		primary_attacker = {
+			any_liege_or_above = { this = scope:actor }
+		}
+	}
+}
+
+##################################################
+# Setup Triggers
+
+basic_eligible_for_diarchy_trigger = {
+	is_landed = yes
+	highest_held_title_tier >= tier_county
+	NOT = { has_active_diarchy = yes }
+}
+
+regency_for_personal_reasons_trigger = {
+	OR = {
+		is_adult = no
+		is_incapable = yes
+	}
+}
+
+imprisonment_would_cause_regency_trigger = {
+	custom_tooltip = {
+		text = imprisonment_would_cause_regency_trigger.tt.imprisoned_abroad
+		is_imprisoned = yes
+		# Doesn't count if your gaoler is your vassal.
+		save_temporary_scope_as = liege_temp
+		NOT = {
+			any_vassal_or_below = { this = scope:liege_temp.imprisoner }
+		}
+	}
+}
+
+travel_would_cause_regency_trigger = {
+	OR = {
+		# Travelling one-way.
+		AND = {
+			# Make sure that we _aren't_ going bilaterally.
+			NOT = { current_travel_plan.final_destination_province = current_travel_plan.departure_location }
+			# Then check that we're actually going outside of the realm.
+			current_travel_plan.final_destination_province.county.holder = {
+				NOR = {
+					any_liege_or_above = { this = $REALM_HOLDER$ }
+					this = $REALM_HOLDER$
+				}
+			}
+		}
+		# Travelling in a circle.
+		AND = {
+			# Make sure that we _are_ going bilaterally.
+			current_travel_plan.final_destination_province = current_travel_plan.departure_location
+			# Check the next destination province instead.
+			## We put a break in to check if there _is_ a county because you might be travelling through the ocean.
+			current_travel_plan.next_destination_province.county ?= {
+				holder = {
+					NOR = {
+						any_liege_or_above = { this = $REALM_HOLDER$ }
+						this = $REALM_HOLDER$
+					}
+				}
+			}
+		}
+	}
+}
+
+can_leave_diarchy_trigger = {
+	trigger_if = {
+		limit = { is_imprisoned = yes }
+		imprisonment_would_cause_regency_trigger = no
+	}
+	is_travelling = no
+	regency_for_personal_reasons_trigger = no
+}
+
+regent_would_remain_loyal_after_death_trigger = {
+	is_ai = yes
+	diarch_loyalty_score_type_regency_value >= diarch_loyalty_visibly_loyal_threshold
+}
+
+##################################################
+# Character Interactions
+
+diarch_cannot_be_disabled_trigger = {
+	custom_description = {
+		text = diarch_interactions_tt_is_able
+		subject = $DIARCH$
+		$DIARCH$ = { is_diarch_able_trigger = yes }
+	}
+}
+
+diarch_legal_meddling_claimable_title_trigger = {
+	custom_description = {
+		text = "you_must_not_have_a_claim_on_the_title"
+		NOT = {
+			any_claimant = { this = $ACTOR$ }
+		}
+	}
+	custom_description = {
+		text = "character_interactions_not_rel_head_title"
+		is_head_of_faith = no
+	}
+	custom_tooltip = {
+		text = title_must_be_county_tier.tt
+		tier = tier_county
+	}
+	# This is mostly here to stop people from not claiming titles because they have valid titles that are _outside_ the sub-realm.
+	custom_tooltip = {
+		text = title_must_be_same_realm.tt
+		holder = {
+			any_liege_or_above = { this = $ACTOR$.liege }
+		}
+	}
+}
+
+diarch_syphon_treasury_embezzlement_modifiers_trigger = {
+	OR = {
+		has_county_modifier = syphon_treasury_massive_sum_modifier
+		has_county_modifier = syphon_treasury_large_sum_modifier
+		has_county_modifier = syphon_treasury_medium_sum_modifier
+		has_county_modifier = syphon_treasury_small_sum_modifier
+	}
+}
+
+diarch_shift_privileges_valid_target_title_trigger = {
+	NOR = {
+		has_county_modifier = shift_privileges_monopolies_sold_modifier
+		has_county_modifier = shift_privileges_scutage_exemptions_modifier
+		has_county_modifier = shift_privileges_conflicting_deeds_modifier
+	}
+}
+
+diarch_swing_scales_valid_shared_hof_trigger = {
+	# You must share a HoF to be able to petition one.
+	custom_tooltip = {
+		text = swing_scales_currency_interaction.tt.no_shared_hof
+		exists = scope:actor.faith.religious_head
+		exists = scope:recipient.faith.religious_head
+		scope:actor.faith.religious_head = scope:recipient.faith.religious_head
+	}
+	# And opinions've gotta line up.
+	trigger_if = {
+		limit = { exists = scope:actor.faith.religious_head }
+		# They must like you.
+		custom_tooltip = {
+			text = swing_scales_currency_interaction.tt.hof_needs_to_like_you_more
+			scope:actor.faith.religious_head = {
+				opinion = {
+					target = scope:actor
+					value >= high_positive_opinion
+				}
+			}
+		}
+		# And not like scope:recipient too much.
+		custom_tooltip = {
+			text = swing_scales_currency_interaction.tt.hof_needs_to_like_them_less
+			scope:actor.faith.religious_head = {
+				opinion = {
+					target = scope:recipient
+					value <= medium_positive_opinion
+				}
+			}
+		}
+		# Plus scope:recipient can't have anything over them.
+		custom_tooltip = {
+			text = swing_scales_currency_interaction.tt.hof_refuses_to_cross_recipient
+			NOT = {
+				scope:recipient = { has_strong_hook = scope:actor.faith.religious_head }
+			}
+		}
+	}
+}
+
+diarch_liege_wants_to_stiff_regent_trigger = {
+	OR = {
+		has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:recipient }
+		opinion = {
+			target = scope:recipient
+			value <= very_high_negative_opinion
+		}
+	}
+}
+
+cannot_release_former_regent_whilst_old_regent_holds_power_trigger = {
+	$PRISONER$ = {
+		trigger_if = {
+			limit = {
+				has_variable = imprisoned_by_diarch
+				exists = $PRISONER$.liege
+				$REGENT$ = { is_diarch_of_target = $PRISONER$.liege }
+			}
+			custom_tooltip = {
+				text = overthrow_regent_scheme_interaction.tt.cannot_release
+				NOR = {
+					var:imprisoned_by_diarch = $PRISONER$.imprisoner
+					var:imprisoned_by_diarch ?= $PRISONER$.liege.diarch
+				}
+			}
+		}
+	}
+}
+
+##################################################
+# Important Actions
+
+action_regent_imprison_suitable_char_covassals_trigger = {
+	opinion = {
+		target = root
+		value <= very_high_negative_opinion
+	}
+	save_temporary_scope_as = char_temp
+	# Could you take the interaction?
+	root = {
+		is_character_interaction_valid = {
+			interaction = diarch_imprison_interaction
+			recipient = scope:char_temp
+		}
+	}
+}
+
+action_regent_imprison_suitable_char_rivals_trigger = {
+	save_temporary_scope_as = char_temp
+	root = {
+		is_character_interaction_valid = {
+			interaction = diarch_imprison_interaction
+			recipient = scope:char_temp
+		}
+	}
+}
+
+action_shift_privileges_suitable_char_trigger = {
+	save_temporary_scope_as = char_temp
+	# Make sure we've got equal or higher diplo and so might get away with a cheeky forgery.
+	diplomacy <= root.diplomacy
+	# And we don't want to spam with little guys, especially as they're more expensive to use prestige on.
+	OR = {
+		highest_held_title_tier >= tier_duchy
+		# But don't block this out entirely within duchies.
+		liege.highest_held_title_tier = tier_duchy
+	}
+	# Could you take the interaction?
+	root = {
+		is_character_interaction_valid = {
+			interaction = diarch_shift_privileges_interaction
+			recipient = scope:char_temp
+		}
+	}
+}
+
+action_legal_meddling_suitable_char_trigger = {
+	max_military_strength < root.eighty_percent_of_max_military_strength
+	NOR = {
+		has_any_good_relationship_with_character_trigger = { CHARACTER = root }
+		root = { has_truce = prev }
+		is_allied_to = root
+	}
+}
+
+action_legal_meddling_suitable_title_trigger = {
+	diarch_legal_meddling_claimable_title_trigger = { ACTOR = root }
+	root = {
+		# Could you take the interaction?
+		is_character_interaction_valid = {
+			interaction = diarch_legal_meddling_interaction
+			recipient = scope:char_temp
+		}
+	}
+}
+
+##################################################
+# Decisions
+
+diarch_coup_valid_conspiracy_culmination_vassals_trigger = {
+	is_powerful_vassal_of = $LIEGE$
+	is_imprisoned = no
+}
+
+diarch_coup_attempt_is_valid_trigger = {
+	# Diarchy checks.
+	is_diarch = yes
+	$LIEGE$ = { has_diarchy_active_parameter = regents_can_try_to_overthrow_present_lieges }
+	## Liege must be physically present to overthrow. You can't coup them whilst they're abroad.
+	$LIEGE$ = {
+		is_imprisoned = no
+		is_travelling = no
+		is_at_war = no
+		custom_tooltip = {
+			text = custom.not_attending_activity
+			NOT = { exists = involved_activity }
+		}
+		age >= 5
+	}
+	# Support checks.
+	## Have you gathered enough support from the realm's powerful vassals and/or councillors?
+	custom_tooltip = {
+		text = diarch_attempt_to_overthrow_liege.tt.majority_powerful_vassal_support
+		subject = root
+		has_variable_list = coup_pv_supporters_list
+		any_in_list = {
+			variable = coup_pv_supporters_list
+			count >= pv_overthrow_threshold_value
+			# Double check they're still valid.
+			diarch_coup_valid_conspiracy_culmination_vassals_trigger = { LIEGE = $LIEGE$ }
+		}
+	}
+	# As a speed-bump, we check how long this diarchy has been on for.
+	OR = {
+		# Either, you've been a diarch for a good long ways.
+		years_as_diarch >= 8
+		# Or, you haven't been but everyone is kinda used to the concept of a diarch.
+		AND = {
+			years_as_diarch >= 4
+			$LIEGE$ = { years_in_diarchy >= 10 }
+		}
+		# OR, you've laid the groundwork for such a coup already
+		custom_tooltip = {
+			text = diarch_attempt_to_overthrow_liege_bypass
+			has_character_flag = laid_coup_groundwork_flag
+		}
+	}
+	# And finally, for ease of sanity, your liege must be of a certain size.
+	$LIEGE$.sub_realm_size >= minor_realm_size
+}
+
+diarch_coup_attempt_is_valid_showing_failure_only_trigger = {
+	# Diarch must be able to act.
+	diarch_cannot_be_disabled_trigger = { DIARCH = $DIARCH$ }
+	# Plus standard checks.
+	is_available_adult = yes
+	# Filter this out in advance, else we risk trying to enter a duel later, only to find we're already engaged in one.
+	custom_description = {
+		text = ENGAGED_IN_SINGLE_COMBAT
+		NOT = { exists = var:engaged_in_single_combat } 
+	}
+	# Liege must have _something_ at the highest tier that isn't a HoF title.
+	custom_tooltip = {
+		text = diarch_attempt_to_overthrow_liege.tt.liege_cant_hold_only_hof_highest_title
+		liege = {
+			any_held_title = {
+				tier = prev.highest_held_title_tier
+				is_head_of_faith = no
+			}
+		}
+	}
+}
+
+diarch_coup_attempt_grabbable_kingdom_trigger = {
+	highest_held_title_tier >= tier_empire
+	any_held_title = {
+		diarch_coup_attempt_grabbable_kingdom_guts_trigger = { TARGET = $TARGET$ }
+	}
+}
+
+diarch_coup_attempt_grabbable_kingdom_guts_trigger = {
+	tier = tier_kingdom
+	is_head_of_faith = no
+	any_de_jure_county = {
+		holder = {
+			any_liege_or_above = { this = $TARGET$ }
+		}
+	}
+}
+
+diarch_coup_attempt_grabbable_capital_and_duchies_trigger = {
+	is_head_of_faith = no
+	OR = {
+		AND = {
+			tier = tier_county
+			this.duchy = $TARGET$.primary_title.title_capital_county.duchy
+		}
+		this = $TARGET$.primary_title.title_capital_county.duchy
+	}
+}
+
+##################################################
+# Mandates
+
+#TODO_CD_EP2; rig these up to the actual loyalty value.
+
+diarch_loyalty_due_to_hook_trigger = {
+	$LIEGE$ = {
+		OR = {
+			has_hook_of_type = {
+				target = $DIARCH$
+				type = loyalty_hook
+			}
+			has_hook_of_type = {
+				target = $DIARCH$
+				type = predecessor_loyalty_hook
+			}
+		}
+	}
+}
+
+diarch_wants_to_engage_with_mandates_trigger = {
+	save_temporary_scope_value_as = {
+		name = diarch_loyalty
+		value = $DIARCH$.diarch_loyalty_score_type_regency_value
+	}
+	OR = {
+		scope:diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+		scope:diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+	}
+}
+
+##################################################
+# Events
+
+character_has_regency_diarchy_trigger = {
+	exists = diarch
+	OR = {
+		has_diarchy_active_parameter = diarchy_type_is_temporary_regency
+		has_diarchy_active_parameter = diarchy_type_is_entrenched_regency
+	}
+}
