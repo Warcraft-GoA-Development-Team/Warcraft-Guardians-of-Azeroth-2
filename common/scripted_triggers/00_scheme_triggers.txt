@@ -12,15 +12,18 @@ intrigue_scheme_trigger = {
 		scheme_type = murder
 		scheme_type = abduct
 		scheme_type = fabricate_hook
+		scheme_type = steal_back_artifact
 	}
 }
 
+# Should be synced with the schemes listed in can_start_hostile_scheme_against_trigger.
 hostile_scheme_trigger = {
 	OR = {
 		scheme_type = murder
 		scheme_type = abduct
 		scheme_type = claim_throne
 		scheme_type = fabricate_hook
+		scheme_type = steal_back_artifact
 	}
 }
 
@@ -30,6 +33,32 @@ friendly_scheme_trigger = {
 		scheme_type = befriend
 		scheme_type = sway
 		scheme_type = courting
+	}
+}
+
+# Should be synced with the schemes listed in hostile_scheme_trigger.
+can_start_hostile_scheme_against_trigger = {
+	OR = {
+		can_start_scheme = {
+			type = murder
+			target = $TARGET$
+		}
+		can_start_scheme = {
+			type = abduct
+			target = $TARGET$
+		}
+		can_start_scheme = {
+			type = claim_throne
+			target = $TARGET$
+		}
+		can_start_scheme = {
+			type = fabricate_hook
+			target = $TARGET$
+		}
+		can_start_scheme = {
+			type = steal_back_artifact
+			target = $TARGET$
+		}
 	}
 }
 
@@ -218,7 +247,7 @@ build_murder_targets_trigger = {
 			count = all
 			trigger_if = {
 				limit = {
-				NOT = { is_in_list = murder_targets }
+					NOT = { is_in_list = murder_targets }
 					is_good_familial_murder_target_trigger = yes
 				}
 				add_to_temporary_list = murder_targets
@@ -257,13 +286,156 @@ build_murder_targets_trigger = {
 			add_to_temporary_list = murder_targets
 		}
 	}
+	trigger_if = { # Murdering troublesome claimants is something you want to do...
+		limit = {
+			is_landed = yes
+			primary_title.tier >= tier_duchy
+			any_targeting_faction = {
+			  	faction_is_type = claimant_faction
+				special_character = {
+					add_to_temporary_list = murder_targets
+				}
+			}
+		}
+	}
+	trigger_if = { # Paranoid characters want to murder claimants to their titles
+		limit = {
+			has_trait = paranoid
+			ai_compassion <= low_negative_ai_value
+			ai_rationality <= 0
+			is_landed = yes
+			primary_title.tier >= tier_duchy
+			any_held_title = {
+				any_claimant = {
+					add_to_temporary_list = murder_targets
+				}
+			}
+		}
+	}
+	any_spouse = { # Murder infertile spouses if you've yet to have an heir (and you're heartless...)
+		trigger_if = {
+			limit = {
+				root = {
+					is_landed = yes
+					ai_compassion <= 0
+					ai_honor <= 0
+					fertility > 0.1
+					NOT = {
+						any_child = {
+							is_heir_of = root
+						}
+					}
+					can_start_scheme = {
+						target = prev
+						type = murder
+					}
+				}
+				is_ai = yes
+				fertility < 0.1
+				add_to_temporary_list = murder_targets
+			}
+		}
+	}
 }
 
 scheme_is_still_valid_trigger = {
 	scope:target = {
 		OR = {
 			exists = location
-			in_diplomatic_range_trigger = { target = scope:owner }
+			in_diplomatic_range = scope:owner
+		}
+	}
+}
+
+can_use_befriend_scheme_trigger = {
+	OR = {
+		has_perk = befriend_perk
+		AND = {
+			exists = dynasty
+			dynasty = {
+				has_dynasty_perk = fp1_adventure_legacy_5
+			}
+			target_is_vassal_or_below = $TARGET$
+		}
+		culture = { has_cultural_parameter = automatic_befriend_access }
+		#any_character_struggle = {
+		#	involvement = involved
+		#	is_struggle_type = iberian_struggle
+		#	has_struggle_phase_parameter = struggle_unlocks_befriend_schemes_for_everyone
+		#}
+	}
+}
+
+# Need to separate travel triggers from rest
+can_seduce_scheme_trigger = {
+	$OWNER$ = {
+		is_adult = yes
+		is_imprisoned = no
+		OR = {
+			is_ai = no	#Players may override their character's sexuality for the purposes of cynical seductions.
+			is_attracted_to_gender_of = $TARGET$
+		}
+		is_below_ai_lover_soft_cap_trigger = yes
+		NOR = {
+			has_trait = celibate
+			has_character_flag = is_party_baron
+			has_relation_lover = $TARGET$
+			guaranteed_under_20_incest_rejection_trigger = {
+				TARGET = $TARGET$
+				SEDUCER = $OWNER$
+			}
+			AND = {
+				has_character_modifier = rejected_from_marriage_bed_modifier
+				is_spouse_of = $TARGET$
+			}
+		}
+	}
+	$TARGET$ = {
+		is_adult = yes
+		is_imprisoned = no
+		is_attracted_to_gender_of = $OWNER$
+		NOR = {
+			has_character_flag = block_seduce_attempts
+			has_trait = intellect_bad_3
+			is_incapable_trigger = yes
+			has_trait = celibate
+			has_opinion_modifier = {
+				modifier = seduce_permanent_blocker_opinion
+				target = $OWNER$
+			}
+			has_opinion_modifier = {
+				modifier = seduce_regular_cooldown_opinion
+				target = $OWNER$
+			}
+		}
+		OR = {
+			exists = location
+			in_diplomatic_range = $OWNER$
+		}
+		trigger_if = {
+			limit = {
+				$OWNER$ = { is_ai = yes }
+			}
+			is_below_ai_lover_soft_cap_trigger = yes
+			trigger_if = { # Block AI from seducing lowborn nobodies in the players court
+				limit = {
+					liege ?= { is_ai = no }
+					NOR = {
+						is_courtier_of = $OWNER$
+						is_foreign_court_or_pool_guest_of = $OWNER$
+					}
+				}
+				OR = {
+					is_lowborn = no
+					is_landed = yes
+				}
+			}
+			trigger_if = { #So players don't get spammed by AI seduction
+				limit = { is_ai = no }
+				NOT = {
+					any_targeting_scheme = { scheme_type = seduce }
+				}
+			}
 		}
 	}
 }

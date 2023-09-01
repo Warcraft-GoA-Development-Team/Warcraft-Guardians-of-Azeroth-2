@@ -1,0 +1,3907 @@
+﻿
+namespace = artifact
+
+# An artifact has changed owners.
+artifact.0011 = {
+	scope = artifact
+	hidden = yes
+
+	trigger = { NOT = { has_variable = suppress_artifact_notifications } }
+
+	immediate = {
+		save_scope_as = this_artifact
+		if = {
+			limit = {
+				scope:old_owner = { is_alive = yes }
+			}
+			scope:old_owner = {
+				send_interface_toast = {
+					title = artifact.0011.t
+					left_icon = scope:owner
+					right_icon = scope:this_artifact
+					custom_tooltip = artifact.0011.tooltip
+				}
+			}
+		}
+	}
+
+	after = {
+		scope:owner = {
+			trigger_event = {
+				id = artifact.0012
+				days = 0
+			}
+		}
+		hidden_effect = {
+			if = {
+				limit = { has_variable = desecrated_artifact_var }
+				remove_variable = desecrated_artifact_var
+			}
+		}
+	}
+}
+
+artifact.0012 = {
+	hidden = yes
+
+	immediate = {
+		scope:owner = {
+			send_interface_toast = {
+				title = artifact.0012.t
+				right_icon = scope:this_artifact
+				custom_tooltip = artifact.0012.tooltip
+			}
+		}
+	}
+}
+
+
+
+# An artifact has been destroyed through damage!
+artifact.0021 = {
+	scope = artifact
+	hidden = yes
+
+	immediate = {
+		save_scope_as = this_artifact
+		if = {
+			limit = {
+				exists = scope:owner
+				scope:owner = { is_alive = yes }
+			}
+			scope:owner = {
+				send_interface_toast = {
+					title = artifact.0021.t
+					right_icon = scope:this_artifact
+					destroy_artifact = scope:this_artifact
+				}
+			}
+		}
+	}
+}
+
+
+# An artifact is about to change owner from succession
+# Handles damage taken, and notification for the inheritor
+artifact.0031 = {
+	scope = artifact
+	hidden = yes
+
+	immediate = {
+		save_scope_as = artifact_inherited
+		if = {
+			limit = {
+				has_variable = artifact_succession_title #Is this an artifact that should follow a title?
+				var:artifact_succession_title = { is_title_created = yes } #Does the title the artifact should follow exist?
+				scope:old_owner = var:artifact_succession_title.previous_holder #Is the old owner of the artifact also the holder of the title the artifact should follow?
+			}
+			var:artifact_succession_title = {
+				holder = {
+					save_scope_as = new_owner
+				}
+			}
+			set_owner = { #The artifact goes to the heir to the title it should follow. In a fraction of a tick this will be the new title holder.
+				target = scope:new_owner
+				history = {
+					type = inherited
+					recipient = scope:new_owner
+				}
+			}
+		}
+		if = {
+			limit = {
+				# Warcraft
+				artifact_can_be_damaged_trigger = yes
+				
+				NOR = {
+					#An equipped court artifact of previous owner
+					has_variable = equipped_court_succession
+					#A historicool artifact
+					has_variable = historical_unique_artifact
+					#Inherited with special title
+					has_variable = artifact_succession_title
+					#Inherited from close relative
+					scope:old_owner = { is_close_family_of = scope:owner }
+					#Inherited by election
+					AND = {
+						exists = scope:old_owner.primary_title
+						scope:old_owner.primary_title = { has_title_law_flag = elective_succession_law }
+					}
+					# Succession caused the heir to change primary
+					trigger_if = {
+						limit = { exists = scope:old_primary }
+						scope:old_primary = scope:owner.primary_title
+					}
+					trigger_else = {
+						always = yes
+					}
+				}
+			}
+			if = {
+				limit = {
+					scope:old_owner = {
+						OR = {
+							is_close_or_extended_family_of = scope:owner
+							is_great_grandchild_of = scope:owner
+							is_great_grandparent_of = scope:owner
+						}
+					}
+					artifact_durability > 1 # We want to avoid destroying an artifact with an already low durability
+				}
+				# Remove 50% of remaining durability
+				add_durability = {
+					value = artifact_durability
+					multiply = -0.50
+				}
+			}
+			else_if = {
+				limit = {
+					NOT = { has_variable = artifact_succession_title }
+				}
+				random_list = {
+					25 = {
+						# Remove 50% of remaining durability
+						add_durability = {
+							value = artifact_durability
+							multiply = -0.50
+						}
+					}
+					25 = {
+						# Remove 75% of remaining durability
+						add_durability = {
+							value = artifact_durability
+							multiply = -0.75
+						}
+					}
+					50 = {
+						# Remove 100% of remaining durability (do not destroy yet, will cause errors!)
+						add_durability = {
+							value = artifact_durability
+							multiply = -1.00
+						}
+					}
+				}
+			}
+		}
+		# Cleanup variables of equipped court artifacts
+		if = {
+			limit = {
+				has_variable = equipped_court_succession
+			}
+			remove_variable = equipped_court_succession
+		}
+		if = {
+			# If the artifact has no durability left, destroy it now.
+			limit = {
+				artifact_durability <= 0
+			}
+			destroy_artifact = root
+			# NOTE: We must not run ANY script after we destroy an artifact, or we will cause errors
+		}
+		else_if = {
+			limit = {
+				NAND = {
+					exists = scope:owner.last_played_character
+					scope:owner.last_played_character = scope:old_owner
+				}
+			}
+			scope:owner = {
+				send_interface_toast = {
+					title = msg_artifact_gained_title
+					left_icon = scope:old_owner
+					right_icon = scope:artifact_inherited
+					custom_tooltip = msg_artifact_gained_desc
+				}
+			}
+			hidden_effect = {
+				if = {
+					limit = { has_variable = desecrated_artifact_var }
+					remove_variable = desecrated_artifact_var
+				}
+			}
+		}
+	}
+}
+
+artifact.1000 = {
+	scope = artifact
+	hidden = yes
+
+	immediate = {
+		if = {
+			# Artifact is a character artifact (not a court artifact)
+			limit = {
+				category = inventory
+				exists = scope:owner
+				scope:owner = {
+					has_royal_court = yes
+					is_alive = yes
+				}
+				OR = {
+					artifact_slot_type = primary_armament
+					artifact_slot_type = armor
+					artifact_slot_type = regalia
+					artifact_slot_type = helmet
+				}
+			}
+			save_scope_as = this_artifact
+			scope:owner = {
+				trigger_event = {
+					id = artifact.1001
+					days = 0
+				}
+			}
+		}
+		else = {
+			trigger_event = {
+				id = artifact.0021
+				days = 0
+			}
+		}
+	}
+}
+
+scripted_effect reforge_as_court_artifact_effect = {
+	hidden_effect_new_object = {
+		if = {
+			limit = {
+				artifact_type = axe
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = axe_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_type = hammer
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = hammer_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_type = spear
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = spear_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_type = mace
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = mace_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_type = dagger
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = dagger_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_type = sword
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = sword_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_slot_type = armor
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = armor_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_slot_type = helmet
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = crown_court
+				decaying = no
+			}
+		}
+		else_if = {
+			limit = {
+				artifact_slot_type = regalia
+			}
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = regalia_court
+				decaying = no
+			}
+		}
+		else = {
+			reforge_artifact = {
+				type = pedestal
+				modifier = artifact_placeholder_modifier
+				visuals = small_box
+				decaying = no
+			}
+		}
+
+		add_scaled_artifact_modifier_grandeur_small_effect = yes
+		add_scaled_artifact_modifier_prestige_effect = yes
+	}
+}
+
+artifact.1001 = {
+	type = character_event
+	title = artifact.1001.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.1001.desc.antiquarian
+			}
+			desc = artifact.1001.desc.servant
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:this_artifact = { artifact_slot_type = primary_armament } }
+				desc = artifact.1001.desc.weapon
+			}
+			desc = artifact.1001.desc.other
+		}
+	}
+	theme = stewardship_wealth_focus
+	left_portrait = scope:antiquarian
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	immediate = {
+		random_dummy_gender_servant_effect = yes 	#needed for loc
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				save_scope_as = antiquarian
+			}
+		}
+	}
+
+	option = {
+		name = artifact.1001.a
+		# Flag that this is free for DLC artefacts that could become courtly ones...
+		if = {
+			limit = { exists = scope:this_artifact.var:dlc_potential_court_artefact }
+			custom_tooltip = artifact.1001.a.tt.free
+		}
+		# ... or else costs a nominal fee.
+		else = { remove_short_term_gold = medium_gold_value }
+		scope:this_artifact = {
+			reforge_as_court_artifact_effect = yes
+		}
+		send_interface_toast = {
+			title = artifact.0012.t
+			left_icon = scope:this_artifact
+			show_as_tooltip = {
+				scope:this_artifact = {
+					set_owner = root
+				}
+			}
+		}
+		custom_tooltip = artifact.1001.a.tt
+		ai_chance = {
+			base = 100
+			modifier = {
+				factor = 0
+				scope:this_artifact = {
+					rarity = common
+				}
+			}
+			modifier = {
+				factor = 0
+				is_at_war = yes
+			}
+			modifier = {
+				factor = 0
+				gold < medium_gold_value
+			}
+		}
+	}
+
+	option = {
+		name = artifact.1001.b
+		show_as_tooltip = { destroy_artifact = scope:this_artifact }
+		scope:this_artifact = { trigger_event = artifact.0021 }
+		ai_chance = {
+			base = 100
+			modifier = {
+				add = -95
+				scope:this_artifact = {
+					OR = {
+						rarity = illustrious
+						rarity = famed
+					}
+				}
+			}
+		}
+	}
+}
+
+# Outcome of challenge to a duel for artifact
+
+scripted_effect artifact_2002_apply_effect = {
+	if = {
+		limit = {
+			scope:target = {
+				can_be_claimed_by = scope:sc_loser
+			}
+		}
+		scope:sc_loser = {
+			if = {
+				limit = {
+					OR = {
+						has_variable = remove_claim_flag
+						has_personal_artifact_claim = scope:target
+					}
+				}
+				if = {
+					limit = {
+						NOT = { has_variable = remove_claim_flag }
+					}
+					set_variable = remove_claim_flag
+				}
+				remove_personal_artifact_claim = scope:target
+			}
+		}
+	}
+	scope:target = {
+		if = {
+			limit = {
+				OR = {
+					has_variable = set_owner_flag
+					artifact_owner = scope:sc_loser
+				}
+			}
+			if = {
+				limit = {
+					NOT = { has_variable = set_owner_flag }
+				}
+				set_variable = set_owner_flag
+			}
+			set_owner = {
+				target = scope:sc_victor
+				history = {
+					actor = scope:sc_loser
+					recipient = scope:sc_victor
+					type = won_in_duel
+				}
+			}
+		}
+	}
+}
+artifact.2001 = {
+	hidden = yes
+
+	immediate = {
+		# Fire the follow-up stuff; delay this by a day so the toasts appear _after_ the final event.
+		trigger_event = {
+			id = artifact.2002
+			days = 1
+		}
+	}
+}
+
+artifact.2002 = {
+	hidden = yes
+
+	immediate = {
+		artifact_2002_apply_effect = yes
+		# Send out a toast to the victor.
+		scope:sc_victor = {
+			send_interface_toast = {
+				title = perk_interaction.0101.victor_toast.t
+				left_icon = scope:sc_loser
+				right_icon = scope:target
+				show_as_tooltip = { artifact_2002_apply_effect = yes }
+			}
+		}
+		# And to the loser.
+		scope:sc_loser = {
+			send_interface_toast = {
+				title = perk_interaction.0101.loser_toast.t
+				left_icon = scope:sc_victor
+				right_icon = scope:target
+				show_as_tooltip = { artifact_2002_apply_effect = yes }
+			}
+			if = {
+				limit = { has_variable = remove_claim_flag }
+				remove_variable = remove_claim_flag
+			}
+		}
+		scope:target = {
+			if = {
+				limit = { has_variable = set_owner_flag }
+				remove_variable = set_owner_flag
+			}
+		}
+	}
+}
+
+### Degraded Artifacts Events ###
+
+# Reuse Materials
+
+artifact.3000 = {
+	type = character_event
+	title = artifact.3000.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.3000.desc.antiquarian_intro
+			}
+			desc = artifact.3000.desc.servant_intro
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.3000.desc.antiquarian
+			}
+			desc = artifact.3000.desc.servant
+		}
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 5 }
+	left_portrait = scope:antiquarian
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	trigger = {
+		trigger_if = {
+			limit = { exists = scope:artifact }
+			scope:artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+				OR = {
+					artifact_slot_type = primary_armament
+					artifact_slot_type = armor
+					artifact_type = cabinet
+					artifact_type = chest
+					artifact_type = throne
+					artifact_type = sculpture
+					artifact_type = regalia
+				}
+			}
+		}
+		trigger_else = {
+			any_character_artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+				OR = {
+					artifact_slot_type = primary_armament
+					artifact_slot_type = armor
+					artifact_type = cabinet
+					artifact_type = chest
+					artifact_type = throne
+					artifact_type = sculpture
+					artifact_type = regalia
+				}
+			}
+		}
+	}
+
+	immediate = {
+
+		if = {
+			limit = {
+				NOT = { exists = scope:artifact }
+			}
+			random_character_artifact = {
+				limit = {
+					artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+					OR = {
+						artifact_slot_type = primary_armament
+						artifact_slot_type = armor
+						artifact_type = cabinet
+						artifact_type = chest
+						artifact_type = throne
+						artifact_type = sculpture
+						artifact_type = regalia
+					}
+				}
+				save_scope_as = this_artifact
+				save_scope_as = artifact
+			}
+		}
+		else = {
+			scope:artifact = {
+				save_scope_as = this_artifact
+			}
+		}
+
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		else = {
+			random_dummy_gender_servant_effect = yes
+		}
+	}
+
+	# Option A: reuse
+	option = {
+		name = artifact.3000.a
+		if = {
+			limit = {
+				scope:this_artifact = {
+					OR = {
+						artifact_slot_type = primary_armament
+						artifact_slot_type = armor
+					}
+				}
+			}
+			add_character_modifier = artifact_3000_reusing_artifact_weapon_modifier
+		}
+		else_if = {
+			limit = {
+				scope:this_artifact = {
+					OR = {
+						artifact_type = cabinet
+						artifact_type = chest
+						artifact_type = throne
+						artifact_type = sculpture
+					}
+				}
+			}
+			add_character_modifier = artifact_3000_reusing_artifact_wood_modifier
+		}
+		else_if = {
+			limit = {
+				scope:this_artifact = {
+					artifact_type = regalia
+				}
+			}
+			add_character_modifier = artifact_3000_reusing_artifact_jewels_modifier
+		}
+		destroy_artifact = scope:this_artifact
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	# Option B: you can still save it
+	option = {
+		name = artifact.3000.b
+		if = {
+			limit = { exists = scope:antiquarian }
+			scope:this_artifact = {
+				add_durability = {
+					value = artifact_durability
+					multiply = 7
+					max = 60
+				}
+			}
+		}
+		else = {
+			scope:this_artifact = {
+				add_durability = {
+					value = artifact_durability
+					multiply = 4
+					max = 50
+				}
+			}
+		}
+		remove_short_term_gold = {
+			value = scope:this_artifact.artifact_durability
+			multiply = 1.5
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = -0.5
+			}
+			modifier = {
+				gold < scope:this_artifact.artifact_durability
+				add = -100
+			}
+		}
+	}
+
+	#Option C: get angry
+	option = {
+		name = artifact.3000.c
+		if = {
+			limit = {
+				exists = scope:antiquarian
+			}
+			scope:antiquarian = {
+				add_opinion = {
+					target = root
+					modifier = insult_opinion
+					opinion = -20
+				}
+			}
+		}
+		stress_impact = {
+			compassionate = minor_stress_impact_gain
+			calm = minor_stress_impact_gain
+			trusting = minor_stress_impact_gain
+			irritable = minor_stress_impact_loss
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = -1
+			}
+		}
+	}
+}
+
+artifact.3001 = {
+	type = character_event
+	title = artifact.3001.t
+	desc = artifact.3001.desc
+	theme = stewardship_wealth_focus
+	right_portrait = {
+		character = scope:inspiration_owner
+		animation = happiness
+	}
+
+	weight_multiplier = {
+		base = 1
+	}
+
+	trigger = {
+		exists = scope:inspiration
+		scope:inspiration = {
+			scope:inspiration_owner = {
+				is_available_ai_adult = yes
+			}
+			OR = {
+				AND = {
+					OR = {
+						has_inspiration_type = weapon_inspiration
+						has_inspiration_type = armor_inspiration
+					}
+					scope:inspiration_sponsor = {
+						has_character_modifier = artifact_3000_reusing_artifact_weapon_modifier
+					}
+				}
+				AND = {
+					has_inspiration_type = artisan_inspiration
+					scope:inspiration_sponsor = {
+						has_character_modifier = artifact_3000_reusing_artifact_wood_modifier
+					}
+				}
+				AND = {
+					has_inspiration_type = smith_inspiration
+					scope:inspiration_sponsor = {
+						has_character_modifier = artifact_3000_reusing_artifact_jewels_modifier
+					}
+				}
+			}
+		}
+	}
+
+	option = {
+		name = artifact.3001.a
+		if = {
+			limit = {
+				scope:inspiration = {
+					OR = {
+						has_inspiration_type = weapon_inspiration
+						has_inspiration_type = armor_inspiration
+					}
+				}
+				has_character_modifier = artifact_3000_reusing_artifact_weapon_modifier
+			}
+			add_gold = {
+				value = scope:inspiration.inspiration_gold_invested
+				multiply = 0.4
+			}
+			remove_character_modifier = artifact_3000_reusing_artifact_weapon_modifier
+		}
+		else_if = {
+			limit = {
+				scope:inspiration = {
+					has_inspiration_type = artisan_inspiration
+				}
+				has_character_modifier = artifact_3000_reusing_artifact_wood_modifier
+			}
+			add_gold = {
+				value = scope:inspiration.inspiration_gold_invested
+				multiply = 0.3
+			}
+			remove_character_modifier = artifact_3000_reusing_artifact_wood_modifier
+		}
+		else_if = {
+			limit = {
+				scope:inspiration = {
+					has_inspiration_type = smith_inspiration
+				}
+				has_character_modifier = artifact_3000_reusing_artifact_jewels_modifier
+			}
+			add_gold = {
+				value = scope:inspiration.inspiration_gold_invested
+				multiply = 0.3
+			}
+			remove_character_modifier = artifact_3000_reusing_artifact_jewels_modifier
+		}
+	}
+}
+
+# Sell it for gold
+
+artifact.3010 = {
+	type = character_event
+	title = artifact.3010.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.3000.desc.antiquarian_intro
+			}
+			desc = artifact.3000.desc.servant_intro
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.3010.desc.antiquarian
+			}
+			desc = artifact.3010.desc.servant
+		}
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 5 }
+	left_portrait = scope:antiquarian
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		trigger_if = {
+			limit = { exists = scope:artifact }
+			scope:artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+			}
+		}
+		trigger_else = {
+			any_character_artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				NOT = { exists = scope:artifact }
+			}
+			random_character_artifact = {
+				limit = {
+					artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+				}
+				save_scope_as = this_artifact
+				save_scope_as = artifact
+			}
+		}
+		else = {
+			scope:artifact = {
+				save_scope_as = this_artifact
+			}
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		else = {
+			random_dummy_gender_servant_effect = yes
+		}
+	}
+
+	# Option A: sell to a scrap collector
+	option = {
+		name = artifact.3010.a
+		if = {
+			limit = {
+				exists = scope:antiquarian
+			}
+			add_gold = {
+				value = scope:this_artifact.artifact_wealth_quality_average_value
+				multiply = 3.5
+			}
+		}
+		else = {
+			add_gold = {
+				value = scope:this_artifact.artifact_wealth_quality_average_value
+				multiply = 2.5
+			}
+		}
+		hidden_effect = { destroy_artifact = scope:this_artifact }
+		custom_tooltip = artifact.3010.a.tt
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 1
+			}
+		}
+	}
+
+	# Option B: keep it
+	option = {
+		name = artifact.3010.b
+		ai_chance = {
+			base = 100
+		}
+	}
+}
+
+# The Antiquarian changes the Type of Artifact
+
+artifact.3020 = {
+	type = character_event
+	title = artifact.3020.t
+	desc = {
+		desc = artifact.3000.desc.antiquarian_intro
+		desc = artifact.3020.desc
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 5 }
+	left_portrait = scope:antiquarian
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		trigger_if = {
+			limit = { exists = scope:artifact }
+			scope:artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+				OR = {
+					artifact_slot_type = primary_armament
+					artifact_slot_type = armor
+					artifact_slot_type = helmet
+					artifact_slot_type = regalia
+				}
+			}
+		}
+		trigger_else = {
+			any_character_artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+				OR = {
+					artifact_slot_type = primary_armament
+					artifact_slot_type = armor
+					artifact_slot_type = helmet
+					artifact_slot_type = regalia
+				}
+			}
+		}
+		employs_court_position = antiquarian_court_position
+		any_court_position_holder = {
+			type = antiquarian_court_position
+			is_available_ai_adult = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				NOT = { exists = scope:artifact }
+			}
+			random_character_artifact = {
+				limit = {
+					artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+					OR = {
+						artifact_slot_type = primary_armament
+						artifact_slot_type = armor
+						artifact_slot_type = helmet
+						artifact_slot_type = regalia
+					}
+				}
+				save_scope_as = this_artifact
+				save_scope_as = artifact
+			}
+		}
+		else = {
+			scope:artifact = {
+				save_scope_as = this_artifact
+			}
+		}
+
+		random_court_position_holder = {
+			type = antiquarian_court_position
+			limit = { is_available_ai_adult = yes }
+			save_scope_as = antiquarian
+		}
+		hidden_effect = {
+			save_scope_as = owner #for loc
+			scope:antiquarian = {
+				create_artifact = {
+					name = keepsake_trinket_name
+					description = keepsake_trinket_description
+					type = miscellaneous
+					visuals = small_box
+					modifier = artifact_monthly_prestige_2_modifier
+					save_scope_as = keepsake_trinket
+				}
+			}
+			if = {
+				limit = {
+					scope:this_artifact = { artifact_slot_type = primary_armament }
+				}
+				scope:keepsake_trinket = {
+					add_artifact_modifier = artifact_prowess_1_modifier
+				}
+			}
+			else_if = {
+				limit = {
+					scope:this_artifact = { artifact_slot_type = armor }
+				}
+				scope:keepsake_trinket = {
+					add_artifact_modifier = artifact_scheme_resistance_add_1_modifier
+				}
+			}
+			else_if = {
+				limit = {
+					scope:this_artifact = { artifact_slot_type = helmet }
+				}
+				scope:keepsake_trinket = {
+					add_artifact_modifier = artifact_parochial_vassal_opinion_1_modifier
+				}
+			}
+			else_if = {
+				limit = {
+					scope:this_artifact = { artifact_slot_type = regalia }
+				}
+				scope:keepsake_trinket = {
+					add_artifact_modifier = artifact_monthly_dynasty_prestige_1_modifier
+				}
+			}
+		}
+	}
+
+	# Option A: Make it a trinket
+	option = {
+		name = artifact.3020.a
+		scope:keepsake_trinket = {
+			set_owner = root
+		}
+		hidden_effect = { destroy_artifact = scope:this_artifact }
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 0.5
+			}
+		}
+	}
+
+	# Option B: repair it!
+	option = {
+		name = artifact.3020.b
+		if = {
+			limit = { exists = scope:antiquarian }
+			scope:this_artifact = {
+				add_durability = {
+					value = artifact_durability
+					multiply = 7
+					max = 60
+				}
+			}
+		}
+		remove_short_term_gold = {
+			value = scope:this_artifact.artifact_durability
+			multiply = 1.5
+		}
+		hidden_effect = { destroy_artifact = scope:keepsake_trinket }
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = -0.5
+			}
+		}
+	}
+}
+
+# The Antiquarian tries a new preservation technique
+
+artifact.3030 = {
+	type = character_event
+	title = artifact.3030.t
+	desc = {
+		desc = artifact.3000.desc.antiquarian_intro
+		desc = artifact.3030.desc
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 5 }
+	left_portrait = scope:antiquarian
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		trigger_if = {
+			limit = { exists = scope:artifact }
+			scope:artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+			}
+		}
+		trigger_else = {
+			any_character_artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+			}
+		}
+		employs_court_position = antiquarian_court_position
+		any_court_position_holder = {
+			type = antiquarian_court_position
+			is_available_ai_adult = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				NOT = { exists = scope:artifact }
+			}
+			random_character_artifact = {
+				limit = {
+					artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+				}
+				save_scope_as = this_artifact
+				save_scope_as = artifact
+			}
+		}
+		else = {
+			scope:artifact = {
+				save_scope_as = this_artifact
+			}
+		}
+
+		random_court_position_holder = {
+			type = antiquarian_court_position
+			limit = { is_available_ai_adult = yes }
+			save_scope_as = antiquarian
+		}
+	}
+
+	# Option A: try the technique
+	option = {
+		name = artifact.3030.a
+		scope:antiquarian = {
+			duel = {
+				skill = learning
+				value = high_skill_rating
+				10 = {
+					#big success
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = medium_positive_duel_skill_multiplier #+50 when extremely skilled meets avarage
+						min = -20
+					}
+					desc = artifact.3030.a.bigsuccess
+					root = {
+						send_interface_toast = {
+							title = artifact.3030.a.bigsuccess.t
+							scope:this_artifact = {
+								add_durability = {
+									value = artifact_max_durability
+									subtract = artifact_durability
+								}
+								set_max_durability = {
+									value = artifact_max_durability
+									add = {
+										value = artifact_max_durability
+										multiply = 0.3
+									}
+								}
+							}
+						}
+					}
+				}
+				40 = {
+					#success
+					desc = artifact.3030.a.success
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = low_positive_duel_skill_multiplier #+25 when extremely skilled meets avarage
+					}
+					root = {
+						send_interface_toast = {
+							title = artifact.3030.a.success.t
+							scope:this_artifact = {
+								add_durability = {
+									value = artifact_durability
+									multiply = 10
+									max = artifact_max_durability
+								}
+							}
+						}
+					}
+				}
+				40 = {
+					#failure
+					desc = artifact.3030.a.failure
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = low_negative_duel_skill_multiplier  #+-25 when extremely skilled meets avarage
+					}
+					root = {
+						send_interface_toast = {
+						title = artifact.3030.a.failure.t
+							scope:this_artifact = {
+								add_durability = {
+									value = artifact_durability
+									multiply = -1
+									add = 1
+								}
+							}
+						}
+					}
+				}
+				10 = {
+					#big failure
+					desc = artifact.3030.a.bigfailure
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = medium_negative_duel_skill_multiplier  #-50 when extremely skilled meets avarage
+					}
+					root = {
+						send_interface_toast = {
+							title = artifact.3030.a.bigfailure.t
+							destroy_artifact = scope:this_artifact
+						}
+					}
+				}
+			}
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = 0.75
+			}
+		}
+	}
+
+	# Option B: NO
+	option = {
+		name = artifact.3030.b
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = -0.75
+			}
+		}
+	}
+}
+
+# A vassal offers to pay for the reforging in exchange for something
+
+artifact.3040 = {
+	type = character_event
+	title = artifact.3040.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.3040.desc.antiquarian
+			}
+			desc = artifact.3040.desc.no_antiquarian
+		}
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 5 }
+	left_portrait = scope:antiquarian
+	right_portrait = {
+		character = scope:vassal
+		animation = schadenfreude
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		trigger_if = {
+			limit = { exists = scope:artifact }
+			scope:artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+			}
+		}
+		trigger_else = {
+			any_character_artifact = {
+				artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+			}
+		}
+		any_vassal = {
+			gold >= major_gold_value
+			is_available_ai_adult = yes
+			can_add_hook = {
+				type = favor_hook
+				target = root
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				NOT = { exists = scope:artifact }
+			}
+			random_character_artifact = {
+				limit = {
+					artifact_durability <= define:NInventory|ARTIFACT_LOW_DURABILITY
+				}
+				save_scope_as = this_artifact
+				save_scope_as = artifact
+			}
+		}
+		else = {
+			scope:artifact = {
+				save_scope_as = this_artifact
+			}
+		}
+		random_vassal = {
+			limit = {
+				gold >= major_gold_value
+				is_available_ai_adult = yes
+				can_add_hook = {
+					type = favor_hook
+					target = root
+				}
+			}
+			save_scope_as = vassal
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+	}
+
+	# Option A: accept the offer, owe a favor
+	option = {
+		name = artifact.3040.a
+		scope:vassal = {
+			remove_short_term_gold = scope:this_artifact.reforge_artifact_cost
+			add_hook = {
+				type = favor_hook
+				target = root
+			}
+		}
+		scope:this_artifact = {
+			add_durability = {
+				value = artifact_max_durability
+				max = artifact_max_durability
+			}
+		}
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	#Option B: use a favor
+	option = {
+		name = artifact.3040.b
+		trigger = {
+			has_hook_of_type = {
+				type = favor_hook
+				target = scope:vassal
+			}
+		}
+		scope:vassal = {
+			remove_short_term_gold = scope:this_artifact.reforge_artifact_cost
+		}
+		remove_hook = {
+			type = favor_hook
+			target = scope:vassal
+		}
+		scope:this_artifact = {
+			add_durability = {
+				value = artifact_max_durability
+				max = artifact_max_durability
+			}
+		}
+		ai_chance = {
+			base = 200
+		}
+	}
+
+	# Option C: refuse
+	option = {
+		name = artifact.3040.c
+		scope:vassal = {
+			add_opinion = {
+				target = root
+				modifier = refusal_opinion
+				opinion = -20
+			}
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_sociability = -0.5
+			}
+		}
+	}
+}
+
+# A high-quality artifact is reaching 0 durability
+
+artifact.3050 = {
+	scope = artifact
+	hidden = yes
+
+	trigger = {
+		artifact_durability <= define:NInventory|ARTIFACT_VERY_LOW_DURABILITY
+		artifact_wealth_quality_average_value >= 75
+	}
+
+	immediate = {
+		scope:owner = {
+			send_interface_message = {
+				type = event_stewardship_good_with_text
+				left_icon = scope:this_artifact
+				title = artifact.3050.t
+				desc = artifact.3050.desc
+			}
+		}
+	}
+}
+
+
+### Artifact modifiers events ###
+
+# Cursed artifact
+
+scripted_trigger artifact_4000_cursed_history_trigger = {
+	#One of the following has to be true:
+	OR = {
+		AND = {
+			has_variable = stolen_artifact
+			var:stolen_artifact >= 5
+		}
+		AND = {
+			exists = previous_owner
+			previous_owner = {
+				is_alive = no
+				exists = killer
+			}
+			OR = {
+				AND = {
+					exists = previous_owner_level_2
+					previous_owner_level_2 = {
+						is_alive = no
+						exists = killer
+					}
+				}
+				AND = {
+					exists = previous_owner_level_3
+					previous_owner_level_3 = {
+						is_alive = no
+						exists = killer
+					}
+				}
+			}
+		}
+		has_variable = ghost_cabinet
+	}
+	NOR = {
+		has_variable = cursed_artifact_var
+		has_variable = blessed_artifact_var
+		has_variable = artifact_named_crown_var
+		has_variable = artifact_killer_var
+		has_variable = artifact_armor_var
+		has_variable = historical_unique_artifact
+	}
+}
+
+scripted_trigger artifact_4000_cursed_creepy_trigger = {
+	OR = {
+		ep1_artifact_durability_lower_equal_percent_trigger = { PERCENT = 0.49 }
+		artifact_age >= 50
+	}
+	NOR = {
+		has_variable = cursed_artifact_var
+		has_variable = blessed_artifact_var
+		has_variable = artifact_named_crown_var
+		has_variable = artifact_killer_var
+		has_variable = artifact_armor_var
+		has_variable = historical_unique_artifact
+	}
+}
+
+artifact.4000 = {
+	type = character_event
+	title = artifact.4000.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4000.desc.antiquarian_intro
+			}
+			desc = artifact.4000.desc.servant_intro
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { #stolen
+					has_variable = stolen_artifact
+					var:stolen_artifact >= 5
+				}
+				desc = artifact.4000.desc.stolen
+			}
+			triggered_desc = {
+				trigger = { #assassinated
+					exists = scope:this_artifact.previous_owner
+					scope:this_artifact.previous_owner = {
+						is_alive = no
+						exists = killer
+					}
+					OR = {
+						AND = {
+							exists = scope:this_artifact.previous_owner_level_2
+							scope:this_artifact.previous_owner_level_2 = {
+								is_alive = no
+								exists = killer
+							}
+						}
+						AND = {
+							exists = scope:this_artifact.previous_owner_level_3
+							scope:this_artifact.previous_owner_level_3 = {
+								is_alive = no
+								exists = killer
+							}
+						}
+					}
+				}
+				desc = artifact.4000.desc.assassinated
+			}
+			triggered_desc = {
+				trigger = { #ghost
+					has_variable = ghost_cabinet
+				}
+				desc = artifact.4000.desc.ghost
+			}
+			desc = artifact.4000.desc.fallback
+		}
+		desc = artifact.4000.desc.end
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 15 }
+	left_portrait = scope:antiquarian
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.5
+		}
+	}
+
+	trigger = {
+		OR = {
+			any_character_artifact = {	#it has creepy history
+				artifact_4000_cursed_history_trigger = yes
+			}
+			AND = {		#it's old and you are creepy
+				dread >= 75
+				any_character_artifact = {
+					artifact_4000_cursed_creepy_trigger = yes
+				}
+			}
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		else = {
+			random_dummy_gender_servant_effect = yes
+		}
+		random_character_artifact = {
+			limit = {
+				artifact_4000_cursed_history_trigger = yes
+			}
+			alternative_limit = {
+				artifact_4000_cursed_creepy_trigger = yes
+			}
+			save_scope_as = this_artifact
+		}
+	}
+
+	#Option A: call for a holy man
+	option = {
+		name = artifact.4000.a
+		trigger_event = {
+			id = artifact.4001
+			days = 35
+		}
+		remove_short_term_gold = minor_gold_value
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_zeal = 1
+			}
+		}
+	}
+
+	#Option B: embrace the cursed reputation
+	option = {
+		name = artifact.4000.b
+		scope:this_artifact = {
+			set_variable = {
+				name = cursed_artifact_accepted_var
+				years = 30
+			}
+		}
+		ai_chance = {
+			base = 90
+			modifier = {
+				add = 50
+				has_trait = sadistic
+			}
+			modifier = {
+				add = 50
+				has_trait = callous
+			}
+			modifier = {
+				add = 100
+				has_trait = torturer
+			}
+		}
+	}
+
+	after = {
+		scope:this_artifact = {
+			set_artifact_name = artifact.4000.cursed_name
+			set_artifact_description = artifact.4000.cursed_desc
+			set_variable = {
+				name = cursed_artifact_var
+			}
+			add_artifact_modifier = cursed_artifact_modifier
+		}
+	}
+}
+
+artifact.4001 = {		# Holy man intervention
+	type = character_event
+	title = artifact.4001.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4001.desc.antiquarian_intro
+			}
+			desc = artifact.4001.desc.servant_intro
+		}
+		desc = artifact.4001.desc
+	}
+	theme = stewardship_wealth_focus
+	left_portrait = {
+		character = scope:holy_man
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		scope:this_artifact = {
+			artifact_owner = root
+			NOT = { has_variable = attempted_blessing_var }
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		else = {
+			random_dummy_gender_servant_effect = yes
+		}
+		create_character = {
+			location = root.capital_province
+			culture = root.culture
+			template = local_saint_template
+			save_scope_as = holy_man
+		}
+		scope:this_artifact = {
+			set_variable = {
+				name = attempted_blessing_var
+				years = 15
+			}
+		}
+	}
+
+	option = {
+		name = artifact.4001.a
+		scope:holy_man = {
+			duel = {
+				skill = learning
+				value = high_skill_rating
+				50 = {
+					desc = artifact.4001.a.success.desc
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = 2.5
+					}
+					root = {
+						send_interface_toast = {
+							title = artifact.4001.a.success
+							left_icon = scope:this_artifact
+							scope:this_artifact = {
+								remove_artifact_modifier = cursed_artifact_modifier
+								remove_variable = cursed_artifact_var
+							}
+						}
+					}
+				}
+				50 = {
+					desc = artifact.4001.a.failure.desc
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = -2.5
+					}
+					root = {
+						send_interface_toast = {
+							title = artifact.4001.a.failure
+							left_icon = scope:this_artifact
+						}
+					}
+				}
+			}
+		}
+	}
+	after = {
+		scope:holy_man = {
+			silent_disappearance_effect = yes
+		}
+	}
+}
+
+artifact.4002 = {		#you own a cursed artifact
+	type = character_event
+	title = artifact.4002.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4002.desc.antiquarian_intro
+			}
+			desc = artifact.4002.desc.servant_intro
+		}
+		desc = artifact.4002.desc
+	}
+	theme = stewardship_wealth_focus
+	left_portrait = {
+		character = scope:antiquarian
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = ROOT
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		any_character_artifact = {
+			has_variable = cursed_artifact_var
+			NOR = {
+				has_variable = attempted_blessing_var
+				has_variable = cursed_artifact_accepted_var
+				has_variable = artifact_named_crown_var
+				has_variable = artifact_killer_var
+				has_variable = artifact_armor_var
+				has_variable = blessed_artifact_var
+				has_variable = historical_unique_artifact
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		random_character_artifact = {
+			limit = {
+				has_variable = cursed_artifact_var
+				NOR = {
+					has_variable = attempted_blessing_var
+					has_variable = cursed_artifact_accepted_var
+					has_variable = artifact_named_crown_var
+					has_variable = artifact_killer_var
+					has_variable = artifact_armor_var
+					has_variable = blessed_artifact_var
+					has_variable = historical_unique_artifact
+				}
+			}
+			save_scope_as = this_artifact
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		else = {
+			random_dummy_gender_servant_effect = yes
+		}
+	}
+	#Option A: call for a holy man
+	option = {
+		name = artifact.4000.a
+		trigger_event = {
+			id = artifact.4001
+			days = 35
+		}
+		remove_short_term_gold = minor_gold_value
+		scope:this_artifact = {
+			set_variable = {
+				name = attempted_blessing_var
+				years = 15
+			}
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_zeal = 1
+			}
+		}
+	}
+
+	#Option B: embrace the cursed reputation
+	option = {
+		name = artifact.4000.b
+		scope:this_artifact = {
+			set_variable = {
+				name = cursed_artifact_accepted_var
+				years = 30
+			}
+		}
+		if = {
+			limit = {
+				scope:this_artifact = {
+					has_artifact_modifier = cursed_artifact_modifier
+				}
+			}
+			scope:this_artifact = {
+				remove_artifact_modifier = cursed_artifact_modifier
+				add_artifact_modifier = very_cursed_artifact_modifier
+			}
+		}
+		ai_chance = {
+			base = 90
+			modifier = {
+				add = 50
+				has_trait = sadistic
+			}
+			modifier = {
+				add = 50
+				has_trait = callous
+			}
+			modifier = {
+				add = 100
+				has_trait = torturer
+			}
+		}
+	}
+}
+
+# Killer weapon
+
+scripted_trigger artifact_4010_valid_weapon_trigger = {
+	artifact_slot_type = primary_armament
+	has_variable = artifact_battles_won_var
+	OR = {
+		AND = {
+			NOT = { has_variable = artifact_killer_var }
+			var:artifact_battles_won_var >= 15
+		}
+		AND = {
+			has_variable = artifact_killer_var
+			var:artifact_killer_var = 15
+			var:artifact_battles_won_var >= 30
+		}
+		AND = {
+			has_variable = artifact_killer_var
+			var:artifact_killer_var = 30
+			var:artifact_battles_won_var >= 50
+		}
+		AND = {
+			has_variable = artifact_killer_var
+			var:artifact_killer_var = 50
+			var:artifact_battles_won_var >= 100
+		}
+	}
+	NOR = {
+		has_variable = cursed_artifact_var
+		has_variable = blessed_artifact_var
+		has_variable = historical_unique_artifact
+		has_variable = artifact_duel_weapon_var
+	}
+}
+
+artifact.4010 = {
+	type = character_event
+	title = artifact.4010.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4010.desc.antiquarian_intro
+			}
+			desc = artifact.4010.desc.servant_intro
+		}
+		desc = artifact.4010.desc
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 10 }
+	left_portrait = {
+		character = scope:antiquarian
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = ROOT
+		animation = happiness
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		any_character_artifact = {
+			artifact_4010_valid_weapon_trigger = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			any_character_artifact = {
+				artifact_4010_valid_weapon_trigger = yes
+				has_variable = artifact_battles_won_var
+				var:artifact_battles_won_var > 30
+			}
+			add = 1
+		}
+		modifier = {
+			any_character_artifact = {
+				artifact_4010_valid_weapon_trigger = yes
+				has_variable = artifact_battles_won_var
+				var:artifact_battles_won_var > 50
+			}
+			add = 2
+		}
+		modifier = {
+			any_character_artifact = {
+				artifact_4010_valid_weapon_trigger = yes
+				has_variable = artifact_battles_won_var
+				var:artifact_battles_won_var > 100
+			}
+			add = 5
+		}
+		modifier = {
+			is_at_war = yes
+			factor = 0.5
+		}
+	}
+
+	immediate = {
+		random_character_artifact = {
+			limit = {
+				artifact_slot_type = primary_armament
+				has_variable = artifact_battles_won_var
+				NOR = {
+					has_variable = blessed_artifact_var
+					has_variable = historical_unique_artifact
+					has_variable = cursed_artifact_var
+					has_variable = artifact_duel_weapon_var
+				}
+				trigger_if = {
+					limit = {
+						NOT = { has_variable = artifact_killer_var }
+					}
+					var:artifact_battles_won_var >= 15
+				}
+				trigger_else_if = {
+					limit = {
+						has_variable = artifact_killer_var
+						var:artifact_killer_var = 15
+					}
+					var:artifact_battles_won_var >= 30
+				}
+				trigger_else_if = {
+					limit = {
+						has_variable = artifact_killer_var
+						var:artifact_killer_var = 30
+					}
+					var:artifact_battles_won_var >= 50
+				}
+				trigger_else = {
+					var:artifact_battles_won_var >= 100
+				}
+			}
+			save_scope_as = this_artifact
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		scope:this_artifact = {
+			if = {
+				limit = {
+					NOT = { has_variable = artifact_killer_var }
+				}
+				set_variable = {
+					name = artifact_killer_var
+					value = 15
+				}
+				set_artifact_name = artifact_killer_1_name
+				set_artifact_description = artifact_killer_1_desc
+				add_artifact_modifier = artifact_killer_1_artifact_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_killer_var
+					var:artifact_killer_var = 15
+				}
+				change_variable = {
+					name = artifact_killer_var
+					add = 15
+				}
+				set_artifact_name = artifact_killer_2_name
+				set_artifact_description = artifact_killer_2_desc
+				add_artifact_modifier = artifact_killer_2_artifact_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_killer_var
+					var:artifact_killer_var = 30
+				}
+				change_variable = {
+					name = artifact_killer_var
+					add = 20
+				}
+				set_artifact_name = artifact_killer_3_name
+				set_artifact_description = artifact_killer_3_desc
+				add_artifact_modifier = artifact_killer_3_artifact_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_killer_var
+					var:artifact_killer_var = 50
+				}
+				change_variable = {
+					name = artifact_killer_var
+					add = 50
+				}
+				set_artifact_name = artifact_killer_4_name
+				set_artifact_description = artifact_killer_4_desc
+				add_artifact_modifier = artifact_killer_4_artifact_modifier
+			}
+		}
+	}
+
+	option = {
+		name = artifact.4010.a
+	}
+}
+
+# Glorious armor
+
+scripted_trigger artifact_4020_valid_armor_trigger = {
+	artifact_slot_type = armor
+	has_variable = artifact_battles_won_var
+	OR = {
+		AND = {
+			NOT = { has_variable = artifact_armor_var }
+			var:artifact_battles_won_var >= 15
+		}
+		AND = {
+			has_variable = artifact_armor_var
+			var:artifact_armor_var = 15
+			var:artifact_battles_won_var >= 30
+		}
+		AND = {
+			has_variable = artifact_armor_var
+			var:artifact_armor_var = 30
+			var:artifact_battles_won_var >= 50
+		}
+		AND = {
+			has_variable = artifact_armor_var
+			var:artifact_armor_var = 50
+			var:artifact_battles_won_var >= 100
+		}
+	}
+	NOR = {
+		has_variable = cursed_artifact_var
+		has_variable = blessed_artifact_var
+		has_variable = historical_unique_artifact
+	}
+}
+
+artifact.4020 = {
+	type = character_event
+	title = artifact.4020.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4010.desc.antiquarian_intro
+			}
+			desc = artifact.4010.desc.servant_intro
+		}
+		desc = artifact.4020.desc
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 10 }
+	left_portrait = {
+		character = scope:antiquarian
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = ROOT
+		animation = happiness
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		any_character_artifact = {
+			artifact_4020_valid_armor_trigger = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			any_character_artifact = {
+				artifact_4020_valid_armor_trigger = yes
+				has_variable = artifact_battles_won_var
+				var:artifact_battles_won_var > 30
+			}
+			add = 1
+		}
+		modifier = {
+			any_character_artifact = {
+				artifact_4020_valid_armor_trigger = yes
+				has_variable = artifact_battles_won_var
+				var:artifact_battles_won_var > 50
+			}
+			add = 2
+		}
+		modifier = {
+			any_character_artifact = {
+				artifact_4020_valid_armor_trigger = yes
+				has_variable = artifact_battles_won_var
+				var:artifact_battles_won_var > 100
+			}
+			add = 5
+		}
+		modifier = {
+			is_at_war = yes
+			factor = 0.5
+		}
+	}
+
+	immediate = {
+		random_character_artifact = {
+			limit = {
+				artifact_slot_type = armor
+				has_variable = artifact_battles_won_var
+				NOR = {
+					has_variable = blessed_artifact_var
+					has_variable = historical_unique_artifact
+					has_variable = cursed_artifact_var
+				}
+				trigger_if = {
+					limit = {
+						NOT = { has_variable = artifact_armor_var }
+					}
+					var:artifact_battles_won_var >= 15
+				}
+				trigger_else_if = {
+					limit = {
+						has_variable = artifact_armor_var
+						var:artifact_armor_var = 15
+					}
+					var:artifact_battles_won_var >= 30
+				}
+				trigger_else_if = {
+					limit = {
+						has_variable = artifact_armor_var
+						var:artifact_armor_var = 30
+					}
+					var:artifact_battles_won_var >= 50
+				}
+				trigger_else = {
+					var:artifact_battles_won_var >= 100
+				}
+			}
+			save_scope_as = this_artifact
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		scope:this_artifact = {
+			if = {
+				limit = {
+					NOT = { has_variable = artifact_armor_var }
+				}
+				set_variable = {
+					name = artifact_armor_var
+					value = 15
+				}
+				set_artifact_name = artifact_armor_1_name
+				set_artifact_description = artifact_armor_1_desc
+				add_artifact_modifier = artifact_armor_1_artifact_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_armor_var
+					var:artifact_armor_var = 15
+				}
+				change_variable = {
+					name = artifact_armor_var
+					add = 15
+				}
+				set_artifact_name = artifact_armor_2_name
+				set_artifact_description = artifact_armor_2_desc
+				add_artifact_modifier = artifact_armor_2_artifact_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_armor_var
+					var:artifact_armor_var = 30
+				}
+				change_variable = {
+					name = artifact_armor_var
+					add = 20
+				}
+				set_artifact_name = artifact_armor_3_name
+				set_artifact_description = artifact_armor_3_desc
+				add_artifact_modifier = artifact_armor_3_artifact_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_armor_var
+					var:artifact_armor_var = 50
+				}
+				change_variable = {
+					name = artifact_armor_var
+					add = 50
+				}
+				set_artifact_name = artifact_armor_4_name
+				set_artifact_description = artifact_armor_4_desc
+				add_artifact_modifier = artifact_armor_4_artifact_modifier
+			}
+		}
+	}
+
+	option = {
+		name = artifact.4010.a
+	}
+}
+
+# Official crown
+scripted_trigger artifact_4030_valid_empire_crown = {
+	artifact_slot_type = helmet
+	AND = {
+		root = { highest_held_title_tier = tier_empire }
+		exists = previous_owner
+		previous_owner = { highest_held_title_tier = tier_empire }
+		exists = previous_owner_level_2
+		previous_owner_level_2 = { highest_held_title_tier = tier_empire }
+		exists = previous_owner_level_3
+		previous_owner_level_3 = { highest_held_title_tier = tier_empire }
+	}
+	NOR = {
+		has_variable = artifact_named_crown_var
+		has_variable = cursed_artifact_var
+		has_variable = blessed_artifact_var
+		has_variable = historical_unique_artifact
+	}
+}
+
+scripted_trigger artifact_4030_valid_people_crown = {
+	artifact_slot_type = helmet
+	AND = {
+		root = {
+			primary_title = { save_temporary_scope_as = crown_title }
+		}
+		exists = previous_owner
+		previous_owner = { has_primary_title = scope:crown_title }
+		exists = previous_owner_level_2
+		previous_owner_level_2 = { has_primary_title = scope:crown_title }
+		exists = previous_owner_level_3
+		previous_owner_level_3 = { has_primary_title = scope:crown_title }
+	}
+	NOR = {
+		has_variable = artifact_named_crown_var
+		has_variable = cursed_artifact_var
+		has_variable = blessed_artifact_var
+		has_variable = historical_unique_artifact
+	}
+}
+
+artifact.4030 = {
+	type = character_event
+	title = artifact.4030.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4030.desc.antiquarian_intro
+			}
+			desc = artifact.4030.desc.servant_intro
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					root = { highest_held_title_tier = tier_empire }
+					exists = scope:this_artifact.previous_owner
+					scope:this_artifact.previous_owner = { highest_held_title_tier = tier_empire }
+					exists = scope:this_artifact.previous_owner_level_2
+					scope:this_artifact.previous_owner_level_2 = { highest_held_title_tier = tier_empire }
+					exists = scope:this_artifact.previous_owner_level_3
+					scope:this_artifact.previous_owner_level_3 = { highest_held_title_tier = tier_empire }
+				}
+				desc = artifact.4030.desc_emperor
+			}
+			desc = artifact.4030.desc_kingdom
+		}
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 30 }
+	left_portrait = {
+		character = scope:antiquarian
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = ROOT
+		animation = happiness
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		any_character_artifact = {
+			OR = {
+				artifact_4030_valid_empire_crown = yes
+				artifact_4030_valid_people_crown = yes
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.5
+		}
+	}
+
+	immediate = {
+		primary_title = {
+			save_scope_as = primary_title_scope
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		else = {
+			random_dummy_gender_servant_effect = yes
+		}
+		random_character_artifact = {
+			limit = {
+				OR = {
+					artifact_4030_valid_empire_crown = yes
+					artifact_4030_valid_people_crown = yes
+				}
+			}
+			save_scope_as = this_artifact
+		}
+		scope:this_artifact = {
+			set_variable = artifact_named_crown_var
+			if = {
+				limit = {
+					artifact_4030_valid_empire_crown = yes
+				}
+				set_artifact_name = artifact_emperors_crown_name
+				set_artifact_description = artifact_emperors_crown_desc
+				add_artifact_modifier = artifact_emperors_crown_artifact_modifier
+			}
+			else = {	#3 generations of owners have the same main title
+				set_artifact_name = artifact_crown_special_name
+				set_artifact_description = artifact_crown_special_desc
+				add_artifact_modifier = artifact_crown_artifact_modifier
+			}
+		}
+	}
+
+	option = {
+		name = artifact.4010.a
+	}
+}
+
+scripted_trigger artifact_4040_relevant_courtier_trigger = {
+	OR = {
+		prowess >= 20
+		has_trait = education_martial_3
+		has_trait = education_martial_4
+		has_trait = education_martial_5
+		has_trait = lifestyle_blademaster
+		has_trait = berserker
+		has_trait = varangian
+		has_trait = desert_warrior
+		has_trait = winter_soldier
+		has_trait = jungle_stalker
+		has_trait = rough_terrain_expert
+		has_trait = forest_fighter
+		has_trait = open_terrain_expert
+		has_trait = reaver
+	}
+}
+
+# Helpful courtier improves artifact
+artifact.4040 = {
+	type = character_event
+	title = artifact.4040.t
+	desc = artifact.4040.desc
+	theme = stewardship_wealth_focus
+	cooldown = { years = 30 }
+	left_portrait = {
+		character = scope:helpful
+		animation = personality_honorable
+	}
+	right_portrait = {
+		character = ROOT
+		animation = happiness
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		any_character_artifact = {
+			OR = {
+				artifact_slot_type = armor
+				artifact_slot_type = primary_armament
+			}
+			NOR = {
+				has_variable = cursed_artifact_var
+				has_variable = artifact_improved_var
+			}
+		}
+		OR = {
+			any_courtier_or_guest = {
+				artifact_4040_relevant_courtier_trigger = yes
+			}
+			any_knight = {
+				artifact_4040_relevant_courtier_trigger = yes
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		random_character_artifact = {
+			limit = {
+				OR = {
+					artifact_slot_type = armor
+					artifact_slot_type = primary_armament
+				}
+				NOR = {
+					has_variable = cursed_artifact_var
+					has_variable = artifact_improved_var
+				}
+			}
+			save_scope_as = this_artifact
+		}
+		if = {
+			limit = {
+				any_courtier_or_guest = {
+					artifact_4040_relevant_courtier_trigger = yes
+				}
+			}
+			random_courtier_or_guest = {
+				limit = {
+					artifact_4040_relevant_courtier_trigger = yes
+				}
+				save_scope_as = helpful
+			}
+		}
+		else = {
+			random_knight = {
+				limit = {
+					artifact_4040_relevant_courtier_trigger = yes
+				}
+				save_scope_as = helpful
+			}
+		}
+	}
+
+	#Option A: accept
+	option = {
+		name = artifact.4040.a
+		scope:this_artifact = {
+			set_variable = {
+				name = artifact_improved_var
+				years = 100
+			}
+		}
+		if = {
+			limit = {
+				scope:helpful = {
+					can_add_hook = {
+						target = root
+						type = favor_hook
+					}
+				}
+			}
+			scope:helpful = {
+				add_hook = {
+					target = root
+					type = favor_hook
+				}
+			}
+		}
+		else = {
+			pay_short_term_gold = {
+				target = scope:helpful
+				gold = minor_gold_value
+			}
+		}
+		custom_tooltip = artifact.4040.a.tt
+		hidden_effect = {
+			if = {
+				limit = {
+					scope:helpful = {
+						has_trait = reaver
+					}
+					scope:this_artifact = {
+						NOR = {
+							has_artifact_modifier = artifact_raid_speed_2_modifier
+							has_artifact_modifier = artifact_raid_speed_3_modifier
+							has_artifact_modifier = artifact_raid_speed_4_modifier
+						}
+					}
+				}
+				scope:this_artifact = {
+					add_artifact_modifier = artifact_raid_speed_2_modifier
+				}
+			}
+			else_if = {
+				limit = {
+					scope:helpful = {
+						has_trait = open_terrain_expert
+					}
+					scope:this_artifact = {
+						NOT = {
+							has_artifact_modifier = artifact_heavy_cavalry_toughness_2_modifier
+						}
+					}
+				}
+				scope:this_artifact = {
+					add_artifact_modifier = artifact_heavy_cavalry_toughness_2_modifier
+				}
+			}
+			else_if = {
+				limit = {
+					scope:helpful = {
+						OR = {
+							has_trait = forest_fighter
+							has_trait = jungle_stalker
+							has_trait = desert_warrior
+							has_trait = winter_soldier
+							has_trait = berserker
+						}
+					}
+					scope:this_artifact = {
+						NOR = {
+							has_artifact_modifier = artifact_heavy_infantry_toughness_2_modifier
+							has_artifact_modifier = artifact_heavy_infantry_toughness_3_modifier
+						}
+					}
+				}
+				scope:this_artifact = {
+					add_artifact_modifier = artifact_heavy_infantry_toughness_2_modifier
+				}
+			}
+			else_if = {
+				limit = {
+					scope:helpful = {
+						has_trait = rough_terrain_expert
+						has_trait = lifestyle_blademaster
+					}
+					scope:this_artifact = {
+						NOR = {
+							has_artifact_modifier = artifact_knight_effectiveness_2_modifier
+							has_artifact_modifier = artifact_knight_effectiveness_3_modifier
+							has_artifact_modifier = artifact_knight_effectiveness_4_modifier
+						}
+					}
+				}
+				scope:this_artifact = {
+					add_artifact_modifier = artifact_knight_effectiveness_2_modifier
+				}
+			}
+			else_if = {
+				limit = {
+					scope:this_artifact = {
+						NOR = {
+							has_artifact_modifier = artifact_prowess_4_modifier
+							has_artifact_modifier = artifact_prowess_5_modifier
+							has_artifact_modifier = artifact_prowess_6_modifier
+						}
+					}
+				}
+				scope:this_artifact = {
+					add_artifact_modifier = artifact_prowess_4_modifier
+				}
+			}
+			else = {
+				scope:this_artifact = {
+					add_artifact_modifier = artifact_heavy_infantry_toughness_3_modifier
+				}
+			}
+		}
+		ai_chance = {
+			base = 150
+		}
+	}
+
+	#Option B: refuse
+	option = {
+		name = artifact.4040.b
+		ai_chance = {
+			base = 50
+			modifier = {
+				has_trait = arrogant
+				add = 50
+			}
+		}
+	}
+}
+
+# Stress damage
+artifact.4050 = {
+	type = character_event
+	title = artifact.4050.t
+	desc = artifact.4050.desc
+	theme = stewardship_wealth_focus
+	cooldown = { years = 20 }
+	left_portrait = {
+		character = root
+		animation = rage
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		OR = {
+			AND = {
+				has_trait = irritable
+				stress_level >= 1
+			}
+			AND = {
+				has_trait = wrathful
+				stress_level >= 2
+			}
+			AND = {
+				NOT = { has_trait = calm }
+				stress_level >= 3
+			}
+		}
+		any_character_artifact = {
+			OR = {
+				artifact_slot_type = primary_armament
+				artifact_slot_type = helmet
+				artifact_slot_type = regalia
+				artifact_slot_type = book
+				artifact_slot_type = pedestal
+				artifact_slot_type = miscellaneous
+			}
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.5
+		}
+	}
+
+	immediate = {
+		random_character_artifact = {
+			limit = {
+				OR = {
+					artifact_slot_type = primary_armament
+					artifact_slot_type = helmet
+					artifact_slot_type = regalia
+					artifact_slot_type = book
+					artifact_slot_type = pedestal
+					artifact_slot_type = miscellaneous
+				}
+			}
+			save_scope_as = this_artifact
+		}
+		scope:this_artifact = {
+			# Remove 50% of remaining durability
+			add_durability = {
+				value = artifact_durability
+				multiply = -0.50
+			}
+		}
+	}
+
+	option = {
+		name = artifact.4050.a
+		stress_impact = {
+			base = medium_stress_impact_loss
+			wrathful = major_stress_impact_loss
+			irritable = massive_stress_impact_loss
+		}
+	}
+}
+
+#Blessed artifact
+
+scripted_trigger artifact_4060_valid_artifact_trigger = {
+	OR = {
+		artifact_slot_type = primary_armament
+		artifact_slot_type = helmet
+		artifact_slot_type = regalia
+		artifact_slot_type = sculpture
+		artifact_slot_type = armor
+		artifact_slot_type = throne
+	}
+	NOR = {
+		has_variable = cursed_artifact_var
+		has_variable = artifact_named_crown_var
+		has_variable = artifact_killer_var
+		has_variable = artifact_armor_var
+		has_variable = blessed_artifact_var
+	}
+}
+
+artifact.4060 = {
+	type = character_event
+	title = artifact.4060.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4001.desc.antiquarian_intro
+			}
+			desc = artifact.4001.desc.servant_intro
+		}
+		desc = artifact.4060.desc
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 30 }
+	left_portrait = {
+		character = scope:holy_man
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = scope:antiquarian
+		animation = happiness
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		any_character_artifact = {
+			artifact_4060_valid_artifact_trigger = yes
+		}
+		piety_level >= 3
+		NOT = {
+			has_trait = arbitrary
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		random_character_artifact = {
+			limit = {
+				artifact_4060_valid_artifact_trigger = yes
+			}
+			save_scope_as = this_artifact
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		else = {
+			random_dummy_gender_servant_effect = yes
+		}
+		create_character = {
+			location = root.capital_province
+			culture = root.culture
+			template = local_saint_template
+			save_scope_as = holy_man
+		}
+	}
+
+	#Option A: accept the blessing
+	option = {
+		name = artifact.4060.a
+		scope:this_artifact = {
+			set_variable = blessed_artifact_var
+			add_artifact_modifier = blessed_artifact_modifier
+			set_artifact_name = artifact_4060_blessed_artifact_name
+			set_artifact_description = artifact_4060_blessed_artifact_desc
+		}
+		remove_short_term_gold = medium_gold_value
+		stress_impact = {
+			cynical = major_stress_impact_gain
+			greedy = major_stress_impact_gain
+			zealous = major_stress_impact_loss
+		}
+	}
+
+	#Option B: refuse
+	option = {
+		name = artifact.4060.b
+		stress_impact = {
+			cynical = major_stress_impact_loss
+			zealous = major_stress_impact_gain
+		}
+	}
+}
+
+# Desecrated relic
+
+scripted_trigger artifact_4070_valid_relic_trigger = {
+	has_variable = relic
+	#trigger_if = {
+	#	limit = {
+	#		var:relic = flag:christian
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_christianity_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:islamic
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_islam_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:buddhism
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_buddhism_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:zoroastr
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_zoroastrianism_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:jainism
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_jainism_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:germanic
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_germanic_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:slavic
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_slavic_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:boog
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_west_african_roog_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:hinduism
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_hinduism_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else_if = {
+	#	limit = {
+	#		var:relic = flag:finno_ugric_religion
+	#	}
+	#	exists = previous_owner
+	#	previous_owner = {
+	#		NOT = { like_finno_ugric_religion_trigger = yes }
+	#	}
+	#}
+	#trigger_else = {
+	#	always = no #Can't be a desecrated relic with no associated religion
+	#}
+	# Warcraft
+	always = no
+}
+
+artifact.4070 = {
+	type = character_event
+	title = artifact.4070.t
+	desc = artifact.4070.desc
+	theme = stewardship_wealth_focus
+	cooldown = { years = 15 }
+	left_portrait = {
+		character = scope:chaplain
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = root
+		animation = worry
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		exists = cp:councillor_court_chaplain
+		cp:councillor_court_chaplain = { is_available_ai_adult = yes }
+		any_character_artifact = {
+			artifact_4070_valid_relic_trigger = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			is_at_war = yes
+			factor = 0.3
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = cp:councillor_court_chaplain
+				cp:councillor_court_chaplain = { is_available_ai_adult = yes }
+			}
+			cp:councillor_court_chaplain = {
+				save_scope_as = chaplain
+			}
+		}
+		random_character_artifact = {
+			limit = {
+				artifact_4070_valid_relic_trigger = yes
+			}
+			save_scope_as = this_artifact
+		}
+		scope:this_artifact = {
+			add_artifact_modifier = desecrated_artifact_modifier
+			set_variable = desecrated_artifact_var
+		}
+	}
+
+	#Option A: religious cerimony
+	option = {
+		name = artifact.4070.a
+		remove_short_term_gold = major_gold_value
+		scope:this_artifact = {
+			remove_artifact_modifier = desecrated_artifact_modifier
+			remove_variable = desecrated_artifact_var
+		}
+		add_piety = medium_piety_gain
+		ai_chance = {
+			base = 105
+			ai_value_modifier = {
+				ai_zeal = 1
+			}
+			modifier = {
+				gold < major_gold_value
+				factor = 0
+			}
+		}
+	}
+
+	#Option B: just superstition
+	option = {
+		name = artifact.4070.b
+		add_piety = medium_piety_loss
+		ai_chance = {
+			base = 150
+			ai_value_modifier = {
+				ai_zeal = -1
+			}
+		}
+	}
+}
+
+# Many duels won
+
+scripted_trigger artifact_4080_valid_weapon_trigger = {
+	artifact_slot_type = primary_armament
+	has_variable = artifact_duel_var
+	OR = {
+		AND = {
+			NOT = { has_variable = artifact_duel_weapon_var }
+			var:artifact_duel_var >= 5
+		}
+		AND = {
+			has_variable = artifact_duel_weapon_var
+			var:artifact_duel_weapon_var = 5
+			var:artifact_duel_var >= 10
+		}
+		AND = {
+			has_variable = artifact_duel_weapon_var
+			var:artifact_duel_weapon_var = 10
+			var:artifact_duel_var >= 20
+		}
+		AND = {
+			has_variable = artifact_duel_weapon_var
+			var:artifact_duel_weapon_var = 20
+			var:artifact_duel_var >= 30
+		}
+	}
+	NOR = {
+		has_variable = cursed_artifact_var
+		has_variable = blessed_artifact_var
+		has_variable = historical_unique_artifact
+		has_variable = artifact_killer_var
+	}
+}
+
+artifact.4080 = {
+	type = character_event
+	title = artifact.4080.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4010.desc.antiquarian_intro
+			}
+			desc = artifact.4010.desc.servant_intro
+		}
+		desc = artifact.4080.desc
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 10 }
+	left_portrait = {
+		character = scope:antiquarian
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = ROOT
+		animation = happiness
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:this_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		any_character_artifact = {
+			artifact_4080_valid_weapon_trigger = yes
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			any_character_artifact = {
+				artifact_4080_valid_weapon_trigger = yes
+				has_variable = artifact_duel_var
+				var:artifact_duel_var > 10
+			}
+			add = 1
+		}
+		modifier = {
+			any_character_artifact = {
+				artifact_4080_valid_weapon_trigger = yes
+				has_variable = artifact_duel_var
+				var:artifact_duel_var > 20
+			}
+			add = 2
+		}
+		modifier = {
+			any_character_artifact = {
+				artifact_4080_valid_weapon_trigger = yes
+				has_variable = artifact_duel_var
+				var:artifact_duel_var > 30
+			}
+			add = 5
+		}
+		modifier = {
+			is_at_war = yes
+			factor = 0.5
+		}
+	}
+
+	immediate = {
+		random_character_artifact = {
+			limit = {
+				artifact_4080_valid_weapon_trigger = yes
+			}
+			save_scope_as = this_artifact
+		}
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+					is_available_ai_adult = yes
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				limit = { is_available_ai_adult = yes }
+				save_scope_as = antiquarian
+			}
+		}
+		scope:this_artifact = {
+			if = {
+				limit = {
+					NOT = { has_variable = artifact_duel_weapon_var }
+				}
+				set_variable = {
+					name = artifact_duel_weapon_var
+					value = 5
+				}
+				set_artifact_name = artifact_duel_weapon_1_name
+				set_artifact_description = artifact_duel_weapon_1_desc
+				add_artifact_modifier = artifact_duel_weapon_1_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_duel_weapon_var
+					var:artifact_duel_weapon_var = 5
+				}
+				change_variable = {
+					name = artifact_duel_weapon_var
+					add = 5
+				}
+				set_artifact_name = artifact_duel_weapon_2_name
+				set_artifact_description = artifact_duel_weapon_2_desc
+				add_artifact_modifier = artifact_duel_weapon_2_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_duel_weapon_var
+					var:artifact_duel_weapon_var = 10
+				}
+				change_variable = {
+					name = artifact_duel_weapon_var
+					add = 10
+				}
+				set_artifact_name = artifact_duel_weapon_3_name
+				set_artifact_description = artifact_duel_weapon_3_desc
+				add_artifact_modifier = artifact_duel_weapon_3_modifier
+			}
+			else_if = {
+				limit = {
+					has_variable = artifact_duel_weapon_var
+					var:artifact_duel_weapon_var = 20
+				}
+				change_variable = {
+					name = artifact_duel_weapon_var
+					add = 10
+				}
+				set_artifact_name = artifact_duel_weapon_4_name
+				set_artifact_description = artifact_duel_weapon_4_desc
+				add_artifact_modifier = artifact_duel_weapon_4_modifier
+			}
+		}
+	}
+
+	option = {
+		name = artifact.4010.a
+	}
+}
+
+artifact.4090 = { #Embed a relic in pommel by Daniel Moore
+	type = character_event
+	title = artifact.4090.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:antiquarian }
+				desc = artifact.4090.desc.antiquarian
+			}
+			desc = artifact.4090.desc
+		}
+	}
+	theme = stewardship_wealth_focus
+	cooldown = { years = 10 }
+	right_portrait = {
+		character = root
+		animation = happiness
+	}
+	left_portrait = {
+		character = scope:antiquarian
+		animation = personality_zealous
+	}
+	artifact = {
+		target = scope:this_artifact
+		position = lower_left_portrait
+	}
+
+	artifact = {
+		target = scope:that_artifact
+		position = lower_right_portrait
+	}
+
+
+	trigger = {
+		any_character_artifact = {
+			artifact_slot_type = primary_armament
+			NOT = {
+				has_variable = added_relic
+			}
+		}
+
+		any_character_artifact = {
+			exists = var:relic
+		}
+
+		employs_court_position = antiquarian_court_position
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				employs_court_position = antiquarian_court_position
+				any_court_position_holder = {
+					type = antiquarian_court_position
+				}
+			}
+			random_court_position_holder = {
+				type = antiquarian_court_position
+				save_scope_as = antiquarian
+			}
+		}
+
+		random_character_artifact = {
+			limit = {
+				artifact_slot_type = primary_armament
+				NOT = {
+					has_variable = added_relic
+				}
+			}
+			save_scope_as = this_artifact
+		}
+
+		random_character_artifact = {
+			limit = {
+				exists = var:relic
+			}
+			save_scope_as = that_artifact
+		}
+	}
+
+	option = {
+		name = artifact.4090.a
+		scope:this_artifact = {
+			set_artifact_name = relic_weapon_name
+			set_artifact_description = artifact_weapon_relic_desc
+			set_variable = added_relic
+			hidden_effect = {
+				copy_artifact_modifiers = scope:that_artifact
+				set_artifact_rarity = illustrious
+			}
+		}
+
+		send_interface_toast = {
+			title = artifact.4090.a.tt
+			left_icon = root
+			right_icon = scope:this_artifact
+			custom_tooltip = embedded_not_destroyed_tooltip
+		}
+
+		scope:that_artifact = {
+			hidden_effect = {
+				destroy_artifact = this
+			}
+		}
+
+		stress_impact = {
+			zealous = minor_stress_gain
+			lazy  = minor_stress_gain
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_zeal = -1
+			}
+		}
+	}
+
+
+	option = {
+		name = artifact.4090.b
+		add_piety = 100
+		stress_impact = {
+			zealous = minor_stress_loss
+			lazy  = minor_stress_loss
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_zeal = 1
+			}
+		}
+	}
+
+}
+
+# Your soldier found a banner after winning a battle!
+artifact.6000 = {
+	scope = combat_side
+	hidden = yes
+
+	trigger = {
+		side_primary_participant = {
+			has_royal_court = yes
+		}
+		enemy_side.side_primary_participant = {
+			is_landed = yes # We don't want to collect banners from peasant revolts...
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			side_primary_participant = {
+				has_royal_court = yes
+				has_court_type = court_warlike
+			}
+			add = 1
+		}
+		modifier = {
+			side_primary_participant = {
+				exists = side_primary_participant.dynasty
+				dynasty = { has_dynasty_perk = fp1_pillage_legacy_4 }
+			}
+			add = 1
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				exists = enemy_side.side_commander
+			}
+			enemy_side.side_commander = {
+				save_scope_as = enemy_commander
+			}
+		}
+		if = {
+			limit = {
+				exists = side_commander
+			}
+			side_commander = {
+				save_scope_as = friendly_commander
+			}
+		}
+		enemy_side.side_primary_participant = {
+			save_scope_as = enemy_battle_owner
+		}
+		combat.location = {
+			save_scope_as = combat_location
+		}
+
+		side_primary_participant = {
+			trigger_event = { id = artifact.6001 }
+		}
+	}
+}
+
+artifact.6001 = {
+	type = character_event
+	title = artifact.6001.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:friendly_commander = { this = root }
+				}
+				desc = artifact.6001.desc.commander
+			}
+			desc = artifact.6001.desc
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { has_character_flag = found_banner_looting }
+				desc = artifact.6001.desc.looting
+			}
+			desc = artifact.6001.desc.killed_defender
+		}
+	}
+	theme = battle
+	left_portrait = {
+		character = scope:friendly_commander
+		animation = celebrate_sword
+	}
+	artifact = { # To display the artifact in the event-window
+		target = scope:newly_created_artifact
+		position = lower_center_portrait
+	}
+
+	trigger = {
+		# based on where the scope is set, they might not exist when the event is fired
+		exists = scope:enemy_commander
+		exists = scope:friendly_commander
+	}
+
+	immediate = {
+		hidden_effect = {
+			set_variable = {
+				name = epic_battle_location
+				value = scope:combat_location
+			}
+			random_list = { # Pick a random desc
+				10 = { # Soldier found it while looting
+					add_character_flag = found_banner_looting
+				}
+				10 = { # Taken from a valiant last stand
+					add_character_flag = found_banner_killing_defenders
+				}
+			}
+			random_list = { # Pick a CoA for the banner...
+				10 = { # ... From the enemy commander
+					trigger = {
+						scope:enemy_commander = {
+							is_ruler = yes
+						}
+					}
+					set_variable = {
+						name = epic_loser
+						value = scope:enemy_commander
+					}
+					create_artifact_wall_banner_effect = {
+						OWNER = root
+						CREATOR = scope:enemy_commander
+						TARGET = scope:enemy_commander.primary_title
+					}
+				}
+				30 = { # ... From the opposing leader (army owner)
+					set_variable = {
+						name = epic_loser
+						value = scope:enemy_battle_owner
+					}
+					create_artifact_wall_banner_effect = {
+						OWNER = root
+						CREATOR = scope:enemy_commander
+						TARGET = scope:enemy_battle_owner.primary_title
+					}
+				}
+			}
+		}
+	}
+
+	option = { # Add it to the collection!
+		name = artifact.6001.a
+		scope:enemy_battle_owner = {
+			send_interface_toast = {
+				title = artifact.6001.toast
+				left_icon = root
+				right_icon = scope:newly_created_artifact
+				show_as_tooltip = {
+					scope:newly_created_artifact = {
+						set_owner = { target = root }
+					}
+				}
+				add_personal_artifact_claim = scope:newly_created_artifact
+				add_prestige = minor_prestige_loss
+			}
+		}
+	}
+
+	option = { # We don't need this useless trinket!
+		name = artifact.6001.b
+
+		add_prestige = minor_prestige_gain
+		destroy_artifact = scope:newly_created_artifact
+	}
+
+	after = {
+		remove_character_flag = found_banner_looting
+		remove_character_flag = found_banner_killing_defenders
+		remove_variable = epic_battle_location
+		remove_variable = epic_loser
+	}
+}
+
+artifact.7000 = {
+	type = character_event
+	title = artifact.7000.t
+	desc = artifact.7000.desc
+	theme = prison
+	left_portrait = {
+		character = root
+		animation = personality_vengeful
+	}
+	right_portrait = {
+		character = scope:skull_boiler
+		triggered_animation = {
+			trigger = {
+				scope:skull_boiler = {
+					NOT = {
+						has_court_position = executioner_court_position
+					}
+				}
+			}
+			animation = disbelief
+		}
+		triggered_animation = {
+			trigger = {
+				scope:skull_boiler = {
+					has_court_position = executioner_court_position
+				}
+			}
+			animation = personality_vengeful
+		}
+	}
+	lower_left_portrait = scope:skull_to_boil
+
+	cooldown = { years = 10 }
+
+	trigger = {
+		any_courtier = {
+			is_available_ai_adult = yes
+		}
+	}
+
+	immediate = {
+		random_courtier = {
+			limit = {
+				is_available_ai_adult = yes
+				has_court_position = executioner_court_position
+			}
+			alternative_limit = {
+				is_available_ai_adult = yes
+				OR = {
+					has_court_position = antiquarian_court_position
+					has_court_position = court_physician_court_position
+				}
+			}
+			alternative_limit = {
+				is_available_ai_adult = yes
+			}
+			save_scope_as = skull_boiler
+		}
+	}
+
+	option = {
+		name = artifact.7000.a
+
+		custom_tooltip = artifact.7000.a.boil_skull
+
+		scope:skull_boiler = {
+			if = {
+				limit = {
+					has_court_position = executioner_court_position
+				}
+			}
+			else_if = {
+				limit = {
+					OR = {
+						has_court_position = antiquarian_court_position
+						has_court_position = court_physician_court_position
+					}
+				}
+				add_opinion = {
+					target = root
+					modifier = disgusted_opinion
+					opinion = -30
+				}
+			}
+			else = {
+				add_opinion = {
+					target = root
+					modifier = absolutely_horrified_opinion
+				}
+			}
+		}
+
+		hidden_effect_new_object = {
+			create_artifact_pedestal_human_skull_effect = {
+				OWNER = root
+				CREATOR = scope:skull_boiler
+				DESKULLED = scope:skull_to_boil
+			}
+			scope:newly_created_artifact = {
+				set_artifact_description = artifact_rival_skull
+			}
+		}
+	}
+
+	option = {
+		name = artifact.7000.b
+
+	}
+}

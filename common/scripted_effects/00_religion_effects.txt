@@ -38,7 +38,7 @@ create_head_of_faith_title_effect = {
 		}
 		add_piety = major_piety_loss
 	}
-	else_if = {
+	else = {
 		remove_short_term_gold = medium_gold_max_value
 	}
 
@@ -92,7 +92,10 @@ create_head_of_faith_title_effect = {
 		save_scope_as = reformer
 		faith = {
 			save_scope_as = faith
-			change_fervor = major_fervor_gain
+			change_fervor = {
+				value = major_fervor_gain
+				desc = fervor_gain_recreated_hof
+			}
 		}
 		every_ruler = {
 			if = {
@@ -114,6 +117,136 @@ create_head_of_faith_title_effect = {
 	}
 }
 
+# Dynamic HoF title creation
+set_up_dynamic_temporal_hof_title_effect = {
+	faith = { save_scope_as = my_faith }
+	create_dynamic_title = {
+		tier = duchy
+		name = REL_HEAD_TITLE_NAME
+	}
+	create_title_and_vassal_change = {
+		type = created
+		save_scope_as = change
+		add_claim_on_loss = no
+	}
+	scope:new_title = {
+		set_destroy_if_invalid_heir = yes
+		set_no_automatic_claims = yes
+		set_definitive_form = yes
+		set_always_follows_primary_heir = yes
+		change_title_holder = {
+			holder = $NEW_HOLDER$
+			change = scope:change
+		}
+	}
+	resolve_title_and_vassal_change = scope:change
+	faith = { set_religious_head_title = scope:new_title }
+	if = {
+		limit = {
+			NOT = { has_realm_law = same_faith_succession_law }
+		}
+		add_realm_law_skip_effects = same_faith_succession_law
+	}
+	scope:new_title = { 
+		generate_coa = religious_title
+		add_title_law = temporal_head_of_faith_succession_law
+	}
+}
+
+set_up_dynamic_spiritual_hof_title_effect = {
+	# Sort scopes & starting processes.
+	faith = { save_scope_as = my_faith }
+	create_dynamic_title = {
+		tier = duchy
+		name = REL_HEAD_TITLE_NAME
+	}
+	create_title_and_vassal_change = {
+		type = created
+		save_scope_as = change
+		add_claim_on_loss = no
+	}
+	# Nab a suitable character.
+	if = {
+		limit = {
+			any_theocratic_vassal = { faith = $CREATOR$.faith }
+		}
+		ordered_theocratic_vassal = {
+			limit = { faith = $CREATOR$.faith }
+			order_by = head_of_faith_selection_weight
+			save_scope_as = new_religious_head
+		}
+	}
+	else = {	
+		create_character = {
+			location = $CREATOR$.capital_province
+			age = { 30 50 }
+			gender_female_chance = root_faith_clergy_gender_female_chance
+			trait = education_learning_4
+			faith = $CREATOR$.faith
+			culture = $CREATOR$.culture
+			learning = { 14 22 }
+			save_scope_as = new_religious_head
+		}
+		# Warcraft
+		scope:new_religious_head = {
+			trigger_race_giving_no_gene_effect = yes			#Assigns race trait
+		}
+	}
+	# Try to land the new title.
+	scope:my_faith = {
+		random_holy_site = {
+			# Prefer a capital that's under $CREATOR$.
+			limit = { county.holder = $CREATOR$ }
+			# Even if it's indirectly under $CREATOR$.
+			alternative_limit = {
+				county.holder = { target_is_liege_or_above = $CREATOR$ }
+			}
+			# Then go for any that's held by someone of the faith.
+			alternative_limit = { county.holder.faith = $CREATOR$.faith }
+			# Under *extreme* circumstances, pick any holy site with at least some faithful.
+			alternative_limit = { county.faith = $CREATOR$.faith }
+			# Ok, just pick any of them. We're out of options and we need _somewhere_.
+			alternative_limit = { always = yes }
+			save_scope_as = holy_site
+		}
+	}
+	if = {
+		limit = { exists = scope:holy_site }
+		scope:new_title = { set_capital_county = scope:holy_site.county }
+	}
+	# Configure final effects.
+	hidden_effect = {
+		scope:new_title = {
+			set_landless_title = yes
+			set_destroy_if_invalid_heir = yes
+			set_no_automatic_claims = yes
+			set_definitive_form = yes
+			set_always_follows_primary_heir = yes
+			change_title_holder = {
+				holder = scope:new_religious_head
+				change = scope:change
+			}
+		}
+	}
+	resolve_title_and_vassal_change = scope:change
+	faith = { set_religious_head_title = scope:new_title }
+	scope:new_title = { generate_coa = religious_title }
+	# We enclose the law safeguard in an if statement to prevent errors when this is only _about_ to be fired.
+	hidden_effect = {
+		if = {
+			limit = { exists = scope:new_religious_head }
+			scope:new_religious_head = {
+				if = {
+					limit = {
+						NOT = { has_realm_law = same_faith_theocratic_succession_law }
+					}
+					add_realm_law_skip_effects = same_faith_theocratic_succession_law
+				}
+			}
+		}
+	}
+}
+
 # Excommunication management.
 add_excommunication_tooltip_only_effect = {
 	show_as_tooltip = {
@@ -129,5 +262,134 @@ add_excommunication_actual_effect = {
 	add_character_modifier = { # Minor negative modifier that stops us from immediately getting our excommunication recinded (so you have a guaranteed 'penance period').
 		modifier = recent_excommunication
 		days = 365
+	}
+}
+
+add_excommunication_actual_effect_5_years_version = {
+	add_trait = excommunicated
+	add_character_modifier = { # Minor negative modifier that stops us from immediately getting our excommunication recinded (so you have a guaranteed 'penance period').
+		modifier = recent_excommunication
+		years = 5
+	}
+}
+
+create_holy_order_neutral_effect = {
+	# Create a general holy order.
+	create_holy_order = {
+		leader = $LEADER$
+		capital = $CAPITAL$
+		save_scope_as = $NEW_HO_SCOPE$
+	}
+	# Struggle Catalysts.
+	$FOUNDER$ = {
+		if = {
+			limit = {
+				#any_character_struggle = {
+				#	involvement = involved
+				#	phase_has_catalyst = catalyst_creating_a_holy_order
+				#}
+				always = no
+			}
+			#every_character_struggle = {
+			#	involvement = involved
+			#	limit = { phase_has_catalyst = catalyst_creating_a_holy_order }
+			#	activate_struggle_catalyst = {
+			#		catalyst = catalyst_creating_a_holy_order
+			#		character = $FOUNDER$
+			#	}
+			#}
+		}
+	}
+}
+
+
+# Get random faith
+get_random_faith_effect = {
+	if = {
+		limit = { $FORBIDROOTFAITH$ = yes }
+		random_religion_global = {
+			limit = { any_faith = { NOT = { this = root.faith } } }
+			random_faith = {
+				limit = { NOT = { this = root.faith } }
+				save_scope_as = random_faith
+			}
+		}
+	}
+	else = {
+		random_religion_global = {
+			random_faith = { save_scope_as = random_faith }
+		}
+	}
+}
+
+set_up_dynamic_spiritual_hof_title_existing_hof_effect = {
+
+	$RELIGIOUS_HEAD$ = { save_scope_as = new_religious_head }
+
+	# Sort scopes & starting processes.
+	faith = { save_scope_as = my_faith }
+	create_dynamic_title = {
+		tier = duchy
+		name = REL_HEAD_TITLE_NAME
+	}
+	create_title_and_vassal_change = {
+		type = created
+		save_scope_as = change
+		add_claim_on_loss = no
+	}
+
+	# Nab a suitable character.
+	# The decision already chose one.
+
+	# Try to land the new title.
+	scope:my_faith = {
+		random_holy_site = {
+			limit = { county.holder = $CREATOR$ }
+			alternative_limit = {
+				county.holder = { target_is_liege_or_above = $CREATOR$ }
+			}
+			alternative_limit = {
+				county.holder = {
+					faith = $CREATOR$.faith
+					is_ai = yes
+				}
+			}
+			save_scope_as = holy_site
+		}
+	}
+	if = {
+		limit = { exists = scope:holy_site }
+		scope:new_title = { set_capital_county = scope:holy_site.county }
+	}
+	# Configure final effects.
+	hidden_effect = {
+		scope:new_title = {
+			set_landless_title = yes
+			set_destroy_if_invalid_heir = yes
+			set_no_automatic_claims = yes
+			set_definitive_form = yes
+			set_always_follows_primary_heir = yes
+			change_title_holder = {
+				holder = scope:new_religious_head
+				change = scope:change
+			}
+		}
+	}
+	resolve_title_and_vassal_change = scope:change
+	faith = { set_religious_head_title = scope:new_title }
+	scope:new_title = { generate_coa = religious_title }
+	# We enclose the law safeguard in an if statement to prevent errors when this is only _about_ to be fired.
+	hidden_effect = {
+		if = {
+			limit = { exists = scope:new_religious_head }
+			scope:new_religious_head = {
+				if = {
+					limit = {
+						NOT = { has_realm_law = same_faith_theocratic_succession_law }
+					}
+					add_realm_law_skip_effects = same_faith_theocratic_succession_law
+				}
+			}
+		}
 	}
 }

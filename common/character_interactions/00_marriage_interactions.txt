@@ -1,5 +1,16 @@
 ﻿
+
+###
+#	SPECIAL NOTE
+#
+#	When evaluating whether or not the AI can send this interaction to the
+#	player, the AI will use the ai_accept value and send a proposal to the 
+#	player IF AND ONLY IF the player, as an AI actor, would have positive
+#	ai_accept value. This is a special case for this specific interaction, 
+#	and is being calculated specifically in code.  
+#
 arrange_marriage_interaction = {
+	icon = icon_marriage
 	category = interaction_category_diplomacy
 	common_interaction = yes
 
@@ -13,6 +24,17 @@ arrange_marriage_interaction = {
 					betrothed = scope:secondary_recipient
 				}
 			}
+		}
+	} 
+
+	recipient_recieve_cooldown = {
+		years = marriage_recieve_proposal_cooldown
+	}
+
+	ignore_recipient_recieve_cooldown = {
+		AND = {
+			is_ai = no
+			scope:recipient = { is_ai = no }
 		}
 	}
 
@@ -138,6 +160,7 @@ arrange_marriage_interaction = {
 			# Warcraft
 			if = {
 				limit = { can_be_matchmaker_trigger = yes }
+
 				every_courtier = {
 					limit = {
 						trigger_if = {
@@ -212,6 +235,7 @@ arrange_marriage_interaction = {
 						}
 					}
 				}
+
 			}
 		}
 	}
@@ -219,8 +243,11 @@ arrange_marriage_interaction = {
 	populate_recipient_list = {
 		scope:recipient = {
 			add_to_list = characters
+
+			# Warcraft
 			if = {
 				limit = { can_be_matchmaker_trigger = yes }
+
 				every_courtier = {
 					add_to_list = characters
 				}
@@ -239,6 +266,47 @@ arrange_marriage_interaction = {
 
 	interface_priority = 60
 
+	cost = {
+		prestige = {
+			value = 0
+			if = {
+				limit = {
+					exists = scope:actor
+					exists = scope:recipient
+					exists = scope:secondary_recipient
+					exists = scope:secondary_actor
+					scope:secondary_actor = { is_close_family_of = scope:actor }
+					scope:recipient = {
+						OR = {
+							AND = {
+								vassal_contract_has_flag = vassal_contract_marriage_favor
+								is_allied_to = scope:actor
+							}
+							NOT = { vassal_contract_has_flag = vassal_contract_marriage_favor}
+						}
+					}
+				}
+				add = {
+					scope:actor = {
+						every_vassal = {
+							limit = {
+								vassal_contract_has_flag = vassal_contract_marriage_favor
+								NOT = { is_allied_to = scope:actor }
+								NOR = {
+									this = scope:recipient
+									this = scope:secondary_recipient
+								}
+							}
+							add = medium_prestige_value
+						}
+					}
+					desc = VASSAL_WITH_MARRIAGE_FAVOR
+				}
+			}
+
+		}
+	}
+
 	# actor, recipient ... characters arranging the marriage
 	# secondary_actor, secondary_recipient ... characters that should marry
 
@@ -246,12 +314,14 @@ arrange_marriage_interaction = {
 		scope:actor = {
 			OR = {
 				is_landed = yes #Can arrange marriages for others
-				AND = {
-					#You're just a courtier? Only use the interaction on characters you can marry
-					sex_opposite_of = scope:recipient
-					can_marry_character_trigger = { CHARACTER = scope:recipient }
-				}
+				#You're just a courtier? Only use the interaction on characters you can marry
+				can_marry_character_trigger = { CHARACTER = scope:recipient }
 			}
+		}
+		# Block further marriage proposals for people who have a pending grand wedding
+		NOR = {
+			scope:secondary_actor ?= { has_been_promised_grand_wedding = yes }
+			scope:secondary_recipient ?= { has_been_promised_grand_wedding = yes }
 		}
 		#If you're interacting with someone who isn't their own matchmaker, only show the interaction if they can get married. (If someone isn't their own matchmaker, they will be set as secondary_recipient by code and their matchmaker becomes recipient)
 		trigger_if = {
@@ -270,7 +340,7 @@ arrange_marriage_interaction = {
 						}
 					}
 				}
-				#To account for a person marrying their concubines/consorts
+				#To account for a person marrying their concubines
 				trigger_if = {
 					limit = {
 						is_concubine = yes
@@ -317,7 +387,7 @@ arrange_marriage_interaction = {
 						AND = {
 							#Recipient can marry
 							can_marry_trigger = yes
-							#To account for a person marrying their concubines/consorts
+							#To account for a person marrying their concubines
 							trigger_if = {
 								limit = {
 									is_concubine = yes
@@ -335,7 +405,7 @@ arrange_marriage_interaction = {
 										#Any of recipient's children can marry
 										AND = {
 											can_marry_trigger = yes
-											#To account for a person marrying their concubines/consorts
+											#To account for a person marrying their concubines
 											trigger_if = {
 												limit = {
 													is_concubine = yes
@@ -355,7 +425,7 @@ arrange_marriage_interaction = {
 										#Any of recipient's courtiers can marry
 										AND = {
 											can_marry_trigger = yes
-											#To account for a person marrying their concubines/consorts
+											#To account for a person marrying their concubines
 											trigger_if = {
 												limit = {
 													is_concubine = yes
@@ -378,7 +448,7 @@ arrange_marriage_interaction = {
 		}
 		#Diplomatic availability & prison
 		scope:recipient = {
-			is_diplomatically_available = yes
+			is_busy_in_events_localised = yes
 			is_imprisoned = no
 		}
 		NOT = {
@@ -392,8 +462,9 @@ arrange_marriage_interaction = {
 				NOT = { scope:secondary_recipient = scope:recipient }
 			}
 			scope:secondary_recipient = {
-				is_diplomatically_available = yes
+				is_busy_in_events_localised = yes
 				is_imprisoned = no
+				bp2_valid_for_standard_interactions_trigger = yes
 			}
 		}
 		trigger_if = { #(must be here because secondary_recipient can be set at the start)
@@ -402,10 +473,16 @@ arrange_marriage_interaction = {
 				NOT = { scope:secondary_actor = scope:actor }
 			}
 			scope:secondary_actor = {
-				is_diplomatically_available = yes
+				is_busy_in_events_localised = yes
 				is_imprisoned = no
+				bp2_valid_for_standard_interactions_trigger = yes
 			}
 		}
+		# Account for regents being bolshy.
+		marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = secondary_actor }
+		marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = secondary_recipient }
+		marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = actor }
+		marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = recipient }
 	}
 	
 	# whether a character can be picked for the interaction, interface only (e.g. picking the first character in the marriage interaction)
@@ -457,6 +534,8 @@ arrange_marriage_interaction = {
 				scope:actor = {
 					is_ai = yes
 					NOT = { has_trait = cynical }
+					#AI should honor betrothal even if faiths change
+					NOT = { scope:secondary_actor.betrothed = scope:secondary_recipient }
 				}
 			}
 			scope:recipient.faith = {
@@ -466,12 +545,44 @@ arrange_marriage_interaction = {
 				}
 			}
 		}
+
+		#Blocks AI from marrying single mayors in their area unless they are also mayors
+		trigger_if = {
+			limit = {
+				scope:actor = {
+					is_ai = yes
+					NOT = { government_has_flag = government_is_republic }
+				}
+			}
+			NOT = {
+				scope:recipient = { government_has_flag = government_is_republic }
+			}
+		}
+		
+		trigger_if = { # Cultural Traditions, for AI
+			limit = {
+				scope:actor = {
+					is_ai = yes
+					culture = {
+						has_cultural_parameter = dislikes_marrying_outside_of_culture
+					}
+				}
+			}
+			OR = {
+				scope:actor.culture = scope:recipient.culture
+				scope:actor.culture = scope:secondary_recipient.culture
+			}
+		}
 	}
 
 	pre_auto_accept = {
 		if = {
 			limit = {
-				NOT = { scope:recipient = scope:actor }
+				NOR = {
+					scope:recipient = scope:actor
+					scope:secondary_actor = { has_been_promised_grand_wedding = yes }
+					scope:secondary_recipient = { has_been_promised_grand_wedding = yes }
+				}
 			}
 			scope:recipient = {
 				if = {
@@ -493,8 +604,53 @@ arrange_marriage_interaction = {
 		}
 	}
 
+	on_send = {
+		if = {
+			limit = {
+				scope:grand_wedding_promise = yes
+			}
+			scope:actor = { 
+				set_variable = {
+					name = grand_wedding_promise_pending
+					days = 10
+				}
+				if = {
+					limit = {
+						is_ai = yes
+					}
+					remove_short_term_gold = ai_wedding_promise_gold_actor
+				}
+				#if = { # Activity count debugging, left in for QA purposes
+				#	limit = {
+				#		NOT = {
+				#			exists = global_var:wedding_promise
+				#		}
+				#	}
+				#	set_global_variable = {
+				#		name = wedding_promise
+				#		value = 1
+				#	}
+				#}
+				#else = {
+				#	change_global_variable = {
+				#		name = wedding_promise
+				#		add = 1
+				#	}
+				#}
+			}
+		}
+	}
+
 	on_accept = {
-		marriage_interaction_on_accept_effect = yes		
+		marriage_interaction_on_accept_effect = yes
+		scope:actor = { 
+			if = {
+				limit = {
+					has_variable = grand_wedding_promise_pending
+				}
+				remove_variable = grand_wedding_promise_pending
+			}
+		}	
 	}
 
 	on_decline = {
@@ -503,27 +659,164 @@ arrange_marriage_interaction = {
 				limit = { NOT = { this = scope:recipient } }
 				trigger_event = marriage_interaction.0011	
 			}
+			if = {
+				limit = {
+					has_variable = grand_wedding_promise_pending
+				}
+				remove_variable = grand_wedding_promise_pending
+			}
+		}
+		scope:secondary_actor = {
+			add_character_flag = {
+				flag = player_declined_marriage
+				years = 5
+			}
 		}
 	}
 
-	
 	auto_accept = {
 		marriage_interaction_auto_accept_trigger = yes #Strong hook conditions
 	}
-	
+
 	ai_accept = {
 		base = 0
 
 		marriage_ai_accept_modifier = yes
 		
 		# Warcraft
-		scourge_interaction_modifiers = yes
+		scourge_marriage_modifiers = yes
 	}
 
-	
+	# If you want the AI to set these options then it needs to be hooked into the code as well
+	send_option = {
+		flag = grand_wedding_promise
+		localization = GRAND_WEDDING_PROMISE
+
+		is_shown = {
+			scope:actor = { #Can organize a Grand Wedding
+				highest_held_title_tier > tier_barony
+				is_landed = yes
+				trigger_if = {
+					limit = {
+						is_ai = yes
+					}
+					is_at_war = no
+				}
+				# DLC locked
+				has_dlc_feature = tours_and_tournaments
+				has_dlc_feature = advanced_activities
+			}
+		}
+
+		current_description = {
+			desc = "GRAND_WEDDING_PROMISE_INFO"
+		}
+
+		is_valid = {
+			scope:actor = {
+				gold >= real_wedding_cost_actor_scope
+				is_available = yes
+				custom_tooltip = {
+					text = grand_wedding_already_promised_tt
+					NOR = {
+						has_variable = promised_grand_wedding_marriage_countdown
+						has_variable = grand_wedding_promise_pending
+					}
+				}
+			}
+			trigger_if = {
+				limit = {
+					exists = scope:secondary_actor
+				}
+				custom_tooltip = {
+					text = grand_wedding_only_dominant_side
+					trigger_if = {
+						limit = {
+							scope:secondary_actor ?= {
+								is_female = yes
+							}
+						}
+						OR = {
+							scope:secondary_actor ?= { matrilinear_betrothal = yes }
+							scope:matrilineal = yes
+						}
+					}
+					trigger_else = {
+						NOR = {
+							scope:secondary_actor ?= { matrilinear_betrothal = yes }
+							scope:matrilineal = yes
+						}
+					}
+				}
+				custom_tooltip = {
+					text = grand_wedding_only_family
+					scope:secondary_actor ?= {
+						is_close_or_extended_family_of = scope:actor
+					}
+				}
+				# Cannot promise grand weddings with regents due to regency and travel limitations
+				custom_tooltip = {
+					text = grand_wedding_secondary_regent
+					NOT = {
+						scope:secondary_actor.liege = {
+							diarch = scope:secondary_actor
+							has_active_diarchy = yes
+						}
+					}
+				}
+			}
+			# Safety check because players shouldn't be spouse_2
+			trigger_if = {
+				limit = {
+					has_multiple_players = yes
+				}
+				custom_tooltip = {
+					text = grand_wedding_mp_ai
+					trigger_if = {
+						limit = {
+							OR = {
+								scope:actor = { is_ai = no }
+								scope:secondary_actor ?= { is_ai = no }
+							}
+						}
+						scope:secondary_recipient ?= {
+							is_ai = yes
+						}
+					}
+				}
+			}
+			trigger_if = {
+				limit = {
+					exists = scope:secondary_recipient.liege
+					scope:secondary_recipient.liege = {
+						diarch = scope:secondary_recipient
+						has_active_diarchy = yes
+					}
+				}
+				# Cannot promise grand weddings with regents due to regency and travel limitations
+				custom_tooltip = {
+					text = grand_wedding_secondary_regent
+					NOT = {
+						scope:secondary_recipient.liege = {
+							diarch = scope:secondary_recipient
+							has_active_diarchy = yes
+						}
+					}
+				}
+			}
+		}
+	}
+
 	send_option = {
 		flag = matrilineal
 		localization = MATRILINEAL_OFFER
+		is_shown = {
+			OR = {
+				NOT = { exists = scope:secondary_actor }
+				NOT = { exists = scope:secondary_recipient }
+				scope:secondary_actor = { sex_opposite_of = scope:secondary_recipient }
+			}
+		}
 		current_description = {
 			triggered_desc = {
 				trigger = {
@@ -541,9 +834,14 @@ arrange_marriage_interaction = {
 				limit = {
 					exists = scope:secondary_actor
 				}
-				scope:secondary_actor = {
+				OR = {
 					NOT = {
-						betrothed = scope:secondary_recipient
+						exists = scope:secondary_recipient
+					}
+					scope:secondary_actor = {
+						NOT = {
+							betrothed = scope:secondary_recipient
+						}
 					}
 				}
 			}
@@ -577,6 +875,7 @@ arrange_marriage_interaction = {
 						}
 						AND = {
 							this = scope:recipient
+							exists = scope:secondary_recipient
 							scope:secondary_recipient = {
 								is_female = yes
 							}
@@ -592,8 +891,7 @@ arrange_marriage_interaction = {
 				}
 			}
 		}
-	}
-	
+	}	
 
 	send_option = {
 		is_shown = {
@@ -608,9 +906,10 @@ arrange_marriage_interaction = {
 				has_usable_hook = scope:recipient
 			}
 		}
-		flag = marriage_hook
+		flag = hook
 		localization = MARRIAGE_HOOK
 	}
+
 	should_use_extra_icon = {
 		scope:actor = { has_usable_hook = scope:recipient }
 	}
@@ -630,6 +929,10 @@ arrange_marriage_interaction = {
 					}
 					scope:secondary_recipient = {
 						is_adult = yes
+					}
+					NOR = {
+						scope:secondary_actor = { has_been_promised_grand_wedding = yes }
+						scope:secondary_recipient = { has_been_promised_grand_wedding = yes }
 					}
 				}
 				desc = {
@@ -743,6 +1046,7 @@ arrange_marriage_interaction = {
 
 #This interaction is referenced in code! If it's renamed you have to ping a coder
 marry_off_interaction = {
+	icon = icon_marriage
 	category = interaction_category_diplomacy
 	common_interaction = yes
 
@@ -786,16 +1090,82 @@ marry_off_interaction = {
 
 	populate_recipient_list = {
 		scope:secondary_actor = {
-			every_spouse_candidate = {
+			if = {
 				limit = {
-					NAND = {
-						is_landless_ruler = yes
-						faith.religious_head = this
-						NOT = { scope:secondary_actor.faith = faith }
+					allowed_to_marry_same_sex_trigger = yes
+				}
+				every_opposite_sex_spouse_candidate = {
+					limit = {
+						NAND = {
+							is_landless_ruler = yes
+							faith.religious_head = this
+							NOT = { scope:secondary_actor.faith = faith }
+						}
+					}
+					add_to_list = characters
+				}
+				every_same_sex_spouse_candidate = {
+					limit = {
+						NAND = {
+							is_landless_ruler = yes
+							faith.religious_head = this
+							NOT = { scope:secondary_actor.faith = faith }
+						}
+					}
+					add_to_list = characters
+				}
+			}
+			else = {
+				every_opposite_sex_spouse_candidate = {
+					limit = {
+						NAND = {
+							is_landless_ruler = yes
+							faith.religious_head = this
+							NOT = { scope:secondary_actor.faith = faith }
+						}
+					}
+					add_to_list = characters
+				}
+			}
+		}
+	}
+
+	cost = {
+		prestige = {
+			value = 0
+			if = {
+				limit = {
+					exists = scope:actor
+					exists = scope:recipient
+					exists = scope:secondary_recipient
+					scope:recipient = {
+						OR = {
+							AND = {
+								vassal_contract_has_flag = vassal_contract_marriage_favor
+								is_allied_to = scope:actor
+							}
+							NOT = { vassal_contract_has_flag = vassal_contract_marriage_favor}
+						}
 					}
 				}
-				add_to_list = characters
+				add = {
+					scope:actor = {
+						every_vassal = {
+							limit = {
+								vassal_contract_has_flag = vassal_contract_marriage_favor
+								NOT = { is_allied_to = scope:actor }
+								NOR = {
+									this = scope:recipient
+									this = scope:secondary_recipient
+								}
+							}
+							add = medium_prestige_value
+						}
+					}
+					desc = VASSAL_WITH_MARRIAGE_FAVOR
+				}
 			}
+
 		}
 	}
 
@@ -817,7 +1187,7 @@ marry_off_interaction = {
 			}
 			#They can be married
 			can_marry_trigger = yes
-			#To account for a person marrying their concubines/consorts
+			#To account for a person marrying their concubines
 			trigger_if = {
 				limit = {
 					is_concubine = yes
@@ -826,14 +1196,29 @@ marry_off_interaction = {
 				can_marry_character_trigger = { CHARACTER = scope:actor }
 			}
 		}
+		# Block further marriage proposals for people who have a pending grand wedding
+		NOR = {
+			scope:secondary_actor ?= { has_been_promised_grand_wedding = yes }
+			scope:secondary_recipient ?= { has_been_promised_grand_wedding = yes }
+		}
 	}
 
 	is_valid_showing_failures_only = {
 		#Diplomatic availability & prison
 		scope:secondary_actor = {
-			is_diplomatically_available = yes
+			is_busy_in_events_localised = yes
 			is_imprisoned = no
+			bp2_valid_for_standard_interactions_trigger = yes
 		}
+		marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = secondary_actor }
+		trigger_if = {
+			limit = {
+				NOT = { scope:secondary_actor = scope:secondary_recipient }
+			}
+			marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = secondary_recipient }
+		}
+		marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = actor }
+		marriage_interaction_non_loyal_diarchs_refuse_secondary_marriage_trigger = { TARGET = recipient }
 	}
 
 	has_valid_target_showing_failures_only = {
@@ -841,7 +1226,7 @@ marry_off_interaction = {
 
 		#Diplomatic availability & prison (located here because these will never be set at the start)
 		scope:recipient = {
-			is_diplomatically_available = yes
+			is_busy_in_events_localised = yes
 			is_imprisoned = no
 		}
 		NOT = {
@@ -852,7 +1237,7 @@ marry_off_interaction = {
 		trigger_if = {
 			limit = { NOT = { scope:recipient = scope:secondary_recipient } }
 			scope:secondary_recipient = {
-				is_diplomatically_available = yes
+				is_busy_in_events_localised = yes
 				is_imprisoned = no
 			}
 		}
@@ -873,8 +1258,53 @@ marry_off_interaction = {
 		}
 	}
 
+	on_send = {
+		if = {
+			limit = {
+				scope:grand_wedding_promise = yes
+			}
+			scope:actor = { 
+				set_variable = {
+					name = grand_wedding_promise_pending
+					days = 10
+				}
+				if = {
+					limit = {
+						is_ai = yes
+					}
+					remove_short_term_gold = ai_wedding_promise_gold_actor
+				}
+				#if = { # Activity count debugging, left in for QA purposes
+				#	limit = {
+				#		NOT = {
+				#			exists = global_var:wedding_promise
+				#		}
+				#	}
+				#	set_global_variable = {
+				#		name = wedding_promise
+				#		value = 1
+				#	}
+				#}
+				#else = {
+				#	change_global_variable = {
+				#		name = wedding_promise
+				#		add = 1
+				#	}
+				#}
+			}
+		}
+	}
+
 	on_accept = {
 		marriage_interaction_on_accept_effect = yes
+		scope:actor = { 
+			if = {
+				limit = {
+					has_variable = grand_wedding_promise_pending
+				}
+				remove_variable = grand_wedding_promise_pending
+			}
+		}
 	}
 
 	on_decline = {
@@ -882,6 +1312,12 @@ marry_off_interaction = {
 			if = {	
 				limit = { NOT = { this = scope:recipient } }
 				trigger_event = marriage_interaction.0011	
+			}
+			if = {
+				limit = {
+					has_variable = grand_wedding_promise_pending
+				}
+				remove_variable = grand_wedding_promise_pending
 			}
 		}
 	}
@@ -896,7 +1332,72 @@ marry_off_interaction = {
 		marriage_ai_accept_modifier = yes
 		
 		# Warcraft
-		scourge_interaction_modifiers = yes
+		scourge_marriage_modifiers = yes
+	}
+
+	send_option = {
+		flag = grand_wedding_promise
+		localization = GRAND_WEDDING_PROMISE
+
+		is_shown = {
+			scope:actor = { #Can organize a Grand Wedding
+				highest_held_title_tier > tier_barony
+				is_landed = yes
+				trigger_if = {
+					limit = {
+						is_ai = yes
+					}
+					is_at_war = no
+				}
+				# DLC locked
+				has_dlc_feature = tours_and_tournaments
+				has_dlc_feature = advanced_activities
+			}
+		}
+
+		current_description = {
+			desc = "GRAND_WEDDING_PROMISE_INFO"
+		}
+
+		is_valid = {
+			scope:actor = {
+				gold >= real_wedding_cost_actor_scope
+				is_available = yes
+				custom_tooltip = {
+					text = grand_wedding_already_promised_tt
+					NOR = {
+						has_variable = promised_grand_wedding_marriage_countdown
+						has_variable = grand_wedding_promise_pending
+					}
+				}
+			}
+			custom_tooltip = {
+				text = grand_wedding_only_dominant_side
+				trigger_if = {
+					limit = {
+						scope:secondary_actor ?= {
+							is_female = yes
+						}
+					}
+					OR = {
+						scope:secondary_actor ?= { matrilinear_betrothal = yes }
+						scope:matrilineal = yes
+					}
+				}
+				trigger_else = {
+					NOR = {
+						scope:secondary_actor ?= { matrilinear_betrothal = yes }
+						scope:matrilineal = yes
+					}
+				}
+			}
+			custom_tooltip = {
+				text = grand_wedding_only_family
+				scope:secondary_actor ?= {
+					is_close_or_extended_family_of = scope:actor
+				}
+			}
+		}
 	}
 	
 	send_option = {
@@ -904,7 +1405,7 @@ marry_off_interaction = {
 		localization = "MATRILINEAL_OFFER"
 		starts_enabled = {
 			scope:actor = {
-				OR= {
+				OR = {
 					faith = {
 						has_doctrine = doctrine_gender_female_dominated
 					}
@@ -929,7 +1430,7 @@ marry_off_interaction = {
 				has_usable_hook = scope:recipient
 			}
 		}
-		flag = marriage_hook
+		flag = hook
 		localization = MARRIAGE_HOOK
 	}
 	#This option cannot be linked with the hook icon, because recipient isn't known in the right-click menu
@@ -948,6 +1449,10 @@ marry_off_interaction = {
 					}
 					scope:secondary_recipient = {
 						is_adult = yes
+					}
+					NOR = {
+						scope:secondary_actor = { has_been_promised_grand_wedding = yes }
+						scope:secondary_recipient = { has_been_promised_grand_wedding = yes }
 					}
 				}
 				desc = {
@@ -1063,6 +1568,7 @@ break_betrothal_interaction = {
 	category = interaction_category_diplomacy
 	special_interaction = break_betrothal_interaction
 	use_diplomatic_range = no
+	icon = icon_marriage
 	
 	is_shown = {
 		OR = {
@@ -1169,7 +1675,7 @@ break_betrothal_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
 		# Recipient is the betrothed
 		custom_description = {
@@ -1287,6 +1793,39 @@ break_betrothal_interaction = {
 				always = no
 			}
 		}
+
+		# Secondary Actor and Recipient were promised a Grand Wedding, and the Activity has already been organized and is ongoing
+		custom_description = {
+			text = break_betrothal_gwedding_ongoing
+			trigger_if = {
+				limit = {
+					OR = {
+						scope:recipient = { has_been_promised_grand_wedding = yes }
+						scope:recipient.betrothed = { has_been_promised_grand_wedding = yes }
+					}
+				}
+				NOR = {
+					scope:recipient.involved_activity ?= {
+						has_activity_type = activity_wedding
+						OR = {
+							special_guest:spouse_1 ?= scope:recipient
+							special_guest:spouse_2 ?= scope:recipient
+							special_guest:spouse_1 ?= scope:recipient.betrothed
+							special_guest:spouse_2 ?= scope:recipient.betrothed
+						}
+					}
+					scope:recipient.betrothed.involved_activity ?= {
+						has_activity_type = activity_wedding
+						OR = {
+							special_guest:spouse_1 ?= scope:recipient
+							special_guest:spouse_2 ?= scope:recipient
+							special_guest:spouse_1 ?= scope:recipient.betrothed
+							special_guest:spouse_2 ?= scope:recipient.betrothed
+						}
+					}
+				}
+			}
+		}
 	}
 
 	on_accept = {
@@ -1330,6 +1869,11 @@ break_betrothal_interaction = {
 			}
 		}
 
+		# If it was a Grand Wedding, find the host
+		scope:rejecting_betrothed.var:promised_grand_wedding_by ?= {
+			save_scope_as = promising_host
+		}
+
 		scope:recipient = { trigger_event = marriage_interaction.0020 }
 
 		#Tooltip for betrothal breakage
@@ -1362,6 +1906,19 @@ break_betrothal_interaction = {
 				NOR = {
 					scope:rejected_betrothed = { has_trait = eunuch }
 					scope:rejecting_betrothed = { has_trait = eunuch }
+					scope:rejected_betrothed = { has_trait_with_flag = can_not_marry }
+					scope:rejecting_betrothed = { has_trait_with_flag = can_not_marry }
+					scope:rejected_betrothed = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejecting_betrothed
+					}
+					scope:rejecting_betrothed = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejected_betrothed
+					}
+					# Prestige loss for Grand Weddings is handled below in the specific effect
+					scope:rejecting_betrothed = { has_been_promised_grand_wedding = yes }
+					scope:rejected_betrothed = { has_been_promised_grand_wedding = yes }
 				}
 			}
 			#Prestige penalty
@@ -1566,11 +2123,45 @@ break_betrothal_interaction = {
 			}
 		}
 
+		############################################
+		# EP2 - Breaking a Grand Wedding Betrothal #
+		############################################
+		if = {
+			limit = {
+				# There is no forced reason for breaking the betrothal
+				NOR = {
+					scope:rejected_betrothed = { has_trait = eunuch }
+					scope:rejecting_betrothed = { has_trait = eunuch }
+					scope:rejected_betrothed = { has_trait_with_flag = can_not_marry }
+					scope:rejecting_betrothed = { has_trait_with_flag = can_not_marry }
+					scope:rejecting_betrothed = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejected_betrothed
+					}
+					scope:rejected_betrothed = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejecting_betrothed
+					}
+				}
+				# A Grand Wedding was promised
+				OR = {
+					scope:rejecting_betrothed = {
+						has_been_promised_grand_wedding = yes
+					}
+					scope:rejected_betrothed = {
+						has_been_promised_grand_wedding = yes
+					}
+				}
+			}
+			scope:actor = { break_grand_wedding_betrothal_effect = yes }
+			scope:rejected_betrothed = { trigger_event = marriage_interaction.0001 }
+		}
+
 		######################################
 		# Opinion hits & notification events #
 		######################################
 		#Personal opinion hit for the rejected_betrothed
-		if = {
+		else_if = {
 			limit = { NOT = { scope:rejected_betrothed = scope:actor } }
 			scope:rejected_betrothed = {
 				if = {
@@ -1578,6 +2169,16 @@ break_betrothal_interaction = {
 						NOR = {
 							has_trait = eunuch
 							scope:rejecting_betrothed = { has_trait = eunuch }
+							has_trait_with_flag = can_not_marry
+							scope:rejecting_betrothed = { has_trait_with_flag = can_not_marry }
+							scope:rejecting_betrothed = {
+								allowed_to_marry_same_sex_trigger = no
+								sex_same_as = scope:rejected_betrothed
+							}
+							AND = {
+								allowed_to_marry_same_sex_trigger = no
+								sex_same_as = scope:rejecting_betrothed
+							}
 						}
 					}
 					show_as_tooltip = {
@@ -1620,12 +2221,30 @@ break_betrothal_interaction = {
 						NOR = {
 							scope:rejected_betrothed = { has_trait = eunuch }
 							scope:rejecting_betrothed = { has_trait = eunuch }
+							scope:rejected_betrothed = { has_trait_with_flag = can_not_marry }
+							scope:rejecting_betrothed = { has_trait_with_flag = can_not_marry }
+							scope:rejected_betrothed = {
+								allowed_to_marry_same_sex_trigger = no
+								sex_same_as = scope:rejecting_betrothed
+							}
+							scope:rejecting_betrothed = {
+								allowed_to_marry_same_sex_trigger = no
+								sex_same_as = scope:rejected_betrothed
+							}
 						}
 					}
-					show_as_tooltip = {
-						add_opinion = {
-							target = scope:actor
-							modifier = broke_betrothal_opinion
+					if = {
+						limit = {
+							NOR = {
+								scope:rejected_betrothed = { has_been_promised_grand_wedding = yes }
+								scope:rejecting_betrothed = { has_been_promised_grand_wedding = yes }
+							}
+						}
+						show_as_tooltip = {
+							add_opinion = {
+								target = scope:actor
+								modifier = broke_betrothal_opinion
+							}
 						}
 					}
 				}
@@ -1639,6 +2258,16 @@ break_betrothal_interaction = {
 				NOR = {
 					scope:rejected_betrothed = { has_trait = eunuch }
 					scope:rejecting_betrothed = { has_trait = eunuch }
+					scope:rejected_betrothed = { has_trait_with_flag = can_not_marry }
+					scope:rejecting_betrothed = { has_trait_with_flag = can_not_marry }
+					scope:rejected_betrothed = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejecting_betrothed
+					}
+					scope:rejecting_betrothed = {
+						allowed_to_marry_same_sex_trigger = no
+						sex_same_as = scope:rejected_betrothed
+					}
 				}
 			}
 			#Opinion hit for close relatives of the rejected_betrothed (that are not rejected_betrothed_owner)
@@ -1652,15 +2281,39 @@ break_betrothal_interaction = {
 						}
 					}
 				}
-				scope:rejected_betrothed = {
-					every_close_or_extended_family_member = {
-						limit = {
-							NOT = { this = scope:rejected_betrothal_owner }
+				if = {
+					limit = {
+						OR = {
+							scope:rejected_betrothed = { has_been_promised_grand_wedding = yes }
+							scope:rejecting_betrothed = { has_been_promised_grand_wedding = yes }
 						}
-						custom = all_family_members
-						add_opinion = {
-							target = scope:actor
-							modifier = broke_betrothal_opinion
+					}
+					scope:rejected_betrothed = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOT = { this = scope:rejected_betrothal_owner }
+							}
+							custom = all_family_members
+							
+							add_opinion = {
+								target = scope:actor
+								modifier = broke_betrothal_grand_wedding_opinion
+								opinion = -50
+							}
+						}
+					}
+				}
+				else = {
+					scope:rejected_betrothed = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOT = { this = scope:rejected_betrothal_owner }
+							}
+							custom = all_family_members
+							add_opinion = {
+								target = scope:actor
+								modifier = broke_betrothal_opinion
+							}
 						}
 					}
 				}
@@ -1684,19 +2337,47 @@ break_betrothal_interaction = {
 						}
 					}
 				}
-				scope:rejecting_betrothed = {
-					every_close_or_extended_family_member = {
-						limit = {
-							NOR = {
-								is_close_or_extended_family_of = scope:rejected_betrothed
-								this = scope:rejected_betrothal_owner
-								this = scope:rejected_betrothed
+				if = {
+					limit = {
+						OR = {
+							scope:rejected_betrothed = { has_been_promised_grand_wedding = yes }
+							scope:rejecting_betrothed = { has_been_promised_grand_wedding = yes }
+						}
+					}
+					scope:rejecting_betrothed = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOR = {
+									this = scope:rejected_betrothal_owner
+									is_close_or_extended_family_of = scope:rejected_betrothed
+									this = scope:rejected_betrothed
+								}
+							}
+							custom = all_family_members
+							
+							add_opinion = {
+								target = scope:actor
+								modifier = broke_betrothal_grand_wedding_opinion
+								opinion = -50
 							}
 						}
-						custom = all_family_members
-						add_opinion = {
-							target = scope:actor
-							modifier = broke_betrothal_opinion
+					}
+				}
+				else = {
+					scope:rejecting_betrothed = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOR = {
+									is_close_or_extended_family_of = scope:rejected_betrothed
+									this = scope:rejected_betrothal_owner
+									this = scope:rejected_betrothed
+								}
+							}
+							custom = all_family_members
+							add_opinion = {
+								target = scope:actor
+								modifier = broke_betrothal_opinion
+							}
 						}
 					}
 				}
@@ -1720,7 +2401,12 @@ break_betrothal_interaction = {
 					}
 				}
 			}
-			else = { 
+			else_if = {
+				limit = {
+					NOT = {
+						scope:actor = scope:rejecting_betrothed
+					}
+				}
 				hidden_effect = {
 					send_interface_message = {
 						type = event_generic_neutral
@@ -1758,12 +2444,10 @@ break_betrothal_interaction = {
 	auto_accept = yes
 }
 
-make_concubine_interaction = {
-	category = interaction_category_diplomacy
-
-	desc = make_concubine_interaction_desc
-
-	interface = concubine_list
+# Stripped down version of make_concubine_interaction for the AI
+# Avoids redirection logic and recipient list building to improve performance
+ai_make_concubine_interaction = {
+	hidden = yes
 	
 	ai_targets = {
 		ai_recipients = prisoners
@@ -1777,70 +2461,6 @@ make_concubine_interaction = {
 	}
 	ai_frequency = 12
 
-	needs_recipient_to_open = yes
-
-	redirect = {
-		# The UI will open to the already filled left and right first if we don't tell it we've got both sides filled
-		scope:actor = {
-			save_scope_as = secondary_actor
-		}
-		scope:recipient = {
-			save_scope_as = secondary_recipient
-		}
-	}
-
-	populate_recipient_list = {
-		scope:actor = {
-			every_courtier = {
-				limit = {
-					can_become_concubine_of_character_trigger = { CHARACTER = scope:actor }
-				}
-				add_to_list = characters
-			}
-			every_prisoner = {
-				limit = {
-					NOT = { is_in_list = characters }
-					can_become_concubine_of_character_trigger = { CHARACTER = scope:actor }
-				}
-				add_to_list = characters
-			}
-		}
-	}
-	
-	is_shown = {
-		scope:actor = {
-			allowed_concubines = yes
-			is_adult = yes
-		}
-		scope:recipient = {
-			OR = {
-				is_courtier_of = scope:actor
-				is_imprisoned_by = scope:actor
-			}
-			can_become_concubine_of_character_trigger = { CHARACTER = scope:actor }
-		}
-	}
-
-	is_valid_showing_failures_only = {
-		custom_description = {
-			text = take_concubine_allowed_more
-			object = scope:recipient
-			scope:actor = {
-				allowed_more_concubines = yes
-			}
-		}
-		scope:recipient = {
-			is_diplomatically_available = yes
-			OR = {
-				AND = {
-					is_imprisoned_by = scope:actor
-					is_married = yes
-				}
-				is_married = no
-			}
-		}
-	}
-	
 	ai_potential = {
 		is_landed = yes
 		is_adult = yes
@@ -1852,9 +2472,17 @@ make_concubine_interaction = {
 			has_sexuality = asexual
 		}
 	}
-	
+
+	is_shown = {
+		make_concubine_is_shown_trigger = yes
+	}
+
+	is_valid_showing_failures_only = {
+		make_concubine_is_valid_trigger = yes
+	}
+
 	auto_accept = yes
-	
+
 	ai_will_do = {
 		base = 0
 		
@@ -1864,10 +2492,11 @@ make_concubine_interaction = {
 				number_of_concubines < number_of_desired_concubines
 			}
 			scope:recipient = {
-				sex_opposite_of = scope:actor
+				can_have_children_with = { CHARACTER = scope:actor } # Only if you can have kids since this is about fertility and genetic traits
 				fertility > 0.2
+				
 				# Warcraft
-				age_in_relation_to_humans_less_than_trigger = { age = 36 }
+				age < age_36_value
 			}
 		}
 		
@@ -1875,7 +2504,7 @@ make_concubine_interaction = {
 			add = 100
 			scope:recipient = {
 				is_imprisoned_by = scope:actor
-				sex_opposite_of = scope:actor
+				can_have_children_with = { CHARACTER = scope:actor } # Only if you can have kids since this is about fertility and genetic traits
 				OR = {
 					is_lowborn = no
 					num_of_good_genetic_traits > 0
@@ -1885,8 +2514,55 @@ make_concubine_interaction = {
 					limit = {
 						is_female = yes
 					}
-					#Warcraft
+					
+					# Warcraft
 					age < female_fertility_age_value
+				}
+			}
+		}
+
+		modifier = {
+			add = 100
+			scope:actor = {
+				allowed_to_marry_same_sex_trigger = yes
+				sex_same_as = scope:recipient
+				is_attracted_to_gender_of = scope:recipient
+				OR = { #If they're not in need of kids, or someone who they can have kids with
+					any_child = {
+						count >= 2
+					}
+					any_consort = {
+						can_have_children_with = { CHARACTER = scope:actor }
+						fertility > 0.1
+					}
+				}
+			}
+		}
+
+		modifier = { #Even if you're allowed to take same-sex concubines we don't want the AI to do so without a good reason if they're not attracted to the person
+			add = -200
+			scope:actor = {
+				allowed_to_marry_same_sex_trigger = yes
+				sex_same_as = scope:recipient
+				NOT = { is_attracted_to_gender_of = scope:recipient }
+			}
+		}
+
+		modifier = { # If they don't have a batch of kids and opposite sex consorts to handle that situation
+			add = -200
+			scope:actor = {
+				allowed_to_marry_same_sex_trigger = yes
+				sex_same_as = scope:recipient
+				NOT = {
+					any_child = {
+						count >= 2
+					}
+				}
+				NOT = {
+					any_consort = {
+						can_have_children_with = { CHARACTER = scope:actor }
+						fertility > 0.1
+					}
 				}
 			}
 		}
@@ -1948,6 +2624,66 @@ make_concubine_interaction = {
 			}
 		}
 	}
+
+	on_accept = {
+		scope:actor = {
+			save_scope_as = secondary_actor
+		}
+		scope:recipient = {
+			save_scope_as = secondary_recipient
+		}
+		concubine_on_accept_effect = yes
+	}
+}
+
+make_concubine_interaction = {
+	category = interaction_category_diplomacy
+	icon = concubine_icon
+
+	desc = make_concubine_interaction_desc
+
+	interface = concubine_list
+	
+
+	needs_recipient_to_open = yes
+
+	redirect = {
+		# The UI will open to the already filled left and right first if we don't tell it we've got both sides filled
+		scope:actor = {
+			save_scope_as = secondary_actor
+		}
+		scope:recipient = {
+			save_scope_as = secondary_recipient
+		}
+	}
+
+	populate_recipient_list = {
+		scope:actor = {
+			every_courtier = {
+				limit = {
+					can_become_concubine_of_character_trigger = { CHARACTER = scope:actor }
+				}
+				add_to_list = characters
+			}
+			every_prisoner = {
+				limit = {
+					NOT = { is_in_list = characters }
+					can_become_concubine_of_character_trigger = { CHARACTER = scope:actor }
+				}
+				add_to_list = characters
+			}
+		}
+	}
+	
+	is_shown = {
+		make_concubine_is_shown_trigger = yes
+	}
+
+	is_valid_showing_failures_only = {
+		make_concubine_is_valid_trigger = yes
+	}
+	
+	auto_accept = yes
 	
 	on_accept = {
 		concubine_on_accept_effect = yes
@@ -1956,6 +2692,7 @@ make_concubine_interaction = {
 
 find_concubine = {
 	category = interaction_category_diplomacy
+	icon = concubine_icon
 
 	desc = find_concubine_desc
 
@@ -2003,7 +2740,12 @@ find_concubine = {
 				NOT = { scope:actor = scope:recipient }
 			}
 			scope:actor = {
-				sex_opposite_of = scope:recipient
+				trigger_if = {
+					limit = {
+						allowed_to_marry_same_sex_trigger = no
+					}
+					sex_opposite_of = scope:recipient
+				}
 				NOT = { relation_with_character_is_incestuous_in_my_faith_trigger = { CHARACTER = scope:recipient } }
 			}
 			scope:recipient = {
@@ -2066,6 +2808,7 @@ find_concubine = {
 
 offer_concubine = {
 	category = interaction_category_diplomacy
+	icon = concubine_icon
 
 	desc = offer_concubine_desc
 
@@ -2185,10 +2928,7 @@ offer_concubine = {
 				multiply = scope:secondary_actor.num_of_good_genetic_traits
 			}
 			scope:secondary_actor = {
-				OR = {
-					is_lowborn = no
-					num_of_good_genetic_traits > 0
-				}
+				num_of_good_genetic_traits > 0
 				trigger_if = {
 					limit = {
 						is_female = yes
@@ -2199,7 +2939,23 @@ offer_concubine = {
 			}
 			desc = AI_POSITIVE_TRAIT_REASON
 		}
-		
+
+		modifier = {
+			add = {
+				value = 50
+			}
+			scope:secondary_actor = {
+				is_lowborn = no
+				trigger_if = {
+					limit = {
+						is_female = yes
+					}
+					age < define:NChildbirth|MAX_FEMALE_REPRODUCTION_AGE
+				}
+			}
+			desc = AI_DYNASTY_PRESTIGE_REASON_NOBLE
+		}
+
 		modifier = {
 			add = {
 				value = -50
@@ -2207,7 +2963,6 @@ offer_concubine = {
 			}
 			scope:secondary_actor = {
 				OR = {
-					is_lowborn = no
 					num_of_bad_genetic_traits > 0
 				}
 				trigger_if = {
@@ -2219,6 +2974,23 @@ offer_concubine = {
 				}
 			}
 			desc = AI_NEGATIVE_TRAIT_REASON
+		}
+
+		modifier = {
+			add = {
+				value = -50
+			}
+			scope:secondary_actor = {
+				is_lowborn = yes
+				num_of_good_genetic_traits = 0
+				trigger_if = {
+					limit = {
+						is_female = yes
+					}
+					age < define:NChildbirth|MAX_FEMALE_REPRODUCTION_AGE
+				}
+			}
+			desc = AI_DYNASTY_PRESTIGE_REASON_LOWBORN_NO_POSITIVE_TRAIT
 		}
 
 		opinion_modifier = { # Opinion of you
@@ -2256,6 +3028,49 @@ offer_concubine = {
 			step = 1
 			offset = -29
 			desc = MARRY_AGE
+		}
+
+		modifier = { # A Recipient is unwilling to take a same-sex concubine if their faith doesn't support it
+			add = -1000
+			
+			scope:recipient = {
+				allowed_to_marry_same_sex_trigger = no
+				sex_same_as = scope:secondary_actor
+			}
+			desc = SAME_SEX_MARRIAGE_FAITH_REASON_RECIPIENT
+		}
+
+		modifier = { # Unwilling if they don't have a batch of kids and opposite sex consorts to handle that situation
+			add = -200
+			scope:recipient = {
+				allowed_to_marry_same_sex_trigger = yes
+				sex_same_as = scope:secondary_actor
+				trigger_if = {
+					limit = {
+						NOT = {
+							any_consort = {
+								can_have_children_with = { CHARACTER = scope:recipient }
+								fertility > 0.1
+							}
+						}
+					}
+					any_child = {
+						is_player_heir_of_trigger = { CHARACTER = root }
+					}
+				}
+				trigger_else = {
+					always = no
+				}
+			}
+			desc = AI_NO_FERTILITY_REASON
+		}
+
+		modifier = {
+			add = 50
+			scope:recipient = {
+				is_attracted_to_gender_of = scope:secondary_actor
+			}
+			desc = AI_ATTRACTION_REASON
 		}
 
 		modifier = { # A Recipient is more likely to agree if you're their liege
@@ -2449,7 +3264,7 @@ offer_concubine = {
 		}
 		
 		# Warcraft
-		scourge_interaction_modifiers = yes
+		scourge_marriage_modifiers = yes
 	}
 
 	ai_potential = {
@@ -2472,10 +3287,17 @@ offer_concubine = {
 				number_of_concubines < number_of_desired_concubines
 			}
 			scope:secondary_actor = {
-				sex_opposite_of = scope:recipient
+				trigger_if = {
+					limit = {
+						allowed_to_marry_same_sex_trigger = no
+					}
+					sex_opposite_of = scope:recipient
+				}
 				fertility > 0.2
+				
 				# Warcraft
-				age_in_relation_to_humans_less_than_trigger = { age = 36 }
+				age < age_36_value
+				
 				NOR = {
 					is_councillor_of = scope:actor
 					is_of_major_interest_trigger = {
@@ -2534,6 +3356,31 @@ offer_concubine = {
 					has_trait = lustful
 					num_of_good_genetic_traits > 0
 				}
+			}
+		}
+
+		modifier = { #Even if they're allowed to take same-sex concubines we don't want the AI to suggest it without a good reason if they're not attracted to the person
+			add = -200
+			scope:recipient = {
+				allowed_to_marry_same_sex_trigger = yes
+				sex_same_as = scope:secondary_actor
+				NOT = { is_attracted_to_gender_of = scope:secondary_actor }
+			}
+		}
+
+		modifier = { # No if it's a same-sex concubinage and actor isn't accepting of it
+			factor = 0
+			scope:actor = {
+				allowed_to_marry_same_sex_trigger = no
+				scope:recipient = { sex_same_as = scope:secondary_actor }
+			}
+		}
+
+		modifier = { # No if it's a same-sex concubinage and recipient isn't accepting of it
+			factor = 0
+			scope:recipient = {
+				allowed_to_marry_same_sex_trigger = no
+				sex_same_as = scope:secondary_actor
 			}
 		}
 
@@ -2620,6 +3467,7 @@ offer_concubine = {
 dismiss_concubine_interaction = {
 	category = interaction_category_diplomacy
 	use_diplomatic_range = no	
+	icon = concubine_icon
 	
 	is_shown = {
 		scope:recipient = {
@@ -2647,8 +3495,10 @@ dismiss_concubine_interaction = {
 				}
 			}
 		}
+		
 		scope:recipient = {
-			trigger_event = marriage_interaction.0050
+		# No point in sending a notification since the player can't be an unlanded concubine in any case
+		#	trigger_event = marriage_interaction.0050
 
 			# Being thrown aside is humiliating, even if you didn't want to be a concubine in the first place.
 			add_opinion = {
@@ -2694,6 +3544,7 @@ dismiss_concubine_interaction = {
 divorce_character_interaction = {
 	category = interaction_category_diplomacy
 	use_diplomatic_range = no
+	icon = icon_marriage
 
 	desc = divorce_character_interaction_desc
 
@@ -2724,16 +3575,21 @@ divorce_character_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
+		custom_tooltip = {
+			NOT = {
+				scope:actor.culture = {
+					has_cultural_parameter = cannot_divorce
+				}
+			}
+			text = CULTURE_FORBIDS_DIVORCE
+		}
 		NOT = {
 			scope:actor.faith = {
 				has_doctrine = doctrine_divorce_disallowed
 			}
 		}
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
-		scope:actor = {
-			piety >= divorce_cost
-		}
 	}
 
 	auto_accept = yes
@@ -2743,6 +3599,12 @@ divorce_character_interaction = {
 			divorce_effect = {
 				DIVORCER = scope:actor
 				DIVORCEE = scope:recipient
+			}
+			if = {
+				limit = {
+					allowed_concubines = yes
+				}
+				custom_tooltip = divorce_cannot_concubine_ex_wife
 			}
 		}
 		scope:recipient = {
@@ -2778,12 +3640,21 @@ divorce_character_interaction = {
 				fertility < 0.1
 			}
 		}
+
+		modifier = { # The AI will divorce if they're in a same-sex marriage and their faith changes its stance on the topic
+			add = 100
+			scope:actor = {
+				sex_same_as = scope:recipient
+				allowed_to_marry_same_sex_trigger = no
+			}
+		}
 	}
 }
 
 divorce_character_house_head_interaction = {
 	category = interaction_category_diplomacy
 	use_diplomatic_range = no
+	icon = icon_marriage
 
 	cost = {
 		piety = divorce_cost
@@ -2826,13 +3697,18 @@ divorce_character_house_head_interaction = {
 
 	is_valid_showing_failures_only = {
 		# Denounced trait?
-		scope:recipient = { is_diplomatically_available = yes }
-		scope:secondary_recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
+		scope:secondary_recipient = { is_busy_in_events_localised = yes }
+		custom_tooltip = {
+			NOT = {
+				scope:actor.culture = {
+					has_cultural_parameter = cannot_divorce
+				}
+			}
+			text = CULTURE_FORBIDS_DIVORCE
+		}
 		NOT = {
 			scope:secondary_recipient = { has_strong_hook = scope:actor }
-		}
-		scope:actor = {
-			piety >= divorce_cost
 		}
 	}
 	
@@ -2976,9 +3852,29 @@ divorce_character_house_head_interaction = {
 			}
 			desc = COWED_REASON
 		}
+
+		modifier = { # You're in a same-sex marriage and your faith doesn't allow it
+			add = 100
+			desc = SAME_SEX_MARRIAGE_FAITH_REASON_ACTOR
+			scope:actor.faith = scope:recipient.faith
+			scope:actor = {
+				sex_same_as = scope:secondary_recipient
+				allowed_to_marry_same_sex_trigger = no
+			}
+		}
+
+		modifier = { # You're in a same-sex marriage and their faith doesn't allow it
+			add = 100
+			desc = SAME_SEX_MARRIAGE_FAITH_REASON
+			scope:secondary_recipient.faith = scope:recipient.faith
+			scope:secondary_recipient = {
+				sex_same_as = scope:actor
+				allowed_to_marry_same_sex_trigger = no
+			}
+		}
 		
 		# Warcraft
-		scourge_interaction_modifiers = yes
+		scourge_marriage_modifiers = yes
 	}
 
 	auto_accept = {
@@ -3016,7 +3912,12 @@ divorce_character_house_head_interaction = {
 		if = {
 			limit = { always = scope:divorce_hook }
 			scope:actor = {
-				use_hook = scope:recipient
+				if = {
+					limit = {
+						has_usable_hook = scope:recipient
+					}
+					use_hook = scope:recipient
+				}
 			}
 		}
 		if = {
@@ -3086,12 +3987,21 @@ divorce_character_house_head_interaction = {
 			scope:divorce_hook = yes
 			add = -1
 		}
+
+		modifier = { # You're in a same-sex marriage and your faith doesn't allow it
+			add = 100
+			scope:actor = {
+				sex_same_as = scope:secondary_recipient
+				allowed_to_marry_same_sex_trigger = no
+			}
+		}
 	}
 }
 
 divorce_character_rel_head_interaction = {
 	category = interaction_category_diplomacy
 	use_diplomatic_range = no
+	icon = icon_marriage
 
 	cost = {
 		piety = divorce_cost
@@ -3131,13 +4041,18 @@ divorce_character_rel_head_interaction = {
 		scope:actor = {
 			NOT = { has_trait = excommunicated }
 		}
-		scope:recipient = { is_diplomatically_available = yes }
-		scope:secondary_recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
+		scope:secondary_recipient = { is_busy_in_events_localised = yes }
+		custom_tooltip = {
+			NOT = {
+				scope:actor.culture = {
+					has_cultural_parameter = cannot_divorce
+				}
+			}
+			text = CULTURE_FORBIDS_DIVORCE
+		}
 		NOT = {
 			scope:secondary_recipient = { has_strong_hook = scope:actor }
-		}
-		scope:actor = {
-			piety >= divorce_cost
 		}
 	}
 
@@ -3290,9 +4205,37 @@ divorce_character_rel_head_interaction = {
 			scope:secondary_recipient.num_sinful_traits > 0
 			desc = THEY_ARE_SINFUL
 		}
+
+		modifier = { # You're in a same-sex marriage and your faith doesn't allow it
+			add = 100
+			desc = SAME_SEX_MARRIAGE_FAITH_REASON_ACTOR
+			scope:actor.faith = scope:recipient.faith
+			scope:actor = {
+				sex_same_as = scope:secondary_recipient
+				allowed_to_marry_same_sex_trigger = no
+			}
+		}
+
+		modifier = { # You're in a same-sex marriage and their faith doesn't allow it
+			add = 100
+			desc = SAME_SEX_MARRIAGE_FAITH_REASON
+			scope:secondary_recipient.faith = scope:recipient.faith
+			scope:secondary_recipient = {
+				sex_same_as = scope:actor
+				allowed_to_marry_same_sex_trigger = no
+			}
+		}
+
+		modifier = { # You have denounced them as impotent (ep2_wedding.1061)
+			add = 30
+			desc = THEY_ARE_ACCUSED_IMPOTENCY
+			scope:secondary_recipient = {
+				has_character_modifier = wedding_accused_impotency_modifier
+			}
+		}
 		
 		# Warcraft
-		scourge_interaction_modifiers = yes
+		scourge_marriage_modifiers = yes
 	}
 	
 	auto_accept = {
@@ -3327,7 +4270,12 @@ divorce_character_rel_head_interaction = {
 		if = {
 			limit = { always = scope:divorce_hook }
 			scope:actor = {
-				use_hook = scope:recipient
+				if = {
+					limit = {
+						has_usable_hook = scope:recipient
+					}
+					use_hook = scope:recipient
+				}
 			}
 		}
 		show_as_tooltip = {
@@ -3383,6 +4331,14 @@ divorce_character_rel_head_interaction = {
 		modifier = { # The AI will only use a Hook if they couldn't otherwise do this
 			scope:divorce_hook = yes
 			add = -1
+		}
+
+		modifier = { # You're in a same-sex marriage and your faith doesn't allow it
+			add = 100
+			scope:actor = {
+				sex_same_as = scope:secondary_recipient
+				allowed_to_marry_same_sex_trigger = no
+			}
 		}
 	}	
 }
@@ -3446,25 +4402,29 @@ divorce_character_dynast_request_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
+		custom_tooltip = {
+			NOT = {
+				scope:actor.culture = {
+					has_cultural_parameter = cannot_divorce
+				}
+			}
+			text = CULTURE_FORBIDS_DIVORCE
+		}
 		NOT = {
 			scope:actor.faith = {
 				has_doctrine = doctrine_divorce_disallowed
 			}
 		}
-		scope:actor = {
-			piety >= divorce_cost
-		}
 		scope:actor.dynasty = {
 			dynasty_prestige >= minor_dynasty_prestige_value
 		}
-
 
 		NOT = {
 			scope:secondary_actor.faith = {
 				has_doctrine = doctrine_divorce_disallowed
 			}
 		}
-		scope:secondary_actor = { is_diplomatically_available = yes }
+		scope:secondary_actor = { is_busy_in_events_localised = yes }
 		scope:secondary_actor = { NOT = { has_strong_hook = scope:actor } }
 		trigger_if = {
 			limit = {
@@ -3508,12 +4468,17 @@ divorce_character_dynast_request_interaction = {
 				target = scope:actor
 			}
 		}
-		scope:recipient = {
-			trigger_event = marriage_interaction.0030
+		if = {
+			limit = {
+				NOT = { scope:recipient = scope:actor }
+			}
+			scope:recipient = {
+				trigger_event = marriage_interaction.0030
 
-			add_opinion = {
-				modifier = forced_divorce_opinion
-				target = scope:actor
+				add_opinion = {
+					modifier = forced_divorce_opinion
+					target = scope:actor
+				}
 			}
 		}
 	}
@@ -3597,6 +4562,9 @@ divorce_character_dynast_request_rel_head_interaction = {
 	is_shown = {
 		NOT = { scope:secondary_actor = scope:actor }
 		scope:secondary_actor.dynasty.dynast = scope:actor
+		NOT = {
+			scope:secondary_actor = { is_spouse_of = scope:actor }
+		}
 
 		exists = scope:secondary_recipient
 
@@ -3609,14 +4577,19 @@ divorce_character_dynast_request_rel_head_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
-		scope:actor = {
-			piety >= divorce_cost
+		custom_tooltip = {
+			NOT = {
+				scope:actor.culture = {
+					has_cultural_parameter = cannot_divorce
+				}
+			}
+			text = CULTURE_FORBIDS_DIVORCE
 		}
 		scope:actor.dynasty = {
 			dynasty_prestige >= minor_dynasty_prestige_value
 		}
 
-		scope:secondary_actor = { is_diplomatically_available = yes }
+		scope:secondary_actor = { is_busy_in_events_localised = yes }
 		scope:secondary_actor = { NOT = { has_strong_hook = scope:actor } }
 		trigger_if = {
 			limit = {
@@ -3747,7 +4720,7 @@ divorce_character_dynast_request_rel_head_interaction = {
 		}
 		
 		# Warcraft
-		scourge_interaction_modifiers = yes
+		scourge_marriage_modifiers = yes
 	}
 	
 	auto_accept = {
@@ -3782,7 +4755,12 @@ divorce_character_dynast_request_rel_head_interaction = {
 		if = {
 			limit = { always = scope:divorce_hook }
 			scope:actor = {
-				use_hook = scope:recipient
+				if = {
+					limit = {
+						has_usable_hook = scope:recipient
+					}
+					use_hook = scope:recipient
+				}
 			}
 		}
 		scope:actor = {
@@ -3861,6 +4839,7 @@ divorce_character_dynast_request_rel_head_interaction = {
 }
 
 elope_interaction = {
+	icon = icon_scheme_elope
 	category = interaction_category_friendly
 
 	scheme = elope
@@ -3906,7 +4885,7 @@ elope_interaction = {
 	
 
 	is_valid_showing_failures_only = {
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:actor = {
 			can_start_scheme = {
 				type = elope
@@ -3922,7 +4901,7 @@ elope_interaction = {
 		elopment_ai_accept_modifier = yes
 		
 		# Warcraft
-		scourge_interaction_modifiers = yes
+		scourge_marriage_modifiers = yes
 	}
 	
 	ai_potential = {
@@ -3979,6 +4958,18 @@ elope_interaction = {
 							honest = minor_stress_impact_gain
 							just = minor_stress_impact_gain
 						}
+					}
+				}
+				if = {
+					limit = {
+						has_trait = education_intrigue_5
+					}
+					random_scheme = {
+						limit = {
+							scheme_type = elope
+							scheme_target = scope:recipient
+						}
+						add_scheme_progress = 3
 					}
 				}
 			}
