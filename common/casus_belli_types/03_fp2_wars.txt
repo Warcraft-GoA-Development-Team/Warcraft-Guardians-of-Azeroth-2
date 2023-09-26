@@ -1,1 +1,759 @@
 ﻿#WARCRAFT
+wc_border_raid = {
+	group = struggle
+	icon = struggle
+
+	combine_into_one = yes
+	should_show_war_goal_subview = yes
+	allow_hostages = no
+	mutually_exclusive_titles = { always = yes }
+	interface_priority = 110
+
+	allowed_for_character = {
+		# Attacker must be Involved in Struggle during correct phase
+		any_character_struggle = {
+			involvement = involved
+			is_struggle_type = lordaeron_struggle
+			has_struggle_phase_parameter = unlocks_border_raid_casus_belli
+		}
+	}
+
+	allowed_against_character = {
+		# Defender must be Involved in Struggle during correct phase
+		any_character_struggle = {
+			involvement = involved
+			is_struggle_type = lordaeron_struggle
+			has_struggle_phase_parameter = unlocks_border_raid_casus_belli
+		}
+		# Defender must be bordering your realm.
+		OR = {
+			character_is_land_realm_neighbor = scope:attacker
+			AND = {
+				exists = scope:attacker.liege
+				character_is_land_realm_neighbor = scope:attacker.liege
+			}
+		}
+	}
+
+	target_titles = neighbor_land # border
+	target_title_tier = county # county
+	target_de_jure_regions_above = no
+	ignore_effect = change_title_holder
+
+	ai_score_mult = { value = wc_border_raid_ai_targeting_value }
+
+	valid_to_start = {
+		exists = scope:target
+		NOT = {
+			scope:target.title_province = { has_province_modifier = recently_looted_modifier }
+		}
+	}
+
+	should_invalidate = {
+		NOT = {
+			any_in_list = {
+				list = target_titles
+				holder = { target_is_same_character_or_above = scope:defender }
+			}
+		}
+	}
+
+	on_invalidated_desc = msg_county_conquest_war_invalidated_message
+	
+	on_invalidated = {}
+
+	cost = {
+		piety = {
+			value = 0
+			if = {
+				limit = {
+					scope:defender.faith = scope:attacker.faith
+				}
+				add = {
+					value = minor_piety_value
+					desc = CB_SAME_FAITH_COST
+				}
+			}
+
+			multiply = common_cb_piety_cost_multiplier
+		}
+		prestige = {
+			value = minor_prestige_value
+			if = {
+				limit = {
+					NOT = { scope:defender.faith = scope:attacker.faith }
+				}
+				add = {
+					value = minor_prestige_value
+					desc = CB_COST_DIFFERENT_FAITH
+				}
+			}
+			multiply = common_cb_prestige_cost_multiplier
+		}
+	}
+
+	on_declaration = {
+		on_declared_war = yes
+	}
+
+	on_victory_desc = {
+		triggered_desc = {
+			trigger = {
+				scope:attacker = { is_local_player = yes }
+			}
+			desc = border_raid_cb_desc_victory_attacker
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = { is_local_player = yes }
+			}
+			desc = border_raid_cb_desc_victory_defender
+		}
+	}
+
+	on_victory = {
+		#EP2 accolade glory gain for winning against higher ranked enemy
+		scope:attacker = { accolade_attacker_war_end_glory_gain_low_effect = yes }
+		
+		every_in_list = {
+			list = target_titles
+			save_scope_as = raid_county
+			# Set raided province modifier
+			title_province = {
+				add_province_modifier = {
+					modifier = recently_looted_modifier
+					years = 5
+				}
+			}
+			show_as_tooltip = {
+				every_in_list = {
+					list = target_titles
+					wc_border_raid_damage_effect = yes
+				}
+			}
+			# Find province for building destruction
+			ordered_county_province = {
+				order_by = num_buildings
+				random = {
+					chance = 25
+					modifier = { factor = destroy_building_soldier_multiplier_value } # chance increases with more soldiers
+					modifier = { add = destroy_building_development_multiplier_value } # chance increases with development
+					custom_tooltip = destroy_random_building_tt
+					destroy_random_building_variable_effect = yes
+				}
+			}
+		}
+
+		hidden_effect = {
+			scope:attacker = {
+				send_interface_message = {
+					type = msg_border_raid_good
+					title = border_raid_message_title
+					show_as_tooltip = {
+						every_in_list = {
+							list = target_titles
+							wc_border_raid_damage_effect = yes
+						}
+					}
+				}
+			}
+			scope:defender = {
+				send_interface_message = {
+					type = msg_border_raid_bad
+					title = border_raid_message_title
+					every_in_list = {
+						list = target_titles
+						wc_border_raid_damage_effect = yes
+					}
+				}
+			}
+		}
+
+		show_as_tooltip = {
+			create_title_and_vassal_change = {
+				type = conquest
+				save_scope_as = change
+				add_claim_on_loss = yes
+			}
+			every_in_list = {
+				list = target_titles
+				change_title_holder = {
+					holder = scope:attacker
+					change = scope:change
+				}
+			}
+			resolve_title_and_vassal_change = scope:change
+		}
+
+		# Prestige Progress for the Attacker
+		every_in_list = {
+			list = target_titles
+			scope:attacker = {
+				add_prestige_experience = miniscule_prestige_value
+			}
+		}
+
+		# Prestige for the attacker's war allies
+		add_from_contribution_attackers = {
+			prestige = minor_prestige_value
+			opinion = {
+				modifier = contributed_in_war
+			}
+		}
+
+		# Prestige for the defender's war allies
+		add_from_contribution_defenders = {
+			prestige = minor_prestige_value
+			opinion = {
+				modifier = contributed_in_war
+			}
+		}
+
+		# Break alliances now out of diplo range
+		if = {
+			limit = {
+				scope:attacker = {
+					any_ally = {
+						NOT = { in_diplomatic_range = scope:attacker }
+					}
+				}
+			}
+			scope:attacker = {
+				every_ally = {
+					limit = {
+						NOT = { in_diplomatic_range = scope:attacker }
+					}
+					break_alliance = scope:attacker
+				}
+			}
+		}
+
+		# Truce
+		add_truce_attacker_victory_effect = yes
+	}
+
+	on_white_peace_desc = {
+		triggered_desc = {
+			trigger = {
+				scope:attacker = { is_local_player = yes }
+			}
+			desc = border_raid_cb_desc_white_peace_attacker
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = { is_local_player = yes }
+			}
+			desc = border_raid_cb_desc_white_peace_defender
+		}
+	}
+
+	on_white_peace = {
+		# Prestige loss for the attacker
+		scope:attacker = {
+			add_prestige = {
+				value = miniscule_prestige_value
+				multiply = -1.0
+			}
+			stress_impact = {
+				ambitious = medium_stress_impact_gain
+				arrogant = medium_stress_impact_gain
+			}
+		}
+
+		# Prestige for the attacker's war allies
+		add_from_contribution_attackers = {
+			prestige = minor_prestige_value
+			opinion = {
+				modifier = contributed_in_war
+			}
+		}
+
+		# Prestige for the defender's war allies
+		add_from_contribution_defenders = {
+			prestige = minor_prestige_value
+			opinion = {
+				modifier = contributed_in_war
+			}
+		}
+
+		scope:defender = {
+			stress_impact = {
+				arrogant = medium_stress_impact_gain
+			}
+		}
+
+		add_truce_white_peace_effect = yes
+	}
+
+	on_defeat_desc = {
+		triggered_desc = {
+			trigger = {
+				scope:attacker = { is_local_player = yes }
+			}
+			desc = border_raid_cb_desc_defeat_attacker
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = { is_local_player = yes }
+			}
+			desc = border_raid_cb_desc_defeat_defender
+		}
+	}
+
+	on_defeat = {
+		#EP2 accolade glory gain for winning against higher ranked enemy
+		scope:defender = { accolade_defender_war_end_glory_gain_low_effect = yes }
+
+		# Prestige loss for the attacker
+		scope:attacker = {
+			pay_short_term_gold_reparations_effect = {
+				GOLD_VALUE = 1
+			}
+			add_prestige = {
+				value = medium_prestige_value
+				multiply = -1.0
+			}
+		}
+
+		# Prestige for Defender
+		scope:defender = {
+			add_prestige_war_defender_effect = {
+				PRESTIGE_VALUE = medium_prestige_value
+			}
+		}
+
+		# Prestige for the attacker's war allies
+		add_from_contribution_attackers = {
+			prestige = minor_prestige_value
+			opinion = {
+				modifier = contributed_in_war
+			}
+		}
+
+		# Prestige for the defender's war allies
+		add_from_contribution_defenders = {
+			prestige = minor_prestige_value
+			opinion = {
+				modifier = contributed_in_war
+			}
+		}
+
+		add_truce_attacker_defeat_effect = yes
+
+		scope:attacker = {
+			save_temporary_scope_as = loser
+		}
+
+		on_lost_aggression_war_discontent_loss = yes
+	}
+
+	transfer_behavior = transfer
+
+	on_primary_attacker_death = invalidate
+	on_primary_defender_death = inherit
+
+	attacker_allies_inherit = no
+	defender_allies_inherit = no
+
+	war_name = "wc_border_raid_WAR_NAME"
+	war_name_base = "wc_border_raid_WAR_NAME_BASE"
+	cb_name = "wc_border_raid_CB_NAME"
+
+	interface_priority = 79
+
+	use_de_jure_wargoal_only = yes
+
+	# The war will last 2 years at most
+	defender_ticking_warscore_delay = { months = 3 }
+	defender_ticking_warscore = 0.15
+
+	attacker_wargoal_percentage = 1
+	attacker_ticking_warscore = 1
+
+	max_defender_score_from_occupation = 100
+	max_attacker_score_from_occupation = 1
+
+	ticking_war_score_targets_entire_realm = no
+}
+
+wc_expel_interloper = {
+	group = conquest
+	icon = struggle
+
+	combine_into_one = yes
+	should_show_war_goal_subview = yes
+	allow_hostages = no
+	mutually_exclusive_titles = { always = yes }
+	interface_priority = 112
+
+	allowed_for_character = {
+		# Attacker must be Involved in Struggle during correct phase
+		any_character_struggle = {
+			involvement = involved
+			is_struggle_type = lordaeron_struggle
+			has_struggle_phase_parameter = unlocks_lordaeron_reclamation_casus_belli
+		}
+	}
+
+	allowed_against_character = {
+		# Defender must not be Involved in Struggle
+		NOT = {
+			any_character_struggle = {
+				involvement = involved
+				is_struggle_type = lordaeron_struggle
+			}
+		}
+		# Outsider who owns Iberian lands
+		wc_lordaeron_reclamation_involved_county_trigger = yes
+	}
+
+	target_titles = neighbor_land_or_water
+	target_title_tier = duchy
+	target_de_jure_regions_above = yes
+	ignore_effect = change_title_holder
+
+	ai_score_mult = { value = wc_expel_interloper_ai_targeting_value }
+
+	valid_to_start = {
+		scope:target = {
+			any_de_jure_county = {
+				any_county_struggle = { this = struggle:lordaeron_struggle }
+			}
+		}
+	}
+
+	should_invalidate = {
+		scope:defender = {
+			NOT = { wc_lordaeron_reclamation_involved_county_trigger = yes }
+		}
+	}
+
+	on_invalidated_desc = msg_county_conquest_war_invalidated_message
+	
+	on_invalidated = {}
+
+	cost = {
+		piety = {
+			value = 0
+			if = {
+				limit = {
+					scope:defender.faith = scope:attacker.faith
+				}
+				add = {
+					value = minor_piety_value
+					desc = CB_SAME_FAITH_COST
+				}
+			}
+
+			multiply = common_cb_piety_cost_multiplier
+		}
+		prestige = {
+			value = minor_prestige_value
+			if = {
+				limit = {
+					NOT = { scope:defender.faith = scope:attacker.faith }
+				}
+				add = {
+					value = minor_prestige_value
+					desc = CB_COST_DIFFERENT_FAITH
+				}
+			}
+			add = {
+				value = 0
+				scope:defender = {
+					every_realm_county = {
+						limit = {
+							any_county_struggle = { this = struggle:lordaeron_struggle }
+						}
+						add = wc_expel_interloper_county_cost_value
+					}
+				}
+				#TODO update
+				desc = CB_COST_IBERIAN_RECLAMATION # cost per-reclaimed county
+			}
+			multiply = common_cb_prestige_cost_multiplier
+		}
+	}
+
+	on_declaration = {
+		on_declared_war = yes
+	}
+
+	on_victory_desc = {
+		triggered_desc = {
+			trigger = {
+				scope:attacker = { is_local_player = yes }
+				scope:defender = { wc_struggle_lordaeron_reclamation_should_vassalize_trigger = yes }
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_victory_desc_attacker_vassalize
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = {
+					is_local_player = yes
+					wc_struggle_lordaeron_reclamation_should_vassalize_trigger = yes
+				}
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_victory_desc_defender_vassalize
+		}
+		triggered_desc = {
+			trigger = {
+				scope:attacker = { is_local_player = yes }
+				scope:defender = {
+					wc_struggle_lordaeron_reclamation_should_vassalize_trigger = no
+				}
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_victory_desc_attacker_conquer_2
+		}
+		triggered_desc = {
+			trigger = {
+				scope:attacker = { is_local_player = yes }
+				scope:defender = {
+					wc_struggle_lordaeron_reclamation_should_vassalize_trigger = no
+					any_vassal_or_below = { wc_lordaeron_reclamation_vassalize_vassal_trigger = yes }
+				}
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_victory_desc_attacker_conquer_1
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = {
+					is_local_player = yes
+					wc_struggle_lordaeron_reclamation_should_vassalize_trigger = no
+				}
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_victory_desc_defender_conquer_2
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = {
+					is_local_player = yes
+					wc_struggle_lordaeron_reclamation_should_vassalize_trigger = no
+					any_vassal_or_below = { wc_lordaeron_reclamation_vassalize_vassal_trigger = yes }
+				}
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_victory_desc_defender_conquer_1
+		}
+	}
+
+	on_victory = {
+		#EP2 accolade glory gain for winning against higher ranked enemy
+		scope:attacker = { accolade_attacker_war_end_glory_gain_med_effect = yes }
+		
+		create_title_and_vassal_change = {
+			type = conquest
+			save_scope_as = title_change
+			add_claim_on_loss = yes
+		}
+		scope:defender = {
+			# Vassalize if entirely within duchy
+			if = {
+				limit = { wc_struggle_lordaeron_reclamation_should_vassalize_trigger = yes }
+				change_liege = {
+					liege = scope:attacker
+					change = scope:title_change
+				}
+			}
+			else = {
+				every_vassal_or_below = {
+					limit = { wc_lordaeron_reclamation_vassalize_vassal_trigger = yes }
+					add_to_list = transferred_vassal
+					change_liege = {
+						liege = scope:attacker
+						change = scope:title_change
+					}
+				}
+				every_in_list = {
+					list = target_titles
+					every_de_jure_county = {
+						limit = {
+							holder.top_liege = scope:defender
+							NOR = {
+								holder.liege = scope:attacker
+								holder = scope:attacker
+								holder = { is_in_list = transferred_vassal }
+							}
+						}
+						change_title_holder = {
+							holder = scope:attacker
+							change = scope:title_change
+						}
+					}
+				}
+			}
+		}
+		resolve_title_and_vassal_change = scope:title_change
+
+		# Prestige Progress for the Attacker
+		every_in_list = {
+			list = target_titles
+			scope:attacker = {
+				add_prestige_experience = medium_prestige_value
+			}
+		}
+
+		# Allies on both sides get full prestige value for helping in the war, based on their war participation.
+		modify_allies_of_participants_fame_values = {
+			WINNER = scope:attacker
+			FAME_BASE = minor_prestige_value
+			IS_RELIGIOUS_WAR = no
+			WINNER_ALLY_FAME_SCALE = 1
+			LOSER_ALLY_FAME_SCALE = 1
+		}
+
+		# Break alliances now out of diplo range
+		scope:attacker = {
+			if = {
+				limit = {
+					any_ally = {
+						NOT = { in_diplomatic_range = scope:attacker }
+					}
+				}
+				every_ally = {
+					limit = {
+						NOT = { in_diplomatic_range = scope:attacker }
+					}
+					break_alliance = scope:attacker
+				}
+			}
+		}
+
+		# Truce
+		add_truce_attacker_victory_effect = yes
+	}
+
+	on_white_peace_desc = {
+		triggered_desc = {
+			trigger = {
+				scope:defender = { wc_struggle_lordaeron_reclamation_should_vassalize_trigger = yes }
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_white_peace_desc_vassalize
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = { wc_struggle_lordaeron_reclamation_should_vassalize_trigger = no }
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_white_peace_desc_conquer
+		}
+	}
+
+	on_white_peace = {
+		#EP2 accolade glory gain for doing ok against higher ranked enemy
+		scope:defender = { accolade_defender_war_end_glory_gain_low_effect = yes }
+
+		# Prestige loss for the attacker
+		scope:attacker = {
+			add_prestige = {
+				value = minor_prestige_value
+				multiply = -1.0
+			}
+			stress_impact = {
+				ambitious = medium_stress_impact_gain
+				arrogant = medium_stress_impact_gain
+			}
+		}
+
+		# Allies on both sides get full prestige value for helping in the war, based on their war participation.
+		modify_allies_of_participants_fame_values = {
+			WINNER = scope:attacker # not important as scale values are identical
+			FAME_BASE = minor_prestige_value
+			IS_RELIGIOUS_WAR = no
+			WINNER_ALLY_FAME_SCALE = 1
+			LOSER_ALLY_FAME_SCALE = 1
+		}
+
+		scope:defender = {
+			stress_impact = {
+				arrogant = medium_stress_impact_gain
+			}
+		}
+
+		add_truce_white_peace_effect = yes
+	}
+
+	on_defeat_desc = {
+		triggered_desc = {
+			trigger = {
+				scope:defender = { wc_struggle_lordaeron_reclamation_should_vassalize_trigger = yes }
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_defeat_desc_vassalize
+		}
+		triggered_desc = {
+			trigger = {
+				scope:defender = { wc_struggle_lordaeron_reclamation_should_vassalize_trigger = no }
+			}
+			#TODO update
+			desc = iberian_reclamation_cb_defeat_desc_conquer
+		}
+	}
+
+	on_defeat = {
+		#EP2 accolade glory gain for winning against higher ranked enemy
+		scope:defender = { accolade_defender_war_end_glory_gain_med_effect = yes }
+
+		# Prestige loss for the attacker
+		scope:attacker = {
+			pay_short_term_gold_reparations_effect = {
+				GOLD_VALUE = 3
+			}
+			add_prestige = {
+				value = major_prestige_value
+				multiply = -1.0
+			}
+		}
+
+		# Prestige for Defender
+		scope:defender = {
+			add_prestige_war_defender_effect = {
+				PRESTIGE_VALUE = major_prestige_value
+			}
+		}
+
+		# Allies on both sides get full prestige value for helping in the war, based on their war participation.
+		modify_allies_of_participants_fame_values = {
+			WINNER = scope:defender
+			FAME_BASE = minor_prestige_value
+			IS_RELIGIOUS_WAR = no
+			WINNER_ALLY_FAME_SCALE = 1
+			LOSER_ALLY_FAME_SCALE = 1
+		}
+
+		add_truce_attacker_defeat_effect = yes
+
+		scope:attacker = {
+			save_temporary_scope_as = loser
+		}
+
+		on_lost_aggression_war_discontent_loss = yes
+	}
+
+	transfer_behavior = transfer
+
+	on_primary_attacker_death = inherit
+	on_primary_defender_death = inherit
+
+	attacker_allies_inherit = yes
+	defender_allies_inherit = yes
+
+	war_name = "wc_expel_interloper_WAR_NAME"
+	war_name_base = "wc_expel_interloper_WAR_NAME_BASE"
+	cb_name = "wc_expel_interloper_CB_NAME"
+
+	interface_priority = 79
+
+	use_de_jure_wargoal_only = yes
+
+	attacker_wargoal_percentage = 0.8
+	
+	max_defender_score_from_occupation = 150
+	max_attacker_score_from_occupation = 150
+}
