@@ -1,0 +1,1483 @@
+﻿#############
+# Diarchy Scripted Effects
+#############
+
+##################################################
+# Debug Effects
+
+log_diarch_send_interaction_as_variable_effect = {
+	if = {
+		limit = { always = no }
+		# Did a landless diarch send this?
+		if = {
+			limit = {
+				scope:actor = { is_ruler = no }
+			}
+			if = {
+				limit = {
+					NOT = { exists = global_var:landless_diarch_tried_$INTERACTION$ }
+				}
+				set_global_variable = {
+					name = landless_diarch_tried_$INTERACTION$
+					value = 1
+				}
+			}
+			else = {
+				change_global_variable = {
+					name = landless_diarch_tried_$INTERACTION$
+					add = 1
+				}
+			}
+		}
+	}
+}
+
+# These two effects exist to allow quantitative tracking of how many characters in the world are actually using diarch interactions & in what numbers mid-game — left in case Design needs to do more frequency checking & doesn't want to re-script everything.
+diarch_interaction_set_or_update_global_variable_effect = {
+	if = {
+		limit = { always = no }
+		if = {
+			limit = {
+				NOT = { exists = global_var:$VARIABLE$ }
+			}
+			set_global_variable = {
+				name = $VARIABLE$
+				value = 1
+			}
+		}
+		else = {
+			change_global_variable = {
+				name = $VARIABLE$
+				add = 1
+			}
+		}
+	}
+}
+diarch_interaction_add_to_global_list_effect = {
+	if = {
+		limit = { always = no }
+		add_to_global_variable_list = {
+			name = $VARIABLE_LIST$
+			target = this
+		}
+	}
+}
+
+##################################################
+# Historical Effects
+
+remove_generated_diarch_consequences_effect = {
+	$NEW_DIARCH$ = {
+		remove_opinion = {
+			target = $LIEGE$
+			modifier = designated_me_regent_opinion
+		}
+	}
+	$LIEGE$ = {
+		every_diarchy_succession_character = {
+			remove_opinion = {
+				target = $LIEGE$
+				modifier = passed_me_over_for_regent_opinion
+			}
+		}
+		every_vassal = {
+			limit = { has_vassal_stance = courtly }
+			remove_opinion = {
+				target = $LIEGE$
+				modifier = designated_bad_regent_opinion
+			}
+		}
+	}
+}
+
+##################################################
+# Decision Effects
+
+ai_diarch_check_to_see_if_should_launch_coup_effect = {
+	scope:actor = {
+		if = {
+			limit = {
+				# Robots only, please.
+				is_ai = yes
+				# Check that this is the diarch.
+				is_diarch_of_target = scope:recipient
+				# Plus a few checks for scope:recipient.
+				scope:recipient = {
+					# Then, we look to see if we've hit that magic number.
+					has_diarchy_active_parameter = regents_can_try_to_overthrow_present_lieges
+					# Finally, make sure that scope:recipient doesn't have a sensibility cooldown on 'em.
+					NOT = { has_character_flag = immune_ai_coups }
+				}
+				# Only disloyal diarchs will even consider this. It's really not for casuals.
+				diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+			}
+			# Right, lets try for some treason, then!
+			trigger_event = diarchy.9031
+		}
+	}
+}
+
+diarch_finalise_conspirators_for_overthrow_list_effect = {
+	# The list we know we have.
+	every_in_list = {
+		variable = coup_pv_supporters_list
+		limit = {
+			diarch_coup_valid_conspiracy_culmination_vassals_trigger = { LIEGE = prev.liege }
+		}
+		add_to_list = coup_pv_supporters_final_list
+	}
+	# & the lists we only might have.
+	## Hooks.
+	if = {
+		limit = { has_variable_list = coup_promise_list_weak_hook }
+		every_in_list = {
+			variable = coup_promise_list_weak_hook
+			limit = {
+				diarch_coup_valid_conspiracy_culmination_vassals_trigger = { LIEGE = prev.liege }
+			}
+			add_to_list = coup_promise_list_weak_hook_final
+		}
+	}
+	## Strong hooks.
+	if = {
+		limit = { has_variable_list = coup_promise_list_strong_hook }
+		every_in_list = {
+			variable = coup_promise_list_strong_hook
+			limit = {
+				diarch_coup_valid_conspiracy_culmination_vassals_trigger = { LIEGE = prev.liege }
+			}
+			add_to_list = coup_promise_list_strong_hook_final
+		}
+	}
+	## Gold.
+	if = {
+		limit = { has_variable_list = coup_promise_list_gold }
+		every_in_list = {
+			variable = coup_promise_list_gold
+			limit = {
+				diarch_coup_valid_conspiracy_culmination_vassals_trigger = { LIEGE = prev.liege }
+			}
+			add_to_list = coup_promise_list_gold_final
+		}
+	}
+	## Big gold.
+	if = {
+		limit = { has_variable_list = coup_promise_list_big_gold }
+		every_in_list = {
+			variable = coup_promise_list_big_gold
+			limit = {
+				diarch_coup_valid_conspiracy_culmination_vassals_trigger = { LIEGE = prev.liege }
+			}
+			add_to_list = coup_promise_list_big_gold_final
+		}
+	}
+}
+
+diarch_clean_up_conspiracy_variables_effect = {
+	if = {
+		limit = { is_alive = yes }
+		remove_variable = coup_pv_supporters_list
+		remove_variable = coup_promise_list_weak_hook
+		remove_variable = coup_promise_list_strong_hook
+		remove_variable = coup_promise_list_gold
+		remove_variable = coup_promise_list_big_gold
+	}
+}
+
+diarch_coup_preamble_effects_effect = {
+	# Note that we don't want a list when it comes to the coup event.
+	save_scope_value_as = {
+		name = disable_display_rightful_imprisonment_tooltip
+		value = yes
+	}
+	# If there's an alliance, it's pretty decisively broken.
+	if = {
+		limit = { is_allied_to = scope:liege }
+		break_alliance_due_to_attack_effect = { TARGET = scope:liege }
+	}
+	# And don't forget stress!
+	stress_impact = {
+		base = major_stress_impact_gain
+		disloyal = medium_stress_impact_loss
+		ambitious = minor_stress_impact_loss
+		arrogant = minor_stress_impact_loss
+		callous = miniscule_stress_impact_loss
+		arbitrary = miniscule_stress_impact_loss
+		just = minor_stress_impact_gain
+		humble = medium_stress_impact_gain
+		content = medium_stress_impact_gain
+		loyal = major_stress_impact_gain
+	}
+	# Register that the AI shouldn't try to coup liege again for a *while*.
+	scope:liege = {
+		add_character_flag = {
+			flag = immune_ai_coups
+			years = 50
+		}
+	}
+}
+
+##################################################
+# Activities
+
+remove_strife_per_invited_powerful_vassal_effect = {
+	scope:activity = {
+		if = {
+			limit = {
+				# Does scope:host have any strife to take care of?
+				scope:host = {
+					exists = liege
+					strife_opinion >= 1
+				}
+				any_attending_character = {
+					NOT = { this = scope:host }
+					is_powerful_vassal_of = scope:host.liege
+				}
+			}
+			# Save a variable for the loc key so that we don't need to parse a million scopes _into_ the key.
+			## We do it this way because the custom_tooltip otherwise gets real finnicky about having 
+			scope:host = {
+				set_variable = {
+					name = strife_loss_total
+					value = {
+						value = scope:activity.diarch_reduced_strife_for_inviting_powerful_covassals_value
+						# Invert it for UX purposes.
+						multiply = -1
+					}
+				}
+			}
+			custom_tooltip = remove_strife_per_invited_powerful_vassal_effect.tt
+			## Don't forget to remove the variable!
+			# Now, change the actual strife.
+			hidden_effect = {
+				scope:host = { change_strife_opinion = scope:activity.diarch_reduced_strife_for_inviting_powerful_covassals_value }
+			}
+		}
+	}
+}
+
+##################################################
+# Character Interactions
+
+diarch_changed_own_contract_effect = {
+	if = {
+		limit = { always = scope:diarch }
+		scope:recipient = {
+			add_to_variable_list = {
+				name = diarch_contract_rights_used_list
+				target = scope:actor
+			}
+			custom_tooltip = liege_modify_vassal_contract_interaction.tt.diarch_powers_used
+			reverse_add_opinion = {
+				target = scope:actor
+				modifier = abused_position_of_trust_opinion
+				opinion = -40
+			}
+		}
+	}
+}
+
+diarch_revoke_title_interaction_intermediary_fail_opinions_effect = {
+	# Scope:actor dislikes scope:intermediary.
+	scope:actor = {
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				target = scope:intermediary
+				modifier = disappointed_opinion
+				opinion = -20
+			}
+		}
+	}
+	# Scope:recipient has mixed feelings.
+	scope:recipient = {
+		# Specifically, they're now happy with scope:intermediary...
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				target = scope:intermediary
+				modifier = protected_me_opinion
+				opinion = 20
+			}
+			# ... but upset with scope:actor.
+			add_opinion = {
+				target = scope:actor
+				modifier = revoked_title
+			}
+		}
+	}
+}
+
+diarch_retract_vassal_interaction_intermediary_fail_opinions_effect = {
+	# Scope:actor dislikes scope:intermediary.
+	scope:actor = {
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				target = scope:intermediary
+				modifier = disappointed_opinion
+				opinion = -20
+			}
+		}
+	}
+	# Scope:recipient has mixed feelings.
+	scope:recipient = {
+		# Specifically, they're now happy with scope:intermediary...
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				target = scope:intermediary
+				modifier = protected_me_opinion
+				opinion = 20
+			}
+			# ... but upset with scope:actor.
+			add_opinion = {
+				target = scope:actor
+				modifier = retracted_vassal
+			}
+		}
+	}
+}
+
+diarch_imprison_interaction_intermediary_fail_opinions_effect = {
+	# Scope:actor dislikes scope:intermediary.
+	scope:actor = {
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				target = scope:intermediary
+				modifier = disappointed_opinion
+				opinion = -20
+			}
+		}
+	}
+	# Scope:recipient has mixed feelings.
+	scope:recipient = {
+		# Specifically, they're now happy with scope:intermediary...
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				target = scope:intermediary
+				modifier = protected_me_opinion
+				opinion = 20
+			}
+			# ... but upset with scope:actor.
+			add_opinion = {
+				target = scope:actor
+				modifier = imprisoned_me_past
+			}
+		}
+	}
+}
+
+diarch_legal_meddling_interaction_success_effect = {
+	scope:actor = {
+		# Nab the claim.
+		add_unpressed_claim = scope:target
+		# We nest this so that scope:recipient doesn't have to see their own opinion effects.
+		if = {
+			limit = {
+				NOT = { this = scope:recipient }
+			}
+			# Add some opinion loss.
+			## Counties are worrying.
+			if = {
+				limit = { scope:target.tier = tier_county }
+				reverse_add_opinion = {
+					target = scope:recipient
+					modifier = annoyed_opinion
+					opinion = -20
+				}
+				change_strife_opinion = minor_strife_gain
+			}
+			## Duchies are troublesome.
+			else_if = {
+				limit = { scope:target.tier = tier_duchy }
+				reverse_add_opinion = {
+					target = scope:recipient
+					modifier = angry_opinion
+					opinion = -40
+				}
+				change_strife_opinion = medium_strife_gain
+			}
+			## Kingdoms are hateful.
+			else_if = {
+				limit = { scope:target.tier = tier_kingdom }
+				reverse_add_opinion = {
+					target = scope:recipient
+					modifier = hate_opinion
+					opinion = -60
+				}
+				change_strife_opinion = major_strife_gain
+			}
+		}
+	}
+	# Object explorer logging.
+	scope:actor = {
+		diarch_interaction_set_or_update_global_variable_effect = { VARIABLE = di_track_legmed_success }
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_legmed_success_actor_list }
+	}
+	scope:recipient = {
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_legmed_success_recipient_list }
+	}
+}
+
+diarch_legal_meddling_interaction_fail_effect = {
+	scope:actor = {
+		# Gain some stress.
+		add_stress = minor_stress_gain
+		# We nest this so that scope:recipient doesn't have to see their own opinion effects.
+		if = {
+			limit = {
+				NOT = { this = scope:recipient }
+			}
+			# Add some opinion loss.
+			## Counties are worrying.
+			if = {
+				limit = { scope:target.tier = tier_county }
+				reverse_add_opinion = {
+					target = scope:recipient
+					modifier = respect_opinion
+					opinion = -10
+				}
+			}
+			## Duchies are troublesome.
+			else_if = {
+				limit = { scope:target.tier = tier_duchy }
+				reverse_add_opinion = {
+					target = scope:recipient
+					modifier = annoyed_opinion
+					opinion = -20
+				}
+			}
+			## Kingdoms are hateful.
+			else_if = {
+				limit = { scope:target.tier = tier_kingdom }
+				reverse_add_opinion = {
+					target = scope:recipient
+					modifier = angry_opinion
+					opinion = -30
+				}
+			}
+		}
+	}
+	# Object explorer logging.
+	scope:actor = {
+		diarch_interaction_set_or_update_global_variable_effect = { VARIABLE = di_track_legmed_failure }
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_legmed_failure_actor_list }
+	}
+	scope:recipient = {
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_legmed_failure_recipient_list }
+	}
+}
+
+diarch_legal_meddling_interaction_apply_success_effect = {
+	# Notify other parties.
+	hidden_effect = {
+		# Inform the liege.
+		scope:actor.liege = {
+			send_interface_message = {
+				type = msg_diarch_acting_effect
+				title = diarch_using_powers.t
+				right_icon = scope:recipient
+				left_icon = scope:actor
+				show_as_tooltip = { diarch_legal_meddling_interaction_success_effect = yes }
+			}
+		}
+		# Inform scope:recipient.
+		scope:recipient = {
+			send_interface_toast = {
+				title = diarch_legal_meddling_interaction.tt.success
+				left_icon = scope:actor
+				show_as_tooltip = { diarch_legal_meddling_interaction_success_effect = yes }
+			}
+		}
+	}
+	# Finally, fire off the actual effect.
+	send_interface_toast = {
+		title = diarch_legal_meddling_interaction.tt.success
+		left_icon = scope:recipient
+		# Prestige costs.
+		## Point out the lack of cost.
+		if = {
+			limit = { scope:diarch_legal_meddling_interaction_duel_learning = yes }
+			custom_tooltip = diarch_interaction_pay_prestige_none
+		}
+		## Point out the discount.
+		else_if = {
+			limit = { scope:diarch_legal_meddling_interaction_pay_prestige_partial = yes }
+			add_prestige = legal_meddling_interaction_title_discounted_cost_value
+		}
+		## Soz mate, yerr payin' full price.
+		else = { add_prestige = legal_meddling_interaction_title_cost_value }
+		# Gib claim & opinion loss.
+		diarch_legal_meddling_interaction_success_effect = yes
+	}
+}
+
+diarch_legal_meddling_interaction_apply_fail_effect = {
+	# Notify other parties.
+	hidden_effect = {
+		# Inform scope:secondary_recipient.
+		scope:secondary_recipient = {
+			send_interface_message = {
+				type = msg_diarch_acting_text_and_effect
+				title = diarch_using_powers.t
+				desc = diarch_legal_meddling_interaction.tt.failure.liege
+				right_icon = scope:recipient
+				left_icon = scope:actor
+				show_as_tooltip = { diarch_legal_meddling_interaction_fail_effect = yes }
+			}
+		}
+		# Inform scope:recipient.
+		scope:recipient = {
+			send_interface_toast = {
+				title = diarch_legal_meddling_interaction.tt.failure
+				left_icon = scope:actor
+				show_as_tooltip = { diarch_legal_meddling_interaction_fail_effect = yes }
+			}
+		}
+	}
+	# Finally, fire off the actual effect.
+	send_interface_toast = {
+		title = diarch_legal_meddling_interaction.tt.failure
+		left_icon = scope:recipient
+		diarch_legal_meddling_interaction_fail_effect = yes
+	}
+}
+
+diarch_syphon_treasury_interaction_syphon_development_growth_effect = {
+	# First, configure the development growth loss to be divided.
+	save_scope_value_as = {
+		name = county_attribute_loss
+		value = $LOSS$
+	}
+	# Now, execute our general effects.
+	while = {
+		count = syphon_treasury_recipient_county_tally
+		random_held_county = {
+			limit = {
+				NOT = {
+					save_temporary_scope_as = current_county
+					any_in_list = {
+						list = syphon_treasury_affected_counties
+						this = scope:current_county
+					}
+				}
+			}
+			change_development_progress = syphon_treasury_county_attribute_loss_fraction
+			add_to_list = syphon_treasury_affected_counties
+		}
+	}
+}
+
+diarch_syphon_treasury_interaction_syphon_control_effect = {
+	# First, configure the control loss to be divided.
+	save_scope_value_as = {
+		name = county_attribute_loss
+		value = $LOSS$
+	}
+	# Now, execute our general effects.
+	while = {
+		count = syphon_treasury_recipient_county_tally
+		random_held_county = {
+			limit = {
+				NOT = {
+					save_temporary_scope_as = current_county
+					any_in_list = {
+						list = syphon_treasury_affected_counties
+						this = scope:current_county
+					}
+				}
+			}
+			change_county_control = syphon_treasury_county_attribute_loss_fraction
+			add_to_list = syphon_treasury_affected_counties
+		}
+	}
+}
+
+diarch_syphon_treasury_interaction_caught_embezzling_effect = {
+	scope:actor = {
+		# Variable results depending on embezzlement level.
+		## Very high.
+		if = {
+			limit = { always = scope:diarch_syphon_treasury_sum_huge }
+			# Apply strife.
+			change_strife_opinion = monumental_strife_gain
+			# Negative opinion.
+			scope:recipient = {
+				# Greedy characters will not forgive this slight if they can help it.
+				if = {
+					limit = {
+						has_trait = greedy
+						can_set_relation_nemesis_trigger = { CHARACTER = scope:actor }
+					}
+					set_relation_nemesis = {
+						target = scope:actor
+						reason = rival_tried_to_embezzle
+					}
+				}
+				# Forgiving characters lose a little less.
+				else_if = {
+					limit = { has_trait = forgiving }
+					add_opinion = {
+						target = scope:actor
+						modifier = disappointed_opinion
+						opinion = -10
+					}
+				}
+				# Otherwise, folks do be mad.
+				else = {
+					add_opinion = {
+						target = scope:actor
+						modifier = trust_opinion
+						opinion = -45
+					}
+				}
+			}
+		}
+		## High.
+		else_if = {
+			limit = { always = scope:diarch_syphon_treasury_sum_large }
+			# Apply strife.
+			change_strife_opinion = massive_strife_gain
+			# Negative opinion.
+			scope:recipient = {
+				# Greedy characters will not forgive this slight if they can help it.
+				if = {
+					limit = {
+						has_trait = greedy
+						can_set_relation_rival_trigger = { CHARACTER = scope:actor }
+					}
+					set_relation_rival = {
+						target = scope:actor
+						reason = rival_tried_to_embezzle
+					}
+				}
+				# Forgiving characters lose a little less.
+				else_if = {
+					limit = { has_trait = forgiving }
+					add_opinion = {
+						target = scope:actor
+						modifier = disappointed_opinion
+						opinion = -5
+					}
+				}
+				# Otherwise, folks are still somewhat mad.
+				else = {
+					add_opinion = {
+						target = scope:actor
+						modifier = trust_opinion
+						opinion = -20
+					}
+				}
+			}
+		}
+		## Medium.
+		else_if = {
+			limit = { always = scope:diarch_syphon_treasury_sum_medium }
+			# Apply strife.
+			change_strife_opinion = major_strife_gain
+			# Negative opinion.
+			## Covered by embezzlement.
+			## Greedy characters do still have a bit more room for hate.
+			scope:recipient = {
+				if = {
+					limit = {
+						scope:recipient = { has_trait = greedy }
+					}
+					progress_towards_rival_effect = {
+						REASON = rival_tried_to_embezzle
+						CHARACTER = scope:actor
+						OPINION = 0
+					}
+				}
+			}
+		}
+		## Low.
+		else_if = {
+			limit = { always = scope:diarch_syphon_treasury_sum_small }
+			# Apply strife.
+			change_strife_opinion = medium_strife_gain
+			# Negative opinion.
+			## Covered by embezzlement.
+			## Greedy characters do still have a bit more room for hate.
+			scope:recipient = {
+				if = {
+					limit = {
+						scope:recipient = { has_trait = greedy }
+					}
+					progress_towards_rival_effect = {
+						REASON = rival_tried_to_embezzle
+						CHARACTER = scope:actor
+						OPINION = 0
+					}
+				}
+			}
+		}
+		# Crime opinion.
+		reverse_add_opinion = {
+			target = scope:recipient
+			modifier = embezzled_opinion
+		}
+	}
+}
+
+diarch_shift_privileges_interaction_success_apply_modifiers_vague_effect = {
+	scope:recipient = {
+		# We obfuscate at this stage for neater UX.
+		custom_tooltip = diarch_shift_privileges_interaction.tt.success.random_negative_effect
+	}
+}
+
+diarch_shift_privileges_interaction_success_apply_modifiers_actual_effect = {
+	# Add a randomised negative modifier.
+	random_list = {
+		# Target cash.
+		100 = {
+			ordered_held_title = {
+				limit = {
+					tier = tier_county
+					diarch_shift_privileges_valid_target_title_trigger = yes
+				}
+				order_by = {
+					value = title_province.monthly_income
+					# Weight down the capital to be the last selected, if we can.
+					if = {
+						limit = { this = scope:recipient.capital_county }
+						add = -1000
+					}
+				}
+				add_county_modifier = {
+					modifier = shift_privileges_monopolies_sold_modifier
+					years = shift_privileges_modifier_duration_value
+				}
+				change_county_control = medium_county_control_loss
+			}
+		}
+		# Target levies.
+		100 = {
+			ordered_held_title = {
+				limit = {
+					tier = tier_county
+					diarch_shift_privileges_valid_target_title_trigger = yes
+				}
+				order_by = {
+					value = building_levies
+					# Weight down the capital to be the last selected, if we can.
+					if = {
+						limit = { this = scope:recipient.capital_county }
+						add = -1000
+					}
+				}
+				add_county_modifier = {
+					modifier = shift_privileges_scutage_exemptions_modifier
+					years = shift_privileges_modifier_duration_value
+				}
+				change_county_control = medium_county_control_loss
+			}
+		}
+		# Target development growth.
+		100 = {
+			ordered_held_title = {
+				limit = {
+					tier = tier_county
+					diarch_shift_privileges_valid_target_title_trigger = yes
+				}
+				order_by = {
+					value = development_rate
+					# Weight down the capital to be the last selected, if we can.
+					if = {
+						limit = { this = scope:recipient.capital_county }
+						add = -1000
+					}
+				}
+				add_county_modifier = {
+					modifier = shift_privileges_conflicting_deeds_modifier
+					years = shift_privileges_modifier_duration_value
+				}
+				change_county_control = medium_county_control_loss
+			}
+		}
+	}
+	# Object explorer logging.
+	scope:actor = {
+		diarch_interaction_set_or_update_global_variable_effect = { VARIABLE = di_track_shiftpriv_success }
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_shiftpriv_success_actor_list }
+	}
+	scope:recipient = {
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_shiftpriv_success_recipient_list }
+	}
+}
+
+diarch_shift_privileges_interaction_success_apply_opinion_effect = {
+	scope:actor = {
+		# Plus opinion loss.
+		reverse_add_opinion = {
+			target = scope:recipient
+			modifier = hate_opinion
+			opinion = -30
+		}
+		# And some strife.
+		change_strife_opinion = minor_strife_gain
+	}
+}
+
+diarch_shift_privileges_interaction_success_apply_other_effect = {
+	scope:actor = {
+		# Now we dole out some cash.
+		add_gold = major_gold_value
+	}
+}
+
+diarch_shift_privileges_interaction_fail_effect = {
+	scope:actor = {
+		# Gain some stress, proportional to the size of the realm you're harassing.
+		## Counties are a bit of stress.
+		if = {
+			limit = { scope:recipient.highest_held_title_tier >= tier_county }
+			add_stress = minor_stress_gain
+		}
+		## Duchies are troublesome.
+		else_if = {
+			limit = { scope:recipient.highest_held_title_tier >= tier_duchy }
+			add_stress = medium_stress_gain
+		}
+		## Kingdoms are a big deal.
+		else_if = {
+			limit = { scope:recipient.highest_held_title_tier >= tier_kingdom }
+			add_stress = major_stress_gain
+		}
+		# We nest this so that scope:recipient doesn't have to see their own opinion effects.
+		if = {
+			limit = {
+				NOT = { this = scope:recipient }
+			}
+			# Add some opinion loss.
+			reverse_add_opinion = {
+				target = scope:recipient
+				modifier = angry_opinion
+				opinion = -20
+			}
+		}
+	}
+	# Object explorer logging.
+	scope:actor = {
+		diarch_interaction_set_or_update_global_variable_effect = { VARIABLE = di_track_shiftpriv_failure }
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_shiftpriv_failure_actor_list }
+	}
+	scope:recipient = {
+		diarch_interaction_add_to_global_list_effect = { VARIABLE_LIST = di_track_shiftpriv_failure_recipient_list }
+	}
+}
+
+diarch_shift_privileges_interaction_apply_success_effect = {
+	# Notify other parties.
+	hidden_effect = {
+		# Inform the liege.
+		scope:actor.liege = {
+			send_interface_message = {
+				type = msg_diarch_acting_effect
+				title = diarch_using_powers.t
+				right_icon = scope:recipient
+				left_icon = scope:actor
+				show_as_tooltip = {
+					diarch_shift_privileges_interaction_success_apply_modifiers_vague_effect = yes
+					diarch_shift_privileges_interaction_success_apply_other_effect = yes
+				}
+			}
+		}
+		# Inform scope:recipient.
+		scope:recipient = {
+			send_interface_toast = {
+				title = diarch_shift_privileges_interaction.tt.success
+				left_icon = scope:actor
+				# We apply the actual modifier here, so that scope:recipient can see it.
+				diarch_shift_privileges_interaction_success_apply_modifiers_actual_effect = yes
+				show_as_tooltip = { diarch_shift_privileges_interaction_success_apply_other_effect = yes }
+			}
+		}
+	}
+	# Finally, fire off the actual effect.
+	send_interface_toast = {
+		title = diarch_shift_privileges_interaction.tt.success
+		left_icon = scope:recipient
+		# Gib actual gold here.
+		diarch_shift_privileges_interaction_success_apply_other_effect = yes
+		# Plus talk about a county modifier.
+		diarch_shift_privileges_interaction_success_apply_modifiers_vague_effect = yes
+	}
+	# Finally, apply opinion loss.
+	diarch_shift_privileges_interaction_success_apply_opinion_effect = yes
+}
+
+diarch_shift_privileges_interaction_apply_fail_effect = {
+	# Notify other parties.
+	hidden_effect = {
+		# Inform scope:secondary_recipient.
+		scope:secondary_recipient = {
+			send_interface_message = {
+				type = msg_diarch_acting_text_and_effect
+				title = diarch_using_powers.t
+				desc = diarch_shift_privileges_interaction.tt.failure.liege
+				right_icon = scope:recipient
+				left_icon = scope:actor
+				show_as_tooltip = { diarch_shift_privileges_interaction_fail_effect = yes }
+			}
+		}
+		# Inform scope:recipient.
+		scope:recipient = {
+			send_interface_toast = {
+				title = diarch_shift_privileges_interaction.tt.failure
+				left_icon = scope:actor
+				show_as_tooltip = { diarch_shift_privileges_interaction_fail_effect = yes }
+			}
+		}
+	}
+	# Finally, fire off the actual effect.
+	send_interface_toast = {
+		title = diarch_shift_privileges_interaction.tt.failure
+		left_icon = scope:recipient
+		diarch_shift_privileges_interaction_fail_effect = yes
+	}
+}
+
+diarch_swing_scales_guts_effect = {
+	# Prestige.
+	if = {
+		limit = { scope:swing_prestige = yes }
+		show_as_tooltip = {
+			add_prestige = {
+				value = swing_scales_prestige_cost_value
+				multiply = -1
+			}
+		}
+	}
+	# Piety.
+	else_if = {
+		limit = { scope:swing_piety = yes }
+		show_as_tooltip = {
+			add_piety = {
+				value = swing_scales_piety_cost_value
+				multiply = -1
+			}
+		}
+	}
+	# Cash.
+	else_if = {
+		limit = { scope:swing_gold = yes }
+		show_as_tooltip = {
+			pay_short_term_gold = {
+				target = scope:recipient
+				gold = swing_scales_cash_cost_value
+			}
+		}
+		# Scope:actor actually loses their gold when paying the admission price for the interaction, so we silently give scope:recipient gold from nowhere instead.
+		hidden_effect = {
+			scope:recipient = { add_gold = scope:actor.swing_scales_cash_cost_value }
+		}
+	}
+	# Hook.
+	else_if = {
+		limit = { scope:swing_hook = yes }
+		use_hook = scope:recipient
+	}
+	# HoF.
+	else_if = {
+		limit = { scope:swing_hof = yes }
+		show_as_tooltip = {
+			add_piety = {
+				value = swing_scales_piety_cost_value
+				multiply = -1
+			}
+			pay_short_term_gold = {
+				target = scope:actor.faith.religious_head
+				gold = swing_scales_cash_cost_value
+			}
+		}
+		# The HoF doesn't need *another* source of cash unless they're fairly minor, so we only actually pay this if they're already very low on cash.
+		hidden_effect = {
+			scope:actor.faith.religious_head = {
+				if = {
+					limit = { gold <= 1000 }
+					add_gold = scope:actor.swing_scales_cash_cost_value
+				}
+			}
+		}
+	}
+}
+
+overthrow_regent_scheme_interaction_actor_stress_effect = {
+	# Loyal stress.
+	## Gain stress if current diarch is loyal.
+	if = {
+		limit = {
+			scope:recipient = { diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold }
+		}
+		stress_impact = {
+			honest = medium_stress_impact_gain
+			compassionate = major_stress_impact_gain
+			just = major_stress_impact_gain
+			loyal = major_stress_impact_gain
+		}
+		if = {
+			limit = { has_trait = loyal }
+			custom_tooltip = overthrow_regent_scheme_interaction_actor_stress_effect.tt.loyal.remove_loyal
+		}
+	}
+	## Lose stress if current diarch is disloyal.
+	else_if = {
+		limit = {
+			scope:recipient = { diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold }
+		}
+		stress_impact = {
+			loyal = major_stress_impact_loss
+			honest = medium_stress_impact_loss
+			compassionate = major_stress_impact_loss
+			just = major_stress_impact_loss
+		}
+		if = {
+			limit = { has_trait = loyal }
+			custom_tooltip = overthrow_regent_scheme_interaction_actor_stress_effect.tt.loyal.remove_disloyal
+		}
+	}
+	# Disloyal stress.
+	## Disloyals don't care if they unseat another disloyal character enough to stress about it, even if they're a bit less likely to do it.
+	## Lose stress if current diarch is loyal.
+	else_if = {
+		limit = {
+			scope:recipient = { diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold }
+		}
+		stress_impact = {
+			disloyal = major_stress_impact_loss
+			honest = medium_stress_impact_loss
+			compassionate = major_stress_impact_loss
+			just = major_stress_impact_loss
+		}
+		if = {
+			limit = { has_trait = disloyal }
+			custom_tooltip = overthrow_regent_scheme_interaction_actor_stress_effect.tt.disloyal.remove_loyal
+		}
+	}
+	# Else, standard.
+	else = {
+		stress_impact = {
+			honest = medium_stress_impact_gain
+			compassionate = major_stress_impact_gain
+			just = major_stress_impact_gain
+		}
+	}
+}
+
+invalidate_diarch_grand_wedding_effect = {
+	# Invalidate grand weddings
+	scope:diarch = {
+		if = {
+			limit = {
+				# scope:diarch is currently an active Diarch
+				exists = liege
+				is_diarch = yes
+				liege = {
+					diarch = scope:diarch
+					has_active_diarchy = yes
+				}
+				# scope:diarch was promised a Grand Wedding
+				has_variable = promised_grand_wedding_by
+			}
+			betrothed = { save_scope_as = betrothed }
+			# Save scopes of spouses, and organizers from variables
+			scope:diarch = {
+				add_to_list = informee
+				var:promised_grand_wedding_by ?= {
+					add_to_list = informee
+					var:promised_grand_wedding_to ?= { add_to_list = informee }
+				}
+			}
+			scope:betrothed = {
+				add_to_list = informee
+				var:promised_grand_wedding_by ?= {
+					add_to_list = informee
+					var:promised_grand_wedding_to ?= { add_to_list = informee }
+				}
+			}
+			# Clean up variables and inform relevant characters of invalidation
+			every_in_list = {
+				list = informee
+				if = {
+					limit = { exists = var:promised_grand_wedding_marriage_countdown }
+					remove_variable = promised_grand_wedding_marriage_countdown
+				}
+				if = {
+					limit = { exists = var:promised_grand_wedding_by }
+					remove_variable = promised_grand_wedding_by
+				}
+				if = {
+					limit = { exists = var:promised_grand_wedding_to }
+					remove_variable = promised_grand_wedding_to
+				}
+				send_interface_message = {
+					type = event_generic_bad_with_text
+					title = grand_wedding_cancelled_by_regency_title
+					left_icon = scope:diarch
+					right_icon = scope:betrothed
+					desc = grand_wedding_cancelled_by_regency_desc
+				}
+			}
+		}
+	}
+}
+
+##################################################
+# Events
+
+# Fire a tooltip saying what effect this'll have on regent opinion.
+## We don't need to use this _every_where, as otherwise it'd have to supplant the opinion effect entirely, but it's cool to use it in any specific regency events where flat opinion might be a nicer gain than usual.
+raise_diarch_opinion_with_loyalty_update_effect = {
+	# Check the current opinion.
+	diarch = {
+		save_opinion_value_as = {
+			name = diarch_old_opinion
+			target = prev
+		}
+	}
+	# Plus, save $OPINION_AMOUNT$ so that we can use it in subsequent script values.
+	save_scope_value_as = {
+		name = opinion_amount
+		value = $OPINION_AMOUNT$
+	}
+	# Process the loyalty update tooltip.
+	diarch = {
+		# Self-interested.
+		## Hates you too much to be able to tell.
+		if = {
+			limit = {
+				diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+				scope:diarch_old_opinion <= -100
+				scope:opinion_amount >= 1
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.overflow_edgecase }
+		}
+		### Since save_opinion_value_as doesn't account for overspill past -100, and as we've got some special conditions that make the move from -100 to -99 very dramatic under certain circumstances, we need to have this vague option to cover up systemic inaccuracies.
+		## Self-interested remains static.
+		else_if = {
+			limit = {
+				diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value <= diarch_loyalty_visibly_disloyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.remains_static }
+		}
+		## Self-interested to selfless.
+		else_if = {
+			limit = {
+				diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value >= diarch_loyalty_visibly_loyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.to_selfless }
+		}
+		## Self-interested to situational.
+		else_if = {
+			limit = { diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold }
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.self_interested.to_situational }
+		}
+		# Situational.
+		## Situational to selfless.
+		else_if = {
+			limit = {
+				diarch_has_situational_loyalty_trigger = yes
+				raise_diarch_opinion_with_loyalty_update_value >= diarch_loyalty_visibly_loyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.situational.to_selfless }
+		}
+		## Situational to self-interested.
+		else_if = {
+			limit = {
+				diarch_has_situational_loyalty_trigger = yes
+				raise_diarch_opinion_with_loyalty_update_value <= diarch_loyalty_visibly_disloyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.situational.to_self_interested }
+		}
+		## Situational remains static.
+		else_if = {
+			limit = { diarch_has_situational_loyalty_trigger = yes }
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.situational.remains_static }
+		}
+		# Selfless.
+		## Is too loyal to be able to tell.
+		else_if = {
+			limit = {
+				diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+				scope:diarch_old_opinion >= 100
+				scope:opinion_amount <= -1
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.overflow_edgecase }
+		}
+		### As above, we need this vague option to account for overspill.
+		## Selfless remains static.
+		else_if = {
+			limit = {
+				diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value >= diarch_loyalty_visibly_loyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.remains_static }
+		}
+		## Selfless to self-interested.
+		else_if = {
+			limit = {
+				diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+				raise_diarch_opinion_with_loyalty_update_value <= diarch_loyalty_visibly_disloyal_threshold
+			}
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.to_self_interested }
+		}
+		## Selfless to situational.
+		else_if = {
+			limit = { diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold }
+			liege = { custom_tooltip = raise_diarch_opinion_with_loyalty_update_effect.tt.selfless.to_situational }
+		}
+	}
+	# Now, add the new opinion.
+	reverse_add_opinion = {
+		target = diarch
+		modifier = $OPINION_TYPE$
+		opinion = scope:opinion_amount
+	}
+}
+
+# Diarchy swing can be good or bad for you depending on whether you're the liege, the diarch, or neutral, so we need different tooltips accordingly.
+## Please note: for technical reasons this'll break if you don't use the pre-set script values or update it to include whatever new value you want to use.
+update_diarchy_swing_with_perspective_effect = {
+	$LIEGE$ = {
+		# Sort the effect.
+		hidden_effect = { change_diarchy_swing = $SWING$ }
+		# Grab $LIEGE$'s' scope for loc.
+		## We save a weirdy scope name so we don't accidentally overwrite common scopes.
+		save_scope_as = liege_loc
+	}
+	# Right, now flick out the correct tooltips.
+	## We can't easily access a number that doesn't yet exist as a variable within a custom tooltip, so this is gon' get _real_ gross and I'm sorry you have to watch it happen.
+	## We also don't contain this in the above $LIEGE$ block because otherwise unusual (but valid) uses of the effect cause asserts.
+	## Is the diarch gaining?
+	if = {
+		limit = { $SWING$ >= 1 }
+		## Miniscule swing.
+		if = {
+			limit = { $SWING$ = miniscule_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.miniscule_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.miniscule_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.miniscule_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Minor swing.
+		else_if = {
+			limit = { $SWING$ = minor_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.minor_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.minor_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.minor_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Medium swing.
+		else_if = {
+			limit = { $SWING$ = medium_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.medium_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.medium_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.medium_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Major swing.
+		else_if = {
+			limit = { $SWING$ = major_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.major_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.major_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.major_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Massive swing.
+		else_if = {
+			limit = { $SWING$ = massive_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.massive_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.massive_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.massive_sop_swing_diarch_gain.tt }
+			}
+		}
+		## Monumental swing.
+		else_if = {
+			limit = { $SWING$ = monumental_sop_swing_diarch_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.monumental_sop_swing_diarch_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.monumental_sop_swing_diarch_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.monumental_sop_swing_diarch_gain.tt }
+			}
+		}
+	}
+	## Is the liege gaining?
+	else_if = {
+		limit = { $SWING$ <= -1 }
+		## Miniscule swing.
+		if = {
+			limit = { $SWING$ = miniscule_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.miniscule_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.miniscule_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.miniscule_sop_swing_liege_gain.tt }
+			}
+		}
+		## Minor swing.
+		else_if = {
+			limit = { $SWING$ = minor_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.minor_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.minor_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.minor_sop_swing_liege_gain.tt }
+			}
+		}
+		## Medium swing.
+		else_if = {
+			limit = { $SWING$ = medium_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.medium_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.medium_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.medium_sop_swing_liege_gain.tt }
+			}
+		}
+		## Major swing.
+		else_if = {
+			limit = { $SWING$ = major_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.major_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.major_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.major_sop_swing_liege_gain.tt }
+			}
+		}
+		## Massive swing.
+		else_if = {
+			limit = { $SWING$ = massive_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.massive_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.massive_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.massive_sop_swing_liege_gain.tt }
+			}
+		}
+		## Monumental swing.
+		else_if = {
+			limit = { $SWING$ = monumental_sop_swing_liege_gain }
+			# For the liege.
+			if = {
+				limit = { this = $LIEGE$ }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.liege_perspective.monumental_sop_swing_liege_gain.tt }
+			}
+			# For the diarch.
+			else_if = {
+				limit = { this = $LIEGE$.diarch }
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.diarch_perspective.monumental_sop_swing_liege_gain.tt }
+			}
+			# For everyone else.
+			else = {
+				$LIEGE$ = { custom_tooltip = update_diarchy_swing_with_perspective_effect.neutral_perspective.monumental_sop_swing_liege_gain.tt }
+			}
+		}
+	}
+	## No gain not accounted for: you should never be swinging by 0.
+}
