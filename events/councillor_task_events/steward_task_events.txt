@@ -21,6 +21,7 @@ namespace = steward_task
 # 1002 - Inefficient Census
 # 1003 - Lack of Sheriffs
 # 1004 - Smuggling Ring
+# 1005 - Tax collector catches steward's accounting error
 ##
 
 # 1101 - Extra Taxes
@@ -33,6 +34,7 @@ namespace = steward_task
 # 2001 - Reduce Construction Speed
 # 2002 - Loss of County Opinion
 # 2003 - Loss of County Control
+# 2004-2008 - Prioritize county development vs. taxation
 
 # 2101 - Efficient Taxation
 # 2102 - Increased Control
@@ -762,6 +764,194 @@ steward_task.1004 = {
 	}
 }
 
+scripted_trigger is_valid_steward_task_1005_tax_collector = {
+	is_available_healthy_ai_adult = yes
+	NOT = { this = root.cp:councillor_steward }
+
+	# Tax collector needs to have at least a little ambition to push this issue
+	ai_energy > high_negative_ai_value
+	
+	# Tax collector and steward can't be friends
+	NOR = {
+		has_relation_friend = root.cp:councillor_steward
+		has_relation_best_friend = root.cp:councillor_steward
+	}
+	OR = {
+		opinion = {
+			target = root.cp:councillor_steward
+			value < low_positive_opinion
+		}
+		reverse_opinion = {
+			target = root.cp:councillor_steward
+			value < low_positive_opinion
+		}
+	}
+
+	# The steward must pay taxes to them
+	tax_slot = { any_tax_slot_vassal = { this = root.cp:councillor_steward } }
+}
+
+# Tax collector tries collecting taxes in steward's realm
+steward_task.1005 = {
+	type = character_event
+	title = steward_task.1005.t
+	desc = steward_task.1005.desc
+	theme = stewardship
+	override_background = { reference = council_chamber }
+	left_portrait = {
+		character = scope:steward
+		animation = anger
+	}
+	right_portrait = scope:tax_collector
+
+	cooldown = { years = 20 }
+
+	# Need to have both an AI tax collector and an AI steward
+	trigger = {
+		is_available = yes
+		exists = cp:councillor_steward
+		cp:councillor_steward = {
+			is_available_healthy_ai_adult = yes
+			ai_greed > high_negative_ai_value # Steward needs to be at least a little greedy to care about taxes
+		}
+		employs_tax_collector = yes
+		any_tax_collector = { is_valid_steward_task_1005_tax_collector = yes }
+
+		# Don't trigger if the tax collector/steward rivalry story cycle is already ongoing, that story has its own (more interesting) events
+		NOT = { any_owned_story = { story_type = story_cycle_tax_rivalry } }
+	}
+
+	immediate = {
+		cp:councillor_steward = { save_scope_as = steward }
+		random_tax_collector = {
+			limit = { is_valid_steward_task_1005_tax_collector = yes }
+			save_scope_as = tax_collector
+		}
+		# Set these variables for the tax collector and steward rivalry story
+		set_variable = {
+			name = story_steward
+			value = scope:steward
+			days = 30
+		}
+		set_variable = {
+			name = story_tax_collector
+			value = scope:tax_collector
+			days = 30
+		}
+	}
+	
+
+	option = { # Use stewardship to negotiate a solution everyone is happy with
+		name = steward_task.1005.a
+		trigger = {
+			stewardship > low_skill_rating
+		}
+		duel = {
+			skill = stewardship
+			value = decent_skill_rating
+
+			5 = {
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = 0.25
+				}
+				send_interface_toast = {
+					type = event_toast_effect_good
+					title = steward_task.1005.a_success
+					left_icon = root
+					add_character_modifier = {
+						modifier = tax_collector_fair_arbiter_modifier
+						years = 20
+					}
+				}
+			}
+			5 = {
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = -0.25
+				}
+				send_interface_toast = {
+					title = steward_task.1005.a_failure
+					add_character_modifier = {
+						modifier = tax_collector_free_rein_modifier
+						years = 20
+					}
+				}
+				scope:steward = {
+					progress_towards_rival_effect = {
+						REASON = rival_taxation_is_theft
+						CHARACTER = scope:tax_collector
+						OPINION = 0
+					}
+				}
+				create_tax_rivalry_story_effect = yes
+			}
+		}
+		ai_chance = {
+			base = 100
+		}
+	}
+
+	option = { # Side with tax collector, get money & negative vassal opinion
+		name = steward_task.1005.b
+		add_character_modifier = {
+			modifier = tax_collector_free_rein_modifier
+			years = 20
+		}
+		scope:steward = {
+			progress_towards_rival_effect = {
+				REASON = rival_taxation_is_theft
+				CHARACTER = scope:tax_collector
+				OPINION = 0
+			}
+		}
+		create_tax_rivalry_story_effect = yes
+		ai_chance = {
+			base = 0
+			ai_value_modifier = {
+				ai_greed = 0.25
+			}
+			opinion_modifier = {
+				opinion_target = scope:tax_collector
+				multiplier = 0.4
+			}
+		}
+	}
+
+	option = { # Side with steward, don't get money or negative vassal opinion
+		name = steward_task.1005.c
+		# Lose unity, assuming the tax collector is a member of your house
+		# Unless the steward is also a member of your house because that would be annoying
+		reverse_add_opinion = {
+			target = scope:steward
+			modifier = feast_sided_with_me_in_my_fight_opinion
+			opinion = 10
+		}
+		scope:tax_collector = {
+			progress_towards_rival_effect = {
+				REASON = rival_accounting_exposure
+				CHARACTER = scope:steward
+				OPINION = 0
+			}
+		}
+		create_tax_rivalry_story_effect = yes
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = -0.25
+			}
+			opinion_modifier = {
+				opinion_target = scope:steward
+				multiplier = 0.4
+			}
+		}
+	}
+
+	after = {
+		clean_up_tax_rivalry_story_variables_effect = yes
+	}
+}
+
 
 ### Good Side Effects
 
@@ -1050,7 +1240,653 @@ steward_task.2003 = {
 	}
 }
 
+scripted_trigger steward_task_2004_tax_collector_is_valid = {
+	# Tax collector needs to be an AI as their actions are entirely simulated
+	is_available_ai_adult = yes
+	NOT = { this = root.cp:councillor_steward }
+	# Tax collector needs at least a little energy to go above and beyond
+	ai_energy > low_negative_ai_value
+}
 
+# Setup for steward_task.2005/2008
+steward_task.2004 = {
+	hidden = yes
+	cooldown = { years = 5 }
+
+	trigger = {
+		exists = cp:councillor_steward
+		cp:councillor_steward = {
+			is_available_adult = yes
+		}
+		employs_tax_collector = yes
+		any_tax_collector = {
+			steward_task_2004_tax_collector_is_valid = yes
+		}
+		# Don't trigger if the tax collector/steward rivalry story cycle is already ongoing, that story has its own (more interesting) events
+		NOT = { any_owned_story = { story_type = story_cycle_tax_rivalry } }
+	}
+
+	immediate = {
+		save_scope_as = liege
+		random_tax_collector = {
+			limit = { steward_task_2004_tax_collector_is_valid = yes }
+			save_scope_as = tax_collector
+		}
+		scope:county.title_province = { save_scope_as = background_terrain_scope } # For event bg in steward_task.2005
+		cp:councillor_steward = { save_scope_as = steward }
+		# Set these variables for the tax collector and steward rivalry story
+		set_variable = {
+			name = story_steward
+			value = scope:steward
+			days = 30
+		}
+		set_variable = {
+			name = story_tax_collector
+			value = scope:tax_collector
+			days = 30
+		}
+		# Only trigger steward_task.2005 for player stewards
+		if = {
+			limit = {
+				scope:steward = { is_ai = yes }
+			}
+			trigger_event = steward_task.2008
+		}
+		else = {
+			scope:steward = { trigger_event = steward_task.2005 }
+		}
+	}
+}
+
+# Calculate whether the liege would prefer long-term gains over short-term gold
+scripted_effect steward_task_2005_set_liege_development_preference_effect = {
+	set_variable = {
+		name = liege_preference_towards_development
+		days = 10
+		value = {
+			value = 0
+			add = {
+				if = {
+					limit = {
+						scope:liege = { has_trait = patient }
+					}
+					value = 100
+				}
+				else_if = {
+					limit = {
+						scope:liege = { has_trait = impatient }
+					}
+					value = -100
+				}
+			}
+			add = {
+				value = scope:liege.ai_greed
+				multiply = -0.25
+			}
+			add = {
+				value = scope:liege.ai_rationality
+				multiply = 0.1
+			}
+			# Make an exception for ambitious, they favor long-term gains despite their ai greed
+			add = {
+				if = {
+					limit = {
+						scope:liege = { has_trait = ambitious }
+					}
+					value = 25
+				}
+			}
+		}
+	}
+}
+
+# Determine liege's reaction to the steward's decision for steward_task.2005
+scripted_effect steward_task_2005_liege_opinion_effect = {
+	# If the liege is a player, then let the liege decide how to react
+	if = {
+		limit = {
+			scope:liege = { is_ai = no }
+		}
+		if = {
+			limit = {
+				$DEVELOPMENT$ = yes
+			}
+			scope:liege = {
+				add_character_flag = {
+					flag = steward_task_2005_redoubled_development
+					days = 1
+				}
+			}
+		}
+		else = {
+			scope:liege = {
+				add_character_flag = {
+					flag = steward_task_2005_redoubled_taxation
+					days = 1
+				}
+			}
+		}
+		scope:liege = { trigger_event = steward_task.2006 }
+	}
+	# Otherwise, immediately inform the steward how the liege received their decision
+	else = {
+		# Correctly predicted what the liege would prefer:
+		if = {
+			limit = {
+				OR = {
+					AND = {
+						$DEVELOPMENT$ = yes
+						scope:steward.var:liege_preference_towards_development >= 0
+					}
+					AND = {
+						$DEVELOPMENT$ = no
+						scope:steward.var:liege_preference_towards_development <= 0
+					}
+				}
+			}
+			scope:steward = {
+				send_interface_toast = {
+					type = event_toast_effect_good
+					title = steward_task.2005.success
+					left_icon = scope:liege
+					reverse_add_opinion = {
+						target = scope:liege
+						modifier = pleased_opinion
+						opinion = 15
+					}
+				}
+			}
+		}
+		# Incorrectly predicted what the liege would prefer:
+		else_if = {
+			limit = {
+				OR = {
+					AND = {
+						$DEVELOPMENT$ = yes
+						scope:steward.var:liege_preference_towards_development < 0
+					}
+					AND = {
+						$DEVELOPMENT$ = no
+						scope:steward.var:liege_preference_towards_development > 0
+					}
+				}
+			}
+			scope:steward = {
+				send_interface_toast = {
+					title = steward_task.2005.failure
+					left_icon = scope:liege
+					reverse_add_opinion = {
+						target = scope:liege
+						modifier = disappointed_opinion
+						opinion = -15
+					}
+				}
+			}
+		}
+	}
+}
+
+# Tax-collector tries collecting more taxes in developing county
+steward_task.2005 = {
+	type = character_event
+	title = steward_task.2005.t
+	desc = steward_task.2005.desc
+	theme = stewardship
+	override_background = {
+		reference = terrain_scope
+	}
+	left_portrait = scope:tax_collector
+	right_portrait = {
+		character = scope:ledger_slave
+		animation = sick
+	}
+
+	immediate = {
+		set_variable = {
+			name = had_steward_task_side_effect
+			value = yes
+			days = steward_task_side_effect_cooldown
+		}
+		steward_task_2005_set_liege_development_preference_effect = yes
+		# Create the ledger slave for fun, but only if the steward is a player (for performance reasons)
+		if = {
+			limit = { is_ai = no }
+			create_character = {
+				template = servant_character
+				employer = scope:liege
+				gender_female_chance = root_faith_dominant_gender_adjusted_female_chance
+				save_scope_as = ledger_slave
+			}
+		}
+	}
+
+	option = { # Give more money to liege
+		name = steward_task.2005.a
+		flavor = steward_task.2005.a.tt
+		scope:county = {
+			add_county_modifier = {
+				modifier = steward_redoubled_taxation_modifier
+				years = 15
+			}
+		}
+		hidden_effect = { steward_task_2005_liege_opinion_effect = { DEVELOPMENT = no } }
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = {
+					value = var:liege_preference_towards_development
+					multiply = -1
+				}
+			}
+		}
+	}
+
+	option = { # Prioritize development
+		name = steward_task.2005.b
+		flavor = steward_task.2005.b.tt
+		scope:county = {
+			add_county_modifier = {
+				modifier = steward_redoubled_development_modifier
+				years = 15
+			}
+		}
+		reverse_add_opinion = {
+			target = scope:tax_collector
+			modifier = steward_doubted_my_accounting_opinion
+		}
+		progress_towards_rival_effect = {
+			CHARACTER = scope:tax_collector
+			REASON = rival_disregarded_accounting
+			OPINION = 0
+		}
+		scope:liege = {
+			create_tax_rivalry_story_effect = yes
+		}
+		hidden_effect = { steward_task_2005_liege_opinion_effect = { DEVELOPMENT = yes } }
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = var:liege_preference_towards_development
+			}
+		}
+	}
+
+	option = { # Just ask
+		name = steward_task.2005.c
+		custom_tooltip = steward_task.2005.c.tt
+		scope:liege = {
+			trigger_event = steward_task.2007
+		}
+		ai_chance = {
+			base = 0
+			# Higher chance if liege is a player and thus this option would trigger an event for them
+			modifier = {
+				scope:liege = { is_ai = no }
+				add = 1000
+			}
+		}
+	}
+
+	after = {
+		if = {
+			limit = { exists = scope:ledger_slave }
+			scope:ledger_slave = {
+				silent_disappearance_effect = yes
+			}
+		}
+	}
+}
+
+# As a liege, react to your steward's decision (player only)
+steward_task.2006 = {
+	type = letter_event
+	opening = steward_task.2006.opening
+	sender = scope:steward
+	desc = {
+		desc = steward_task.2006.desc_intro
+		triggered_desc = {
+			trigger = { has_character_flag = steward_task_2005_redoubled_development }
+			desc = steward_task.2006.desc_development
+		}
+		triggered_desc = {
+			trigger = { has_character_flag = steward_task_2005_redoubled_taxation }
+			desc = steward_task.2006.desc_taxation
+		}
+	}
+
+	option = { # Praise steward
+		name = steward_task.2006.a
+		# Add stress depending on what the steward's decision was
+		if = {
+			limit = { has_character_flag = steward_task_2005_redoubled_development }
+			stress_impact = {
+				greedy = minor_stress_impact_gain
+				impatient = minor_stress_impact_gain
+			}
+		}
+		else_if = {
+			limit = { has_character_flag = steward_task_2005_redoubled_taxation }
+			stress_impact = {
+				generous = minor_stress_impact_gain
+				patient = minor_stress_impact_gain
+			}
+		}
+	}
+
+	option = { # Criticize steward
+		name = steward_task.2006.b
+		# Remove the modifier that they added and replace it with the one you want
+		scope:steward = {
+			send_interface_message = {
+				type = event_stewardship_bad
+				title = steward_task.2006.b_notification
+				left_icon = scope:county
+				right_icon = scope:liege
+				tooltip = task_develop_county_notification_tooltip				
+				scope:county = {
+					if = {
+						limit = { has_county_modifier = steward_redoubled_development_modifier }
+						remove_county_modifier = steward_redoubled_development_modifier
+						add_county_modifier = {
+							modifier = steward_redoubled_taxation_modifier
+							years = 15
+						}
+					}
+					else_if = {
+						limit = { has_county_modifier = steward_redoubled_taxation_modifier }
+						remove_county_modifier = steward_redoubled_taxation_modifier
+						add_county_modifier = {
+							modifier = steward_redoubled_development_modifier
+							years = 15
+						}
+					}
+				}
+				# Hide this effect for the liege choosing this option
+				if = {
+					limit = {
+						NOT = { root = scope:liege }
+					}		
+					reverse_add_opinion = {
+						target = scope:liege
+						modifier = disappointed_opinion
+						opinion = -15
+					}
+				}
+			}
+		}
+		reverse_add_opinion = {
+			target = scope:steward
+			modifier = stress_upset_councillor
+		}
+		# Add stress depending on what the steward's decision was
+		if = {
+			limit = { has_character_flag = steward_task_2005_redoubled_development }
+			stress_impact = {
+				generous = minor_stress_impact_gain
+				patient = minor_stress_impact_gain
+			}
+		}
+		else_if = {
+			limit = { has_character_flag = steward_task_2005_redoubled_taxation }
+			stress_impact = {
+				greedy = minor_stress_impact_gain
+				impatient = minor_stress_impact_gain
+			}
+		}
+	}
+
+	after = {	
+		clean_up_tax_rivalry_story_variables_effect = yes
+	}
+}
+
+# As a liege, decide how you want to tax the developing county after your steward asks you
+steward_task.2007 = {
+	type = letter_event
+	opening = steward_task.2006.opening
+	sender = scope:steward
+	desc = steward_task.2007.desc
+
+	trigger = { is_available = yes }
+
+	option = { # Focus on taxation
+		name = steward_task.2007.a
+		scope:steward = {
+			send_interface_message = {
+				type = event_steward_task_good
+				title = steward_task.2005.t
+				left_icon = scope:county
+				right_icon = scope:liege
+				desc = task_develop_county_notification_tooltip				
+				scope:county = {
+					add_county_modifier = {
+						modifier = steward_redoubled_taxation_modifier
+						years = 15
+					}
+				}
+			}
+		}
+		stress_impact = {
+			generous = minor_stress_impact_gain
+			patient = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = {
+					value = scope:steward.var:liege_preference_towards_development
+					multiply = -1
+				}
+			}
+		}
+	}
+
+	option = { # Focus on development
+		name = steward_task.2005.b
+		scope:steward = {
+			send_interface_message = {
+				type = event_steward_task_good
+				title = steward_task.2005.t
+				left_icon = scope:county
+				right_icon = scope:liege
+				desc = task_develop_county_notification_tooltip
+				scope:county = {
+					add_county_modifier = {
+						modifier = steward_redoubled_development_modifier
+						years = 15
+					}
+				}
+			}
+		}
+		stress_impact = {
+			greedy = minor_stress_impact_gain
+			impatient = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = scope:steward.var:liege_preference_towards_development
+			}
+		}
+	}
+
+	after = {		
+		clean_up_tax_rivalry_story_variables_effect = yes
+	}
+}
+
+# As a liege, decide how you want to tax the developing county (steward is AI)
+steward_task.2008 = {
+	type = character_event
+	title = steward_task.2005.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					AND = {
+						scope:steward = {
+							opinion = {
+								target = scope:tax_collector
+								value <= low_negative_opinion
+							}
+						}
+						scope:tax_collector = {
+							opinion = {
+								target = scope:steward
+								value <= low_negative_opinion
+							}
+						}
+					}
+				}
+				desc = steward_task.2008.desc_intro_friendly
+			}
+			desc = steward_task.2008.desc_intro_unfriendly
+		}
+		desc = steward_task.2008.desc_outro
+	}
+	theme = stewardship
+	override_background = {
+		reference = council_chamber
+	}
+	left_portrait = scope:tax_collector
+	right_portrait = {
+		character = scope:steward
+		animation = dismissal
+	}
+
+	immediate = {
+		scope:steward = { steward_task_2005_set_liege_development_preference_effect = yes }
+		scope:tax_collector = {
+			progress_towards_rival_effect = {
+				REASON = rival_disregarded_accounting
+				CHARACTER = scope:steward
+				OPINION = 0
+			}
+		}
+	}
+
+	trigger = {
+		is_available = yes
+		# Just so this event doesn't trigger for two people who get along
+		scope:tax_collector = {
+			OR = {
+				opinion = {
+					target = scope:steward
+					value < low_positive_opinion
+				}
+				reverse_opinion = {
+					target = scope:steward
+					value < low_positive_opinion
+				}
+			}
+		}
+	}
+
+	option = { # Side with tax collector (taxation)
+		name = steward_task.2008.a
+		scope:county = {
+			add_county_modifier = {
+				modifier = steward_redoubled_taxation_modifier
+				years = 15
+			}
+		}
+		if = {
+			limit = {
+				is_in_same_clan_as_trigger = { CHARACTER = scope:steward }
+				NOT = { is_in_same_clan_as_trigger = { CHARACTER = scope:tax_collector } }
+			}
+			add_clan_unity_interaction_effect = {
+				CHARACTER = root
+				TARGET = scope:steward
+				VALUE = minor_unity_loss
+				DESC = clan_unity_sided_with_tax_collector.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
+		create_tax_rivalry_story_effect = yes
+		stress_impact = {
+			generous = minor_stress_impact_gain
+			patient = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = {
+					value = scope:steward.var:liege_preference_towards_development
+					multiply = -1
+				}
+			}
+		}
+	}
+
+	option = { # Side with steward (development)
+		name = steward_task.2008.b
+		scope:county = {
+			add_county_modifier = {
+				modifier = steward_redoubled_development_modifier
+				years = 15
+			}
+		}
+		if = {
+			limit = {
+				is_in_same_clan_as_trigger = { CHARACTER = scope:tax_collector }
+				NOT = { is_in_same_clan_as_trigger = { CHARACTER = scope:steward } }
+			}
+			add_clan_unity_interaction_effect = {
+				CHARACTER = root
+				TARGET = scope:tax_collector
+				VALUE = minor_unity_loss
+				DESC = clan_unity_sided_with_steward.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
+		create_tax_rivalry_story_effect = yes
+		stress_impact = {
+			greedy = minor_stress_impact_gain
+			impatient = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = {
+					value = scope:steward.var:liege_preference_towards_development
+				}
+			}
+		}
+	}
+
+	option = { # Opt out
+		name = steward_task.2008.c
+		reverse_add_opinion = {
+			target = scope:steward
+			modifier = dismissed_me_opinion
+			opinion = -15
+		}
+		reverse_add_opinion = {
+			target = scope:tax_collector
+			modifier = dismissed_me_opinion
+			opinion = -15
+		}
+		create_tax_rivalry_story_effect = yes
+		stress_impact = {
+			compassionate = minor_stress_impact_gain
+			just = minor_stress_impact_gain
+			arbitrary = minor_stress_impact_loss
+			wrathful = minor_stress_impact_loss
+		}
+		ai_chance = {
+			base = 0
+			modifier = {
+				has_trait = lazy
+				add = 50
+			}
+		}
+	}
+
+	after = {		
+		clean_up_tax_rivalry_story_variables_effect = yes
+	}
+}
 
 ###Good Side Effects
 
@@ -1306,7 +2142,7 @@ steward_task.3002 = {
 		}
 
 		send_interface_message = {
-			type = event_steward_task_bad
+			type = event_stewardship_bad
 			title = steward_task.3002.notification
 			desc = {
 				triggered_desc = {
