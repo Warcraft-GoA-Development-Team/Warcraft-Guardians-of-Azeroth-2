@@ -15,6 +15,7 @@
 	can_send_despite_rejection = yes
 	popup_on_receive = yes
 	pause_on_receive = yes
+	icon = revoke_title
 
 	interface_priority = 60
 	ai_min_reply_days = 4
@@ -32,33 +33,14 @@
 			target_is_liege_or_above = scope:actor
 			# is_vassal_of = scope:actor
 		}
-
-		trigger_if = {
-			limit = {
-				scope:actor = {
-					is_ai = yes
-				}
-				# No point revoking barons at this time
-				scope:recipient.primary_title.tier >= tier_county
-			}
-		}
 	}
 	
 	is_valid_showing_failures_only = {
-		NOT = { scope:actor = { is_at_war_with = scope:recipient } }
+		title_revocation_standard_valid_showing_failures_only_trigger = yes
+		# Plus make sure there's a legal right to revoke.
 		scope:actor = {
-			custom_description = {
-				text = "character_interactions_revoke_title_from_ally_without_reason"
-				object = scope:recipient
-				OR = {
-					NOT = {
-						is_allied_to = scope:recipient
-					}
-					has_revoke_title_reason = scope:recipient
-				}
-			}
 			trigger_if = {
-				limit = { has_government = tribal_government }
+				limit = { government_has_flag = government_is_tribal }
 				custom_description = {
 					text = "has_law_allowing_title_revocation_tribal"
 					has_realm_law_flag = title_revocation_allowed
@@ -66,31 +48,36 @@
 			}
 			trigger_if = {
 				limit = {
-					NOT = { has_government = tribal_government }
+					NOT = { government_has_flag = government_is_tribal }
 				}
 				custom_description = {
 					text = "has_law_allowing_title_revocation_crown"
 					has_realm_law_flag = title_revocation_allowed
 				}
 			}
-			trigger_if = {
-				limit = {
-					scope:recipient = {
-						vassal_contract_has_flag = vassal_contract_cannot_revoke_titles
-					}
+		}
+		trigger_if = {
+			limit = {
+				scope:recipient = {
+					vassal_contract_has_flag = vassal_contract_cannot_revoke_titles
 				}
-				custom_description = {
-					text = vassal_contract_forbids_revocation
-					scope:recipient = {
-						NOT = { vassal_contract_has_flag = vassal_contract_cannot_revoke_titles }
-					}
+			}
+			custom_description = {
+				text = vassal_contract_forbids_revocation
+				scope:recipient = {
+					NOT = { vassal_contract_has_flag = vassal_contract_cannot_revoke_titles }
 				}
 			}
 		}
+		# And uhh... the sensible check.
 		scope:recipient = {
 			is_vassal_of = scope:actor
-			is_diplomatically_available = yes
+			is_busy_in_events_localised = yes
 			NOT = { has_strong_hook = scope:actor }
+		}
+		custom_tooltip = {
+			text = cannot_take_overt_hostile_actions_against_diarch.tt
+			NOT = { scope:recipient ?= scope:actor.diarch }
 		}
 	}
 
@@ -125,19 +112,7 @@
 	}
 		
 	can_be_picked_title = {
-		scope:target = {
-			is_contested = no
-			NOT = {
-				recent_history = {
-					type = granted
-					years = 1
-				}
-			}
-			custom_description = {
-				text = "character_interactions_not_rel_head_title"
-				NOT = { exists = controlled_faith }
-			}
-		}
+		scope:target = { title_revocation_standard_can_pick_title_trigger = yes }
 	}
 
 	#Use hook
@@ -157,6 +132,11 @@
 
 	send_options_exclusive = no
 
+	cost = {
+		# Usually, this action is free, but during certain diarchies, we want it to cost.
+		prestige = liege_diarchy_surcharge_interaction_revoke_title_interaction_value
+	}
+
 	on_send = {
 		scope:actor = {
 			add_character_flag = {
@@ -173,8 +153,6 @@
 	}
 
 	on_accept = {
-		revoke_title_interaction_effect = yes
-
 		save_scope_value_as = {
 			name = revoke_title_interaction
 			value = yes
@@ -183,30 +161,13 @@
 		scope:actor = {
 			trigger_event = char_interaction.0199
 		}
+		revoke_title_interaction_effect = yes
 
 		if = {
 			limit = {
 				scope:actor = { has_character_flag = flag_hostile_actions_disabled_delay }
 			}
 			scope:actor = { remove_character_flag = flag_hostile_actions_disabled_delay }
-		}
-
-		# For revoking titles of character's imprisoned abroard who have lost a revocation war
-		hidden_effect = {
-			scope:actor = {
-				if = {
-					limit = {
-						has_opinion_modifier = {
-							target = scope:recipient
-							modifier = foreign_prison_revocation_opinion
-						}
-					}
-					remove_opinion = {
-						target = scope:recipient
-						modifier = foreign_prison_revocation_opinion
-					}
-				}
-			}
 		}
 	}
 
@@ -273,12 +234,6 @@
 						is_imprisoned = yes
 						NOT = { is_imprisoned_by = scope:actor }
 					}
-					scope:actor = {
-						has_opinion_modifier = {
-							target = scope:recipient
-							modifier = foreign_prison_revocation_opinion
-						}
-					}
 				}
 			}
 		}
@@ -306,6 +261,32 @@
 			}
 			desc = AI_REFUSAL_IS_TREASON
 		}
+		
+		modifier = {
+			add = 20
+			scope:recipient = {
+				has_trait = trusting
+			}
+			desc = TAKE_THE_VOWS_TRUSTING
+		}
+		
+		modifier = {
+			add = 20
+			scope:recipient = {
+				has_trait = content
+			}
+			desc = INTERACTION_CONTENT
+		}
+		
+		modifier = {
+			add = 20
+			scope:actor.current_military_strength > scope:recipient.current_military_strength
+			scope:recipient = {
+				has_trait = craven
+			}
+			desc = INTERACTION_CRAVEN
+		}
+		
 		modifier = {
 			exists = scope:actor.primary_title.title_capital_county
 			OR = {
@@ -315,6 +296,18 @@
 			add = 50
 			desc = AI_TITLE_IS_REALM_CAPITAL
 		}
+		
+		modifier = {
+			exists = scope:actor.primary_title.title_capital_county
+			NOR = {
+				scope:landed_title = scope:actor.primary_title.title_capital_county
+				scope:landed_title = scope:actor.primary_title.title_capital_county.de_jure_liege
+			}
+			scope:landed_title.de_jure_liege = scope:actor.primary_title.title_capital_county.de_jure_liege
+			add = 30
+			desc = AI_TITLE_IS_IN_CAPITAL_DUCHY
+		}
+		
 		modifier = {
 			add = 30
 			scope:actor = {
@@ -356,6 +349,7 @@
 		}
 		modifier = { #Title is part of vassal's primary title de-jure.
 			add = -25
+			scope:recipient.primary_title.tier > tier_county
 			OR = {
 				scope:recipient.primary_title = {
 					is_de_jure_liege_or_above_target = scope:landed_title
@@ -388,10 +382,10 @@
 			desc = offer_vassalization_interaction_aibehavior_power_tt
 	  	  	add = {
 				value = 1
-					subtract = {
-					value = scope:recipient.max_military_strength
-					divide = { value = scope:actor.max_military_strength min = 1 }
-					}
+				subtract = {
+					value = scope:recipient.current_military_strength
+					divide = { value = scope:actor.current_military_strength min = 1 }
+				}
 				multiply = 50
 				max = 20
 	  		}
@@ -417,7 +411,7 @@
 
 	ai_potential = {
 		has_realm_law_flag = title_revocation_allowed
-		primary_title.tier > tier_county
+		primary_title.tier >= tier_county
 	}
 
 	ai_will_do = {
@@ -445,8 +439,84 @@
 
 			add = 990
 		}
+		# Only certain rulers won't revoke vassals who have revolted against them
+		modifier = {
+			scope:actor = {
+				ai_compassion <= 75
+				ai_greed >= -50
+				ai_honor <= 50
+				scope:recipient = {
+					is_imprisoned = yes
+					is_ai = yes # Be kinder to players
+					opinion = {
+						target = scope:actor
+						value <= 0
+					}
+				}
+				NOT = {
+					title_revocation_is_tyrannical_trigger = yes
+				}
+				OR = {
+					has_opinion_modifier = {
+						modifier = rebellious_vassal_opinion
+						target = scope:recipient
+					}
+					has_opinion_modifier = {
+						modifier = vassal_lost_faction_revolt_war
+						target = scope:recipient
+					}
+					has_opinion_modifier = {
+						modifier = vassal_wp_faction_revolt_war
+						target = scope:recipient
+					}
+				}
+			}
+			add = {
+				value = 100
+				add = scope:actor.ai_greed
+				add = {
+					value = scope:actor.ai_honor
+					multiply = -1
+				}
+				if = {
+					limit = {
+						scope:actor.ai_vengefulness > 0
+					}
+					add = scope:actor.ai_vengefulness
+				}
+			}
+		}
+		# Vengeful AI's want to revoke
+		modifier = {
+			scope:actor = {
+				ai_vengefulness > 0
+				scope:recipient = {
+					is_imprisoned = yes
+				}
+				NOT = {
+					title_revocation_is_tyrannical_trigger = yes
+				}
+			}
+			add = {
+				value = scope:actor.ai_vengefulness
+				multiply = 2
+			}
+		}
 		# Always revoke preferred capital and capital duchy
 		modifier = {
+			years_from_game_start >= 3
+			OR = {
+				scope:actor = {
+					is_at_war = no
+					gold > 0
+				}
+				scope:recipient = {
+					is_imprisoned_by = scope:actor
+				}
+			}
+
+			# Warcraft
+
 			exists = scope:actor.primary_title.title_capital_county
 			OR = {
 				scope:landed_title = scope:actor.primary_title.title_capital_county
@@ -460,14 +530,177 @@
 					title_revocation_is_tyrannical_trigger = yes
 				}
 			}
-			add = 1000
+			add = 1100
 		}
-		# Revoke county we're dejure liege of if below domain limit
+		# If below domain limit, try to revoke counties in your capital duchy despite tyranny, sometimes
+		modifier = {
+			years_from_game_start >= 3
+			OR = {
+				scope:actor = {
+					is_at_war = no
+					gold > 0
+				}
+				scope:recipient = {
+					is_imprisoned_by = scope:actor
+				}
+			}
+
+
+			# Warcraft
+
+			scope:actor.domain_size < scope:actor.domain_limit
+			scope:actor.primary_title.tier > tier_county
+			trigger_if = {
+				limit = {
+					scope:actor = {
+						title_revocation_is_tyrannical_trigger = yes
+						domain_size > 3
+					}
+				}
+				scope:actor = {
+					NOR = {
+						has_trait = generous
+						has_trait = just
+					}
+				}
+			}
+			exists = scope:actor.primary_title.title_capital_county
+			OR = {
+				scope:actor.primary_title.title_capital_county.holder = scope:actor # You have your de jure capital already
+				NOT = {
+					scope:actor.primary_title.title_capital_county.holder.top_liege = scope:actor.top_liege # Or your De Jure capital isn't in your realm
+				}
+			}
+			scope:landed_title.tier = tier_county # Only Counties
+			OR = { # The AI gives away wrong-holding counties almost instantly, so we restrict to counties with holdings they can hold
+				scope:landed_title.title_province = { has_holding_type = castle_holding } # Everyone is valid for castles
+				AND = {
+					scope:actor = {
+						government_has_flag = government_is_tribal
+					}
+					scope:landed_title.title_province = { has_holding_type = tribal_holding }
+				}
+				AND = {
+					scope:actor = {
+						government_has_flag = government_is_republic
+					}
+					scope:landed_title.title_province = { has_holding_type = city_holding }
+				}
+				AND = {
+					scope:actor = {
+						OR = {
+							government_has_flag = government_is_clan
+							government_has_flag = government_is_theocracy
+						}
+					}
+					scope:landed_title.title_province = { has_holding_type = church_holding }
+				}
+			}
+			OR = { # And the capital duchy, if it exists at all
+				AND = {
+					exists = scope:actor.primary_title.title_capital_county.de_jure_liege.holder
+					scope:actor.primary_title.title_capital_county.de_jure_liege.holder = scope:actor
+				}
+				AND = {
+					exists = scope:actor.primary_title.title_capital_county.de_jure_liege.holder
+					NOT = {
+						scope:actor.primary_title.title_capital_county.de_jure_liege.holder.top_liege = scope:actor.top_liege
+					}
+				}
+				scope:actor.primary_title.title_capital_county.de_jure_liege = {
+					is_title_created = no
+				}
+			}
+			
+			scope:landed_title.de_jure_liege = scope:actor.primary_title.title_capital_county.de_jure_liege # Under the same Duchy as your capital
+			
+			scope:recipient = { # Not from players
+				is_ai = yes
+			}
+			
+			OR = { # Tyranny tolerance is based on rationality
+				AND = {
+					scope:actor.ai_rationality < 0
+					scope:actor.tyranny <= 15 # Don't go crazy with tyranny, just a bit is fine
+				}
+				AND = {
+					scope:actor.ai_rationality >= 0
+					scope:actor.ai_rationality < 50
+					scope:actor.tyranny <= 5 # Don't go crazy with tyranny, just a bit is fine
+				}
+				AND = {
+					scope:actor.ai_rationality >= 50
+					scope:actor.tyranny <= 0 # Don't go crazy with tyranny, just a bit is fine
+				}
+				AND = {
+					scope:actor.ai_rationality >= 0
+					scope:recipient = {
+						is_imprisoned_by = scope:actor
+					}
+					scope:actor = { has_revoke_title_reason = scope:recipient }
+				}
+				AND = {
+					scope:actor.ai_rationality < 0
+					scope:recipient = {
+						is_imprisoned_by = scope:actor
+					}
+				}
+			}
+			# To do this, the target must be weak or willing in some way
+			OR = {
+				scope:actor.current_military_strength > scope:recipient.current_military_strength # Must be stronger
+				scope:recipient = {
+					is_imprisoned_by = scope:actor
+				}
+			}
+			scope:recipient = {
+				OR = {
+					AND = {
+						scope:recipient.primary_title.tier <= tier_county
+						scope:actor.primary_title.tier >= tier_duchy
+					}
+					has_trait = craven
+					has_trait = content
+					has_trait = trusting
+					has_dread_level_towards = {
+						target = scope:actor
+						level >= 1
+					}
+					opinion = { target = scope:actor value >= 40 }
+					is_imprisoned_by = scope:actor
+					scope:actor = { has_revoke_title_reason = scope:recipient }
+				}
+			}
+			
+			add = 1100
+		}
+		# Revoke counties we're dejure liege of if below domain limit
 		modifier = {
 			scope:actor.domain_size < scope:actor.domain_limit
 			scope:landed_title.tier = tier_county
 			scope:landed_title.de_jure_liege.holder = scope:actor
 			add = 500
+		}
+		# Revoke appropriate baronies if below domain limit, it's tyranny free
+		modifier = {
+			scope:actor.domain_size < scope:actor.domain_limit
+			scope:recipient = { highest_held_title_tier = tier_barony }
+			scope:landed_title.tier = tier_barony
+			OR = {
+				scope:landed_title.title_province = { has_holding_type = castle_holding }
+				AND = {
+					OR = {
+						scope:actor = { government_has_flag = government_is_clan }
+						scope:actor = { government_has_flag = government_is_theocracy }
+					}
+					scope:landed_title.title_province = { has_holding_type = church_holding }
+				}
+				AND = {
+					scope:actor = { government_has_flag = government_is_republic }
+					scope:landed_title.title_province = { has_holding_type = city_holding }
+				}
+			}
+			add = 1100
 		}
 		# Revoke from vassals of the wrong faith if you can do it without tyranny
 		modifier = {
@@ -516,23 +749,28 @@
 					has_relation_best_friend = scope:recipient
 					has_relation_lover = scope:recipient
 					has_relation_soulmate = scope:recipient
-					is_heir_of = scope:recipient
+					is_parent_of = scope:recipient
+					is_grandparent_of = scope:recipient
+					is_great_grandparent_of = scope:recipient
 				}
 			}
-			add = -2000
+			add = -5000
 		}
 		# Do not revoke titles when the chance of success if exceedingly low
 		modifier = {
-			NOT = {
+			NOR = {
 				scope:recipient = {
 					is_imprisoned_by = scope:actor
+				}
+				scope:recipient = {
+					highest_held_title_tier = tier_barony
 				}
 			}
 			scope:actor = {
 				OR = {
 					gold < minimum_ai_gold_value_for_tyranny_wars
 					AND = {
-						scope:actor.max_military_strength < scope:recipient.max_military_strength
+						scope:actor.current_military_strength < scope:recipient.current_military_strength
 						gold < comfortable_ai_gold_value_for_tyranny_wars
 					}
 				}
@@ -540,13 +778,13 @@
 			add = -2000
 		}
 		
-		modifier = { # The AI will only use a Hook if they couldn't otherwise do this
+		modifier = { # The AI will always use a Hook if they can
 			scope:hook = yes
-			add = -1
+			add = 1
 		}
 
 		modifier = { # The AI shouldn't ruin the player's fun
-			add = -2000
+			add = -5000
 			scope:recipient = { has_character_flag = is_party_baron }
 		}
 
@@ -555,9 +793,42 @@
 			scope:actor = {
 				is_at_war = yes
 			}
-			scope:recipient = {
-				NOT = {
+			NOR = {
+				scope:recipient = {
 					is_imprisoned_by = scope:actor
+				}
+				scope:recipient = {
+					highest_held_title_tier = tier_barony
+				}
+			}
+		}
+		
+		# Clan Government: Avoid revoking titles from house members if the AI wants to have high unity
+		modifier = {
+			scope:actor = {
+				government_has_flag = government_is_clan
+				exists = house
+				ai_wants_high_unity = yes
+			}
+			scope:recipient = {
+				government_has_flag = government_is_clan
+				exists = house
+				house = scope:actor.house
+			}
+			add = -1000
+		}
+
+		modifier = { # Avoid triggering Tyranny wars mid-grand activity
+			factor = 0
+			scope:actor = {
+				has_ongoing_grand_activity_trigger = yes
+			}
+			NOR = {
+				scope:recipient = {
+					is_imprisoned_by = scope:actor
+				}
+				scope:recipient = {
+					highest_held_title_tier = tier_barony
 				}
 			}
 		}

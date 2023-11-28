@@ -22,19 +22,19 @@ scripted_trigger fatality_default_will_die_trigger = {
 			#scope:sc_attacker is tribal.
 			AND = {
 				is_ruler = yes
-				has_government = tribal_government
+				government_has_flag = government_is_tribal
 			}
 			#scope:sc_attacker has a tribal court_owner.
 			AND = {
 				is_ruler = no
 				exists = court_owner
-				scope:sc_attacker.court_owner = { has_government = tribal_government}
+				scope:sc_attacker.court_owner = { government_has_flag = government_is_tribal}
 			}
 			#scope:sc_attacker has a tribal host.
 			AND = {
 				is_ruler = no
 				exists = host
-				scope:sc_attacker.host = { has_government = tribal_government }
+				scope:sc_attacker.host = { government_has_flag = government_is_tribal }
 			}
 			#scope:sc_attacker is isolated & landless, in which case we check scope:sc_defender.
 			AND = {
@@ -48,19 +48,19 @@ scripted_trigger fatality_default_will_die_trigger = {
 						#scope:sc_defender is tribal.
 						AND = {
 							is_ruler = yes
-							has_government = tribal_government
+							government_has_flag = government_is_tribal
 						}
 						#scope:sc_defender has a tribal court_owner.
 						AND = {
 							is_ruler = no
 							exists = court_owner
-							scope:sc_defender.court_owner = { has_government = tribal_government}
+							scope:sc_defender.court_owner = { government_has_flag = government_is_tribal}
 						}
 						#scope:sc_defender has a tribal host.
 						AND = {
 							is_ruler = no
 							exists = host
-							scope:sc_defender.host = { has_government = tribal_government }
+							scope:sc_defender.host = { government_has_flag = government_is_tribal }
 						}
 					}
 				}
@@ -248,7 +248,7 @@ scripted_effect select_special_tier_move_effect = {
 							exists = house
 							NOR = {
 								has_trait = peasant_leader
-								has_government = republic_government
+								government_has_flag = government_is_republic
 							}
 						}
 					}
@@ -258,7 +258,7 @@ scripted_effect select_special_tier_move_effect = {
 							exists = house
 							NOR = {
 								has_trait = peasant_leader
-								has_government = republic_government
+								government_has_flag = government_is_republic
 							}
 						}
 					}
@@ -1856,6 +1856,11 @@ scripted_effect select_combat_options_from_pool_effect = {
 
 # Determine whether scope:sc_loser will be unharmed, wounded, or killed at the end of a duel.
 scripted_effect work_out_wounds_or_death_effect = {
+	#Fatality:Practice - no wounds, please
+	if = {
+		limit = { scope:fatality = flag:practice }
+		# No extra effect.
+	}
 	# Fatality:No = death has been disabled.
 	if = {
 		limit = { scope:fatality = flag:no }
@@ -1876,7 +1881,7 @@ scripted_effect work_out_wounds_or_death_effect = {
 		if = {
 			limit = { fatality_default_will_die_trigger = yes }
 			scope:sc_loser = {
-				override_death_killer_effect = { death_reason = death_duel killer = scope:sc_victor }
+				single_combat_death_effect = yes
 			}
 		}
 		else = {
@@ -1888,8 +1893,17 @@ scripted_effect work_out_wounds_or_death_effect = {
 	# Fatality:Always = losing is always fatal.
 	else_if = {
 		limit = { scope:fatality = flag:always }
+		scope:sc_victor = {
+			if = {
+				limit = {
+					this = scope:sc_attacker
+					NOT = { has_execute_reason = scope:sc_loser }
+				}
+				add_kinslayer_trait_or_nothing_effect = { VICTIM = scope:sc_loser }
+			}
+		}
 		scope:sc_loser = {
-			override_death_killer_effect = { death_reason = death_duel killer = scope:sc_victor }
+			single_combat_death_effect = yes
 		}
 	}
 }
@@ -2225,7 +2239,7 @@ scripted_effect finalise_combat_results_effect = {
 	## We do this before death calculation so that the loser isn't too dead to be told that they've died (if they died).
 	scope:sc_loser = { trigger_event = single_combat.0031 }
 	scope:sc_victor = { trigger_event = single_combat.0041 }
-	#Setup for artifact.4080
+	# Setup for artifact.4080
 	scope:sc_victor = {
 		if = {
 			limit = {
@@ -2268,6 +2282,88 @@ scripted_effect finalise_combat_results_effect = {
 			}
 		}
 	}
+	# Sort glory allocation.
+	scope:sc_victor = {
+		if = {
+			limit = {
+				exists = accolade
+				accolade = { is_accolade_active = yes }
+			}
+			# Glory is relative to the prowess difference between two characters. Beating someone equally matched or better is worth more.
+			## Massively outclassed.
+			if = {
+				limit = {
+					prowess_diff = {
+						target = scope:sc_loser
+						value <= -20
+					}
+				}
+				accolade = { add_glory = monumental_glory_gain }
+			}
+			## Majorly outclassed.
+			else_if = {
+				limit = {
+					prowess_diff = {
+						target = scope:sc_loser
+						value <= -15
+					}
+				}
+				accolade = { add_glory = massive_glory_gain }
+			}
+			## Somewhat outclassed.
+			else_if = {
+				limit = {
+					prowess_diff = {
+						target = scope:sc_loser
+						value <= -8
+					}
+				}
+				accolade = { add_glory = major_glory_gain }
+			}
+			## Slightly outclassed.
+			else_if = {
+				limit = {
+					prowess_diff = {
+						target = scope:sc_loser
+						value <= -4
+					}
+				}
+				accolade = { add_glory = medium_glory_gain }
+			}
+			## Evenly matched.
+			else_if = {
+				limit = {
+					prowess_diff = {
+						target = scope:sc_loser
+						value <= 0
+					}
+				}
+				accolade = { add_glory = minor_glory_gain }
+			}
+			## Slightly in your favour.
+			else_if = {
+				limit = {
+					prowess_diff = {
+						target = scope:sc_loser
+						value <= 4
+					}
+				}
+				accolade = { add_glory = minimal_glory_gain }
+			}
+			## Below this, things are too much in your favour and you're not earning glory, you're defending what you already have.
+			
+			#Beating your rival means additional glory gain
+			if = {
+				limit = {
+					OR = {
+						has_relation_rival = scope:sc_loser
+						has_relation_nemesis = scope:sc_loser
+					}
+				}
+				accolade = { add_glory = minor_glory_gain }
+			}
+		}
+	}
 	# Calculate wounds/death; we use an effect so that we can show it as a tooltip elsewhere.
 	work_out_wounds_or_death_effect = yes
 	# Send the final output event & clean up.
@@ -2295,8 +2391,16 @@ scripted_effect finalise_combat_results_effect = {
 	}
 	## Or otherwise the other person.
 	### Doesn't hugely matter, technically, since the output event should be from a neutral scope, but if they're dead then the event won't fire and the chain silently invalidates.
-	else = {
+	else_if = {
+		limit = {
+			scope:sc_defender = { is_alive = yes }
+		}
 		scope:sc_defender = {
+			trigger_event = { saved_event_id = scope:follow_up_event }
+		}
+	}
+	else = {
+		scope:sc_attacker = {
 			trigger_event = { saved_event_id = scope:follow_up_event }
 		}
 	}
@@ -4614,10 +4718,20 @@ scripted_effect combat_move_something_to_hide_effect = {
 scripted_effect may_damage_artifact_effect = {
 	if = {
 		limit = {
-			any_equipped_character_artifact = { artifact_slot_type = $TYPE$ }
+			any_equipped_character_artifact = {
+				# Warcraft
+				artifact_can_be_damaged_trigger = yes
+				
+				artifact_slot_type = $TYPE$
+			}
 		}
 		random_equipped_character_artifact = {
-			limit = { artifact_slot_type = $TYPE$ }
+			limit = {
+				# Warcraft
+				artifact_can_be_damaged_trigger = yes
+				
+				artifact_slot_type = $TYPE$
+			}
 			random = {
 				chance = $CHANCE$
 				add_durability = {
@@ -4648,7 +4762,8 @@ scripted_effect may_damage_artifact_effect = {
 
 #	Standard combat event.
 single_combat.0001 = {
-	type = duel_event
+	type = character_event
+	window = duel_event
 	title = {
 		first_valid = {
 			triggered_desc = {
@@ -5709,63 +5824,63 @@ single_combat.0001 = {
 	# Background Logic
 	override_background = {
 		trigger = { scope:locale = flag:terrain_scope }
-		event_background = terrain_scope
+		reference = terrain_scope
 	}
 	override_background = {
 		trigger = { scope:locale = flag:battlefield }
-		event_background = battlefield
+		reference = battlefield
 	}
 	override_background = {
 		trigger = { scope:locale = flag:alley_night }
-		event_background = alley_night
+		reference = alley_night
 	}
 	override_background = {
 		trigger = { scope:locale = flag:alley_day }
-		event_background = alley_day
+		reference = alley_day
 	}
 	override_background = {
 		trigger = { scope:locale = flag:temple }
-		event_background = temple
+		reference = temple
 	}
 	override_background = {
 		trigger = { scope:locale = flag:corridor_night }
-		event_background = corridor_night
+		reference = corridor_night
 	}
 	override_background = {
 		trigger = { scope:locale = flag:corridor_day }
-		event_background = corridor_day
+		reference = corridor_day
 	}
 	override_background = {
 		trigger = { scope:locale = flag:courtyard }
-		event_background = courtyard
+		reference = courtyard
 	}
 	override_background = {
 		trigger = { scope:locale = flag:dungeon }
-		event_background = dungeon
+		reference = dungeon
 	}
 	override_background = {
 		trigger = { scope:locale = flag:docks }
-		event_background = docks
+		reference = docks
 	}
 	override_background = {
 		trigger = { scope:locale = flag:feast }
-		event_background = feast
+		reference = feast
 	}
 	override_background = {
 		trigger = { scope:locale = flag:market }
-		event_background = market
+		reference = market
 	}
 	override_background = {
 		trigger = { scope:locale = flag:tavern }
-		event_background = tavern
+		reference = tavern
 	}
 	override_background = {
 		trigger = { scope:locale = flag:throne_room }
-		event_background = throne_room
+		reference = throne_room
 	}
 	override_background = {
 		trigger = { scope:locale = flag:army_camp }
-		event_background = army_camp
+		reference = army_camp
 	}
 
 	immediate = {
@@ -6510,7 +6625,14 @@ single_combat.0001 = {
 
 	#Unsure Attack
 	option = {
-		name = single_combat.0001.unsure_attack
+		name = {
+			trigger = { scope:fatality = flag:yes }
+			text = single_combat.0001.unsure_attack
+		}
+		name = {
+			trigger = { scope:fatality = flag:no }
+			text = single_combat.0001.unsure_attack_non_fatal
+		}
 		trigger = { exists = local_var:combat_move_unsure_attack_flag }
 
 		#Move clarification
@@ -7534,9 +7656,7 @@ single_combat.0001 = {
 		custom_tooltip = single_combat.0001.tt.feint_and_stab
 
 		#Spawn Info; use individual traits so that the unlock trait shows in the option UI.
-		trait = hunter_1
-		trait = hunter_2
-		trait = hunter_3
+		trait = lifestyle_hunter
 
 		#Move effects
 		## First, we show the move's effects with no guff.
@@ -7594,47 +7714,47 @@ single_combat.0001 = {
 		}
 	}
 
-	#Stoic Veteran
-	option = {
-		name = {
-			trigger = {
-				NOT = {
-					scope:my_foe = { has_trait = varangian }
-				}
-			}
-			text = single_combat.0001.stoic_veteran.general
-		}
-		name = {
-			trigger = {
-				scope:my_foe = { has_trait = varangian }
-			}
-			text = single_combat.0001.stoic_veteran.other_varangian
-		}
-		trigger = { exists = local_var:combat_move_stoic_veteran_flag }
-
-		#Move clarification
-		custom_tooltip = single_combat.0001.tt.stoic_veteran
-
-		#Spawn Info
-		trait = varangian
-
-		#Move effects
-		## First, we show the move's effects with no guff.
-		show_as_tooltip = { combat_move_stoic_veteran_effect = yes }
-		## Then, we check to make sure if scope:my_foe is still around to suffer the effects. This prevents errors if they die mid-combat.
-		if = {
-			limit = {
-				scope:my_foe = { is_alive = yes }
-			}
-			hidden_effect = { combat_move_stoic_veteran_effect = yes }
-		}
-
-		# Loc here implies stoic professionalism, so doesn't seem fair to apply stress over that.
-		ai_chance = {
-			base = 100
-			sce_preferred_shrewd_fighter_scripted_modifier = yes
-		}
-	}
+	#Stoic Veteran Warcraft
+	#option = {
+	#	name = {
+	#		trigger = {
+	#			NOT = {
+	#				scope:my_foe = { has_trait = varangian }
+	#			}
+	#		}
+	#		text = single_combat.0001.stoic_veteran.general
+	#	}
+	#	name = {
+	#		trigger = {
+	#			scope:my_foe = { has_trait = varangian }
+	#		}
+	#		text = single_combat.0001.stoic_veteran.other_varangian
+	#	}
+	#	trigger = { exists = local_var:combat_move_stoic_veteran_flag }
+	#
+	#	#Move clarification
+	#	custom_tooltip = single_combat.0001.tt.stoic_veteran
+	#
+	#	#Spawn Info
+	#	trait = varangian
+	#
+	#	#Move effects
+	#	## First, we show the move's effects with no guff.
+	#	show_as_tooltip = { combat_move_stoic_veteran_effect = yes }
+	#	## Then, we check to make sure if scope:my_foe is still around to suffer the effects. This prevents errors if they die mid-combat.
+	#	if = {
+	#		limit = {
+	#			scope:my_foe = { is_alive = yes }
+	#		}
+	#		hidden_effect = { combat_move_stoic_veteran_effect = yes }
+	#	}
+	#
+	#	# Loc here implies stoic professionalism, so doesn't seem fair to apply stress over that.
+	#	ai_chance = {
+	#		base = 100
+	#		sce_preferred_shrewd_fighter_scripted_modifier = yes
+	#	}
+	#}
 
 	#Blade Dance
 	option = {
@@ -7645,9 +7765,7 @@ single_combat.0001 = {
 		custom_tooltip = single_combat.0001.tt.blade_dance
 
 		#Spawn Info; use individual traits so that the unlock trait shows in the option UI.
-		trait = blademaster_1
-		trait = blademaster_2
-		trait = blademaster_3
+		trait = lifestyle_blademaster
 
 		#Move effects
 		## First, we show the move's effects with no guff.
@@ -7869,9 +7987,6 @@ single_combat.0021 = {
 	immediate = {
 		# Check what round we're at, and reduce the threshold variables as appropriate if we're in a late enough round.
 		## Reduce injury thresholds for both characters.
-		#TODO_CD: we're getting some errors logs in the overnight about the variables here, so this debug-stuff is for error-searching!
-		debug_log = "single combat variable error-check"
-		debug_log_scopes = yes
 		if = {
 			limit = { scope:sc_defender.var:current_round = round_injury_bonus_lower }
 			debug_log = "single combat variable error-check: round_injury_bonus_lower"
@@ -7930,9 +8045,7 @@ single_combat.0021 = {
 		## Check scope:sc_attacker first, seeing if they have more success chance than the minimum threshold for victory.
 		if = {
 			limit = {
-				scope:sc_attacker.var:sc_attacker_success_check = {
-					compare_value >= scope:sc_defender.var:success_threshold
-				}
+				scope:sc_attacker.var:sc_attacker_success_check >= scope:sc_defender.var:success_threshold
 			}
 			save_scope_value_as = {
 				name = sc_finished
@@ -7948,9 +8061,7 @@ single_combat.0021 = {
 		## Then check scope:sc_defender, performing the same calculation in reverse.
 		if = {
 			limit = {
-				scope:sc_defender.var:sc_defender_success_check = {
-					compare_value >= scope:sc_defender.var:success_threshold
-				}
+				scope:sc_defender.var:sc_defender_success_check >= scope:sc_defender.var:success_threshold
 			}
 			save_scope_value_as = {
 				name = sc_finished
@@ -7974,9 +8085,7 @@ single_combat.0021 = {
 			# Check scope:sc_attacker to see if they can injure themselves due to having more risk than success.
 			if = {
 				limit = {
-					scope:sc_attacker.var:sc_attacker_injury_risk_check = {
-						compare_value >= scope:sc_attacker.var:sc_attacker_duel_success_score
-					}
+					scope:sc_attacker.var:sc_attacker_injury_risk_check >= scope:sc_attacker.var:sc_attacker_duel_success_score
 				}
 				random = {
 					chance = {
@@ -7999,9 +8108,7 @@ single_combat.0021 = {
 			# Then check scope:sc_defender in the same fashion.
 			if = {
 				limit = {
-					scope:sc_defender.var:sc_defender_injury_risk_check = {
-						compare_value >= scope:sc_defender.var:sc_defender_duel_success_score
-					}
+					scope:sc_defender.var:sc_defender_injury_risk_check >= scope:sc_defender.var:sc_defender_duel_success_score
 				}
 				random = {
 					chance = {
@@ -8146,7 +8253,8 @@ scripted_effect sce_victor_end_result_tooltip_effect = {
 
 #	scope:sc_loser's confirmation event.
 single_combat.0031 = {
-	type = duel_event
+	type = character_event
+	window = duel_event
 	title = single_combat.0031.t
 	desc = {
 		first_valid = {
@@ -9372,63 +9480,63 @@ single_combat.0031 = {
 	# Background Logic
 	override_background = {
 		trigger = { scope:locale = flag:terrain_scope }
-		event_background = terrain_scope
+		reference = terrain_scope
 	}
 	override_background = {
 		trigger = { scope:locale = flag:battlefield }
-		event_background = battlefield
+		reference = battlefield
 	}
 	override_background = {
 		trigger = { scope:locale = flag:alley_night }
-		event_background = alley_night
+		reference = alley_night
 	}
 	override_background = {
 		trigger = { scope:locale = flag:alley_day }
-		event_background = alley_day
+		reference = alley_day
 	}
 	override_background = {
 		trigger = { scope:locale = flag:temple }
-		event_background = temple
+		reference = temple
 	}
 	override_background = {
 		trigger = { scope:locale = flag:corridor_night }
-		event_background = corridor_night
+		reference = corridor_night
 	}
 	override_background = {
 		trigger = { scope:locale = flag:corridor_day }
-		event_background = corridor_day
+		reference = corridor_day
 	}
 	override_background = {
 		trigger = { scope:locale = flag:courtyard }
-		event_background = courtyard
+		reference = courtyard
 	}
 	override_background = {
 		trigger = { scope:locale = flag:dungeon }
-		event_background = dungeon
+		reference = dungeon
 	}
 	override_background = {
 		trigger = { scope:locale = flag:docks }
-		event_background = docks
+		reference = docks
 	}
 	override_background = {
 		trigger = { scope:locale = flag:feast }
-		event_background = feast
+		reference = feast
 	}
 	override_background = {
 		trigger = { scope:locale = flag:market }
-		event_background = market
+		reference = market
 	}
 	override_background = {
 		trigger = { scope:locale = flag:tavern }
-		event_background = tavern
+		reference = tavern
 	}
 	override_background = {
 		trigger = { scope:locale = flag:throne_room }
-		event_background = throne_room
+		reference = throne_room
 	}
 	override_background = {
 		trigger = { scope:locale = flag:army_camp }
-		event_background = army_camp
+		reference = army_camp
 	}
 
 	immediate = {
@@ -9436,12 +9544,26 @@ single_combat.0031 = {
 		if = {
 			limit = { duel_will_end_in_my_death_trigger = yes }
 			show_as_tooltip = {
-				override_death_killer_effect = { death_reason = death_duel killer = scope:sc_victor }
+				single_combat_death_effect = yes
 			}
+		}
+		else_if = {
+			limit = { scope:fatality = flag:practice }
+			# If we're only practicing, there's no harm done.
+			custom_tooltip = single_combat.result.tt.practice_no_wounds
 		}
 		else = {
 			show_as_tooltip = {
 				increase_wounds_no_death_effect = { REASON = duel }
+			}
+		}
+		# Add Tournament Trait XP
+		if = {
+			limit = { has_trait = tourney_participant }
+			add_trait_xp = {
+				trait = tourney_participant
+				track = foot
+				value = { 1 3 }
 			}
 		}
 		#Acknowledge loss of temporary combat modifiers.
@@ -9616,8 +9738,9 @@ single_combat.0031 = {
 				NOT = { has_relation_rival = scope:sc_victor }
 			}
 			progress_towards_rival_effect = {
+				REASON = rival_lost_duel
 				CHARACTER = scope:sc_victor
-				OPINION = no
+				OPINION = 0
 			}
 		}
 		# Consolation prize for being a sore loser to a rival.
@@ -9674,13 +9797,49 @@ single_combat.0031 = {
 				limit = { has_character_flag = single_combat_duel_armor }
 				remove_character_flag = single_combat_duel_armor
 			}
+		}		
+		if = { #If dueled an AI, clear everything
+			limit = {
+				scope:sc_victor = { is_ai = yes }
+			}
+			single_combat_clean_temp_weapon_effect = {
+				ATTACKER = scope:sc_loser
+				DEFENDER = scope:sc_victor
+			}
+		}
+		else_if = { #If both players, clear own only
+			limit = { is_ai = no }
+			if = { #check for variables set up in set_temporary_signature_weapon
+				limit = {
+					OR = {
+						has_variable = og_signature_weapon
+						has_variable = temporary_signature_weapon
+					}
+				}
+				if = { #remove the signature_weapon variable if the character didn't have anything before
+					limit = {
+						var:og_signature_weapon = flag:no_signature_weapon_yet
+					}
+					remove_variable = signature_weapon
+				}
+				else = { #restore the original signature_weapon
+					set_variable = {
+						name = signature_weapon
+						value = var:og_signature_weapon 
+					}
+				}
+				#remove all variables set up in set_temporary_signature_weapon
+				remove_variable = temporary_signature_weapon
+				remove_variable = og_signature_weapon
+			}
 		}
 	}
 }
 
 #	scope:sc_victor's confirmation event.
 single_combat.0041 = {
-	type = duel_event
+	type = character_event
+	window = duel_event
 	title = single_combat.0041.t
 	desc = {
 		first_valid = {
@@ -10923,80 +11082,105 @@ single_combat.0041 = {
 	# Background Logic
 	override_background = {
 		trigger = { scope:locale = flag:terrain_scope }
-		event_background = terrain_scope
+		reference = terrain_scope
 	}
 	override_background = {
 		trigger = { scope:locale = flag:battlefield }
-		event_background = battlefield
+		reference = battlefield
 	}
 	override_background = {
 		trigger = { scope:locale = flag:alley_night }
-		event_background = alley_night
+		reference = alley_night
 	}
 	override_background = {
 		trigger = { scope:locale = flag:alley_day }
-		event_background = alley_day
+		reference = alley_day
 	}
 	override_background = {
 		trigger = { scope:locale = flag:temple }
-		event_background = temple
+		reference = temple
 	}
 	override_background = {
 		trigger = { scope:locale = flag:corridor_night }
-		event_background = corridor_night
+		reference = corridor_night
 	}
 	override_background = {
 		trigger = { scope:locale = flag:corridor_day }
-		event_background = corridor_day
+		reference = corridor_day
 	}
 	override_background = {
 		trigger = { scope:locale = flag:courtyard }
-		event_background = courtyard
+		reference = courtyard
 	}
 	override_background = {
 		trigger = { scope:locale = flag:dungeon }
-		event_background = dungeon
+		reference = dungeon
 	}
 	override_background = {
 		trigger = { scope:locale = flag:docks }
-		event_background = docks
+		reference = docks
 	}
 	override_background = {
 		trigger = { scope:locale = flag:feast }
-		event_background = feast
+		reference = feast
 	}
 	override_background = {
 		trigger = { scope:locale = flag:market }
-		event_background = market
+		reference = market
 	}
 	override_background = {
 		trigger = { scope:locale = flag:tavern }
-		event_background = tavern
+		reference = tavern
 	}
 	override_background = {
 		trigger = { scope:locale = flag:throne_room }
-		event_background = throne_room
+		reference = throne_room
 	}
 	override_background = {
 		trigger = { scope:locale = flag:army_camp }
-		event_background = army_camp
+		reference = army_camp
 	}
 
 	immediate = {
 		#Death/wounding enacted elsewhere.
 		if = {
-			limit = { duel_will_end_in_opponent_death_trigger = yes }
+			limit = {
+				duel_will_end_in_opponent_death_trigger = yes
+			}
 			scope:sc_loser = {
 				show_as_tooltip = {
-					override_death_killer_effect = { death_reason = death_duel killer = scope:sc_victor }
+					single_combat_death_effect = yes
 				}
 			}
+		}
+		else_if = {
+			limit = { scope:fatality = flag:practice }
+			# If we're only practicing, there's no harm done.
+			custom_tooltip = single_combat.result.tt.practice_no_wounds
 		}
 		else = {
 			scope:sc_loser = {
 				show_as_tooltip = {
 					increase_wounds_no_death_effect = { REASON = duel }
 				}
+			}
+		}
+		# Add Blademaster Trait XP
+		if = {
+			limit = { has_trait = lifestyle_blademaster }
+			add_trait_xp = {
+				trait = lifestyle_blademaster
+				value = lifestyle_blademaster_xp_gain_minor_value
+			}
+		}
+
+		# Add Tournament Trait XP
+		if = {
+			limit = { has_trait = tourney_participant }
+			add_trait_xp = {
+				trait = tourney_participant
+				track = foot
+				value = tournament_hastiludes_xp_gain_minor_value
 			}
 		}
 		# Damage equipped artifacts
@@ -11058,6 +11242,42 @@ single_combat.0041 = {
 			else_if = { # If a player who dueled a player, clear only own flags
 				limit = { has_character_flag = single_combat_duel_armor }
 				remove_character_flag = single_combat_duel_armor
+			}
+		}
+		# Everyone puts their signature weapons back on.
+		if = { #If dueled an AI, clear everything
+			limit = {
+				scope:sc_loser = { is_ai = yes }
+			}
+			single_combat_clean_temp_weapon_effect = {
+				ATTACKER = scope:sc_loser
+				DEFENDER = scope:sc_victor
+			}
+		}
+		else_if = { #If both players, clear own only
+			limit = { is_ai = no }
+			if = { #check for variables set up in set_temporary_signature_weapon
+				limit = {
+					OR = {
+						has_variable = og_signature_weapon
+						has_variable = temporary_signature_weapon
+					}
+				}
+				if = { #remove the signature_weapon variable if the character didn't have anything before
+					limit = {
+						var:og_signature_weapon = flag:no_signature_weapon_yet
+					}
+					remove_variable = signature_weapon
+				}
+				else = { #restore the original signature_weapon
+					set_variable = {
+						name = signature_weapon
+						value = var:og_signature_weapon 
+					}
+				}
+				#remove all variables set up in set_temporary_signature_weapon
+				remove_variable = temporary_signature_weapon
+				remove_variable = og_signature_weapon
 			}
 		}
 	}
@@ -11217,7 +11437,8 @@ single_combat.1003 = {
 
 #	Debug event to duel a character.
 single_combat.1004 = {
-	type = duel_event
+	type = character_event
+	window = duel_event
 	title = single_combat.1004.t
 	desc = single_combat.1004.desc
 	left_portrait = {
