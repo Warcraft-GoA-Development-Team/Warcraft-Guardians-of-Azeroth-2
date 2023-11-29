@@ -410,6 +410,17 @@ PixelShader =
 				Color += EmissiveColor;
 
 			#endif
+
+			//EK2 EMISSIVE SHADER
+			//Use for emissive in normal BLUE channel.
+			#ifdef EMISSIVE_NORMAL_BLUE
+
+				float EmissiveStrength = 1.0f;
+				float emissiveMask = PdxTex2D( NormalMap, Input.UV0 ).b;
+				float3 emissiveColor = Diffuse.rgb * EmissiveStrength;
+				Color = lerp(Color, emissiveColor, emissiveMask);
+
+			#endif
 			//EK2 EMISSIVE SHADER
 			
 			Color = ApplyDistanceFog( Color, Input.WorldSpacePos );
@@ -737,6 +748,7 @@ RasterizerState ShadowRasterizerState
 	DepthBias = 500
 	SlopeScaleDepthBias = 2
 }
+
 RasterizerState ShadowRasterizerStateBackfaces
 {
 	DepthBias = 1000
@@ -748,7 +760,7 @@ Effect portrait_skin
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "EMISSIVE" "DECALS" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect wc_portrait_skin_attachment_alpha_to_coverage
@@ -757,7 +769,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skinShadow
@@ -815,13 +827,13 @@ Effect portrait_attachment
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
 }
 Effect wc_portrait_attachment_emissive
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "EMISSIVE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachmentShadow
@@ -836,7 +848,7 @@ Effect portrait_attachment_pattern
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_patternShadow
@@ -852,7 +864,7 @@ Effect portrait_attachment_pattern_alpha_to_coverage
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES"}
+	Defines = { "EMISSIVE_NORMAL_BLUE" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES"}
 }
 
 Effect portrait_attachment_pattern_alpha_to_coverageShadow
@@ -876,7 +888,7 @@ Effect portrait_attachment_alpha_to_coverage
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_alpha_to_coverageShadow
@@ -884,14 +896,14 @@ Effect portrait_attachment_alpha_to_coverageShadow
 	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
-	Defines = { "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_with_coa
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_alpha_to_coverage_with_coa
@@ -899,14 +911,14 @@ Effect portrait_attachment_alpha_to_coverage_with_coa
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_with_coa_and_variations
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_alpha_to_coverage_with_coa_and_variations
@@ -914,7 +926,7 @@ Effect portrait_attachment_alpha_to_coverage_with_coa_and_variations
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair
