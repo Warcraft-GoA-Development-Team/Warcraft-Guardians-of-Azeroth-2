@@ -724,17 +724,6 @@ PixelShader =
 				Color += EmissiveColor;
 
 			#endif
-
-			//EK2 EMISSIVE SHADER
-			//Use for emissive in normal BLUE channel.
-			#ifdef EMISSIVE_NORMAL_BLUE
-
-				float EmissiveStrength = 1.0f;
-				float emissiveMask = PdxTex2D( NormalMap, Input.UV0 ).b;
-				float3 emissiveColor = Diffuse.rgb * EmissiveStrength;
-				Color = lerp(Color, emissiveColor, emissiveMask);
-
-			#endif
 			//EK2 EMISSIVE SHADER
 
 			DebugReturn( Color, MaterialProps, LightingProps, EnvironmentMap, SssColor, SssMask );
@@ -1274,7 +1263,7 @@ Effect portrait_skin
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE" "DECALS" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_teeth
@@ -1304,7 +1293,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
@@ -1312,7 +1301,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skinShadow
@@ -1327,7 +1316,7 @@ Effect portrait_skin_face
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "DECALS" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE" "DECALS" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skin_face_selection
@@ -1390,14 +1379,14 @@ Effect wc_portrait_attachment_emissive
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "USE_CHARACTER_DATA" "PDX_MESH_BLENDSHAPES" "EMISSIVE_NORMAL_BLUE" }
+	Defines = { "USE_CHARACTER_DATA" "PDX_MESH_BLENDSHAPES" "EMISSIVE" }
 }
 
 Effect wc_portrait_attachment_emissive_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
-	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE_NORMAL_BLUE" }
+	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" }
 }
 
 Effect portrait_attachmentShadow
@@ -2107,3 +2096,4 @@ Effect sine_flag_animation
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"
 }
+
