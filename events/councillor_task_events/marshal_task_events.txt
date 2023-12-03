@@ -517,6 +517,455 @@ marshal_task.0303 = {
 	}
 }
 
+# Is this character bad enough at martial/prowess that making them a commander would be a mistake?
+scripted_trigger marshal_task_0304_is_valid_beneficiary_of_nepotism = {
+	is_physically_able_ai_adult = yes
+	prowess < mediocre_skill_rating
+	martial <= mediocre_skill_rating
+	NOR = {
+		is_knight_of = scope:councillor_liege
+	}
+	# Only peeps who are your vassal or who aren't employed in an important court position elsewhere are valid targets
+	OR = {
+		is_vassal_of = scope:councillor_liege
+		AND = {
+			is_landed = no
+			has_any_court_position = no
+		}
+	}
+	can_be_knight_trigger = { ARMY_OWNER = scope:councillor_liege }
+}
+
+# Will this character ask you to employ their incompetent child as a knight?
+scripted_trigger marshal_task_0304_is_valid_advocate_of_nepotism = {
+	NOT = { this = root }
+	is_physically_able_ai_adult = yes
+	is_available = yes
+	NOR = {
+		has_relation_rival = scope:councillor_liege
+		has_relation_nemesis = scope:councillor_liege
+	}
+	ai_honor < high_positive_ai_value
+	ai_energy >= low_negative_ai_value
+}
+
+scripted_trigger marshal_task_0304_is_corrupt_parent_of_weak_child = {
+	marshal_task_0304_is_valid_advocate_of_nepotism = yes
+	any_child = {
+		marshal_task_0304_is_valid_beneficiary_of_nepotism = yes
+	}
+}
+
+# Promote an incompetent house member's child to knighthood
+marshal_task.0304 = {
+	type = character_event
+	title = marshal_task.0304.t
+	desc = marshal_task.0304.desc
+	theme = martial
+	left_portrait = scope:beneficiary_of_nepotism
+	right_portrait = {
+		character = cp:councillor_marshal
+		animation = personality_rational
+	}
+	lower_left_portrait = scope:advocate_of_nepotism
+
+	trigger = {
+		exists = cp:councillor_marshal
+		scope:councillor = cp:councillor_marshal
+		NOT = {
+			has_variable = had_new_commander_event
+		}
+		# Either you have a harmonious clan government (so you care about unity effects) or the parent is a vassal (so you care about their opinion)
+		OR = {
+			AND = {
+				government_has_flag = government_is_clan
+				exists = house
+				house = {
+					OR = {
+						has_house_unity_stage = friendly
+						has_house_unity_stage = harmonious
+					}
+					any_house_member = {
+						marshal_task_0304_is_corrupt_parent_of_weak_child = yes
+					}
+				}
+			}
+			any_vassal = {
+				marshal_task_0304_is_corrupt_parent_of_weak_child = yes
+			}
+		}
+	}
+
+	# Ambitious parents are more likely to try this scheme
+	weight_multiplier = {
+		base = 1
+		modifier = {
+			add = 0.5
+			OR = {
+				AND = {
+					exists = house
+					house = {
+						any_house_member = {
+							marshal_task_0304_is_corrupt_parent_of_weak_child = yes
+							has_trait = ambitious
+						}
+					}
+				}
+				any_vassal = {
+					marshal_task_0304_is_corrupt_parent_of_weak_child = yes
+					has_trait = ambitious
+				}
+			}
+		}
+	}
+
+	immediate = {
+		set_variable = {
+			name = had_new_commander_event
+			days = 730
+		}
+		# Select who will appear in the event
+		if = {
+			limit = {
+				exists = house
+				government_has_flag = government_is_clan
+				house = {
+					OR = {
+						has_house_unity_stage = friendly
+						has_house_unity_stage = harmonious
+					}
+					any_house_member = {
+						marshal_task_0304_is_corrupt_parent_of_weak_child = yes
+					}
+				}
+			}
+			house = {
+				random_house_member = {
+					limit = { 
+						marshal_task_0304_is_corrupt_parent_of_weak_child = yes
+					}
+					weight = {
+						base = 1
+						modifier = {
+							add = 0.5
+							has_trait = ambitious
+						}
+						# Weight mothers more strongly
+						modifier = {
+							add = 0.5
+							is_female = yes
+						}
+					}
+					save_scope_as = advocate_of_nepotism
+					random_child = {
+						limit = {
+							marshal_task_0304_is_valid_beneficiary_of_nepotism = yes
+						}
+						save_scope_as = beneficiary_of_nepotism
+						get_quirk_character_effect = yes
+					}
+				}
+			}
+		}
+		else = {
+			random_vassal = {
+				limit = {
+					marshal_task_0304_is_corrupt_parent_of_weak_child = yes
+				}
+				weight = {
+					base = 1
+					modifier = {
+						add = 0.5
+						has_trait = ambitious
+					}
+					# Weight mothers more strongly
+					modifier = {
+						add = 0.5
+						is_female = yes
+					}
+				}
+				save_scope_as = advocate_of_nepotism
+				random_child = {
+					limit = {
+						marshal_task_0304_is_valid_beneficiary_of_nepotism = yes
+					}
+					save_scope_as = beneficiary_of_nepotism
+					get_quirk_character_effect = yes
+				}
+			}
+		}
+		# Add the incompetent potential commander as a guest if they aren't already at your court or landed
+		if = {
+			limit = {
+				scope:beneficiary_of_nepotism = {
+					NOR = {
+						is_courtier_of = root
+						location = root.capital_province
+						is_landed = yes
+					}
+				}
+			}
+			add_visiting_courtier = scope:beneficiary_of_nepotism
+		}
+	}
+
+	option = { # Accept the nepotism
+		name = {
+			trigger = { house = scope:beneficiary_of_nepotism.house }
+			text = marshal_task.0304.a_clan
+		}
+		name = {
+			trigger = { NOT = { house = scope:beneficiary_of_nepotism.house } }
+			text = marshal_task.0304.a_neutral
+		}
+		if = {
+			limit = {
+				scope:beneficiary_of_nepotism = {
+					is_landed = no
+					NOT = { is_courtier_of = root }
+				}
+			}
+			add_courtier = scope:beneficiary_of_nepotism
+		}
+		scope:beneficiary_of_nepotism = {
+			hidden_effect = { set_knight_status = force }
+			add_character_flag = {
+				flag = marshal_task_0304_forced_knighthood
+				years = 20
+			}
+		}
+		custom_description_no_bullet = {
+			text = marshal_task_0304_a_tt
+			subject = scope:advocate_of_nepotism
+			object = scope:beneficiary_of_nepotism
+		}
+		reverse_add_opinion = {
+			target = scope:advocate_of_nepotism
+			modifier = marshal_task_train_commanders_supported_my_child_opinion
+		}
+		# For the next 20 years, we'll check monthly to see if the child is still employed as a knight
+		# But only if the councillor liege is a player (for performance reasons)
+		if = {
+			limit = { is_ai = no }
+			trigger_event = {
+				id = marshal_task.0305
+				days = 14
+			}
+		}
+		if = {
+			limit = {
+				government_has_flag = government_is_clan
+				# Only add/lose unity if the parent is a part of your house
+				house = scope:advocate_of_nepotism.house
+			}
+			add_clan_unity_interaction_effect = {
+				CHARACTER = scope:councillor_liege
+				TARGET = scope:advocate_of_nepotism
+				VALUE = minor_unity_gain
+				DESC = clan_unity_yes_to_nepotism.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_honor = -0.25
+			}
+		}
+		stress_impact = {
+			just = minor_stress_impact_gain
+			arrogant = minor_stress_impact_gain
+			paranoid = minor_stress_impact_gain
+		}
+	}
+
+	option = { # Offer for their child to be your courtier instead
+		name = marshal_task.0304.b
+		trigger = {
+			scope:beneficiary_of_nepotism = {
+				NOR = {
+					is_courtier_of = scope:councillor_liege
+					is_landed = yes
+				}
+			}
+		}
+		duel = {
+			skill = diplomacy
+			target = scope:advocate_of_nepotism
+			6 = {
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = 0.5
+					min = -5
+				}
+				desc = marshal_task.0304.b.success
+				send_interface_toast = {
+					title = marshal_task.0304.b.success
+					left_icon = scope:advocate_of_nepotism
+					right_icon = scope:beneficiary_of_nepotism
+					pay_short_term_gold = {
+						gold = scope:beneficiary_of_nepotism.recruit_guest_interaction_cost
+						target = scope:beneficiary_of_nepotism
+					}
+					add_courtier = scope:beneficiary_of_nepotism
+				}
+			}
+			4 = {
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = 0.5
+					min = -5
+				}
+				desc = marshal_task.0304.b.failure
+				send_interface_toast = {
+					title = marshal_task.0304.b.failure
+					left_icon = scope:advocate_of_nepotism				
+					reverse_add_opinion = {
+						target = scope:advocate_of_nepotism
+						modifier = marshal_task_train_commanders_rebuffed_my_child_opinion
+						opinion = -20
+					}
+					if = {
+						limit = {
+							government_has_flag = government_is_clan
+							house = scope:advocate_of_nepotism.house
+						}
+						add_clan_unity_interaction_effect = {
+							CHARACTER = scope:councillor_liege
+							TARGET = scope:advocate_of_nepotism
+							VALUE = minor_unity_loss
+							DESC = clan_unity_refused_nepotism.desc
+							REVERSE_NON_HOUSE_TARGET = no
+						}
+					}
+				}
+			}
+		}
+		ai_chance = {
+			base = 10
+			compare_modifier = {
+				value = diplomacy
+				offset = scope:advocate_of_nepotism.diplomacy
+				multiplier = 2.5
+			}
+		}
+	}
+
+	option = { # Deny the nepotism
+		name = marshal_task.0304.c
+		ai_chance = {
+			base = 10
+		}
+		reverse_add_opinion = {
+			target = scope:advocate_of_nepotism
+			modifier = marshal_task_train_commanders_rebuffed_my_child_opinion
+		}
+		if = {
+			limit = {
+				government_has_flag = government_is_clan
+				house = scope:advocate_of_nepotism.house 
+			}
+			add_clan_unity_interaction_effect = {
+				CHARACTER = scope:councillor_liege
+				TARGET = scope:advocate_of_nepotism
+				VALUE = minor_unity_loss
+				DESC = clan_unity_refused_nepotism.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
+	}
+}
+
+marshal_task.0305 = {
+	hidden = yes
+
+	trigger = {
+		scope:councillor_liege = {
+			is_alive = yes
+		}
+		scope:advocate_of_nepotism = {
+			is_alive = yes
+		}
+		scope:beneficiary_of_nepotism = {
+			is_alive = yes
+			is_healthy = yes
+			has_character_flag = marshal_task_0304_forced_knighthood
+			NOT = {
+				has_opinion_modifier = {
+					modifier = kicked_me_from_court
+					target = scope:councillor_liege
+				}
+			}
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				scope:beneficiary_of_nepotism = { is_knight_of = scope:councillor_liege }
+			}
+			trigger_event = {
+				id = marshal_task.0305
+				days = 30
+			}
+		}
+		else = {
+			trigger_event = marshal_task.306
+		}
+	}
+}
+
+# The worthless house member you promised to keep as a knight was removed from their post
+marshal_task.0306 = {
+	type = letter_event
+	sender = scope:advocate_of_nepotism
+	opening = marshal_task.0306.opening
+	desc = marshal_task.0306.desc
+
+	option = {
+		name = marshal_task.0306.a
+		stress_impact = {
+			shy = medium_stress_impact_gain
+		}
+		scope:advocate_of_nepotism = {
+			if = {
+				limit = {
+					has_opinion_modifier = {
+						target = root
+						modifier = marshal_task_train_commanders_supported_my_child_opinion	
+					}
+				}
+				remove_opinion = {
+					target = root
+					modifier = marshal_task_train_commanders_supported_my_child_opinion
+				}
+			}
+			add_opinion = {
+				target = root
+				modifier = weak_excuses
+				opinion = -25
+				years = 15
+			}
+		}
+		scope:beneficiary_of_nepotism = {
+			remove_character_flag = marshal_task_0304_forced_knighthood
+		}
+		if = {
+			limit = {
+				government_has_flag = government_is_clan
+				house = scope:advocate_of_nepotism.house
+			}
+			add_clan_unity_interaction_effect = {
+				CHARACTER = scope:councillor_liege
+				TARGET = scope:advocate_of_nepotism
+				VALUE = medium_unity_loss
+				DESC = clan_unity_nepotism_removed_from_post.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
+	}
+}
+
 ##########
 # END Task Outcome Events
 ##########
