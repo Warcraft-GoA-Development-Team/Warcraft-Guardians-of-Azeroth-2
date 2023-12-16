@@ -28,6 +28,4 @@ replace_path="common/religion/holy_sites"
 replace_path="common/bookmark_portraits"
 replace_path="common/bookmarks"
 supported_version="1.11.3"
-path="C:/Users/akozh/Documents/Paradox Interactive/Crusader Kings III/mod/Warcraft-Guardians-of-Azeroth-2"
-remote_file_id="2949767945"
-
+path="mod/Warcraft-Guardians-of-Azeroth-2"
