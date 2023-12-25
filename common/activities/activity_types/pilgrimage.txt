@@ -1,0 +1,2525 @@
+﻿activity_pilgrimage = {
+	is_shown = {
+		highest_held_title_tier > tier_barony
+		is_landed = yes
+		trigger_if = {
+			limit = {
+				is_ai = yes
+			}
+			is_at_war = no
+			short_term_gold >= pilgrimage_base_cost
+		}
+	}
+
+	can_start_showing_failures_only = {
+		is_available_adult = yes
+		faith = {
+			NOT = { has_doctrine_parameter = forbidden_from_pilgrimage }
+			any_holy_site = { exists = this }	
+		}
+		#Check if all of your holy sites are on cooldown
+		trigger_if = {
+			limit = {
+				any_memory = {
+					has_variable = pilgrimage_destination
+					memory_age_years < 5
+				}
+			}
+			custom_tooltip = { 
+				text = activity_pilgrimage.is_activity_available.all_holy_sites_on_cooldown
+				faith = {
+					any_holy_site = {
+						save_temporary_scope_as = site_check
+						NOT = {
+							root = {
+								any_memory = {
+									has_variable = pilgrimage_destination
+									memory_age_years < 5
+									var:pilgrimage_destination.barony = scope:site_check
+								}
+							}
+						}
+						add_to_temporary_list = holy_sites_not_on_cooldown
+						any_in_list = {
+							list = holy_sites_not_on_cooldown
+							count > 0
+						}
+					}
+				}
+			}
+		}
+		trigger_else = { always = yes }
+		
+		#Are you a diarch forbidden from leaving the realm?
+		trigger_if = {
+			limit = { bannable_serving_diarch_trigger = yes }
+			custom_tooltip = {
+				text = activity_pilgrimage.serving_diarch
+				faith = {
+					any_holy_site = {
+						save_temporary_scope_as = site_check
+						NOT = {
+							root = {
+								any_memory = {
+									has_variable = pilgrimage_destination
+									memory_age_years < 5
+									var:pilgrimage_destination.barony = scope:site_check
+								}
+							}
+						}
+						add_to_temporary_list = holy_sites_not_on_cooldown
+						any_in_list = {
+							list = holy_sites_not_on_cooldown
+							county.holder = {
+								any_liege_or_above = { this = root.liege }
+							}
+							count > 0
+						}
+					}
+				}
+			}
+		}
+	}
+
+	is_valid = {
+		scope:host = {
+			#If you don't have a capital to return to, don't bother
+			exists = capital_province
+			is_capable_adult = yes
+			is_imprisoned = no
+			is_landed = yes 
+			NOT = { is_incapable = yes }
+			#Invalidate flag, until/unless this is fixed in code
+			NOT = { has_variable = pilgrimage_invalidated_illness }
+			#Don't change your capital to be the holy site destination
+			NOT = { capital_province.barony = scope:activity.activity_location.barony }
+		}
+		# Converting mid-pilgrimage is a big no-no.
+		scope:activity = {
+			OR = {
+				NOT = { has_variable = starting_faith }
+				# We could check whether the place you're going to is still a holy site in the new faith, but then that messes up all the people moving with you, so we just cancel the whole thing.
+				scope:host.faith = var:starting_faith
+			}
+		}
+	}
+
+	on_invalidated = {
+		scope:host = {
+			#We're heading back home to bury the old host
+			if = {
+				limit = { has_variable = pilgrimage_death_turn_back }
+				trigger_event = pilgrimage.0042
+			}
+			#Regular invalidation event
+			else = {
+				if = {
+					limit = { capital_province.barony ?= scope:activity.activity_location.barony }
+					set_variable = {
+						name = moved_capital_to_holy_site
+						value = scope:activity.activity_location
+					}
+				}
+				trigger_event = pilgrimage.0040
+			}
+		}
+		# Host becomes unlanded
+		if = {
+			limit = {
+				scope:host = { is_landed = no }
+			}
+			scope:activity = {
+				activity_type = { save_scope_as = activity_type }
+			}
+			every_attending_character = {
+				trigger_event = activity_system.0320
+			}
+		}
+		if = {
+			limit = {
+				scope:host = { is_incapable = yes }
+			}
+			scope:activity = {
+				activity_type = { save_scope_as = activity_type }
+			}
+			scope:host = {
+				trigger_event = activity_system.0330
+			}
+			every_attending_character = {
+				limit = { NOT = { this = scope:host } }
+				trigger_event = activity_system.0331
+			}
+		}
+	}
+
+	on_host_death = {
+		#Make the player heir the new host, if they're on the Pilgrimage
+		if = {
+			limit = { 
+				exists = scope:host.player_heir
+				any_attending_character = { this = scope:host.player_heir }
+				scope:host.faith = scope:host.player_heir.faith
+			}
+			scope:host = { save_scope_as = old_host }
+			scope:host.player_heir = { save_scope_as = new_host }
+			#Also inherit the travel plan
+			if = {
+				limit = {
+					scope:host.current_travel_plan = {
+						any_entourage_character = { this = scope:new_host }
+					}
+				}
+				scope:host.current_travel_plan = { set_travel_plan_owner = scope:new_host }
+			}
+			set_activity_host = scope:new_host
+			scope:new_host = {
+				set_variable = {
+					name = old_host_to_be_buried
+					value = scope:old_host #The old host
+				}
+				add_character_flag = pilgrimage_dealing_with_invalidation
+				trigger_event = activity_system.0081
+			}
+		}
+		#Otherwise indirectly cancel the activity by not setting a new host
+		else = {
+			# Send your entourage home
+			scope:host = {
+				current_travel_plan = {
+					every_entourage_character = { set_location_to_default = yes }
+				}
+			}
+		}
+	}
+
+	#Filtering for Mecca will not work if put under Phase instead of the Activity setup
+	is_location_valid = {
+		#You only get to visit any particular holy site once every 5 years
+		custom_tooltip = { 
+			text = activity_pilgrimage.is_location_valid.recently_visited
+			NOT = {
+				scope:host = {
+					any_memory = {
+						has_variable = pilgrimage_destination
+						var:pilgrimage_destination = root #root is the province we're checking
+						memory_age_years < 5
+					}
+				}
+			}
+		}
+		#You can't pilgrimage to your own capital
+		custom_tooltip = {
+			text = activity_pilgrimage.is_location_valid.capital_is_holy_site
+			NOT = { scope:host.capital_province = root }
+		}
+
+		# If you are supposed to be the realm's reserve ruler, then you can't take a multi-year foreign trip.
+		trigger_if = {
+			limit = {
+				scope:host = { bannable_serving_diarch_trigger = yes }
+			}
+			custom_tooltip = {
+				text = activity_pilgrimage.serving_diarch
+				county.holder = {
+					any_liege_or_above = { this = scope:host.liege }
+				}
+			}
+		}
+	}
+
+	province_description = {
+		desc = activity_pilgrimage_province_desc
+		# Are you going to honor your imaginary friend guardian angel?
+		triggered_desc = {
+			trigger = {
+				scope:host = {
+					any_owned_story = {
+						story_type = story_cycle_imaginary_friend
+						var:pilgrimage_destination ?= root
+					}
+				}
+			}
+			desc = activity_pilgrimage_imaginary_friend_location_desc
+		}
+		#Is it an unvisited holy site?
+		triggered_desc = {
+			trigger = {
+				scope:host = {
+					OR = {
+						AND = {
+							#These two really shouldn't exist without each other, but safe-checking
+							NOT = { 
+								exists = var:visited_unique_holy_sites_list
+								exists = var:visited_unique_holy_sites_count 
+							}
+						}
+						AND = {
+							exists = var:visited_unique_holy_sites_count
+							#Does this holy site exist in the list?
+							NOT = {
+								any_in_list = {
+									variable = visited_unique_holy_sites_list
+									this = root 
+								}
+							}
+
+						}
+					}
+				}
+			}
+			desc = activity_pilgrimage_province_unvisited_desc
+		}
+		#Is it a unique holy site?
+		triggered_desc = {
+			trigger = {
+				#OR = {
+					#Taken from the Pilgrimage arrival on_action event triggers
+					#Warcraft
+					#AND = {
+					#	scope:host = { like_christianity_religion_trigger = yes }
+					#	OR = {
+					#		county = title:c_roma # Rome
+					#		county = title:c_jerusalem # Jerusalem
+					#		county = title:c_byzantion # Constantinople
+					#		county = title:c_alexandria # Alexandria
+					#	}
+					#}
+					#Christianity
+					#AND = {
+					#	scope:host = { religion = religion:judaism_religion }
+					#	OR = {
+					#		county = title:c_sinai # Mt. Sinai
+					#		county = title:c_jerusalem # Jerusalem
+					#	}
+					#}
+					#Islam
+					#AND = {
+					#	scope:host = { religion = religion:islam_religion }
+					#	OR = {
+					#		county = title:c_mecca # Mecca
+					#		county = title:c_medina # Medina
+					#		county = title:c_sinai # Mt. Sinai
+					#		county = title:c_jerusalem # Jerusalem
+					#	}
+					#}
+				#}
+				#Warcraft add later destinations with unique description
+				always = no
+			}
+			desc = activity_pilgrimage_province_unique_desc
+		}
+		#What's the distance to the holy site - needs to be in the middle of the PROVINCE_DESCRIPTION since it move from the negative itinerary to the Additional Cost-part
+		first_valid = {
+			triggered_desc = {
+				trigger = { "scope:host.capital_province.squared_distance(root)" <= squared_distance_small }
+				desc = activity_pilgrimage_province_very_short_desc
+			}
+			triggered_desc = {
+				trigger = { 
+					"scope:host.capital_province.squared_distance(root)" > squared_distance_small
+					"scope:host.capital_province.squared_distance(root)" <= squared_distance_medium
+				}
+				desc = activity_pilgrimage_province_pretty_short_desc
+			}
+			triggered_desc = {
+				trigger = { 
+					"scope:host.capital_province.squared_distance(root)" > squared_distance_medium
+					"scope:host.capital_province.squared_distance(root)" <= squared_distance_large
+				}
+				desc = activity_pilgrimage_province_short_desc
+			}
+			triggered_desc = {
+				trigger = { 
+					"scope:host.capital_province.squared_distance(root)" > squared_distance_large
+					"scope:host.capital_province.squared_distance(root)" <= squared_distance_huge
+				}
+				desc = activity_pilgrimage_province_intermediate_desc
+			}
+			triggered_desc = {
+				trigger = { 
+					"scope:host.capital_province.squared_distance(root)" > squared_distance_huge
+					"scope:host.capital_province.squared_distance(root)" <= squared_distance_almost_massive
+				}
+				desc = activity_pilgrimage_province_respectably_desc
+			}
+			triggered_desc = {
+				trigger = { 
+					"scope:host.capital_province.squared_distance(root)" > squared_distance_almost_massive
+					"scope:host.capital_province.squared_distance(root)" <= squared_distance_massive
+				}
+				desc = activity_pilgrimage_province_quite_far_desc
+			}
+			#Klingenberg -> Jerusalem
+			triggered_desc = {
+				trigger = { 
+					"scope:host.capital_province.squared_distance(root)" > squared_distance_massive
+					"scope:host.capital_province.squared_distance(root)" <= squared_distance_monstrous
+				}
+				desc = activity_pilgrimage_province_very_far_desc
+			}
+			#Klingenberg -> Kanchipuram
+			triggered_desc = {
+				trigger = { "scope:host.capital_province.squared_distance(root)" > squared_distance_monstrous }
+				desc = activity_pilgrimage_province_extraordinarily_far_desc
+			}
+			#Fallback, we should never end up here
+			desc = activity_pilgrimage_province_desc
+		}
+		#Once again, with feeling - needs to be at the end of the PROVINCE_DESCRIPTION since it has the Effects-part
+		first_valid = {
+			triggered_desc = {
+				trigger = { 
+					scope:host.capital_province = {
+						squared_distance = {
+							target = root
+							value > long_pilgrimage_max_length
+						}
+					}
+				}
+				desc = activity_pilgrimage_province_very_long_mult_desc
+			}
+			triggered_desc = {
+				trigger = { 
+					scope:host.capital_province = {
+						squared_distance = {
+							target = root
+							value > medium_pilgrimage_max_length
+						}
+					}
+				}
+				desc = activity_pilgrimage_province_long_mult_desc
+			}
+			triggered_desc = {
+				trigger = { 
+					scope:host.capital_province = {
+						squared_distance = {
+							target = root
+							value > short_pilgrimage_max_length
+						}
+					}
+				}
+				desc = activity_pilgrimage_province_medium_mult_desc
+			}
+		}
+	}
+
+	# desc is only shown in debug AI watch window
+	ai_will_do = {
+		value = 0
+		if = {
+			limit = {
+				ai_energy < 0
+			}
+			add = {
+				add = ai_energy
+				desc = "ai_energy"
+			}
+		}
+		if = {
+			limit = {
+				faith = { has_doctrine = doctrine_pilgrimage_mandatory }
+				NOT = { has_trait = pilgrim }
+			}
+			add = {
+				value = 50
+				desc = "Pilgrim mandatory malus"
+			}
+		}
+		
+		if = {
+			limit = { short_term_gold >= major_gold_value }
+			add = {
+				value = 30
+				desc = "Got gold to burn"
+			}
+		}
+		if = {
+			limit = { piety_level <= 2 }
+			add = {
+				value = 20
+				desc = "Has low piety level"
+			}
+		}
+		if = {
+			limit = { has_trait = zealous }
+			add = {
+				value = 20
+				desc = "Has Zealous"
+			}
+		}
+		if = {
+			limit = { has_trait = humble }
+			add = {
+				value = 10
+				desc = "Has Humble"
+			}
+		}
+		if = {
+			limit = {
+				ai_zeal > 0
+				piety < 0
+			}
+			add = {
+				value = 10
+				desc = "Zealous wants above 0 piety"
+			}
+		}
+		if = {
+			limit = { 
+				has_trait = zealous
+				NOT = { has_trait = pilgrim }
+			}
+			add = {
+				value = 20
+				desc = "Has Zealous, don't have Pilgrim"
+			}
+		}
+		if = {
+			limit = {
+				is_independent_ruler = no
+				has_vassal_stance = zealot
+			}
+			add = {
+				value = 10
+				desc = zealot
+			}
+		}
+		if = {
+			limit = {
+				OR = {
+					has_trait = cynical
+					any_secret = { secret_type = secret_non_believer }
+				}
+			}
+			add = {
+				value = -30
+				desc = "Is cynical or non-believer"
+			}
+		}
+		if = {
+			limit = {
+				has_trait = pilgrim
+				has_trait_xp = {
+					trait = pilgrim
+					value >= 100
+				}
+			}
+			add = {
+				value = -30
+				desc = "Has maxed out Pilgrim"
+			}
+		}
+	}
+
+	ai_check_interval = 60
+
+	ai_will_select_province = {
+		value = 50
+		if = {
+			limit = {
+				scope:host = {
+					exists = var:visited_unique_holy_sites_count
+					var:visited_unique_holy_sites_count > 0
+					NOT = {
+						any_in_list = {
+							variable = visited_unique_holy_sites_list
+							this = root
+						}
+					}
+				}
+			}
+			add = {
+				value = 100
+				desc = "Unvisited holy site"
+			}
+		}
+		if = {
+			limit = { "scope:host.capital_province.squared_distance(root)" <= squared_distance_small }
+			multiply = {
+				value = 8
+				desc = "Holy site is super close 8"
+			}
+		}
+		else_if = {
+			limit = {
+				"scope:host.capital_province.squared_distance(root)" > squared_distance_small
+				"scope:host.capital_province.squared_distance(root)" <= squared_distance_medium
+			}
+			multiply = {
+				value = 7
+				desc = "Holy site is pretty close 7"
+			}
+		}
+		else_if = {
+			limit = {
+				"scope:host.capital_province.squared_distance(root)" > squared_distance_medium
+				"scope:host.capital_province.squared_distance(root)" <= squared_distance_large
+			}
+			multiply = {
+				value = 6
+				desc = "Holy site is OK close 6"
+			}
+		}
+		else_if = {
+			limit = {
+				"scope:host.capital_province.squared_distance(root)" > squared_distance_large
+				"scope:host.capital_province.squared_distance(root)" <= squared_distance_huge
+			}
+			multiply = {
+				value = 5
+				desc = "Holy site is intermediately far away 5"
+			}
+		}
+		else_if = {
+			limit = {
+				"scope:host.capital_province.squared_distance(root)" > squared_distance_huge
+				"scope:host.capital_province.squared_distance(root)" <= squared_distance_almost_massive
+			}
+			multiply = {
+				value = 4
+				desc = "Holy site is quite far away 4"
+			}
+		}
+		else_if = {
+			limit = {
+				"scope:host.capital_province.squared_distance(root)" > squared_distance_almost_massive
+				"scope:host.capital_province.squared_distance(root)" <= squared_distance_massive
+			}
+			multiply = {
+				value = 3
+				desc = "Holy site is far away 3"
+			}
+		}
+		#Klingenberg -> Jerusalem
+		else_if = {
+			limit = {
+				"scope:host.capital_province.squared_distance(root)" > squared_distance_massive
+				"scope:host.capital_province.squared_distance(root)" <= squared_distance_monstrous
+			}
+			multiply = {
+				value = 2
+				desc = "Holy site is very far away 2"
+			}
+		}
+		#Klingenberg -> Kanchipuram
+		else_if = {
+			limit = { "scope:host.capital_province.squared_distance(root)" > squared_distance_monstrous }
+			multiply = {
+				value = 1
+				desc = "Holy site is super far away 1"
+			}
+		}
+	}
+
+	###################
+	# PARAMETERS
+	###################
+
+	is_grand_activity = no
+
+	is_single_location = yes
+
+	province_filter = holy_sites
+
+	max_route_deviation_mult = 3.0
+
+	cost = {
+		gold = {
+			add = {
+				add = {
+					value = root.pilgrimage_base_cost
+					desc = pilgrimage_base_cost
+				}
+				add = {
+					value = root.pilgrimage_base_cost
+					multiply = activity_cost_scale_by_era
+					subtract = root.pilgrimage_base_cost
+					desc = activity_cost_scale_by_era_desc
+				}
+				if = {
+					limit = { has_character_modifier = ghost_pilgrimage_promised_modifier }
+					subtract = {
+						value = medium_gold_value
+						desc = pilgrimage_cost_triggered_by_ghosts
+					}
+				}
+				#You should really only have this flag if your religion has Hajj and you've never Hajj'd
+				if = {
+					limit = { has_character_modifier = hajj_promised_modifier }
+					subtract = {
+						value = medium_gold_value
+						desc = pilgrimage_cost_triggered_by_dead_hajj_relative
+					}
+				}
+				#You should really only have this flag if you haven't Pilgrim'd before
+				if = {
+					limit = { has_character_modifier = pilgrimage_promised_modifier }
+					subtract = {
+						value = medium_gold_value
+						desc = pilgrimage_cost_triggered_by_dead_pilgrimage_relative
+					}
+				}
+				if = {
+					limit = {
+						dynasty ?= { has_dynasty_perk = ep2_activities_legacy_1 }
+					}
+					subtract = {
+						value = root.pilgrimage_base_cost
+						multiply = ep2_activities_legacy_1_pilgrimages_discount_value
+						desc = ep2_activities_legacy_track
+					}
+				}
+				# bp2_yearly.2030
+				if = {
+					limit = {
+						exists = scope:province 
+						has_character_flag = imaginary_friend_pilgrimage_discount
+						any_owned_story = {
+							story_type = story_cycle_imaginary_friend
+							var:pilgrimage_destination ?= scope:province
+						}
+					}
+					multiply = {
+						value = 0.5
+						desc = imaginary_friend_pilgrimage_discount
+					}
+				}
+				min = minor_gold_value
+			}
+		}
+	}
+
+	ui_predicted_cost = {
+		gold = {
+			# Calculate average cost of traveling to one of your holy sites
+			faith = { 
+				# Calculate a summation of the costs to travel to each of your faith's holy sites
+				# MUST BE SYNCED WITH THE PHASE COST
+				every_holy_site = {
+					#Tier 1
+					if = {
+						limit = {
+							"squared_distance(root.capital_province)" > squared_distance_small
+							"squared_distance(root.capital_province)" <= squared_distance_medium
+						}
+						add = {
+							value = root.medium_gold_value 
+							multiply = 0.2
+						}
+					}
+					#Tier 2: Praha -> Cologne
+					else_if = {
+						limit = {
+							"squared_distance(root.capital_province)" > squared_distance_medium
+							"squared_distance(root.capital_province)" <= squared_distance_large
+						}
+						add = {
+							value = root.medium_gold_value 
+							multiply = 0.4
+						}
+					}
+					#Tier 3
+					else_if = {
+						limit = {
+							"squared_distance(root.capital_province)" > squared_distance_large
+							"squared_distance(root.capital_province)" <= squared_distance_huge
+						}
+						add = {
+							value = root.medium_gold_value 
+							multiply = 0.6
+						}
+					}
+					#Tier 4
+					else_if = {
+						limit = {
+							"squared_distance(root.capital_province)" > squared_distance_huge
+							"squared_distance(root.capital_province)" <= squared_distance_almost_massive
+						}
+						add = {
+							value = root.medium_gold_value 
+							multiply = 0.8
+						}
+					}
+					#Tier 5
+					else_if = {
+						limit = {
+							"squared_distance(root.capital_province)" > squared_distance_almost_massive
+							"squared_distance(root.capital_province)" <= squared_distance_massive
+						}
+						add = {
+							value = root.medium_gold_value 
+							multiply = 1
+						}
+					}
+					#Tier 6: Klingenberg -> Jerusalem
+					else_if = {
+						limit = {
+							"squared_distance(root.capital_province)" > squared_distance_massive
+							"squared_distance(root.capital_province)" <= squared_distance_monstrous
+						}
+						add = {
+							value = root.medium_gold_value 
+							multiply = 1.2
+						}
+					}
+					#Tier 7: Klingenberg -> Kanchipuram
+					else_if = {
+						limit = { "squared_distance(root.capital_province)" > squared_distance_monstrous }
+						add = {
+							value = root.medium_gold_value 
+							multiply = 1.5
+						}
+					}
+				}
+			}
+
+			# Now that we have added up the costs of traveling to every holy site, we divide by the number of holy sites you have so we come up with an average travel cost value
+			divide = {
+				# Have to set this value to 1 so the error log doesn't think we're dividing by 0
+				value = 1
+				faith = {
+					every_holy_site = {
+						add = 1
+					}
+				}
+				# account for the starting value of 1
+				subtract = 1
+				# Ensure that we never drop to 0
+				min = 1
+			}
+
+			add = { # Base cost, scaled by era
+				value = pilgrimage_base_cost
+				multiply = activity_cost_scale_by_era
+			}
+			
+			# Options 
+			add = { # Pomp Option 
+				value = 0 # Appropriate Cost
+				add = -10 # Humble Cost
+				add = 50 # Ceremonial Cost
+				add = 100 # Throng Cost
+				# Scale option costs by tier and era
+				multiply = activity_cost_scale_by_tier
+				multiply = activity_cost_scale_by_era
+				# Divide by the number of option levels to get an average option cost
+				divide = 4
+			}
+
+			if = {
+				limit = { has_character_modifier = ghost_pilgrimage_promised_modifier }
+				subtract = {
+					value = medium_gold_value
+					desc = pilgrimage_cost_triggered_by_ghosts
+				}
+			}
+			#You should really only have this flag if your religion has Hajj and you've never Hajj'd
+			if = {
+				limit = { has_character_modifier = hajj_promised_modifier }
+				subtract = {
+					value = medium_gold_value
+					desc = pilgrimage_cost_triggered_by_dead_hajj_relative
+				}
+			}
+			#You should really only have this flag if you haven't Pilgrim'd before
+			if = {
+				limit = { has_character_modifier = pilgrimage_promised_modifier }
+				subtract = {
+					value = medium_gold_value
+					desc = pilgrimage_cost_triggered_by_dead_pilgrimage_relative
+				}
+			}
+			if = {
+				limit = {
+					dynasty ?= { has_dynasty_perk = ep2_activities_legacy_1 }
+				}
+				subtract = {
+					value = root.pilgrimage_base_cost
+					multiply = ep2_activities_legacy_1_pilgrimages_discount_value
+					desc = ep2_activities_legacy_track
+				}
+			}
+			min = minor_gold_value
+			
+			# Make it a multiple of 5 (rounded up)
+			divide = 5
+			ceiling = yes 
+			multiply = 5
+		}
+	}
+
+	###################
+	# OPTIONS
+	###################
+
+	options = {
+		#########
+		# TYPE OF PILGRIMAGE [SPECIAL TYPE] OPTION
+		#########
+		special_type = {
+			pilgrimage_type_pious = {
+				#Crashes [sometimes] if you start the game with a ruler where this is default then tag over to another ruler where this isn't default
+				default = {
+					always = yes
+				}
+				is_valid = {
+					# Otherwise, you can always do this.
+					always = yes
+				}
+				ai_will_do = {
+					value = 50
+					if = {
+						limit = {
+							OR = {
+								has_trait = zealous
+								has_trait = diligent
+								has_trait = flagellant
+								has_trait = brave
+							}
+						}
+						add = 50
+					}
+					if = {
+						limit = {
+							OR = {
+								has_trait = cynical
+								has_trait = lazy
+								has_trait = craven
+							}
+							any_secret = { secret_type = secret_non_believer }
+						}
+						subtract = 50
+					}
+				}
+			}
+			pilgrimage_type_worldly = {
+				is_valid = {
+					# Otherwise, you can always do this.
+					always = yes
+				}
+				ai_will_do = {
+					value = 50
+					if = {
+						limit = {
+							OR = {
+								has_trait = cynical
+								has_trait = lazy
+								has_trait = craven
+							}
+							any_secret = { secret_type = secret_non_believer }
+						}
+						add = 50
+					}
+					if = {
+						limit = {
+							OR = {
+								has_trait = zealous
+								has_trait = diligent
+								has_trait = flagellant
+								has_trait = brave
+							}
+						}
+						subtract = 50
+					}
+				}
+			}
+			pilgrimage_type_hajj = {
+				#Crashes [sometimes] if you start the game with a ruler where this is default then tag over to another ruler where this isn't default
+				default = {
+					always = no
+				}
+				is_shown = {
+					always = no
+				}
+				is_valid = {
+					always = no
+				}
+				ai_will_do = {
+					value = 0
+				}
+			}
+			
+		}
+		#########
+		# LEVEL OF DEVOTION OPTION
+		#########
+		pilgrimage_option_fidelity = {
+			pilgrimage_fidelity_obligatory = {
+				is_shown = { has_dlc_feature = advanced_activities }
+
+				is_valid = {
+					custom_tooltip = {
+						text = activity_pilgrimage.is_valid.other.mandatory_or_impatient
+						OR = {
+							faith = { has_doctrine_parameter = mandatory_pilgrimage }
+							has_trait = impatient
+						}
+					}
+				}
+
+				# Travel modifier given in on_enter_travel_state.
+
+				ai_will_do = {
+					value = 0
+					# AI values.
+					add = {
+						value = ai_zeal
+						multiply = -1
+					}
+					# Basic weight-up.
+					if = {
+						limit = {
+							OR = {
+								# Some personality traits.
+								has_trait = impatient
+								has_trait = cynical
+								# Reclusive characters want this over with quickly.
+								has_trait = reclusive
+								# Diligent characters want to be on their way unless they regard religion very seriously.
+								AND = {
+									has_trait = diligent
+									NOT = { has_trait = zealous }
+								}
+								# Non-believers want out of here.
+								any_secret = { secret_type = secret_non_believer }
+							}
+						}
+						add = 100
+					}
+					# Basic weight-down.
+					if = {
+						limit = {
+							OR = {
+								# Some personality traits.
+								has_trait = patient
+								has_trait = zealous
+								# Flagellants take their time on the trail.
+								has_trait = flagellant
+								# Diligent characters who take religion very seriously don't want to be dishonest about a pilgrimage.
+								AND = {
+									has_trait = diligent
+									has_trait = zealous
+								}
+							}
+						}
+						add = -100
+					}
+				}
+			}
+			pilgrimage_fidelity_pilgrim = {
+				default = yes
+
+				ai_will_do = {
+					# Default to this.
+					value = 100
+				}
+			}
+			pilgrimage_fidelity_contemplative = {
+				is_shown = { has_dlc_feature = advanced_activities }
+
+				is_valid = {
+					custom_tooltip = {
+						text = activity_pilgrimage.is_valid.pilgrim_or_patient
+						OR = {
+							has_trait = patient
+							has_trait = pilgrim
+							has_trait = hajjaj
+						}
+					}
+				}
+
+				# Travel modifier given in on_enter_travel_state.
+
+				ai_will_do = {
+					value = 0
+					# AI values.
+					add = {
+						value = ai_zeal
+						multiply = 1
+					}
+					# Basic weight-up.
+					if = {
+						limit = {
+							OR = {
+								# Some personality traits.
+								has_trait = patient
+								has_trait = zealous
+								# Flagellants take their time on the trail.
+								has_trait = flagellant
+								# Diligent characters who take religion very seriously want to be thorough
+								AND = {
+									has_trait = diligent
+									has_trait = zealous
+								}
+							}
+						}
+						add = 100
+					}
+					# Basic weight-down.
+					if = {
+						limit = {
+							OR = {
+								# Some personality traits.
+								has_trait = impatient
+								has_trait = cynical
+								# Reclusive characters want this over with quickly.
+								has_trait = reclusive
+								# Diligent characters want to be on their way unless they regard religion very seriously.
+								AND = {
+									has_trait = diligent
+									NOT = { has_trait = zealous }
+								}
+								# Non-believers want out of here.
+								any_secret = { secret_type = secret_non_believer }
+							}
+						}
+						add = -100
+					}
+				}
+			}
+		}
+		#########
+		# POMP OPTION
+		#########
+		pilgrimage_option_pomp = {
+			pilgrimage_pomp_humble = {
+				is_shown = { has_dlc_feature = advanced_activities }
+
+				cost = { 
+					gold = {
+						subtract = {
+							add = {
+								value = 10
+								desc = pilgrimage_cost_pomp_ceremonial
+							}
+							add = {
+								value = 10 
+								multiply = activity_cost_scale_by_tier
+								subtract = 10
+								desc = activity_cost_scale_by_tier_desc
+							}
+							add = {
+								value = 10 
+								multiply = activity_cost_scale_by_era
+								subtract = 10 
+								desc = activity_cost_scale_by_era_desc
+							}
+						}
+					}
+				}
+				
+				# Travel modifier given in on_enter_travel_state.
+
+				# We just grab/generate random same-faith "pilgrims" from the local pool.
+
+				ai_will_do = {
+					value = 0
+					add = {
+						value = 40
+						desc = "Base test value"
+					}
+				}
+			}
+			pilgrimage_pomp_appropriate = {
+				default = yes
+
+				# Entourage option grabbing suitable bodyguards & maybe someone from court who really likes you, + randos.
+				travel_entourage_selection = { 
+					weight = pilgrimage_entourage_base_set_weighting_value
+					max = pilgrimage_entourage_pomp_appropriate_max_value
+					invite_rule_order = 1
+				}
+
+				ai_will_do = {
+					value = 0
+					add = {
+						value = 40
+						desc = "Base test value"
+					}
+				}
+			}
+			pilgrimage_pomp_ceremonial = {
+				is_shown = { has_dlc_feature = advanced_activities }
+
+				cost = { 
+					gold = {
+						add = {
+							add = {
+								value = 50
+								desc = pilgrimage_cost_pomp_ceremonial
+							}
+							add = {
+								value = 50 
+								multiply = activity_cost_scale_by_tier
+								subtract = 50
+								desc = activity_cost_scale_by_tier_desc
+							}
+							add = {
+								value = 50 
+								multiply = activity_cost_scale_by_era
+								subtract = 50 
+								desc = activity_cost_scale_by_era_desc
+							}
+							if = {
+								limit = {
+									dynasty ?= { has_dynasty_perk = ep2_activities_legacy_1 }
+								}
+								subtract = {
+									value = 50
+									multiply = ep2_activities_legacy_1_pilgrimages_discount_value
+									desc = ep2_activities_legacy_track
+								}
+							}
+						}
+					}
+				}
+
+				#Entourage option grabbing most people suitable from court, + randos.
+				travel_entourage_selection = {
+					weight = {
+						add = pilgrimage_entourage_base_set_weighting_value
+						add = pilgrimage_entourage_extras_set_weighting_value
+					}
+
+					max = pilgrimage_entourage_pomp_ceremonial_max_value
+					invite_rule_order = 1
+				}
+
+				ai_will_do = {
+					value = 0
+					add = {
+						value = 40
+						desc = "Base test value"
+					}
+				}
+			}
+			pilgrimage_pomp_throng = {
+				is_shown = { has_dlc_feature = advanced_activities }
+
+				cost = { 
+					gold = {
+						add = {
+							add = {
+								value = 100
+								desc = pilgrimage_cost_pomp_throng
+							}
+							add = {
+								value = 100 
+								multiply = activity_cost_scale_by_tier
+								subtract = 100
+								desc = activity_cost_scale_by_tier_desc
+							}
+							add = {
+								value = 100 
+								multiply = activity_cost_scale_by_era
+								subtract = 100 
+								desc = activity_cost_scale_by_era_desc
+							}
+							if = {
+								limit = {
+									dynasty ?= { has_dynasty_perk = ep2_activities_legacy_1 }
+								}
+								subtract = {
+									value = 100
+									multiply = ep2_activities_legacy_1_pilgrimages_discount_value
+									desc = ep2_activities_legacy_track
+								}
+							}
+						}
+					}
+				}
+				#Entourage option grabbing sodding everyone suitable from court, + every grabbable rando in the duchy and maybe a few extra.
+				travel_entourage_selection = {
+					weight = {
+						add = pilgrimage_entourage_base_set_weighting_value
+						add = pilgrimage_entourage_extras_set_weighting_value
+						add = pilgrimage_entourage_sodding_everyone_set_weighting_value
+					}
+
+					max = pilgrimage_entourage_pomp_throng_max_value
+					invite_rule_order = 1
+				}
+
+				ai_will_do = {
+					value = 0
+					add = {
+						value = 40
+						desc = "Base test value"
+					}
+				}
+			}
+		}
+	}
+
+	special_option_category = special_type
+
+	###################
+	# PHASES
+	###################
+
+	phases = {
+		#Solo pilgrimage
+		pilgrimage_phase_solo = {
+			is_predefined = yes
+
+			cost = {
+				gold = {
+					add = {
+						value = medium_gold_value
+						desc = pilgrimage_cost_distance
+						#This needs to be synced  the values in pilgrimage_length_cost_tier_X in the script_values\50_pilgrimage_values.txt file
+						if = {
+							limit = { exists = scope:province }
+							#Tier 0
+							if = {
+								limit = { "capital_province.squared_distance(scope:province)" <= squared_distance_small }
+								subtract = medium_gold_value
+							}
+							#Tier 1
+							else_if = {
+								limit = {
+									"capital_province.squared_distance(scope:province)" > squared_distance_small
+									"capital_province.squared_distance(scope:province)" <= squared_distance_medium
+								}
+								multiply = 0.2
+							}
+							#Tier 2: Praha -> Cologne
+							else_if = {
+								limit = {
+									"capital_province.squared_distance(scope:province)" > squared_distance_medium
+									"capital_province.squared_distance(scope:province)" <= squared_distance_large
+								}
+								multiply = 0.4
+							}
+							#Tier 3
+							else_if = {
+								limit = {
+									"capital_province.squared_distance(scope:province)" > squared_distance_large
+									"capital_province.squared_distance(scope:province)" <= squared_distance_huge
+								}
+								multiply = 0.6
+							}
+							#Tier 4
+							else_if = {
+								limit = {
+									"capital_province.squared_distance(scope:province)" > squared_distance_huge
+									"capital_province.squared_distance(scope:province)" <= squared_distance_almost_massive
+								}
+								multiply = 0.8
+							}
+							#Tier 5
+							else_if = {
+								limit = {
+									"capital_province.squared_distance(scope:province)" > squared_distance_almost_massive
+									"capital_province.squared_distance(scope:province)" <= squared_distance_massive
+								}
+								multiply = 1
+							}
+							#Tier 6: Klingenberg -> Jerusalem
+							else_if = {
+								limit = {
+									"capital_province.squared_distance(scope:province)" > squared_distance_massive
+									"capital_province.squared_distance(scope:province)" <= squared_distance_monstrous
+								}
+								multiply = 1.2
+							}
+							#Tier 7: Klingenberg -> Kanchipuram
+							else_if = {
+								limit = { "capital_province.squared_distance(scope:province)" > squared_distance_monstrous }
+								multiply = 1.5
+							}
+						}
+						multiply = activity_cost_scale_by_era
+						if = {
+							limit = {
+								exists = scope:province 
+								has_character_flag = imaginary_friend_pilgrimage_discount
+								any_owned_story = {
+									story_type = story_cycle_imaginary_friend
+									var:pilgrimage_destination ?= scope:province
+								}
+							}
+							multiply = {
+								value = 0.5
+								desc = imaginary_friend_pilgrimage_discount
+							}
+						}
+					}
+				}
+			}
+
+			ai_will_do = {
+				value = 0
+				add = {
+					value = 30
+					desc = "Base test value"
+				}
+			}
+
+			#This is when you arrive at the pilgrimage destination (and get your Pilgrimage trait)
+			on_phase_active = {
+				if = {
+					limit = { this = scope:host }
+
+					scope:activity = { progress_activity_phase_after = { months = 3 } }
+
+					#scope:activity = {
+					#	set_variable = at_pilgrimage_destination
+					#}
+
+					#Boost short pilgrimages a bit so they don't always get shafted
+					account_for_pilgrimage_length_type_effect = yes
+				
+					#Keep track of how many unique holy sites we've visited
+					save_unique_holy_site_and_update_count_variable_for_tally_effect = { HOLY_SITE = scope:activity.activity_location }
+				
+					#Keep track of how many pilgrimages we've undertaken for fun stats at the conclusion
+					if = {
+						limit = { has_variable = num_pilgrimages_undertaken }
+						change_variable = {
+							name = num_pilgrimages_undertaken
+							add = 1
+						}	
+					}
+				
+					#Arrival events - where Pilgrims gain their Pilgrim trait
+					#We have the Obligatory option selected - we skip the destination events
+					if = {
+						limit = {
+							scope:activity = {
+								has_activity_option = {
+									category = pilgrimage_option_fidelity
+									option = pilgrimage_fidelity_obligatory
+								}
+							}
+							NOT = { has_character_flag = pilgrimage_counter_obligatory }
+						}
+						trigger_event = pilgrimage.4010
+					}
+					#Standard pilgrimage arrival events
+					else = {
+						trigger_event = { on_action = pilgrimage_arrival_events }
+					}
+				}
+				if = {
+					limit = {
+						any_owned_story = {
+							story_type = story_cycle_imaginary_friend
+							var:pilgrimage_destination ?= scope:activity.activity_location
+						}
+					}
+					trigger_event = {
+						id = bp2_yearly.2031
+						days = 2 # Fire the event slightly after arrival
+					}
+				}
+				# Achievements.
+				# Warcraft
+			}
+
+			#Events that happen while we're on site
+			on_monthly_pulse = {
+				if = {
+					limit = { this = scope:host }
+					#We are in a Pilgrimage event chain or Hajjing
+					if = {
+						limit = {
+							#No events until you're done with your chain
+							has_character_flag = in_pilgrimage_event_chain 
+						} 
+						#No events until you're done with your chain
+					}
+					#We're just doing regular pilgrim destination stuff
+					else = {
+						trigger_event = { on_action = pilgrimage_destination_events }
+					}
+				}
+			}
+
+			on_end = {
+				if = {
+					limit = { this = scope:host }
+					# Warcraft
+					#Resolve how we did with our type so we can bake that into the total reward
+					resolve_pilgrimage_type_reward_effect = yes 
+					#Conclusion event
+					trigger_event = pilgrimage.7000 
+					#Reward effect, looks at if Hajj (in that case looks at if you should get trait or not) or Pilgrimage and award appropriate rewards and log entries
+					pilgrimage_completed_log_entry_effect = yes
+				}
+			}
+		}
+	}
+
+	###################
+	# GUEST HANDLING
+	###################
+
+	allow_zero_guest_invites = yes
+
+	can_be_activity_guest = {
+		age > 5
+	}
+
+	max_guests = 30
+
+	host_intents = {
+		intents = { reflection_intent altruism_intent zealot_intent }
+		default = reflection_intent
+	}
+
+	guest_intents = {
+		intents = { reflection_intent }
+		default = reflection_intent
+	}
+
+	travel_entourage_selection = {
+		weight = standard_travel_entourage_additions
+		max = 5
+		invite_rule_order = 1
+	}
+
+	###################
+	# ACTIVITY-SPECIFIC PULSES
+	###################
+
+	pulse_actions = {
+		entries = {
+			apa_preaching_wrath_of_god
+			apa_studying_scripture
+			apa_visited_markets
+			apa_prayer
+			apa_silent_contemplation
+			apa_preaching_to_unbelievers
+			apa_sight_seeing_group
+			apa_cultured_discussion
+			apa_audience
+			apa_communal_prayer
+			apa_comet_sighted
+			apa_good_omen
+			apa_pilgrim_protection
+			apa_pilgrim_hospitals
+			apa_foreign_custom
+			apa_tended_to_travellers
+			apa_donated_to_holy_site_temple
+			apa_charity_for_the_poor
+			apa_spiritual_journey
+			apa_picked_up_local_language
+			apa_lead_procession
+			apa_overcome_with_emotion
+		}
+		chance_of_no_event = 5
+	}
+
+	on_start = {
+		#Used for rewards
+		if = {
+			limit = {
+				scope:activity = {
+					NOT = { exists = var:pilgrimage_distance }
+				}
+			}
+			set_pilgrimage_distance_variable_effect = {
+				PILGRIM = scope:host
+				HOLY_SITE = scope:activity.activity_location
+			}
+		}
+
+		scope:host = {
+			#If we had a rebated Pilgrimage, remove the rebate
+			if = {
+				limit = { has_character_modifier = ghost_pilgrimage_promised_modifier }
+				remove_character_modifier = ghost_pilgrimage_promised_modifier
+			}
+			if = {
+				limit = { has_character_modifier = hajj_promised_modifier }
+				remove_character_modifier = hajj_promised_modifier
+			}
+			if = {
+				limit = { has_character_modifier = pilgrimage_promised_modifier }
+				remove_character_modifier = pilgrimage_promised_modifier
+			}
+
+			# Keep track of how many pilgrimages we've undertaken for fun stats at the conclusion
+			if = {
+				limit = {
+					NOT = { has_variable = num_pilgrimages_undertaken }
+				}
+				set_variable = {
+					name = num_pilgrimages_undertaken
+					value = 0
+				}
+			}
+		}
+
+		scope:activity ?= {
+			#Counter for the Activity Special Type (Pious/Worldly etc) Progress bar
+			activity_setup_special_type_progression_effect = yes
+
+			#Sets the departure activity log entry
+			add_activity_log_entry = {
+				key = pilgrimage_departed_log
+				score = 25
+				tags = { departure }
+				character = scope:activity.activity_host
+			}
+
+			# Check what faith the pilgrimage is supposed to be for.
+			set_variable = {
+				name = starting_faith
+				value = scope:host.faith
+			}
+
+			# How jazzed are people about going?
+			every_attending_character = {
+				limit = {
+					NOT = {
+						this = scope:host
+					}
+				}
+				# Then, apply suitable opinion.
+				custom = custom.every_entourage_character
+				if = {
+					limit = {
+						NOT = {
+							has_opinion_modifier = {
+								modifier = brought_me_on_pilgrimage_opinion
+								target = scope:host
+							}
+						}
+					}
+					# Very long pilgrimage.
+					if = {
+						limit = { scope:activity.var:pilgrimage_distance = flag:very_long_pilgrimage_var }
+						add_opinion = {
+							target = scope:host
+							modifier = brought_me_on_pilgrimage_opinion
+							opinion = 60
+						}
+					}
+					# Long pilgrimage.
+					if = {
+						limit = { scope:activity.var:pilgrimage_distance = flag:long_pilgrimage_var }
+						add_opinion = {
+							target = scope:host
+							modifier = brought_me_on_pilgrimage_opinion
+							opinion = 45
+						}
+					}
+					# Medium pilgrimage.
+					if = {
+						limit = { scope:activity.var:pilgrimage_distance = flag:medium_pilgrimage_var }
+						add_opinion = {
+							target = scope:host
+							modifier = brought_me_on_pilgrimage_opinion
+							opinion = 30
+						}
+					}
+					# Short pilgrimage.
+					if = {
+						limit = { scope:activity.var:pilgrimage_distance = flag:short_pilgrimage_var }
+						add_opinion = {
+							target = scope:host
+							modifier = brought_me_on_pilgrimage_opinion
+							opinion = 15
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	on_enter_travel_state = {
+		scope:activity ?= {
+			# Sort starting travel modifiers.
+			# Do we need to apply travel modifiers depending on our activity options?
+			## Devotion options.
+			if = {
+				limit = {
+					has_activity_option = {
+						category = pilgrimage_option_fidelity
+						option = pilgrimage_fidelity_obligatory
+					}
+					scope:host.current_travel_plan = {
+						NOT = { has_travel_plan_modifier = travel_obligatory_pilgrimage_modifier }
+					}
+				}
+				scope:host.current_travel_plan = { add_travel_plan_modifier = travel_obligatory_pilgrimage_modifier }
+			}
+			else_if = {
+				limit = {
+					has_activity_option = {
+						category = pilgrimage_option_fidelity
+						option = pilgrimage_fidelity_contemplative
+					}
+					scope:host.current_travel_plan = {
+						NOT = { has_travel_plan_modifier = travel_contemplative_pilgrimage_modifier }
+					}
+				}
+				scope:host.current_travel_plan = { add_travel_plan_modifier = travel_contemplative_pilgrimage_modifier }
+			}
+			## Pomp options.
+			if = {
+				limit = {
+					has_activity_option = {
+						category = pilgrimage_option_pomp
+						option = pilgrimage_pomp_humble
+					}
+					scope:host.current_travel_plan = {
+						NOT = { has_travel_plan_modifier = travel_alone_with_strangers_modifier }
+					}
+				}
+				scope:host.current_travel_plan = { add_travel_plan_modifier = travel_alone_with_strangers_modifier }
+			}
+		}
+	}
+
+	on_travel_state_pulse = {
+		#Handled in the on_travel_plan_movement on_action for Pilgrimage and Hajj
+	}
+
+	on_enter_passive_state = {
+		#If you run the Obligatory activity option, you're going to be early to your own Pilgrimage, so let's progress the phase :eyes:
+		if = {
+			limit = { root = scope:host }
+			scope:activity = { progress_activity_phase_after = { days = 1 } }
+		}
+	}
+
+	on_passive_state_pulse = { }
+
+	on_enter_active_state = { }
+
+	on_active_state_pulse = { }
+
+	on_complete = {
+		#Conclusion/reward event is run in the phase on_end
+
+		#Otherwise set up Pilgrimage memories
+		#For the follow-up reflective event when back home, triggered through travel_plan_completion on_action
+		set_variable = {
+			name = has_completed_pilgrimage
+			value = flag:pilgrimage
+		}
+		if = {
+			limit = { var:has_completed_pilgrimage ?= flag:pilgrimage }
+			#To prevent 'unused except in loc' errors :catto:
+		}
+		#Create a memory of your very first pilgrimage
+		if = {
+			limit = { 
+				NOT = {
+					any_memory = {
+						has_memory_type = completed_pilgrimage
+						has_variable = first_pilgrimage
+					}
+				}
+			}
+			create_character_memory = { type = completed_pilgrimage }
+			scope:new_memory = {
+				set_variable = {
+					name = first_pilgrimage
+					value = flag:completed_pilgrimage
+				}
+				set_variable = {
+					name = pilgrimage_destination
+					value = scope:activity.activity_location
+				}
+			}
+			if = {
+				limit = { exists = var:pilgrimage_distance }
+				scope:new_memory = {
+					set_variable = {
+						name = pilgrimage_length
+						value = scope:activity.var:pilgrimage_distance
+					} 
+					if = {
+						limit = { exists = var:pilgrimage_length }
+						#To prevent 'unused except in loc' errors :catto:
+					}
+				}
+			}
+		}
+		#Creates a character memory of the completed pilgrimage with your friend
+		else_if = {
+			limit = { exists = scope:activity.var:friend_companion }
+			create_character_memory = {
+				type = completed_pilgrimage_friend 
+				participants = { friend = scope:activity.var:friend_companion }
+			}
+			scope:new_memory = {
+				set_variable = {
+					name = pilgrimage_destination
+					value = scope:activity.activity_location
+				} 
+			}
+		}
+		#Creates a character memory of the completed pilgrimage
+		else = {
+			create_character_memory = { type = completed_pilgrimage }
+			scope:new_memory = {
+				set_variable = {
+					name = pilgrimage_destination
+					value = scope:activity.activity_location
+				}
+				#Save type of pilgrimage for loc - Pious/Worldly
+				if = {
+					limit = {
+						scope:activity = {
+							has_activity_option = {
+								category = special_type
+								option = pilgrimage_type_pious
+							}
+						}
+					}
+					set_variable = {
+						name = memory_type_of_pilgrimage
+						value = flag:pious
+					}
+				}
+				else_if = {
+					limit = {
+						scope:activity = {
+							has_activity_option = {
+								category = special_type
+								option = pilgrimage_type_worldly
+							}
+						}
+					}
+					set_variable = {
+						name = memory_type_of_pilgrimage
+						value = flag:worldly
+					}
+				}
+				if = {
+					limit = { exists = var:pilgrimage_distance }
+					set_variable = {
+						name = pilgrimage_length
+						value = scope:activity.var:pilgrimage_distance
+					} 
+					if = {
+						limit = { exists = var:pilgrimage_length }
+						#To prevent 'unused except in loc' errors :catto:
+					}
+				}
+				if = {
+					limit = { exists = var:memory_type_of_pilgrimage }
+					#To prevent 'unused except in loc' errors :catto:
+				}
+			}	
+		}
+		# Dynasty Legacies
+		scope:host = {
+			if = {
+				limit = {
+					# Has the right perk.
+					dynasty ?= { has_dynasty_perk = ep2_activities_legacy_1 }
+					OR = {
+						# Hasn't got this list at all.
+						NOT = { has_variable_list = ep2_activities_legacy_1_tracker_list }
+						# Or, has the list and meets the requirements.
+						AND = {
+							has_variable_list = ep2_activities_legacy_1_tracker_list
+							variable_list_size = {
+								name = ep2_activities_legacy_1_tracker_list
+								value <= ep2_activities_legacy_1_pilgrimages_learning_visitable_holy_sites_cap_value
+							}
+							NOT = {
+								is_target_in_variable_list = {
+									name = ep2_activities_legacy_1_tracker_list
+									target = scope:activity.activity_location.county
+								}
+							}
+						}
+					}
+				}
+				# Add the appropriate learning.
+				add_learning_skill = ep2_activities_legacy_1_pilgrimages_learning_learning_per_holy_site_value
+				# Plus add the new target.
+				add_to_variable_list = {
+					name = ep2_activities_legacy_1_tracker_list
+					target = scope:activity.activity_location.county
+				}
+			}
+		}
+	}
+
+	###################
+	# GRAPHICS
+	###################
+
+	# Travel
+	background = { # Bridge
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				is_riverside_province = yes
+				geographical_region = world_europe
+				OR = {
+					terrain = farmlands
+					terrain = plains
+					terrain = mountains
+					terrain = hills
+				}
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_travel_bridge.dds"
+		environment = "environment_travel_bridge"
+		ambience = "event:/SFX/Events/Backgrounds/mountains_day"
+	}
+	
+	background = { # Farmland, settled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				terrain = farmlands
+				exists = province_owner
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_travel_farm.dds"
+		environment = "environment_travel_farmlands"
+		ambience = "event:/SFX/Events/Backgrounds/fields_farms_day"
+	}
+	background = { # Farmland, unsettled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				terrain = farmlands
+				NOT = { exists = province_owner }
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/farms.dds"
+		environment = "environment_event_farms"
+		ambience = "event:/SFX/Events/Backgrounds/fields_farms_day"
+	}
+
+	background = { #Desert, settled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_desert_trigger = yes
+				exists = province_owner
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_travel_desert.dds"
+		environment = "environment_travel_desert"
+		ambience = "event:/SFX/Events/Backgrounds/desert_day"
+	}
+	background = { #Desert, unsettled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_desert_trigger = yes
+				NOT = { exists = province_owner }
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/desert.dds"
+		environment = "environment_event_bp1_desert"
+		ambience = "event:/SFX/Events/Backgrounds/desert_day"
+	}
+
+	background = { #forest snowy
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location ?= { hunt_snowy_forest_trigger = yes }
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_hunt_snowy_forest.dds"
+		environment = "environment_hunt_snowy_forest"
+		ambience = "event:/SFX/Events/Backgrounds/mountains_day"
+	}
+
+	background = { #forest_pine
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_forest_pine_trigger = yes
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/forest_pine.dds"
+		environment = "environment_event_forest_pine"
+		ambience = "event:/SFX/Events/Backgrounds/coniferous_forest_day"
+	}
+
+	background = { #forest
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_forest_trigger = yes
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/forest.dds"
+		environment = "environment_event_forest"
+		ambience = "event:/SFX/Events/Backgrounds/deciduous_forest_day"
+	}
+
+	background = { #mountains, settled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_mountains_trigger = yes
+				exists = province_owner
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_travel_mountains.dds"
+		environment = "environment_travel_mountain_settlement"
+		ambience = "event:/SFX/Events/Backgrounds/mountains_day"
+	}
+	background = { #mountains, unsettled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_mountains_trigger = yes
+				NOT = { exists = province_owner }
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/mountains.dds"
+		environment = "environment_event_mountains"
+		ambience = "event:/SFX/Events/Backgrounds/mountains_day"
+	}
+
+	background = { #steppe, settled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_steppe_trigger = yes
+				exists = province_owner
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_travel_steppe.dds"
+		environment = "environment_travel_steppe_settlement"
+		ambience = "event:/SFX/Events/Backgrounds/steppe_day"
+	}
+	background = { #steppe, unsettled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_steppe_trigger = yes
+				NOT = { exists = province_owner }
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/steppe.dds"
+		environment = "environment_event_steppe"
+		ambience = "event:/SFX/Events/Backgrounds/steppe_day"
+	}
+
+	background = { #drylands (formerly desert)
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_drylands_trigger = yes
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/drylands.dds"
+		environment = "environment_event_desert"
+		ambience = "event:/SFX/Events/Backgrounds/desert_day"
+	}
+
+	background = { #wetlands
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_wetlands_trigger = yes
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/bp1_wetlands.dds"
+		environment = "environment_event_bp1_wetlands" 
+		ambience = "event:/SFX/Events/Backgrounds/deciduous_forest_day"
+	}
+
+	background = { #jungle
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_wilderness_jungle_trigger = yes
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/bp1_jungle.dds"
+		environment = "environment_event_bp1_jungle"
+		ambience = "event:/SFX/Events/Backgrounds/deciduous_forest_day"
+	}
+
+	background = { #plains, settled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_plains_trigger = yes
+				exists = province_owner
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_travel_hills.dds"
+		environment = "environment_travel_hills_settlement"
+		ambience = "event:/SFX/Events/Backgrounds/fields_farms_day"
+	}
+	background = { #plains, unsettled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_plains_trigger = yes
+				NOT = { exists = province_owner }
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/bp1_plains.dds"
+		environment = "environment_event_bp1_plains"
+		ambience = "event:/SFX/Events/Backgrounds/fields_farms_day"
+	}
+
+	background = { #hills, settled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_hills_trigger = yes
+				exists = province_owner
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_travel_hills.dds"
+		environment = "environment_travel_hills_settlement"
+		ambience = "event:/SFX/Events/Backgrounds/fields_farms_day"
+	}
+	background = { #hills, unsettled
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				graphical_hills_trigger = yes
+				NOT = { exists = province_owner }
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/bp1_hills.dds"
+		environment = "environment_event_bp1_hills"
+		ambience = "event:/SFX/Events/Backgrounds/fields_farms_day"
+	}
+
+	background = { #sea
+		trigger = {
+			NOT = { scope:host.location = scope:activity.activity_location }
+			scope:host.location = {
+				is_sea_province = yes
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/fp1_ocean.dds"
+		environment = "environment_event_fp1_ocean"
+		ambience = "event:/DLC/FP1/SFX/Events/event_ocean_longship"
+	}
+	# End Travel
+	#Unique holy sites
+	#background = {
+	#	trigger = {
+	#		activity_location.county = title:c_mecca
+	#	}
+	#	texture = "gfx/interface/illustrations/event_scenes/ep2_holysite_mecca.dds"
+	#	environment = "environment_mecca"
+	#	ambience = "event:/SFX/Events/Backgrounds/town_market_middleeastern_day"
+	#}
+	#background = {
+	#	trigger = {
+	#		activity_location.county = title:c_jerusalem
+	#	}
+	#	texture = "gfx/interface/illustrations/event_scenes/ep2_holysite_jerusalem.dds"
+	#	environment = "environment_jerusalem"
+	#	ambience = "event:/SFX/Events/Backgrounds/town_market_middleeastern_day"
+	#}
+	#Generic holy sites
+	background = {
+		trigger = { scope:host = { like_zoroastrianism_religion_trigger = yes } }
+		texture = "gfx/interface/illustrations/event_scenes/fp3_temple.dds"
+		environment = "environment_event_fp3_temple"
+		ambience = "event:/DLC/FP1/SFX/Events/event_temple"
+	}
+	background = {
+		trigger = {
+			activity_location.culture = { has_graphical_mena_culture_group_trigger = yes }
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_holysite_mena.dds"
+		environment = "environment_generic_holy_site_mena"
+		ambience = "event:/SFX/Events/Backgrounds/town_market_middleeastern_day"
+	}
+	background = {
+		trigger = {
+			activity_location.culture = { has_graphical_india_culture_group_trigger = yes }
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_holysite_indian.dds"
+		environment = "environment_indian_holy_site"
+		ambience = "event:/SFX/Events/Backgrounds/deciduous_forest_day"
+	}
+	background = {
+		trigger = {
+			activity_location.culture = { has_graphical_iberian_culture_group_trigger = yes }
+		}
+		texture = "gfx/interface/illustrations/event_scenes/fp2_temple.dds"
+		environment = "environment_event_fp2_temple"
+		ambience = "event:/DLC/FP2/SFX/Events/temple"
+	}
+	background = {
+		trigger = {
+			activity_location.culture = { has_graphical_western_culture_group_trigger = yes }
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_holysite_western.dds"
+		environment = "environment_western_holy_site"
+		ambience = "event:/SFX/Events/Backgrounds/temple_christian"
+	}
+	background = {
+		trigger = {
+			OR = {
+				activity_location.province_owner ?= { 
+					OR = {
+						government_has_flag = government_is_clan
+						government_has_flag = government_is_tribal
+					} 
+				}
+				activity_location.culture = { has_graphical_steppe_culture_group_trigger = yes }
+			}
+		}
+		texture = "gfx/interface/illustrations/event_scenes/ep2_holysite_tribal.dds"
+		environment = "environment_event_garden"
+		ambience = "event:/DLC/FP1/SFX/Events/event_temple"
+	}
+	background = {
+		trigger = {
+			activity_location.culture = { has_graphical_norse_culture_group_trigger = yes }
+		}
+		texture = "gfx/interface/illustrations/event_scenes/fp1_tribal_temple.dds"
+		environment = "environment_event_fp1_tribal_temple"
+		ambience = "event:/DLC/FP1/SFX/Events/event_temple"
+	}
+	background = {
+		trigger = { 
+			scope:host.faith = { has_doctrine = tenet_sanctity_of_nature }
+		}
+		texture = "gfx/interface/illustrations/event_scenes/forest.dds"
+		environment = "environment_event_forest"
+		ambience = "event:/SFX/Events/Backgrounds/deciduous_forest_day"
+	}
+	background = {
+		trigger = { scope:host = { like_tengrism_religion_trigger = yes } }
+		texture = "gfx/interface/illustrations/event_scenes/forest.dds"
+		environment = "environment_event_forest"
+		ambience = "event:/SFX/Events/Backgrounds/deciduous_forest_day"
+	}
+
+	#Fallback
+	background = {
+		texture = "gfx/interface/illustrations/event_scenes/temple.dds"
+		environment = "environment_event_temple"
+		ambience = "event:/SFX/Events/Backgrounds/temple_generic"
+	}
+
+	### Plug in widgets
+	activity_window_widgets = {
+		activity_special_type_progression = "activity_plugin_widgets_summary"
+	}
+
+	window_characters = {
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				if = {
+					limit = {
+						has_activity_option = {
+							category = pilgrimage_option_pomp
+							option = pilgrimage_pomp_throng
+						}
+					}
+					every_attending_character = {
+						limit = {
+							scope:host.location = scope:activity.activity_location
+						}
+						add_to_list = characters
+					}
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = zealous }
+					}
+					animation = personality_zealous
+				}
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = cynical }
+					}
+					animation = { boredom personality_cynical }
+				}
+				#Fallback
+				animation = thinking
+			}
+		}
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				every_attending_character = {
+					limit = {
+						scope:host.location = scope:activity.activity_location
+					}
+					add_to_list = characters
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = zealous }
+					}
+					animation = personality_zealous
+				}
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = cynical }
+					}
+					animation = { boredom personality_cynical }
+				}
+				#Fallback
+				animation = personality_compassionate
+			}
+		}
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				if = {
+					limit = {
+						has_activity_option = {
+							category = pilgrimage_option_pomp
+							option = pilgrimage_pomp_throng
+						}
+					}
+					every_attending_character = {
+						limit = {
+							NOT = {
+								scope:host.location = scope:activity.activity_location
+							}
+						}
+						add_to_list = characters
+					}
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character.location = { is_sea_province = yes }
+					}
+					animation = { idle }
+				}
+				animation = jockey_walk
+			}
+		}
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				every_attending_character = {
+					limit = {
+						NOT = {
+							scope:host.location = scope:activity.activity_location
+						}
+					}
+					add_to_list = characters
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character.location = { is_sea_province = yes }
+					}
+					animation = { idle }
+				}
+				animation = jockey_walk
+			}
+		}
+		
+		host = {
+			camera = camera_body
+			
+			effect = {
+				if = {
+					limit = {
+						scope:host.location = scope:activity.activity_location
+					}
+					scope:host = { add_to_list = characters }
+				}
+			}
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:host = {
+							has_trait = zealous
+							NOT = {
+								any_secret = { secret_type = secret_non_believer }
+							}
+						}
+					}
+					animation = personality_zealous
+				}
+				triggered_animation = {
+					trigger = {
+						scope:host = { has_trait = cynical }
+					}
+					animation = { boredom personality_cynical }
+				}
+				#Fallback
+				animation = personality_compassionate
+			}
+		}
+		
+		travel_host = {
+			camera = camera_body
+			
+			effect = {
+				if = {
+					limit = {
+						NOT = {
+							scope:host.location = scope:activity.activity_location
+						}
+					}
+					scope:host = {
+						add_to_list = characters
+					}
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character.location = { is_sea_province = yes }
+					}
+					animation = { idle }
+				}
+				animation = jockey_walk
+			}
+		}
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				every_attending_character = {
+					limit = {
+						scope:host.location = scope:activity.activity_location
+					}
+					add_to_list = characters
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = zealous }
+					}
+					animation = personality_zealous
+				}
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = cynical }
+					}
+					animation = { boredom personality_cynical }
+				}
+				#Fallback
+				animation = thinking
+			}
+		}
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				if = {
+					limit = {
+						has_activity_option = {
+							category = pilgrimage_option_pomp
+							option = pilgrimage_pomp_throng
+						}
+					}
+					every_attending_character = {
+						limit = {
+							scope:host.location = scope:activity.activity_location
+						}
+						add_to_list = characters
+					}
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = zealous }
+					}
+					animation = personality_zealous
+				}
+				triggered_animation = {
+					trigger = {
+						scope:character = { has_trait = cynical }
+					}
+					animation = { boredom personality_cynical }
+				}
+				#Fallback
+				animation = personality_compassionate
+			}
+		}
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				every_attending_character = {
+					limit = {
+						NOT = {
+							scope:host.location = scope:activity.activity_location
+						}
+					}
+					add_to_list = characters
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character.location = { is_sea_province = yes }
+					}
+					animation = { idle }
+				}
+				animation = jockey_walk
+			}
+		}
+
+		pilgrim = {
+			camera = camera_body
+			
+			effect = {
+				if = {
+					limit = {
+						has_activity_option = {
+							category = pilgrimage_option_pomp
+							option = pilgrimage_pomp_throng
+						}
+					}
+					every_attending_character = {
+						limit = {
+							NOT = {
+								scope:host.location = scope:activity.activity_location
+							}
+						}
+						add_to_list = characters
+					}
+				}
+			}
+
+			scripted_animation = {
+				triggered_animation = {
+					trigger = {
+						scope:character.location = { is_sea_province = yes }
+					}
+					animation = { idle }
+				}
+				animation = jockey_walk
+			}
+		}
+	}
+}
