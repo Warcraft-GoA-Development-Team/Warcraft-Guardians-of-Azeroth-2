@@ -70,7 +70,7 @@ PixelShader =
 			else if (GH_MarkerTexelEquals(PortraitEffect.Param, GH_MARKER_TOP_RIGHT_STATUE_MARBLE))
 			{
 				Diffuse    = float4(1.0, 1.0, 1.0, 1.0);
-				Properties = float4(0.0, 0.12, 0.1, 0.9);
+				Properties = float4(0.0, 0.4, 0.25, 0.8);
 			}
 			else if (GH_MarkerTexelEquals(PortraitEffect.Param, GH_MARKER_TOP_RIGHT_STATUE_LIMESTONE))
 			{
