@@ -79,8 +79,8 @@ PixelShader =
 			}
 			else if (GH_MarkerTexelEquals(PortraitEffect.Param, GH_MARKER_TOP_RIGHT_STATUE_STONE))
 			{
-				Diffuse    = float4(0.2, 0.2, 0.2, 0.4);
-				Properties = float4(0.0, 0.0, 0.0, 0.0);
+				Diffuse    = float4(0.3, 0.2, 0.2, 0.5);
+				Properties = float4(0.0, 0.0, 0.0, 0.8);
 			}
 			else if (GH_MarkerTexelEquals(PortraitEffect.Param, GH_MARKER_TOP_RIGHT_STATUE_COPPER))
 			{
