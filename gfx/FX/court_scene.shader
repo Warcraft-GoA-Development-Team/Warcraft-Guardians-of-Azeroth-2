@@ -8,10 +8,12 @@ Includes = {
 	"jomini/jomini_lighting.fxh"
 	"jomini/jomini_fog.fxh"
 	"jomini/portrait_accessory_variation.fxh"
+	"jomini/portrait_coa.fxh"
 	"jomini/portrait_decals.fxh"
 	"jomini/portrait_user_data.fxh"
 	"constants.fxh"
 	"standardfuncsgfx.fxh"
+	"parallax.fxh"
 }
 
 PixelShader =
@@ -52,6 +54,17 @@ PixelShader =
 		SampleModeU = "Wrap"
 		SampleModeV = "Wrap"
 	}
+#ifdef PARALLAX
+	TextureSampler ParallaxMap
+	{
+		Index = 4
+		MagFilter = "Linear"
+		MinFilter = "Linear"
+		MipFilter = "Linear"
+		SampleModeU = "Wrap"
+		SampleModeV = "Wrap"
+	}
+#endif
 	TextureSampler EnvironmentMap
 	{
 		Ref = JominiEnvironmentMap
@@ -88,6 +101,15 @@ PixelShader =
 		MipFilter = "Linear"
 		SampleModeU = "Wrap"
 		SampleModeV = "Wrap"
+	}
+	TextureSampler CoaTexture 
+	{
+		Index = 12
+		MagFilter = "Linear"
+		MinFilter = "Linear"
+		MipFilter = "Linear"
+		SampleModeU = "Clamp"
+		SampleModeV = "Clamp"
 	}
 	TextureSampler ShadowTexture
 	{
@@ -165,6 +187,11 @@ ConstantBuffer( 5 )
 	float HasNormalMapOverride;
 	float HasPropertiesMapOverride;
 	float HoverMult;
+	
+	float4		CoaColor1;
+	float4		CoaColor2;
+	float4		CoaColor3;
+	float4		CoaOffsetAndScale;
 };
 
 # CCourtSceneShadowMap::MaxShadows in cpp code controls shadow array sizes
@@ -697,6 +724,17 @@ PixelShader =
 				Color += EmissiveColor;
 
 			#endif
+
+			//EK2 EMISSIVE SHADER
+			//Use for emissive in normal BLUE channel.
+			#ifdef EMISSIVE_NORMAL_BLUE
+
+				float EmissiveStrength = 1.0f;
+				float emissiveMask = PdxTex2D( NormalMap, Input.UV0 ).b;
+				float3 emissiveColor = Diffuse.rgb * EmissiveStrength;
+				Color = lerp(Color, emissiveColor, emissiveMask);
+
+			#endif
 			//EK2 EMISSIVE SHADER
 
 			DebugReturn( Color, MaterialProps, LightingProps, EnvironmentMap, SssColor, SssMask );
@@ -910,6 +948,10 @@ PixelShader =
 				#ifdef VARIATIONS_ENABLED
 					ApplyVariationPatterns( Input, Diffuse, Properties, NormalSample );
 				#endif
+				
+				#ifdef COA_ENABLED
+					ApplyCoa( Input, Diffuse, CoaColor1, CoaColor2, CoaColor3, CoaOffsetAndScale.xy, CoaOffsetAndScale.zw, CoaTexture, Properties.r );
+				#endif
 
 				#ifdef USE_CHARACTER_DATA
 				float AppliedHover = HoverMult;
@@ -1079,6 +1121,15 @@ PixelShader =
 			PDX_MAIN
 			{
 				PS_COLOR_SSAO Out;
+				
+				#ifdef PARALLAX
+					#ifdef LOW_SPEC_SHADERS
+						Input.UV0 = ParallaxMappingLowSpec( ParallaxMap, Input.UV0, Input.Tangent, Input.Bitangent, Input.Normal, Input.WorldSpacePos, CameraPosition );
+					#else
+						Input.UV0 = ParallaxMapping( ParallaxMap, Input.UV0, Input.Tangent, Input.Bitangent, Input.Normal, Input.WorldSpacePos, CameraPosition );
+					#endif
+				#endif
+
 
 				#if defined( COA ) || defined( USER_COLOR )
 					static const int USER_DATA_PRIMARY_COLOR = 0;
@@ -1223,7 +1274,7 @@ Effect portrait_skin
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "EMISSIVE" "DECALS" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_teeth
@@ -1253,7 +1304,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
@@ -1261,7 +1312,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skinShadow
@@ -1276,7 +1327,7 @@ Effect portrait_skin_face
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "EMISSIVE" "DECALS" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "DECALS" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skin_face_selection
@@ -1339,14 +1390,14 @@ Effect wc_portrait_attachment_emissive
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "USE_CHARACTER_DATA" "PDX_MESH_BLENDSHAPES" "EMISSIVE" }
+	Defines = { "USE_CHARACTER_DATA" "PDX_MESH_BLENDSHAPES" "EMISSIVE_NORMAL_BLUE" }
 }
 
 Effect wc_portrait_attachment_emissive_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
-	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" }
+	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE_NORMAL_BLUE" }
 }
 
 Effect portrait_attachmentShadow
@@ -1429,13 +1480,29 @@ Effect portrait_attachment_with_coa
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+	Defines = {"USE_CHARACTER_DATA" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	BlendState = "alpha_to_coverage"
+	Defines = {"USE_CHARACTER_DATA" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_with_coa_selection
 {
 	VertexShader = "VS_standard"
-	PixelShader = "PS_attachment"
+	PixelShader = "PS_court_selection"
+	Defines = { "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court_selection"
+	BlendState = "alpha_to_coverage"
 	Defines = { "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
@@ -1451,13 +1518,29 @@ Effect portrait_attachment_with_coa_and_variations
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "USE_CHARACTER_DATA" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa_and_variations
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	BlendState = "alpha_to_coverage"
+	Defines = {"USE_CHARACTER_DATA" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_with_coa_and_variations_selection
 {
 	VertexShader = "VS_standard"
-	PixelShader = "PS_attachment"
+	PixelShader = "PS_court_selection"
+	Defines = { "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa_and_variations_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court_selection"
+	BlendState = "alpha_to_coverage"
 	Defines = { "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
@@ -2002,6 +2085,18 @@ Effect material_test
 }
 
 Effect selection_marker
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect travel_arrow_marker
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect travel_arrow_marker_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"
