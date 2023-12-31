@@ -5,7 +5,34 @@
 # Code on-action: character being imprisoned in root scope
 # imprisoning character set as scope:imprisoner
 on_imprison = {
-	effect = { #You no longer make such decisions over your life :(
+	effect = { # You no longer make such decisions over your life :(
+		# EP2: Cancel associated activity and travel plan if they exist
+		if = {
+			limit = {
+				exists = involved_activity
+				involved_activity.activity_host = root
+			}
+			invalidate_activity = root.involved_activity
+		}
+		else_if = {
+			limit = {
+				exists = involved_activity
+			}
+			remove_from_activity = involved_activity
+		}
+
+		current_travel_plan ?= {
+			if = {
+				limit = {
+					travel_plan_owner = root
+				}
+				abort_travel_plan = yes
+			}
+			else = {
+				remove_character = root
+		 	}
+		}
+
 		if = {
 			limit = { has_character_modifier = gaining_weight_modifier }
 			remove_character_modifier = gaining_weight_modifier
@@ -14,19 +41,177 @@ on_imprison = {
 			limit = { has_character_modifier = losing_weight_modifier }
 			remove_character_modifier = losing_weight_modifier
 		}
+		if = { # from event hold_court.6140
+			limit = {
+				scope:imprisoner = {
+					has_character_modifier = 6140_pet_modifier
+					OR = {
+						has_trait = torturer
+						has_trait = callous
+						has_trait = sadistic
+					}
+				}
+			}
+			add_character_modifier = 6140_animal_guardian_modifier
+		}
+
+		# Warcraft
+		# Struggle Catalysts
+		# End of Warcraft
+		
+		# Memory system
+		create_character_memory = {
+			type = imprisoned
+			participants = { imprisoner = scope:imprisoner }
+		}
+		if = {
+			limit = {
+				is_adult = no
+			}
+			scope:new_memory = {
+				set_variable = childhood_memory
+			}
+		}
+
+		if = {
+			limit = {
+				has_bp2_dlc_trigger = yes
+				is_adult = yes
+				any_memory = {
+					has_memory_type = imprisoned
+					has_variable = childhood_memory
+				}
+			}
+			trigger_event = {
+				id = bp2_yearly.4031
+				days = 10
+			}
+		} #You were imprisoned as a child, and guess what? You are imprisoned as an adult. Congratulations!
+
+		if = {
+			limit = {
+				OR = {
+					is_of_major_interest_trigger = { CHARACTER = scope:imprisoner }
+					AND = {
+						exists = scope:imprisoner.primary_title.tier
+						highest_held_title_tier >= scope:imprisoner.primary_title.tier
+					}
+					highest_held_title_tier >= tier_kingdom
+				}
+			}
+			root = { save_scope_as = prisoner_memory }
+			scope:imprisoner = { # We must buffer this memory via events, otherwise the imprisonment shows up before tyranny/faction wars end
+				trigger_event = error_suppression.0003
+			}
+		}
+		if = { # Set up so you can't banish realm priests, and so that they transfer their gold to the next realm priest if possible
+			limit = {
+				is_theocratic_lessee = yes
+			}
+			add_character_flag = realm_priest
+			save_scope_as = realm_priest_transfer
+			if = {
+				limit = {
+					exists = liege
+				}
+				liege = {
+					trigger_event = {
+						days = 2 # Queued, so we can check the pulse in parallel
+						id = prison.8000
+					}
+				}
+			}
+		}
+		if = {
+			limit = {
+				has_bp2_dlc_trigger = yes
+				scope:imprisoner = {
+					any_memory = {
+						has_memory_type = relative_died
+						any_memory_participant = {
+							exists = this.killer
+							killer = {
+								is_imprisoned_by = root
+							}
+						}
+						has_variable = childhood_memory
+					}
+				}
+			}
+			scope:imprisoner = {
+				trigger_event = {
+					id = bp2_yearly.4001
+					days = 1
+				}
+			}
+		}
 	}
 	events = {
 		prison_notification.0001
 		stewardship_duty.1066  #You imprison your client and prevent them from working for you.
-		bookmark.0003 	#King Aella gets imprisoned by one of Ragnarr Lodbrok's sons
 		martial_authority.2052 # Right-Hand Person Imprisoned (by you)
 		martial_authority.2053 # Right-Hand Person Imprisoned (by someone else)
+		diarchy.0001			# You're forced into a regency	
 	}
 }
 
 # Code on-action: character released from prison in root scope. Does not fire when "released" due to dying
 # imprisoning character set as scope:imprisoner
 on_release_from_prison = {
+	effect = {
+		if = {
+			limit = { # Uses flag to stop escape + release memories being created at same time
+				NOT = { has_character_flag = escaped_from_prison_flag }
+			}
+			create_character_memory = {
+				type = released_from_prison_memory
+				
+				participants = {
+					imprisoner = scope:imprisoner
+				}
+			}
+		}
+		# No prison, no problem.
+		if = {
+			limit = { has_character_modifier = gruesome_festivals_designated_sacrifice_fp1_modifier }
+			remove_character_modifier = gruesome_festivals_designated_sacrifice_fp1_modifier
+		}
+		if = {		#from event hold_court.6140
+			limit = { has_character_modifier = 6140_animal_guardian_modifier }
+			remove_character_modifier = 6140_animal_guardian_modifier
+		}
+		if = {
+			limit = {
+				has_character_flag = realm_priest
+			}
+			remove_character_flag = realm_priest
+		}
+		if = {
+			limit = {
+				has_character_flag = rival_on_exit_prison
+			}
+			remove_character_flag = rival_on_exit_prison
+
+			# imprisoner has to still be valid and alive
+			if = {
+				limit = {
+					scope:imprisoner ?= { is_alive = yes }
+				}
+
+				set_relation_rival = {
+					target = scope:imprisoner
+					reason = rival_was_kept_in_jail
+				}
+			}
+		}
+		if = {
+			limit = { has_variable = imprisoned_by_diarch }
+			remove_variable = imprisoned_by_diarch
+		}
+
+		# Struggle bonus
+	}
+
 	events = {
 		prison.0001					# Remove imprisoned_me modifier, consume imprisonment reasons the imprisoner had
 		prison_notification.2001
@@ -59,9 +244,25 @@ quarterly_prison_maintenance_pulse = {
 			limit = {
 				is_in_prison_type = dungeon
 			}
-			trigger_event = {
-				days = 1 # Queued, so we can check the pulse in parallel
-				on_action = dungeon_ongoing
+			if = {
+				limit = { this.imprisoner = { has_variable = reformed_dungeon } }
+				trigger_event = {
+					days = 1
+					on_action = dungeon_ongoing_reformed
+				}
+			}
+			if = {
+				limit = { this.imprisoner = { has_variable = neglected_dungeon } }
+				trigger_event = {
+					days = 1
+					on_action = dungeon_ongoing_neglected
+				}
+			}
+			else = {
+				trigger_event = {
+					days = 1 # Queued, so we can check the pulse in parallel
+					on_action = dungeon_ongoing
+				}
 			}
 		}
 	}
@@ -87,6 +288,63 @@ dungeon_ongoing = {
 		100 = dungeon_ongoing.0007 #It is terrible to be Ambitious and in prison
 		100 = dungeon_ongoing.0008 #Impatient, and have stayed in the dungeon "forever"
 		100 = dungeon_ongoing.0009 #You prison pet is there to comfort you
+		100 = dungeon_ongoing.0010 #Write to a relative asking for help
+
+		#Long-term imprisonment events:
+		500 = dungeon_ongoing.9001 #Become ill
+		500 = dungeon_ongoing.9002 #Become pneumonic
+		500 = dungeon_ongoing.9003 #Gain stress
+		500 = dungeon_ongoing.9004 #Gain stress
+		500 = dungeon_ongoing.9005 #Prison Pet Dies
+	}
+}
+
+dungeon_ongoing_reformed = {
+	trigger = {
+		exists = imprisoner #Don't fire if we've been released since the on_action was called.
+	}
+
+	random_events = {
+		#chance_to_happen = 25
+		500 = 0
+		100 = dungeon_ongoing.0001 #Crazy neighbor bothers you
+		200 = dungeon_ongoing.0002 #Wait patiently - or not
+		100 = dungeon_ongoing.0003 #Guards threaten you with violence
+		200 = dungeon_ongoing.0004 #A wound becomes infected
+		50 = dungeon_ongoing.0005 #Infection passes
+		200 = dungeon_ongoing.0006 #Prison has low standards - unless you are Content
+		100 = dungeon_ongoing.0007 #It is terrible to be Ambitious and in prison
+		100 = dungeon_ongoing.0008 #Impatient, and have stayed in the dungeon "forever"
+		100 = dungeon_ongoing.0009 #You prison pet is there to comfort you
+		100 = dungeon_ongoing.0010 #Write to a relative asking for help
+
+		#Long-term imprisonment events:
+		500 = dungeon_ongoing.9001 #Become ill
+		500 = dungeon_ongoing.9002 #Become pneumonic
+		500 = dungeon_ongoing.9003 #Gain stress
+		500 = dungeon_ongoing.9004 #Gain stress
+		500 = dungeon_ongoing.9005 #Prison Pet Dies
+	}
+}
+
+dungeon_ongoing_neglected = {
+	trigger = {
+		exists = imprisoner #Don't fire if we've been released since the on_action was called.
+	}
+
+	random_events = {
+		chance_to_happen = 75
+		500 = 0
+		100 = dungeon_ongoing.0001 #Crazy neighbor bothers you
+		200 = dungeon_ongoing.0002 #Wait patiently - or not
+		100 = dungeon_ongoing.0003 #Guards threaten you with violence
+		200 = dungeon_ongoing.0004 #A wound becomes infected
+		50 = dungeon_ongoing.0005 #Infection passes
+		200 = dungeon_ongoing.0006 #Prison has low standards - unless you are Content
+		100 = dungeon_ongoing.0007 #It is terrible to be Ambitious and in prison
+		100 = dungeon_ongoing.0008 #Impatient, and have stayed in the dungeon "forever"
+		100 = dungeon_ongoing.0009 #You prison pet is there to comfort you
+		100 = dungeon_ongoing.0010 #Write to a relative asking for help
 
 		#Long-term imprisonment events:
 		500 = dungeon_ongoing.9001 #Become ill
@@ -113,6 +371,7 @@ house_arrest_ongoing = {
 		100 = house_arrest_ongoing.0003 #Missing love ones
 		100 = house_arrest_ongoing.0004 #Friend at court helps you
 		100 = house_arrest_ongoing.0005 #Rival at court is a nuisance
+		100 = dungeon_ongoing.0010 #Write to a relative asking for help
 	}
 }
 
@@ -125,7 +384,7 @@ escape_from_prison = {
 	}
 }
 
-escape_from_prison_success= {
+escape_from_prison_success = {
 	random_events = {
 		1 = prison.9001 #You escaped!
 		100 = prison.9002 #You escaped thanks to your prison pet
@@ -133,11 +392,12 @@ escape_from_prison_success= {
 	}
 }
 
-escape_from_prison_failure= {
+escape_from_prison_failure = {
 	random_events = {
 		10 = prison.9501 #You're still stuck, buttercup... :(
 		100 = prison.9502 #You and your prison pet failed
 		100 = prison.9503 #Your friend or close family member leave you behind
+		200 = fp1_shieldmaiden.0011 #Your imprisoner's shieldmaiden stymies your escape.
 		50 = prison.9504 #Rival sabotages escape
 		5 = prison.9505 #Become wounded
 	}

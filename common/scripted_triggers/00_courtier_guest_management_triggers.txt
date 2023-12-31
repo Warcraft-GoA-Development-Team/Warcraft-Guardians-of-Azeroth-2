@@ -76,19 +76,26 @@ any_consort_not_in_traveling_family_trigger = {
 courtier_allowed_to_leave_trigger = {
 	save_temporary_scope_as = leaving_courtier
 	NOR = {
+		# Warcraft
+		has_relation_scourge_damned = scope:liege
+		
 		# Not blocked by script
 		has_character_flag = blocked_from_leaving
 		is_councillor_of = scope:liege
 		is_consort_of = scope:liege
 		scope:liege = {
 			player_heir_position = {
-				target = prev
-				position <= 2 #Not 1st, 2nd or 3rd player heir (0,1,2)
+				target = scope:leaving_courtier
+				value <= 2 #Not 1st, 2nd or 3rd player heir (0,1,2)
 			}
 		}
-		scope:liege = { has_relation_court_physician = scope:leaving_courtier }
+		AND = {
+			has_any_court_position = yes
+			any_court_position_employer = { this = scope:liege }
+		}
 		has_relation_lover = scope:liege
 		is_knight_of = scope:liege
+		is_tax_collector_of = scope:liege
 		any_relation = {
 			type = ward
 			OR = {
@@ -144,7 +151,11 @@ courtier_allowed_to_leave_trigger = {
 		has_epidemic_disease_trigger = yes
 		#Keep daughters/sons for marriages
 		AND = {
-			is_child_of = scope:liege
+			OR = {
+				is_child_of = scope:liege
+				is_grandchild_of = scope:liege
+				is_great_grandchild_of = scope:liege
+			}
 			NOT = { has_trait = bastard }
 			trigger_if = { #Daughters
 				limit = { is_female = yes }
@@ -155,7 +166,7 @@ courtier_allowed_to_leave_trigger = {
 					}
 				}
 			}
-			trigger_else = { #Sonds
+			trigger_else = { #Sons
 				scope:liege = {
 					OR = {
 						has_realm_law = female_only_law
@@ -166,7 +177,11 @@ courtier_allowed_to_leave_trigger = {
 		}
 		#No children of liege can leave court while children
 		AND = {
-			is_child_of = scope:liege
+			OR = {
+				is_child_of = scope:liege
+				is_grandchild_of = scope:liege
+				is_great_grandchild_of = scope:liege
+			}
 			is_adult = no
 		}
 		#Claimant won't leave while claim is pressed...
@@ -184,12 +199,67 @@ courtier_allowed_to_leave_trigger = {
 		any_targeting_scheme = {
 			scheme_type = elope
 		}
+		
+		#Non-dominant spouses don't wander off
+		AND = {
+			is_married = yes
+			any_spouse = {
+				OR = {
+					AND = {
+						exists = liege
+						liege = scope:leaving_courtier.liege
+					}
+					AND = {
+						exists = host
+						exists = scope:leaving_courtier.host
+						liege = scope:leaving_courtier.host
+					}
+					is_in_the_same_court_as = scope:leaving_courtier
+				}
+			}
+			trigger_if = {
+				limit = { is_female = yes }
+				scope:liege = {
+					OR = {
+						has_realm_law = male_only_law
+						has_realm_law = male_preference_law
+					}
+				}
+			}
+			trigger_else = {
+				scope:liege = {
+					OR = {
+						has_realm_law = female_only_law
+						has_realm_law = female_preference_law
+					}
+				}
+			}
+		}
+
+		# Diarchs don't leave their court.
+		is_diarch = yes
+		is_designated_diarch = yes
+		
+		#Shieldmaidens stay till dismissed.
+		has_trait = shieldmaiden
+		
+		# Children taught a lesson won't leave
+		has_character_modifier = mellowed_spirit
+
+		# Courtiers with sponsored inspirations won't leave on their own.
+		AND = {
+			exists = inspiration
+			inspiration = {	exists = inspiration_sponsor }
+		}
 	}
 }
 
 
 guest_allowed_to_leave_trigger = {
 	NOR = {
+		# Warcraft
+		has_relation_scourge_damned = scope:host
+		
 		# Not blocked by script
 		has_character_flag = blocked_from_leaving
 		#Agent in a local scheme
@@ -213,11 +283,16 @@ guest_allowed_to_leave_trigger = {
 			is_adult = no
 			any_parent = { this = scope:host }
 		}
+		# Diarchs don't leave their court.
+		is_diarch = yes
+		is_designated_diarch = yes
 		#Too sick to travel
 		has_epidemic_disease_trigger = yes
 		#Would be leaving without spouse or underage child
 		any_child_not_in_traveling_family_trigger = yes
 		any_consort_not_in_traveling_family_trigger = yes
+		#Is waiting for inspiration funding
+		exists = inspiration
 	}
 }
 
@@ -256,6 +331,194 @@ guest_allowed_to_arrive_trigger = {
 		$HOST$ = { highest_held_title_tier <= tier_county }
 	}
 } #Note: this trigger used to contain opinion triggers but then some awful rulers could never get guests because everyone hates them
+
+
+#This is a localized trigger for checking that a character do not have a spouse that's employed or has some other circumstance blocking them from being recruited to a court
+can_recruit_character_to_court_trigger = {
+	$RECRUITER$ = { save_temporary_scope_as = recruiter }
+	$RECRUITEE$ = { save_temporary_scope_as = recruitee }
+	scope:recruitee = {
+		bp2_valid_for_standard_interactions_trigger = yes
+		NOR = {
+			custom_description = {
+				text = is_not_wandering_child
+				subject = scope:recruitee
+				AND = {
+					is_adult = no
+					NOT = { is_close_or_extended_family_of = scope:recruiter }
+				}
+			}
+			is_imprisoned = yes
+			is_theocratic_lessee = yes
+			is_diarch = yes
+			trigger_if = {
+				limit = {
+					exists = host
+					NOT = { is_player_heir_of = scope:recruiter }
+				}
+				is_player_heir_of = host
+			}
+			trigger_if = {
+				limit = { exists = host }
+				is_consort_of = host
+			}
+			trigger_if = {
+				limit = { exists = host }
+				host = {
+					pressing_claim_of_character_trigger = { CHARACTER = scope:recruitee }
+				}
+			}
+			trigger_if = {
+				limit = { exists = host }
+				#Are they employed?
+				is_councillor_of = scope:recruitee.host
+				is_knight_of = scope:recruitee.host
+				any_relation = {
+					type = ward
+					OR = {
+						this = scope:recruitee.host
+						is_close_family_of = scope:recruitee.host
+					}
+				}
+				any_relation = {
+					type = guardian
+					OR = {
+						this = scope:recruitee.host
+						is_close_family_of = scope:recruitee.host
+					}
+				}
+				any_relation = {
+					type = mentor
+					OR = {
+						this = scope:recruitee.host
+						is_close_family_of = scope:recruitee.host
+					}
+				}
+				any_relation = {
+					type = student
+					OR = {
+						this = scope:recruitee.host
+						is_close_family_of = scope:recruitee.host
+					}
+				}
+				any_court_position_employer = { this = scope:recruitee.host }
+			}
+			
+			#Do they have the "wrong" marriage type and the spouse is employed?
+			custom_description = {
+				text = is_married_matrilineally_and_spouse_is_dominant_partner
+				subject = scope:recruitee
+				any_spouse = {
+					is_female = yes
+					matrilinear_marriage = yes
+					exists = host
+					host = scope:recruitee.host
+					save_temporary_scope_as = spouse
+					OR = { #Is employed in some way
+						is_councillor_of = scope:recruitee.host
+						is_knight_of = scope:recruitee.host
+						any_relation = {
+							type = ward
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						any_relation = {
+							type = guardian
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						any_relation = {
+							type = mentor
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						any_relation = {
+							type = student
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						scope:spouse = {
+							any_court_position_employer = { this = scope:recruitee.host }
+						}
+					}
+				}
+			}
+			custom_description = {
+				text = is_married_patrilineally_and_spouse_is_dominant_partner
+				subject = scope:recruitee
+				any_spouse = {
+					is_male = yes
+					patrilinear_marriage = yes
+					exists = host
+					host = scope:recruitee.host
+					save_temporary_scope_as = spouse
+					OR = { #Is employed in some way
+						is_councillor_of = scope:recruitee.host
+						is_knight_of = scope:recruitee.host
+						any_relation = {
+							type = ward
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						any_relation = {
+							type = guardian
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						any_relation = {
+							type = mentor
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						any_relation = {
+							type = student
+							OR = {
+								this = scope:recruitee.host
+								is_close_family_of = scope:recruitee.host
+							}
+						}
+						scope:spouse = {
+							any_court_position_employer = { this = scope:recruitee.host }
+						}
+					}
+				}
+			}
+			custom_description = {
+				text = "is_escaped_prisoner"
+				subject = scope:recruitee
+				OR = {
+					has_opinion_modifier = {
+						modifier = attempted_imprisonment_opinion
+						target = scope:recruiter
+					}
+					has_opinion_modifier = {
+						modifier = treasonous_imprison_refusal
+						target = scope:recruiter
+					}
+					AND = {
+						exists = var:escaped_imprisonment_from
+						var:escaped_imprisonment_from = scope:recruiter
+					}
+				}
+			}
+		}
+	}
+}
+
 
 ###GUEST/COURTIER USEFULNESS TRIGGERS###
 courtier_or_guest_claim_trigger = {
@@ -349,15 +612,21 @@ has_useful_potential_spouse_claim_trigger = {
 
 guest_knight_candidate_trigger = {
 	can_be_knight_trigger = { ARMY_OWNER = $HOST$ }
-	age < 60
-	age >= 25
+
+	# Warcraft
+	age < age_60_value
+	age >= age_25_value
+
 	prowess > medium_skill_rating
 }
 
 guest_commander_candidate_trigger = {
 	can_be_combatant_based_on_gender_trigger = { ARMY_OWNER = $HOST$ }
-	age < 60
-	age >= 25
+
+	# Warcraft
+	age < age_60_value
+	age >= age_25_value
+
 	martial > medium_skill_rating
 }
 
@@ -378,7 +647,9 @@ guest_vassal_candidate_bad_traits_trigger = {
 }
 
 guest_vassal_candidate_trigger = {
-	age < 60
+	# Warcraft
+	age < age_60_value
+
 	faith = scope:host.faith
 	culture = scope:host.culture
 	faith = {
@@ -398,20 +669,28 @@ guest_vassal_candidate_trigger = {
 }
 
 guest_physician_candidate_trigger = {
-	age < 70
+	# Warcraft
+	age < age_70_value
+
 	learning >= decent_skill_rating
 }
 
 guest_male_female_balance_trigger = { #are you interesting enough to get "upbalanced" to make up for lack of available positions due to your gender?
 	is_adult = yes
-	age <= 65
+
+	# Warcraft
+	age <= age_65_value
+
 	is_lowborn = no
 }
 	
 child_available_for_guest_marriage_trigger = {
 	is_married = no
 	is_betrothed = no
-	age >= 10
+
+	# Warcraft
+	age >= age_10_value
+
 	OR = {
 		is_vassal_of = scope:host
 		is_courtier_of = scope:host
@@ -422,7 +701,9 @@ guest_marriage_candidate_trigger = {
 	save_temporary_scope_as = marriage_candidate
 	OR = {
 		is_male = yes
-		age <= 40
+
+		# Warcraft
+		age <= age_40_value
 	}
 	OR = {
 		AND = {
@@ -437,7 +718,6 @@ guest_marriage_candidate_trigger = {
 		}
 	}
 }
-
 
 ###POOL TRIGGERS###
 is_visitable_relation_trigger = {

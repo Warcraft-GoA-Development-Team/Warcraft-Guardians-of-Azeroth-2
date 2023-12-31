@@ -1,13 +1,25 @@
 ﻿#Interactions relating to the head of the dynasty
 
 disinherit_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_hostile
 	interface_priority = 60
 
 	desc = disinherit_interaction_desc
+	use_diplomatic_range = no
 	
 	is_shown = {
-		NOT = { scope:recipient = scope:actor }
+		NOT = { 
+			scope:recipient = scope:actor 
+
+			AND = { # Explicit AND to ensure no funny business
+				scope:recipient = { is_child_of = scope:actor }
+				scope:actor.dynasty = {
+					this = scope:recipient.dynasty
+					has_dynasty_perk = fp2_coterie_legacy_5
+				}
+			}
+		}
 
 		scope:actor = {
 			is_dynast = yes
@@ -21,11 +33,37 @@ disinherit_interaction = {
 		}
 	}
 
-	is_valid_showing_failures_only = {
-		scope:actor.dynasty = {
-			dynasty_prestige >= medium_dynasty_prestige_value
+	is_valid = {
+		custom_description = {
+			scope:actor.culture = {
+				NOT = { has_cultural_parameter = cannot_disherit }
+			}
+			text = "mystical_ancestors_disinherit"
 		}
-		scope:recipient = { is_diplomatically_available = yes }
+	}
+
+	is_valid_showing_failures_only = {
+		trigger_if = {
+			limit = {
+				NOT = { # in such cases, it will be free so no need to check for Renown
+					scope:recipient = {
+						OR = {
+							has_trait = disputed_heritage
+							any_secret = {
+								secret_type = secret_disputed_heritage
+								is_known_by = scope:actor
+							}
+							has_trait = bastard
+						}
+					}
+				}
+			}
+			scope:actor.dynasty = {
+				dynasty_prestige >= medium_dynasty_prestige_value
+			}
+		}
+
+		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
 		trigger_if = {
 			limit = {
@@ -42,6 +80,10 @@ disinherit_interaction = {
 				text = "same_realm_as"
 			}
 		}
+		custom_tooltip = {
+			text = cannot_take_overt_hostile_actions_against_diarch.tt
+			NOT = { scope:recipient ?= scope:actor.diarch }
+		}
 	}
 
 	on_auto_accept = {
@@ -56,6 +98,12 @@ disinherit_interaction = {
 				forgiving = minor_stress_impact_gain
 				compassionate = minor_stress_impact_gain
 			}
+
+			add_character_modifier = {
+				modifier = parent_disinherited_child_modifier
+				years = 5
+			}
+
 			hidden_effect = {
 				send_interface_toast = {
 					title = disinherit_interaction_notification
@@ -65,7 +113,7 @@ disinherit_interaction = {
 
 					scope:recipient = {
 						show_as_tooltip = {
-							disinherit_effect = yes
+							disinherit_effect = { DISINHERITOR = scope:actor }
 						}
 					}
 				}
@@ -73,7 +121,36 @@ disinherit_interaction = {
 		}
 
 		scope:recipient = {
-			disinherit_effect = yes
+			disinherit_effect = { DISINHERITOR = scope:actor }
+		}
+
+		# If we're a clan this interaction affects unity
+		add_clan_unity_interaction_effect = {
+			CHARACTER = scope:actor
+			TARGET = scope:recipient
+			VALUE = medium_unity_loss
+			DESC = clan_unity_disinheritance.desc
+			REVERSE_NON_HOUSE_TARGET = no
+		}
+
+		if = {
+			limit = {
+				scope:recipient = {
+					any_secret = {
+						secret_type = secret_disputed_heritage
+						is_known_by = scope:actor
+						save_temporary_scope_as = secret_to_reveal
+					}
+				}
+			}
+
+			scope:secret_to_reveal = {
+				expose_secret = scope:recipient.mother
+			}
+
+			scope:recipient = {
+				add_trait = disputed_heritage
+			}
 		}
 	}
 	
@@ -100,11 +177,26 @@ disinherit_interaction = {
 					}
 					add = medium_dynasty_prestige_value
 				}
+				if = {
+					limit = {
+						scope:recipient = {
+							OR = {
+								has_trait = disputed_heritage
+								any_secret = {
+									secret_type = secret_disputed_heritage
+									is_known_by = scope:actor
+								}
+								has_trait = bastard
+							}
+						}
+					}
+					multiply = 0
+				}
 			}
 		}
 		prestige = {
 			value = {
-				add = major_dynasty_prestige_value
+				add = medium_prestige_value
 				if = {
 					limit = {
 						scope:recipient = {
@@ -122,7 +214,22 @@ disinherit_interaction = {
 							}
 						}
 					}
-					add = major_dynasty_prestige_value
+					add = medium_prestige_value
+				}
+				if = {
+					limit = {
+						scope:recipient = {
+							OR = {
+								has_trait = disputed_heritage
+								any_secret = {
+									secret_type = secret_disputed_heritage
+									is_known_by = scope:actor
+								}
+								has_trait = bastard
+							}
+						}
+					}
+					multiply = 0
 				}
 			}
 		}
@@ -164,7 +271,7 @@ disinherit_interaction = {
 				OR = {
 					has_trait = inbred
 					has_trait = intellect_bad_3
-					has_trait = incapable
+					is_incapable_trigger = yes
 				}
 			}
 		}
@@ -250,6 +357,11 @@ disinherit_interaction = {
 				}
 			}
 		}
+
+		# Unity modifiers
+		evaluate_action_decreasing_house_unity = {
+			VALUE = 100
+		}
 		
 		modifier = {
 			factor = 0
@@ -267,10 +379,298 @@ disinherit_interaction = {
 				is_ai = no
 			}
 		}
+	
+		# Warcraft
+		modifier = {
+			add = 100
+			scope:recipient = { is_criminal_being_trigger = { FAITH = scope:actor.faith } }
+		}
+	}
+}
+
+disinherit_children_interaction = {
+	icon = icon_dynasty
+	category = interaction_category_hostile
+	interface_priority = 60
+
+	desc = disinherit_children_interaction_desc
+	use_diplomatic_range = no
+
+	is_shown = {
+		# DLC checking
+		has_fp2_dlc_trigger = yes
+		# Standard check
+		NOT = { scope:recipient = scope:actor }
+
+		scope:actor.dynasty = {
+			this = scope:recipient.dynasty
+			has_dynasty_perk = fp2_coterie_legacy_5
+		}
+		scope:recipient = {
+			NOT = {
+				has_trait = disinherited
+			}
+		}
+	}
+
+	is_valid = {
+		scope:actor = { is_parent_of = scope:recipient }
+
+
+		custom_description = {
+			scope:actor.culture = {
+				NOT = { has_cultural_parameter = cannot_disherit }
+			}
+			text = "mystical_ancestors_disinherit"
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		scope:actor = {
+			prestige >= major_prestige_value
+		}
+		scope:recipient = { is_busy_in_events_localised = yes }
+		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
+		trigger_if = {
+			limit = {
+				scope:recipient = {
+					NOR = {
+						is_child_of = scope:actor
+						is_grandchild_of = scope:actor
+						is_great_grandchild_of = scope:actor
+					}
+				}
+			}
+			custom_description = {
+				scope:recipient.top_liege = scope:actor.top_liege
+				text = "same_realm_as"
+			}
+		}
+		custom_tooltip = {
+			text = cannot_take_overt_hostile_actions_against_diarch.tt
+			NOT = { scope:recipient ?= scope:actor.diarch }
+		}
+	}
+
+	on_auto_accept = {
+		scope:recipient = {
+			trigger_event = char_interaction.0020
+		}
+	}
+
+	on_accept = {
+		scope:actor = {
+			stress_impact = {
+				forgiving = minor_stress_impact_gain
+				compassionate = minor_stress_impact_gain
+			}
+			add_tyranny = massive_tyranny_value
+			hidden_effect = {
+				send_interface_toast = {
+					title = disinherit_interaction_notification
+
+					left_icon = scope:actor
+					right_icon = scope:recipient
+
+					scope:recipient = {
+						show_as_tooltip = {
+							disinherit_effect = { DISINHERITOR = scope:actor }
+						}
+					}
+				}
+			}
+		}
+
+		scope:recipient = {
+			disinherit_effect = { DISINHERITOR = scope:actor }
+		}
+
+		# If we're a clan this interaction affects unity
+		add_clan_unity_interaction_effect = {
+			CHARACTER = scope:actor
+			TARGET = scope:recipient
+			VALUE = minor_unity_loss
+			DESC = clan_unity_disinheritance.desc
+			REVERSE_NON_HOUSE_TARGET = no
+		}		
+	}
+
+	cost = {
+		prestige = {
+			value = {
+				add = medium_prestige_value
+				if = {
+					limit = {
+						scope:recipient = {
+							is_landed = yes
+						}
+					}
+					add = massive_prestige_value
+				}
+				if = {
+					limit = {
+						scope:recipient = {
+							is_landed = no
+							any_heir_title = {
+								exists = holder
+							}
+						}
+					}
+					add = medium_prestige_value
+				}
+			}
+		}
+	}
+
+	auto_accept = yes
+
+	ai_potential = {
+		is_at_war = no
+		NOT = {
+			has_trait = forgiving
+		}
+	}
+
+	ai_targets = {
+		ai_recipients = dynasty
+		max = 20
+	}
+
+	ai_frequency = 96
+
+	ai_will_do = {
+		base = 0
+
+		modifier = {
+			add = 100
+			scope:recipient = {
+				OR = {
+					has_relation_rival = scope:actor
+					has_relation_nemesis = scope:actor
+				}
+			}
+		}
+
+		modifier = {
+			add = 100
+			scope:recipient = {
+				is_primary_heir_of = scope:actor
+				OR = {
+					has_trait = inbred
+					has_trait = intellect_bad_3
+					has_trait = incapable
+				}
+			}
+		}
+
+		modifier = {
+			add = 5
+			ai_vengefulness >= medium_positive_ai_value
+			scope:recipient = {
+				is_heir_of = scope:actor
+			}
+			OR = {
+				AND = {
+					scope:recipient = {
+						has_trait = incestuous
+					}
+					NOT = { is_incestuous_trigger = yes }
+					trait_is_criminal_in_faith_trigger = { TRAIT = incestuous FAITH = scope:actor.faith GENDER_CHARACTER = scope:recipient }
+				}
+				AND = {
+					scope:recipient = {
+						has_trait = kinslayer
+					}
+					NOT = { has_trait = kinslayer }
+				}
+				AND = {
+					scope:recipient = {
+						has_trait = adulterer
+					}
+					NOR = {
+						has_trait = adulterer
+						has_trait = fornicator
+					}
+					trait_is_criminal_in_faith_trigger = { TRAIT = adulterer FAITH = scope:actor.faith GENDER_CHARACTER = scope:recipient }
+				}
+				AND = {
+					scope:recipient = {
+						has_trait = fornicator
+					}
+					NOR = {
+						has_trait = adulterer
+						has_trait = fornicator
+					}
+					trait_is_criminal_in_faith_trigger = { TRAIT = fornicator FAITH = scope:actor.faith GENDER_CHARACTER = scope:recipient }
+				}
+				AND = {
+					scope:recipient = {
+						has_trait = deviant
+					}
+					NOT = {
+						is_deviant_trigger = yes
+					}
+					trait_is_criminal_in_faith_trigger = { TRAIT = deviant FAITH = scope:actor.faith GENDER_CHARACTER = scope:recipient }
+				}
+				AND = {
+					scope:recipient = {
+						has_trait = witch
+					}
+					NOT = {
+						is_witch_trigger = yes
+					}
+					trait_is_criminal_in_faith_trigger = { TRAIT = witch FAITH = scope:actor.faith GENDER_CHARACTER = scope:recipient }
+				}
+				AND = {
+					scope:recipient = {
+						has_trait = sodomite
+					}
+					NOR = {
+						has_trait = sodomite
+						any_secret = {
+							secret_type = secret_homosexual
+						}
+					}
+					trait_is_criminal_in_faith_trigger = { TRAIT = sodomite FAITH = scope:actor.faith GENDER_CHARACTER = scope:recipient }
+				}
+				AND = {
+					scope:recipient = {
+						has_trait = cannibal
+					}
+					NOT = {
+						is_cannibal_trigger = yes
+					}
+					trait_is_criminal_in_faith_trigger = { TRAIT = cannibal FAITH = scope:actor.faith GENDER_CHARACTER = scope:recipient }
+				}
+			}
+		}
+
+		# Unity modifiers
+		evaluate_action_decreasing_house_unity = {
+			VALUE = 100
+		}
+
+		modifier = {
+			factor = 0
+			scope:recipient = {
+				OR = {
+					has_relation_friend = scope:actor
+					has_relation_best_friend = scope:actor
+				}
+			}
+		}
+
+		modifier = {
+			factor = 0
+			scope:recipient = {
+				is_ai = no
+			}
+		}
 	}
 }
 
 restore_inheritance_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_friendly
 	desc = restore_inheritance_interaction_desc
 
@@ -291,7 +691,7 @@ restore_inheritance_interaction = {
 		scope:actor.dynasty ={
 			dynasty_prestige >= miniscule_dynasty_prestige_value
 		}
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 	}
 
 	on_auto_accept = {
@@ -323,6 +723,15 @@ restore_inheritance_interaction = {
 		scope:recipient = {
 			restore_inheritance_effect = yes
 		}
+
+		# If we're a clan this interaction affects unity
+		add_clan_unity_interaction_effect = {
+			CHARACTER = scope:actor
+			TARGET = scope:recipient
+			VALUE = minor_unity_gain
+			DESC = clan_unity_re_inheritance.desc
+			REVERSE_NON_HOUSE_TARGET = no
+		}		
 	}
 
 	cost = {
@@ -366,6 +775,11 @@ restore_inheritance_interaction = {
 			add = 100
 			scope:recipient = scope:actor
 		}
+
+		# Unity modifiers
+		evaluate_action_increasing_house_unity = {
+			VALUE = 100
+		}
 		
 		modifier = {
 			factor = 0
@@ -380,6 +794,7 @@ restore_inheritance_interaction = {
 }
 
 denounce_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_hostile
 	interface_priority = 60
 
@@ -403,8 +818,12 @@ denounce_interaction = {
 		scope:actor.dynasty = {
 			dynasty_prestige >= minor_dynasty_prestige_value
 		}
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
+		custom_tooltip = {
+			text = cannot_take_overt_hostile_actions_against_diarch.tt
+			NOT = { scope:recipient ?= scope:actor.diarch }
+		}
 	}
 
 	on_auto_accept = {
@@ -429,7 +848,7 @@ denounce_interaction = {
 
 					scope:recipient = {
 						show_as_tooltip = {
-							denounce_effect = yes
+							denounce_effect = { ACTOR = scope:actor RECIPIENT = scope:recipient }
 						}
 					}
 				}
@@ -437,8 +856,17 @@ denounce_interaction = {
 		}
 
 		scope:recipient = {
-			denounce_effect = yes
+			denounce_effect = { ACTOR = scope:actor RECIPIENT = scope:recipient }
 		}
+
+		# If we're a clan this interaction affects unity
+		add_clan_unity_interaction_effect = {
+			CHARACTER = scope:actor
+			TARGET = scope:recipient
+			VALUE = minor_unity_loss
+			DESC = clan_unity_denouncement.desc
+			REVERSE_NON_HOUSE_TARGET = no
+		}		
 	}
 
 	cost = {
@@ -599,6 +1027,11 @@ denounce_interaction = {
 				}
 			}
 		}
+
+		# Unity modifiers
+		evaluate_action_decreasing_house_unity = {
+			VALUE = 100
+		}
 		
 		modifier = {
 			factor = 0
@@ -613,6 +1046,7 @@ denounce_interaction = {
 }
 
 forgive_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_friendly
 	interface_priority = 60
 
@@ -634,7 +1068,7 @@ forgive_interaction = {
 		scope:actor.dynasty = {
 			dynasty_prestige >= miniscule_dynasty_prestige_value
 		}
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 	}
 
 	on_auto_accept = {
@@ -666,6 +1100,15 @@ forgive_interaction = {
 		scope:recipient = {
 			forgive_effect = yes
 		}
+
+		# If we're a clan this interaction affects unity
+		add_clan_unity_interaction_effect = {
+			CHARACTER = scope:actor
+			TARGET = scope:recipient
+			VALUE = minor_unity_gain
+			DESC = clan_unity_forgiveness.desc
+			REVERSE_NON_HOUSE_TARGET = no
+		}		
 	}
 
 	cost = {
@@ -709,6 +1152,11 @@ forgive_interaction = {
 			add = 100
 			scope:recipient = scope:actor
 		}
+
+		# Unity modifiers
+		evaluate_action_increasing_house_unity = {
+			VALUE = 100
+		}
 		
 		modifier = {
 			factor = 0
@@ -723,6 +1171,7 @@ forgive_interaction = {
 }
 
 call_dynasty_member_to_war_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_diplomacy
 	interface_priority = 60
 
@@ -775,6 +1224,10 @@ call_dynasty_member_to_war_interaction = {
 
 	is_valid_showing_failures_only = {
 		scope:actor.dynasty = { dynasty_prestige >= medium_dynasty_prestige_value }
+		scope:recipient = {
+			NOT = { government_has_flag = government_is_mercenary }
+			NOT = { government_has_flag = government_is_holy_order }
+		}
 		custom_description = {
 			text = "is_already_in_all_wars"
 			scope:actor = {
@@ -872,6 +1325,22 @@ call_dynasty_member_to_war_interaction = {
 	
 	ai_accept = {
 		base = 20
+
+		#modifier = {  # Refuse call to conflicts of little benefit
+		#	add = -1000
+		#	desc = WONT_FIGHT_MEANINGLESS_REASON
+		#	trigger_if = {
+		#		limit = { exists = scope:target }
+		#		scope:target = { using_cb = fp2_border_raid }
+		#		scope:recipient = { # Unless they like going on raids
+		#			NOR = {
+		#				has_trait = viking
+		#				has_trait = reaver
+		#			}
+		#		}
+		#	}
+		#	trigger_else = { always = no }
+		#}
 
 		modifier = {  # Refuse call against Heir
 			add = -1000
@@ -1001,6 +1470,9 @@ call_dynasty_member_to_war_interaction = {
 			}
 			desc = WONT_ATTACK_RELIGIOUS_BRETHREN_REASON
 		}
+		
+		# Warcraft
+		scourge_interaction_modifiers = yes
 	}
 
 	auto_accept = {
@@ -1030,6 +1502,7 @@ call_dynasty_member_to_war_interaction = {
 }
 
 dynast_claim_title_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_diplomacy
 	desc = dynast_claim_title_interaction_desc
 	target_type = title
@@ -1093,12 +1566,22 @@ dynast_claim_title_interaction = {
 				}
 			}
 		}
+
+		# If we're a clan this interaction affects unity
+		add_clan_unity_interaction_effect = {
+			CHARACTER = scope:actor
+			TARGET = scope:recipient
+			VALUE = medium_unity_loss
+			DESC = clan_unity_title_claim.desc
+			REVERSE_NON_HOUSE_TARGET = no
+		}
 	}
 
 	auto_accept = yes
 }
 
 dynast_end_dynasty_wars_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_diplomacy
 	desc = dynast_end_dynasty_wars_interaction_desc
 
@@ -1125,7 +1608,7 @@ dynast_end_dynasty_wars_interaction = {
 		scope:actor.dynasty = {
 			dynasty_prestige >= medium_dynasty_prestige_value
 		}
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:actor = {
 			NOT = {
 				is_at_war_with = scope:recipient
@@ -1160,6 +1643,7 @@ dynast_end_dynasty_wars_interaction = {
 }
 
 dynast_legitimize_bastard_interaction = {
+	icon = icon_dynasty
 	category = interaction_category_diplomacy
 	desc = dynast_legitimize_bastard_interaction_desc
 
@@ -1180,7 +1664,7 @@ dynast_legitimize_bastard_interaction = {
 		scope:actor.dynasty = {
 			dynasty_prestige >= medium_dynasty_prestige_value
 		}
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 	}
 
 	auto_accept = yes
@@ -1242,3 +1726,5 @@ dynast_legitimize_bastard_interaction = {
 		}
 	}
 }
+
+# Warcraft

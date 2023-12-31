@@ -1,0 +1,2506 @@
+﻿namespace = fp1_trade_events
+
+##################################################
+# #Standard Trade Events
+# 0001 - 0010	Raid or Trade - a raid potentially becomes a trading mission instead
+# 0011 - 0020	A Comfortable Accomodation - a trade ceasefire has expired and can be renewed.
+# 0021 - 0040	Visitors from Afar - courtiers swap between two places that trade with each other.
+# 0041 - 0060	Belligerents with Benefits - beneficial modifiers are swapped between the capital and a foreign trade location.
+#
+# #Special Trade Events
+# 1101 - 1130	An Alternative Arrangement - offer land to a raid-trade partner
+# 1131 - 1170	The Northerner Menace - you buy off an SA's troops, or offer them a position under you.
+# 1171 - 1180	A Holy Helping Hand - someone you have a raid-trade agreement with offers the hand of a child and conversion aid.
+##################################################
+
+
+
+
+
+
+
+
+
+
+##################################################
+# STANDARD TRADE EVENTS
+
+##################################################
+# Take or Trade?
+# by Ewan Cowhig Croft
+# 0001 - 0010
+##################################################
+
+#	Hidden setup: could this raid become a trade mission instead?
+fp1_trade_events.0001 = {
+	hidden = yes
+	scope = army
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Make sure that the army hasn't landed straight into combat or w/e.
+		is_army_in_combat = no
+		# Various checks related to scope:raider, including most of the stuff for fp1_trade_events.0002's trigger block.
+		scope:raider = {
+			#You must be leading your own forces.
+			this = root.army_commander
+			# Standard checks.
+			is_available_adult_or_is_commanding = yes
+			NOT = { has_character_flag = had_event_fp1_trade_events_0002 }
+			# Must be either river-capable raiders, or have invested in a suitable dynasty legacy.
+			OR = {
+				culture = { has_innovation = innovation_longboats }
+				AND = {
+					exists = dynasty
+					dynasty = { has_dynasty_perk = fp1_adventure_legacy_2 }
+				}
+			}
+			# Must be at peace; not strictly, but this is the easiest way to reduce edge cases.
+			is_at_war = no
+			# Shouldn't hypothetically need to check whether or not scope:raider can actually raid the target, since that should be handled code-side before the on_action even fires.
+		}
+		# Is the target intimidating to this raid army?
+		army_size < fp1_trade_events_eligible_settlement_value
+	}
+
+	immediate = {
+		random = {
+			chance = 20
+			modifier = {
+				add = 20
+				scope:raider = {
+					# Warcraft
+					like_north_germanic_group_trigger = yes
+
+					dynasty = { has_dynasty_perk = fp1_adventure_legacy_2 }
+				}
+			}
+			save_scope_as = raid_army
+			scope:raider = { trigger_event = fp1_trade_events.0002 }
+		}
+	}
+}
+
+scripted_effect fp1_trade_events_offer_trade_deal_raider_perspective_effect = {
+	# Add the truce.
+	add_truce_both_ways = {
+		character = scope:raider
+		days = fp1_trade_events_truce_length_value
+		name = TRUCE_TRADE_DEAL
+	}
+	# Add some mutual opinion gain.
+	add_opinion = {
+		target = scope:raider
+		modifier = pleased_opinion
+		opinion = 20
+	}
+	# Raid loot for the army.
+	scope:raid_army = { add_loot = fp1_trade_events_cash_settlement_value }
+}
+
+scripted_effect fp1_trade_events_offer_trade_deal_defender_perspective_effect = {
+	# Add the truce.
+	show_as_tooltip = {
+		add_truce_both_ways = {
+			character = scope:raider
+			days = fp1_trade_events_truce_length_value
+			name = TRUCE_TRADE_DEAL
+		}
+	}
+	# Add some mutual opinion gain.
+	reverse_add_opinion = {
+		target = scope:raider
+		modifier = pleased_opinion
+		opinion = 20
+	}
+	# Minor beneficial modifier gain for the county.
+	scope:county = {
+		add_county_modifier = {
+			modifier = trade_instead_of_raid_fp1_modifier
+			days = fp1_trade_events_truce_length_value
+		}
+	}
+}
+
+#	You have the chance to trade peacefully instead of raiding.
+fp1_trade_events.0002 = {
+	type = character_event
+	title = fp1_trade_events.0002.t
+	desc = fp1_trade_events.0002.desc
+	theme = realm
+	left_portrait = {
+		character = scope:raider
+		animation = personality_honorable
+	}
+	right_portrait = {
+		character = scope:county.holder
+		animation = disapproval
+	}
+	lower_right_portrait = scope:top_liege
+	override_background = { reference = burning_building }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_fp1_trade_events_0002
+			days = 365
+		}
+		# Grab top_liege, if they're a separate character.
+		if = {
+			limit = {
+				NOT = { scope:county.holder = scope:county.holder.top_liege }
+			}
+			scope:county.holder.top_liege = { save_scope_as = top_liege }
+		}
+	}
+
+	# Offer trade: local holder.
+	option = {
+		name = fp1_trade_events.0002.a
+
+		# Show offer results.
+		show_as_tooltip = {
+			random_list = {
+				# We only want to show the two possibilities, actual percentages don't matter, since the results are decided in the recipient's event.
+				100 = {
+					show_chance = no
+					desc = fp1_trade_events.0002.a.accepted
+					scope:county.holder = { fp1_trade_events_offer_trade_deal_raider_perspective_effect = yes }
+				}
+				100 = {
+					show_chance = no
+					desc = fp1_trade_events.0002.a.rejected
+					custom_tooltip = fp1_trade_events.0002.a.tt
+				}
+			}
+		}
+		# Send the actual offer.
+		scope:county.holder = { trigger_event = fp1_trade_events.0003 }
+		# Charge a little prestige to make it a trade-off.
+		add_prestige = minor_prestige_loss
+
+		stress_impact = {
+			calm = medium_stress_impact_loss
+			compassionate = major_stress_impact_loss
+			wrathful = medium_stress_impact_gain
+			callous = major_stress_impact_gain
+			sadistic = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_compassion = 0.5
+				ai_greed = -0.5
+			}
+			opinion_modifier = { opinion_target = scope:county.holder.top_liege }
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = calm
+			}
+			modifier = {	# Weight up for stress.
+				add = 30
+				has_trait = compassionate
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = wrathful
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = callous
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = sadistic
+			}
+		}
+	}
+	
+	# Offer trade: top liege.
+	option = {
+		name = fp1_trade_events.0002.b
+		trigger = {
+			NOT = { scope:county.holder = scope:county.holder.top_liege }
+		}
+
+		# Show offer results.
+		show_as_tooltip = {
+			random_list = {
+				# We only want to show the two possibilities, actual percentages don't matter, since the results are decided in the recipient's event.
+				100 = {
+					show_chance = no
+					desc = fp1_trade_events.0002.a.accepted
+					scope:county.holder.top_liege = { fp1_trade_events_offer_trade_deal_raider_perspective_effect = yes }
+				}
+				100 = {
+					show_chance = no
+					desc = fp1_trade_events.0002.a.rejected
+					custom_tooltip = fp1_trade_events.0002.a.tt
+				}
+			}
+		}
+		# Send the actual offer.
+		scope:county.holder.top_liege = { trigger_event = fp1_trade_events.0003 }
+		# Charge a little prestige to make it a trade-off.
+		add_prestige = minor_prestige_loss
+
+		stress_impact = {
+			calm = medium_stress_impact_loss
+			compassionate = major_stress_impact_loss
+			wrathful = medium_stress_impact_gain
+			callous = major_stress_impact_gain
+			sadistic = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_compassion = 0.5
+				ai_greed = -0.5
+			}
+			opinion_modifier = { opinion_target = scope:county.holder.top_liege }
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = calm
+			}
+			modifier = {	# Weight up for stress.
+				add = 30
+				has_trait = compassionate
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = wrathful
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = callous
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = sadistic
+			}
+		}
+	}
+	
+	# Pillage it anyway.
+	option = {
+		name = fp1_trade_events.0002.c
+
+		# Nahhhhh, screw it.
+		custom_tooltip = fp1_trade_events.0002.c.tt
+
+		stress_impact = {
+			wrathful = medium_stress_impact_loss
+			callous = major_stress_impact_loss
+			sadistic = major_stress_impact_loss
+			calm = medium_stress_impact_gain
+			compassionate = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 0.5
+				ai_compassion = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = wrathful
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = callous
+			}
+			modifier = {	# Weight up for stress.
+				add = 30
+				has_trait = sadistic
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = calm
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = compassionate
+			}
+		}
+	}
+	
+	# Pillage & don't poke me about this again.
+	option = {
+		name = fp1_trade_events.0002.d
+		# AI don't need an opt-out.
+		trigger = { is_ai = no }
+
+		# Furthermore, screw it for a very long time.
+		custom_tooltip = fp1_trade_events.0002.d.tt
+		add_character_flag = { flag = had_event_fp1_trade_events_0002 }
+
+		stress_impact = {
+			wrathful = medium_stress_impact_loss
+			callous = major_stress_impact_loss
+			sadistic = major_stress_impact_loss
+			calm = medium_stress_impact_gain
+			compassionate = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 0.5
+				ai_compassion = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = wrathful
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = callous
+			}
+			modifier = {	# Weight up for stress.
+				add = 30
+				has_trait = sadistic
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = calm
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = compassionate
+			}
+		}
+	}
+}
+
+scripted_effect fp1_set_prime_trade_partner_effect = {
+	# Store the variable for general tracking.
+	set_variable = {
+		name = fp1_prime_trade_deal
+		value = scope:recipient
+		days = fp1_trade_events_truce_length_value
+	}
+	# Fire off the renewal event from the date of expiry.
+	trigger_event = {
+		id = fp1_trade_events.0011
+		days = fp1_trade_events_truce_renewal_date_value
+	}
+	# Trigger the on_action.
+	if = {
+		limit = {
+			NOT = { has_character_flag = fp1_trade_events_cycle_start }
+		}
+		add_character_flag = fp1_trade_events_cycle_start
+		trigger_event = { on_action = fp1_trade_events_cycle }
+	}
+}
+
+#	A raider in your lands would prefer commerce to pillage.
+fp1_trade_events.0003 = {
+	type = character_event
+	title = fp1_trade_events.0003.t
+	desc = fp1_trade_events.0003.desc
+	theme = realm
+	left_portrait = {
+		character = scope:raider
+		animation = personality_bold
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = disapproval
+	}
+	override_background = { reference = burning_building }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+	}
+
+	immediate = {
+		# Grab a scope:recipient for the portraits, since this may have gone to two different characters.
+		save_scope_as = recipient
+	}
+
+	# Unexpected, but highly welcome.
+	option = {
+		name = fp1_trade_events.0003.a
+
+		# Apply effects & inform scope:raider.
+		hidden_effect = {
+			scope:raider = {
+				send_interface_toast = {	
+					title = fp1_trade_events.0003.a.tt_success
+					left_icon = scope:recipient
+					scope:recipient = { fp1_trade_events_offer_trade_deal_raider_perspective_effect = yes }
+				}
+				# Quietly work out if this would become their pre-eminent trade deal.
+				## Due to no existing prime trade deal.
+				if = {
+					limit = {
+						NOT = { has_variable = fp1_prime_trade_deal }
+					}
+					fp1_set_prime_trade_partner_effect = yes
+				}
+				## Due to a dead/landless prime trade deal or cancelled truces.
+				else_if = {
+					limit = {
+						has_variable = fp1_prime_trade_deal
+						var:fp1_prime_trade_deal = {
+							OR = {
+								is_alive = no
+								is_landed = no
+								NOR = {
+									has_truce = scope:raider
+									scope:raider = { has_truce = var:fp1_prime_trade_deal }
+								}
+							}
+						}
+					}
+					fp1_set_prime_trade_partner_effect = yes
+				}
+				## Due to scope:recipient being of a higher tier than their current one.
+				else_if = {
+					limit = {
+						has_variable = fp1_prime_trade_deal
+						scope:recipient.primary_title.tier > var:fp1_prime_trade_deal.primary_title.tier 
+					}
+					fp1_set_prime_trade_partner_effect = yes
+				}
+			}
+		}
+		fp1_trade_events_offer_trade_deal_defender_perspective_effect = yes
+
+		stress_impact = {
+			compassionate = medium_stress_impact_loss
+			forgiving = major_stress_impact_loss
+			callous = medium_stress_impact_gain
+			sadistic = major_stress_impact_gain
+			vengeful = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_compassion = 0.5
+				ai_vengefulness = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = compassionate
+			}
+			modifier = {	# Weight up for stress.
+				add = 30
+				has_trait = forgiving
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = callous
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = sadistic
+			}
+			modifier = {	# Weight down for stress.
+				add = -40
+				has_trait = vengeful
+			}
+		}
+	}
+	
+	# *Trade*? With these murderers?!
+	option = {
+		name = fp1_trade_events.0003.b
+
+		# Gain some prestige for turning down these marauders.
+		add_prestige = minor_prestige_gain
+		# Inform scope:raider that negotiations have failed.
+		hidden_effect = {
+			scope:raider = {
+				send_interface_toast = {	
+					title = fp1_trade_events.0003.b.tt_failure
+					left_icon = scope:recipient
+					custom_tooltip = fp1_trade_events.0003.b.tt_failure
+				}
+			}
+		}
+
+		stress_impact = {
+			compassionate = medium_stress_impact_gain
+			forgiving = major_stress_impact_gain
+			callous = medium_stress_impact_loss
+			sadistic = major_stress_impact_loss
+			vengeful = major_stress_impact_loss
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_compassion = 0.5
+				ai_vengefulness = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = callous
+			}
+			modifier = {	# Weight up for stress.
+				add = 30
+				has_trait = sadistic
+			}
+			modifier = {	# Weight up for stress.
+				add = 40
+				has_trait = vengeful
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = compassionate
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = forgiving
+			}
+		}
+	}
+}
+
+##################################################
+#  Comfortable Accomodation
+# by Ewan Cowhig Croft
+# 0011 - 0020
+##################################################
+
+scripted_trigger fp1_prime_trade_partner_still_valid_trigger = {
+	exists = $RAIDER$.var:fp1_prime_trade_deal
+	$RAIDER$.var:fp1_prime_trade_deal = {
+		this = $RECIPIENT$
+		is_alive = yes
+		is_landed = yes
+		# Make sure the truce hasn't been cancelled.
+		has_truce = $RAIDER$
+		$RAIDER$ = { has_truce = var:fp1_prime_trade_deal }
+		# And that the characters haven't wound up in the same realm somehow.
+		NOT = { top_liege = $RAIDER$.top_liege }
+	}
+}
+
+scripted_effect fp1_trade_events_trade_renewed_raider_perspective_effect = {
+	# Add the truce.
+	add_truce_both_ways = {
+		character = scope:recipient
+		days = fp1_trade_events_truce_length_value
+		name = TRUCE_TRADE_DEAL
+	}
+	# Nudge towards friendship.
+	progress_towards_friend_effect = {
+		CHARACTER = scope:recipient
+		OPINION = 30
+		REASON = friend_fp1_renewed_trade_deal
+	}
+	# Gain some prestige.
+	add_prestige = major_prestige_gain
+	# Sort deal veterancy.
+	set_variable = {
+		name = fp1_renewed_trade_deal
+		value = scope:recipient
+		days = fp1_trade_events_truce_length_value
+	}
+}
+
+scripted_effect fp1_trade_events_trade_renewed_defender_perspective_effect = {
+	# Truce added in scope:raider's perspective.
+	show_as_tooltip = {
+		add_truce_both_ways = {
+			character = scope:raider
+			days = fp1_trade_events_truce_length_value
+			name = TRUCE_TRADE_DEAL
+		}
+	}
+	# Nudge towards friendship.
+	show_as_tooltip = {
+		progress_towards_friend_effect = {
+			CHARACTER = scope:raider
+			OPINION = 30
+			REASON = friend_fp1_renewed_trade_deal
+		}
+	}
+	# Since prestige is the independence reward, we give a little bit of static cash.
+	add_gold = 50
+}
+
+scripted_effect fp1_trade_events_trade_renewal_rejected_effect = {
+	add_prestige = minor_prestige_loss
+	custom_tooltip = fp1_trade_events.0011.b.tt
+}
+
+#	A trade ceasefire has expired and can be renewed.
+fp1_trade_events.0011 = {
+	type = character_event
+	title = fp1_trade_events.0011.t
+	desc = {
+		first_valid = {
+			# Not your first renewal.
+			triggered_desc = {
+				trigger = {
+					exists = var:fp1_renewed_trade_deal
+					var:fp1_renewed_trade_deal = var:fp1_prime_trade_deal
+				}
+				desc = fp1_trade_events.0011.desc.subsequent_renewal
+			}
+			# First time renewing this particular deal.
+			desc = fp1_trade_events.0011.desc.first_renewal
+		}
+		desc = fp1_trade_events.0011.desc.outro
+	}
+	theme = stewardship
+	left_portrait = {
+		character = scope:raider
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:recipient
+		animation = personality_bold
+	}
+	override_background = { reference = market }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Standard checks.
+		is_landed = yes
+		# Scope:raider's prime trade deal must still be valid.
+		fp1_prime_trade_partner_still_valid_trigger = {
+			RECIPIENT = scope:recipient
+			RAIDER = scope:raider
+		}
+	}
+
+	# A grand offer!
+	option = {
+		name = fp1_trade_events.0011.a
+		# Make sure players in MP don't cheese anything.
+		trigger = {
+			fp1_prime_trade_partner_still_valid_trigger = {
+				RECIPIENT = scope:recipient
+				RAIDER = scope:raider
+			}
+		}
+
+		# You offer a renewal to scope:recipient.
+		random_list = {
+			100 = {
+				show_chance = no
+				desc = fp1_trade_events.0011.a.accepted
+				show_as_tooltip = { fp1_trade_events_trade_renewed_raider_perspective_effect = yes }
+			}
+			100 = {
+				show_chance = no
+				desc = fp1_trade_events.0011.a.rejected
+				show_as_tooltip = { fp1_trade_events_trade_renewal_rejected_effect = yes }
+			}
+		}
+		scope:recipient = { trigger_event = fp1_trade_events.0012 }
+
+		stress_impact = {
+			honest = minor_stress_impact_loss
+			arbitrary = medium_stress_impact_gain
+			fickle = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_honor = 0.5
+				ai_sociability = 0.25
+				ai_rationality = 0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = honest
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = arbitrary
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = fickle
+			}
+		}
+	}
+	
+	# This has run its course...
+	option = {
+		name = fp1_trade_events.0011.b
+
+		# A bit of consolation prestige for your hard-work.
+		add_prestige = minor_prestige_gain
+		# Confirm that the deal will lapse as expected.
+		custom_tooltip = fp1_trade_events.0011.b.tt
+
+		stress_impact = {
+			arbitrary = minor_stress_impact_loss
+			fickle = minor_stress_impact_loss
+			honest = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_honor = -0.25
+				ai_sociability = -0.25
+				ai_rationality = -0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = arbitrary
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = fickle
+			}
+			modifier = {	# Weight down for stress.
+				add = -10
+				has_trait = honest
+			}
+		}
+	}
+}
+
+#	A trading partner proposes an extension.
+fp1_trade_events.0012 = {
+	type = character_event
+	title = fp1_trade_events.0012.t
+	desc = {
+		first_valid = {
+			# Not your first renewal.
+			triggered_desc = {
+				trigger = {
+					exists = var:fp1_renewed_trade_deal
+					var:fp1_renewed_trade_deal = var:fp1_prime_trade_deal
+				}
+				desc = fp1_trade_events.0012.desc.subsequent_renewal
+			}
+			# First time renewing this particular deal.
+			desc = fp1_trade_events.0012.desc.first_renewal
+		}
+		desc = fp1_trade_events.0012.desc.outro
+	}
+	theme = stewardship
+	left_portrait = {
+		character = scope:recipient
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:raider
+		animation = admiration
+	}
+	override_background = { reference = market }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Scope:raider's prime trade deal must still be valid.
+		fp1_prime_trade_partner_still_valid_trigger = {
+			RECIPIENT = scope:recipient
+			RAIDER = scope:raider
+		}
+	}
+
+	# A most agreeable proposal.
+	option = {
+		name = fp1_trade_events.0012.a
+		# Make sure players in MP don't cheese anything.
+		trigger = {
+			fp1_prime_trade_partner_still_valid_trigger = {
+				RECIPIENT = scope:recipient
+				RAIDER = scope:raider
+			}
+		}
+
+		# You agree to a renewal with scope:raider.
+		fp1_trade_events_trade_renewed_defender_perspective_effect = yes
+		# Inform scope:raider.
+		scope:raider = {
+			hidden_effect = {
+				send_interface_toast = {
+					title = fp1_trade_events.0012.a.tt_success
+					left_icon = scope:recipient
+					fp1_trade_events_trade_renewed_raider_perspective_effect = yes
+				}
+			}
+		}
+
+		stress_impact = {
+			honest = minor_stress_impact_loss
+			arbitrary = medium_stress_impact_gain
+			fickle = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			opinion_modifier = { opinion_target = scope:raider}
+			ai_value_modifier = {
+				ai_honor = 0.5
+				ai_sociability = 0.25
+				ai_rationality = 0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = honest
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = arbitrary
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = fickle
+			}
+		}
+	}
+	
+	# I'm done with this GetWomanMan.
+	option = {
+		name = fp1_trade_events.0012.b
+
+		# A bit of consolation prestige for your independence.
+		add_prestige = minor_prestige_gain
+		# Confirm that the deal will lapse as expected.
+		custom_tooltip = fp1_trade_events.0012.b.tt
+		# Inform scope:raider, who is disappointed.
+		scope:raider = {
+			add_opinion = {
+				target = scope:recipient
+				modifier = disappointed_opinion
+				opinion = -20
+			}
+			hidden_effect = {
+				send_interface_toast = {	
+					title = fp1_trade_events.0012.b.tt_failure
+					left_icon = scope:recipient
+					fp1_trade_events_trade_renewal_rejected_effect = yes
+				}
+			}
+		}
+
+		stress_impact = {
+			arbitrary = minor_stress_impact_loss
+			fickle = minor_stress_impact_loss
+			honest = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_honor = -0.25
+				ai_sociability = -0.25
+				ai_rationality = -0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = arbitrary
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = fickle
+			}
+			modifier = {	# Weight down for stress.
+				add = -10
+				has_trait = honest
+			}
+		}
+	}
+}
+
+##################################################
+# Visitors from Afar
+# by Ewan Cowhig Croft
+# 0021 - 0040
+##################################################
+
+scripted_effect fp1_trade_events_0021_acquire_courtier_effect = {
+	# Acquire selection and boost opinion.
+	add_courtier = $SELECTION$
+	progress_towards_friend_effect = {
+		CHARACTER = $SELECTION$
+		OPINION = 100
+		REASON = friend_accepted_courtier
+	}
+	# Ditch the rest.
+	hidden_effect = {
+		scope:merchant = {
+			if = {
+				limit = {
+					NOT = { this = $SELECTION$ }
+				}
+				override_death_effect = { death_reason = death_vanished }
+			}
+		}
+		scope:priest = {
+			if = {
+				limit = {
+					NOT = { this = $SELECTION$ }
+				}
+				override_death_effect = { death_reason = death_vanished }
+			}
+		}
+		if = {
+			limit = {
+				exists = scope:spy
+				NOT = { scope:spy = $SELECTION$ }
+			}
+			scope:spy = {
+				override_death_effect = { death_reason = death_vanished }
+			}
+		}
+	}
+}
+
+#	Courtiers swap between two places that trade with each other.
+fp1_trade_events.0021 = {
+	type = character_event
+	title = fp1_trade_events.0021.t
+	desc = fp1_trade_events.0021.desc
+	theme = alliance
+	left_portrait = {
+		character = scope:merchant
+		animation = personality_greedy
+	}
+	right_portrait = {
+		character = scope:priest
+		animation = personality_zealous
+	}
+	lower_center_portrait = scope:spy
+	lower_right_portrait = var:fp1_prime_trade_deal
+	override_background = { reference = docks }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Standard checks.
+		## Allow when commanding to be fairer to people out raiding, which we incentivise you to do personally to get pacts to begin with.
+		is_available_adult_or_is_commanding = yes
+		NOT = { has_character_flag = had_event_fp1_trade_events_0021 }
+		is_landed = yes
+		# Scope:raider's prime trade deal must still be valid.
+		fp1_prime_trade_partner_still_valid_trigger = {
+			RECIPIENT = root.var:fp1_prime_trade_deal
+			RAIDER = root
+		}
+	}
+
+	weight_multiplier = {
+		base = 1
+		
+		# Weight up a little for certain lifestyle traits, as these spread stories of your success and accomplishments.
+		modifier = {
+			add = 0.25
+			has_trait = diplomat
+		}
+		modifier = {
+			add = 0.25
+			has_trait = avaricious
+		}
+		# Weight up for this being a renewed treaty.
+		modifier = {
+			add = 1
+			exists = root.var:fp1_renewed_trade_deal
+			exists = root.var:fp1_prime_trade_deal
+			root.var:fp1_prime_trade_deal = root.var:fp1_renewed_trade_deal
+		}
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_fp1_trade_events_0021
+			days = 1825
+		}
+		# Save some things for loc & future events.
+		save_scope_as = raider
+		var:fp1_prime_trade_deal = { save_scope_as = partner }
+		# Create our players.
+		## A merchant.
+		create_character = {
+			template = fp1_trade_partner_merchant
+			location = root.capital_province
+			save_scope_as = merchant
+		}
+		## A priest.
+		create_character = {
+			template = fp1_trade_partner_priest
+			location = root.capital_province
+			save_scope_as = priest
+		}
+		## And a spy, if appropriate.
+		if = {
+			limit = {
+				NOT = { has_trait = trusting }
+				intrigue >= high_skill_rating
+			}
+			create_character = {
+				template = fp1_trade_partner_spy
+				location = root.capital_province
+				save_scope_as = spy
+			}
+		}
+	}
+
+	# I could use someone to count my coin...
+	option = {
+		name = fp1_trade_events.0021.a
+
+		# Select the merchant.
+		fp1_trade_events_0021_acquire_courtier_effect = { SELECTION = scope:merchant }
+
+		stress_impact = {
+			trusting = minor_stress_impact_loss
+			generous = medium_stress_impact_gain
+			paranoid = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = 0.5
+				ai_sociability = 0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = trusting
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = generous
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = paranoid
+			}
+		}
+	}
+	
+	# Welcome to my service, [priest.GetFirstName]!
+	option = {
+		name = fp1_trade_events.0021.b
+
+		# Select the priest.
+		fp1_trade_events_0021_acquire_courtier_effect = { SELECTION = scope:priest }
+
+		stress_impact = {
+			trusting = minor_stress_impact_loss
+			zealous = medium_stress_impact_gain
+			paranoid = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_sociability = 0.25
+				ai_zeal = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = trusting
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = zealous
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = paranoid
+			}
+		}
+	}
+	
+	# And who is this accompanying you?
+	option = {
+		name = fp1_trade_events.0021.c
+		trigger = { exists = scope:spy }
+		skill = intrigue
+
+		fp1_trade_events_0021_acquire_courtier_effect = { SELECTION = scope:spy }
+
+		stress_impact = {
+			trusting = minor_stress_impact_loss
+			paranoid = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_sociability = 0.5
+				ai_boldness = 0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = trusting
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = paranoid
+			}
+		}
+	}
+
+	# Move along, foreigners, my agreement is with [recipient.GetFirstName].
+	option = {
+		name = fp1_trade_events.0021.d
+
+		# Gain some prestige for your haughtiness.
+		add_prestige = medium_prestige_gain
+		# But annoy your trading partner.
+		reverse_add_opinion = {
+			target = var:fp1_prime_trade_deal
+			modifier = annoyed_opinion
+			opinion = -40
+		}
+		# Dispose of the guests.
+		hidden_effect = {
+			scope:merchant = {
+				override_death_effect = { death_reason = death_vanished }
+			}
+			scope:priest = {
+				override_death_effect = { death_reason = death_vanished }
+			}
+			if = {
+				limit = { exists = scope:spy }
+				scope:spy = {
+					override_death_effect = { death_reason = death_vanished }
+				}
+			}
+		}
+
+		stress_impact = {
+			paranoid = medium_stress_impact_loss
+			shy = medium_stress_impact_loss
+			compassionate = minor_stress_impact_gain
+			gregarious = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = -0.25
+				ai_sociability = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = paranoid
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = shy
+			}
+			modifier = {	# Weight down for stress.
+				add = -10
+				has_trait = compassionate
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = gregarious
+			}
+		}
+	}
+
+	after = {
+		# Send a companion event to var:fp1_prime_trade_deal.
+		#var:fp1_prime_trade_deal = { trigger_event = fp1_trade_events.0031 }
+		var:fp1_prime_trade_deal = {
+			trigger_event = {
+				id = fp1_trade_events.0031
+				days = 1
+			}
+		}
+	}
+}
+
+fp1_trade_events.0031 = {
+	type = character_event
+	title = fp1_trade_events.0031.t
+	desc = fp1_trade_events.0031.desc
+	theme = alliance
+	left_portrait = {
+		character = scope:warrior
+		animation = personality_bold
+	}
+	lower_right_portrait = scope:raider
+	override_background = { reference = throne_room }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Standard checks.
+		## Allow when commanding - we want to make trading compacts a bit more equal.
+		is_available_adult = yes
+		NOT = { has_character_flag = had_event_fp1_trade_events_0031 }
+		is_landed = yes
+		# Scope:raider's prime trade deal must still be valid.
+		fp1_prime_trade_partner_still_valid_trigger = {
+			RECIPIENT = scope:raider.var:fp1_prime_trade_deal
+			RAIDER = scope:raider
+		}
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_fp1_trade_events_0031
+			days = 1825
+		}
+		# Create scope:warrior.
+		create_character = {
+			template = fp1_trade_partner_warrior
+			location = scope:raider.var:fp1_prime_trade_deal.capital_province
+			save_scope_as = warrior
+		}
+	}
+
+	# We can always use another sword!
+	option = {
+		name = fp1_trade_events.0031.a
+
+		# Gain the warrior, who's understandably pretty hyped.
+		add_courtier = scope:warrior
+		progress_towards_friend_effect = {
+			CHARACTER = scope:warrior
+			OPINION = 100
+			REASON = friend_accepted_courtier
+		}
+
+		stress_impact = {
+			trusting = minor_stress_impact_loss
+			paranoid = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_sociability = 0.5
+				ai_boldness = 0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = trusting
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = paranoid
+			}
+		}
+	}
+	
+	# Be gone, bandit.
+	option = {
+		name = fp1_trade_events.0031.b
+
+		# Gain some prestige for your haughtiness.
+		add_prestige = medium_prestige_gain
+		# But annoy your trading partner, though not as much as snubbing an open delegation on the inverse.
+		reverse_add_opinion = {
+			target = scope:raider
+			modifier = annoyed_opinion
+			opinion = -20
+		}
+		# Dispose of the guest.
+		hidden_effect = {
+			scope:warrior = {
+				override_death_effect = { death_reason = death_vanished }
+			}
+		}
+
+		stress_impact = {
+			paranoid = medium_stress_impact_loss
+			shy = medium_stress_impact_loss
+			compassionate = minor_stress_impact_gain
+			gregarious = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = -0.25
+				ai_sociability = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = paranoid
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = shy
+			}
+			modifier = {	# Weight down for stress.
+				add = -10
+				has_trait = compassionate
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = gregarious
+			}
+		}
+	}
+}
+
+##################################################
+# Belligerents with Benefits
+# by Ewan Cowhig Croft
+# 0041 - 0060
+##################################################
+
+scripted_trigger fp1_trade_events_0041_advanced_culture_comparison_trigger = {
+	scope:raider.culture = {
+		# Must have separate cultures for one to be more advanced.
+		NOT = { this = scope:partner.culture }
+		# And scope:partner's must be in a later era than scope:raider's.
+		## Tribal.
+		trigger_if = {
+			limit = {
+				NOT = { has_cultural_era_or_later = culture_era_early_medieval }
+			}
+			scope:partner.culture = { has_cultural_era_or_later = culture_era_early_medieval }
+		}
+		## Early Medieval.
+		trigger_if = {
+			limit = {
+				NOT = { has_cultural_era_or_later = culture_era_high_medieval }
+			}
+			scope:partner.culture = { has_cultural_era_or_later = culture_era_high_medieval }
+		}
+		## High Medieval.
+		trigger_if = {
+			limit = {
+				NOT = { has_cultural_era_or_later = culture_era_late_medieval }
+			}
+			scope:partner.culture = { has_cultural_era_or_later = culture_era_late_medieval }
+		}
+		## And you can't be later than the Late Medieval, so we ignore that'un.
+	}
+}
+
+scripted_trigger fp1_trade_events_0041_valid_partner_counties_trigger = {
+	has_county_modifier = recently_looted_modifier
+	NOT = { has_county_modifier = fp1_trade_events_raid_consultants_modifier }
+}
+
+scripted_effect fp1_trade_events_0041_offer_consultation_deal_raider_perspective_effect = {
+	# You pay coin and get discounts to construction in your domain.
+	remove_short_term_gold = massive_gold_value
+	# Give a modifier with development growth to underdeveloped holdings.
+	every_held_title = {
+		limit = {
+			tier = tier_county
+			development_level <= 15
+		}
+		custom = fp1_trade_events.0041.foreign_architects_growth.tt
+		add_county_modifier = {
+			modifier = fp1_trade_events_foreign_architects_modifier
+			years = 20
+		}
+	}
+	# And one without it to holdings that are adequately developed.
+	every_held_title = {
+		limit = {
+			tier = tier_county
+			development_level >= 16
+		}
+		custom = fp1_trade_events.0041.foreign_architects_no_growth.tt
+		add_county_modifier = {
+			modifier = fp1_trade_events_foreign_architects_no_growth_modifier
+			years = 20
+		}
+	}
+	# Plus stepped friendship with scope:partner.
+	progress_towards_friend_effect = {
+		CHARACTER = scope:partner
+		OPINION = 30
+		REASON = friend_fp1_renewed_trade_deal
+	}
+	# Scope:partner gets some help with raiding.
+	custom_tooltip = fp1_trade_events.0041.partner_gets_raid_aid.tt
+}
+
+scripted_effect fp1_trade_events_0041_offer_consultation_deal_partner_perspective_effect = {
+	# You pay coin and get raid protection increases in one duchy.
+	remove_short_term_gold = scandinavian_adventurer_fp1_0041_gold_value
+	# Give modifiers that make that duchy better able to withstand raids.
+	$TARGET_DUCHY$ = {
+		save_scope_as = target_duchy
+		every_in_de_jure_hierarchy = {
+			limit = {
+				tier = tier_county
+				holder = {
+					OR = {
+						any_liege_or_above = { this = scope:partner }
+						this = scope:partner
+					}
+				}
+			}
+			custom = fp1_trade_events.0041.partner.benefiting_counties.tt
+			add_county_modifier = {
+				modifier = fp1_trade_events_raid_consultants_modifier
+				years = 20
+			}
+			# Grab the holders for happiness purposes.
+			holder = {
+				if = {
+					limit = {
+						NOT = { this = scope:partner }
+					}
+					add_to_list = happy_with_raid_proofing_list
+				}
+			}
+		}
+	}
+	# Anyone who holds lands here other than you is duly grateful.
+	every_in_list = {
+		list = happy_with_raid_proofing_list
+		add_opinion = {
+			target = scope:partner
+			modifier = grateful_opinion
+			opinion = 30
+		}
+	}
+	# Plus, stepped friendship with scope:raider (actual effect handled scope:raider-side).
+	show_as_tooltip = {
+		progress_towards_friend_effect = {
+			CHARACTER = scope:raider
+			OPINION = 30
+			REASON = friend_fp1_renewed_trade_deal
+		}
+	}
+	# Scope:raider gets help with civic works.
+	custom_tooltip = fp1_trade_events.0041.raider_gets_civic_aid.tt
+}
+
+scripted_effect fp1_trade_events_0041_consultation_rejected_effect = {
+	# Lose a fair bit of prestige.
+	add_prestige = medium_prestige_loss
+}
+
+#	Beneficial modifiers are swapped between the capital and a foreign trade location.
+fp1_trade_events.0041 = {
+	type = character_event
+	title = fp1_trade_events.0041.t
+	desc = fp1_trade_events.0041.desc
+	theme = alliance
+	left_portrait = {
+		character = scope:raider
+		animation = personality_forgiving
+	}
+	right_portrait = {
+		character = scope:partner
+		animation = personality_content
+	}
+	override_background = { reference = docks }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Standard checks.
+		## Allow when commanding to be fairer to people out raiding, which we incentivise you to do personally to get pacts to begin with.
+		is_available_adult_or_is_commanding = yes
+		NOT = { has_character_flag = had_event_fp1_trade_events_0041 }
+		is_landed = yes
+		# Scope:raider's prime trade deal must still be valid & available.
+		fp1_prime_trade_partner_still_valid_trigger = {
+			RECIPIENT = root.var:fp1_prime_trade_deal
+			RAIDER = root
+		}
+		root.var:fp1_prime_trade_deal = { is_available_adult_or_is_commanding = yes }
+		# And they've gotta be able to take the deal in some fashion.
+		root.var:fp1_prime_trade_deal = {
+			any_sub_realm_county = { fp1_trade_events_0041_valid_partner_counties_trigger = yes }
+		}
+		# Plus, there must be a trade to be made.
+		## Meaning one must be tribal, the other feudal.
+		government_has_flag = government_is_tribal
+		root.var:fp1_prime_trade_deal = {
+			NOT = { government_has_flag = government_is_tribal }
+		}
+		## And that scope:partner can't raid for some other reason.
+		root.var:fp1_prime_trade_deal = { can_raid_trigger = no }
+	}
+
+	weight_multiplier = {
+		base = 1
+		
+		# Weight up a little for certain lifestyle traits, as these spread stories of your success and accomplishments.
+		modifier = {
+			add = 0.25
+			has_trait = diplomat
+		}
+		modifier = {
+			add = 0.25
+			has_trait = avaricious
+		}
+		# Weight up for this being a renewed treaty.
+		modifier = {
+			add = 1
+			exists = root.var:fp1_renewed_trade_deal
+			exists = root.var:fp1_prime_trade_deal
+			root.var:fp1_prime_trade_deal = root.var:fp1_renewed_trade_deal
+		}
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = had_event_fp1_trade_events_0041
+			days = 3625
+		}
+		# Save some things for loc & future events.
+		save_scope_as = raider
+		var:fp1_prime_trade_deal = { save_scope_as = partner }
+	}
+
+	# Could they build me a palace in the [partner.GetCulture] style?
+	option = {
+		name = {
+			trigger = { fp1_trade_events_0041_advanced_culture_comparison_trigger = yes }
+			text = fp1_trade_events.0041.a.advanced
+		}
+		name = {
+			trigger = { fp1_trade_events_0041_advanced_culture_comparison_trigger = no }
+			text = fp1_trade_events.0041.a.fallback
+		}
+		trigger = {
+			can_make_expensive_purchase_trigger = { PRICE = scandinavian_adventurer_fp1_0041_gold_value }
+		}
+
+		# Show possible results depending on scope:partner's response.
+		random_list = {
+			100 = {
+				show_chance = no
+				desc = fp1_trade_events.0041.a.offer_accepted
+				show_as_tooltip = { fp1_trade_events_0041_offer_consultation_deal_raider_perspective_effect = yes }
+			}
+			100 = {
+				show_chance = no
+				desc = fp1_trade_events.0041.a.offer_rejected
+				show_as_tooltip = { fp1_trade_events_0041_consultation_rejected_effect = yes }
+			}
+		}
+		# And send scope:partner their event.
+		scope:partner = { trigger_event = fp1_trade_events.0051 }
+
+		stress_impact = {
+			trusting = minor_stress_impact_loss
+			paranoid = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_sociability = 0.5
+				ai_boldness = 0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = trusting
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = paranoid
+			}
+		}
+	}
+	
+	# Let's keep this informal.
+	option = {
+		name = fp1_trade_events.0041.b
+
+		# Stress loss; handled in stress_impact block.
+
+		stress_impact = {
+			base = medium_stress_impact_loss
+			paranoid = medium_stress_impact_loss
+			gregarious = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = -0.25
+				ai_sociability = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 20
+				has_trait = paranoid
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = gregarious
+			}
+		}
+	}
+}
+
+scripted_effect fp1_trade_events_0051_inform_scope_raider_effect = {
+	hidden_effect = {
+		scope:raider = {
+			send_interface_toast = {
+				title = fp1_trade_events.0051.offer_accepted
+				left_icon = scope:partner
+				fp1_trade_events_0041_offer_consultation_deal_raider_perspective_effect = yes
+			}
+		}
+	}
+}
+
+fp1_trade_events.0051 = {
+	type = character_event
+	title = fp1_trade_events.0051.t
+	desc = fp1_trade_events.0051.desc
+	theme = alliance
+	left_portrait = {
+		character = scope:partner
+		animation = personality_forgiving
+	}
+	right_portrait = {
+		character = scope:raider
+		animation = personality_content
+	}
+	override_background = { reference = docks }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Standard checks done scope:raider's side.
+		# Scope:raider's prime trade deal must still be valid.
+		fp1_prime_trade_partner_still_valid_trigger = {
+			RECIPIENT = scope:raider.var:fp1_prime_trade_deal
+			RAIDER = scope:raider
+		}
+	}
+
+	immediate = {
+		# Build a list of valid duchies.
+		## First, we sort through all valid counties and add their duchies to a list.
+		every_sub_realm_county = {
+			limit = { fp1_trade_events_0041_valid_partner_counties_trigger = yes }
+			duchy = { add_to_list = duchies_valid_for_raid_proofing_list }
+		}
+		## Then we order the list to pick the largest duchies.
+		ordered_in_list = {
+			list = duchies_valid_for_raid_proofing_list
+			max = 3
+			order_by = {
+				value = 0
+
+				# Then we add a point for every de jure county that's also de facto part of the sub-realm.
+				every_in_de_jure_hierarchy = {
+					limit = {
+						tier = tier_county
+						holder = {
+							OR = {
+								this = scope:partner
+								any_liege_or_above = { this = scope:partner }
+							}
+						}
+					}
+					add = 1
+
+					# And again for every one that has _also_ been raided recently, since that's a good indicator of raid-density.
+					if = {
+						limit = { has_county_modifier = recently_looted_modifier }
+						add = 1
+					}
+				}
+			}
+			if = {
+				limit = {
+					NOT = { exists = scope:option_1 }
+				}
+				save_scope_as = option_1
+			}
+			if = {
+				limit = {
+					NOT = {
+						this = scope:option_1
+						exists = scope:option_2
+					}
+				}
+				save_scope_as = option_2
+			}
+			if = {
+				limit = {
+					NOT = {
+						this = scope:option_1
+						this = scope:option_2
+						exists = scope:option_3
+					}
+				}
+				save_scope_as = option_3
+			}
+		}
+	}
+
+	# Scope:option_1 could use some experts...
+	option = {
+		name = fp1_trade_events.0051.a
+
+		# Apply effects to scope:option_1.
+		fp1_trade_events_0041_offer_consultation_deal_partner_perspective_effect = { TARGET_DUCHY = scope:option_1 }
+		# Inform scope:raider of the decision.
+		fp1_trade_events_0051_inform_scope_raider_effect = yes
+
+		stress_impact = {
+			compassionate = minor_stress_impact_loss
+			callous = medium_stress_impact_gain
+			sadistic = medium_stress_impact_gain
+			greedy = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_sociability = 0.5
+				ai_rationality = 0.5
+				ai_greed = -0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = compassionate
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = callous
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = sadistic
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = greedy
+			}
+		}
+	}
+	
+	# Scope:option_2 might be a good place for them?
+	option = {
+		name = fp1_trade_events.0051.b
+		trigger = { exists = scope:option_2 }
+
+		# Apply effects to scope:option_2.
+		fp1_trade_events_0041_offer_consultation_deal_partner_perspective_effect = { TARGET_DUCHY = scope:option_2 }
+		# Inform scope:raider of the decision.
+		fp1_trade_events_0051_inform_scope_raider_effect = yes
+
+		stress_impact = {
+			compassionate = minor_stress_impact_loss
+			callous = medium_stress_impact_gain
+			sadistic = medium_stress_impact_gain
+			greedy = major_stress_impact_gain
+		}
+		ai_chance = {
+			# AI should always pick the first & mostly-best option.
+			base = 0
+		}
+	}
+	
+	# I think I'd prefer to shore up scope:option_3.
+	option = {
+		name = fp1_trade_events.0051.c
+		trigger = { exists = scope:option_3 }
+
+		# Apply effects to scope:option_3.
+		fp1_trade_events_0041_offer_consultation_deal_partner_perspective_effect = { TARGET_DUCHY = scope:option_3 }
+		# Inform scope:raider of the decision.
+		fp1_trade_events_0051_inform_scope_raider_effect = yes
+
+		stress_impact = {
+			compassionate = minor_stress_impact_loss
+			callous = medium_stress_impact_gain
+			sadistic = medium_stress_impact_gain
+			greedy = major_stress_impact_gain
+		}
+		ai_chance = {
+			# AI should always pick the first & mostly-best option.
+			base = 0
+		}
+	}
+
+	# What an outrageous proposal!
+	option = {
+		name = fp1_trade_events.0051.d
+
+		# Gain a little consolation prestige.
+		add_prestige = minor_prestige_gain
+		# Inform scope:raider of the decision.
+		hidden_effect = {
+			scope:raider = {
+				send_interface_toast = {
+					title = fp1_trade_events.0051.offer_rejected
+					left_icon = scope:partner
+					fp1_trade_events_0041_consultation_rejected_effect = yes
+				}
+			}
+		}
+
+		stress_impact = {
+			callous = minor_stress_impact_loss
+			sadistic = minor_stress_impact_loss
+			compassionate = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_greed = -0.25
+				ai_rationality = -0.25
+				ai_compassion = -0.5
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = callous
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = sadistic
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = compassionate
+			}
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+##################################################
+# SPECIAL TRADE EVENTS
+
+##################################################
+# The Northerner Menace
+# by Ewan Cowhig Croft
+# 1131 - 1170
+##################################################
+
+#	You buy off an SA's troops, or offer them a position under you.
+fp1_trade_events.1131 = {
+	type = character_event
+	title = fp1_trade_events.1131.t
+	desc = fp1_trade_events.1131.desc
+	theme = war
+	left_portrait = {
+		character = scope:defender
+		animation = worry
+	}
+	right_portrait = {
+		character = scope:attacker
+		animation = personality_greedy
+	}
+	override_background = { reference = fp1_beached_longships }
+
+	trigger = {
+		# Warcraft
+		# You can't buy them
+		scope:attacker.primary_title = {
+			NOT = { exists = var:draenor_raiders }
+		}
+		
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Make sure the war is still ongoing
+		any_character_war = {
+			using_cb = fp1_scandi_adventurer_conquest
+			primary_attacker = scope:attacker
+			primary_defender = scope:defender
+		}
+	}
+
+	immediate = {
+		# Grab the CB for general reference.
+		random_character_war = {
+			limit = {
+				using_cb = fp1_scandi_adventurer_conquest
+				primary_attacker = scope:attacker
+				primary_defender = scope:defender
+			}
+			save_scope_as = sa_war
+		}
+	}
+
+	# Never! Back to your frozen hellscape of a home, scum!
+	option = {
+		name = fp1_trade_events.1131.a
+
+		# Gain a bit of prestige for your boasting.
+		add_prestige = medium_prestige_gain
+		# Stress gain trade-off handled in stress impact.
+		# Clarify that this is merely another trade-off option.
+		custom_tooltip = fp1_trade_events.1131.d.tt
+
+		stress_impact = {
+			base = medium_stress_gain
+			arrogant = minor_stress_impact_loss
+			ambitious = minor_stress_impact_loss
+			stubborn = minor_stress_impact_loss
+			vengeful = minor_stress_impact_loss
+			humble = medium_stress_impact_gain
+			content = medium_stress_impact_gain
+			fickle = medium_stress_impact_gain
+			forgiving = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_vengefulness = 0.5
+				ai_energy = 0.25
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = arrogant
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = ambitious
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = stubborn
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = vengeful
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = humble
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = content
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = fickle
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = forgiving
+			}
+		}
+	}
+	
+	# Well, if it's land they want...
+	option = {
+		name = fp1_trade_events.1131.b
+		trigger = {
+			# Must be able to vassalise a duke.
+			highest_held_title_tier >= tier_kingdom
+			# Target duchy doesn't contain a player that isn't scope:defender.
+			NOT = {
+				any_player = {
+					# First, see if they're a vassal of scope:defender.
+					any_liege_or_above = { this = scope:defender }
+					# And if they are, make sure they have no titles held within the appropriate lands.
+					save_temporary_scope_as = vassal_player
+					any_in_list = {
+						list = target_titles
+						holder = scope:vassal_player
+					}
+				}
+			}
+			# Scope:defender must control at least some lands outside of the target duchy.
+			any_held_title = {
+				NOT = { is_in_list = target_titles }
+			}
+		}
+
+		# You allow them to win the war...
+		scope:sa_war = { end_war = attacker }
+		add_prestige = major_prestige_loss
+		# ... but then immediately vassalise them.
+		create_title_and_vassal_change = {
+			type = swear_fealty
+			save_scope_as = change
+		}
+		scope:attacker = {
+			change_liege = {
+				liege = scope:defender
+				change = scope:change
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+		# This also gives a nice long truce so that they can't immediately usurp you.
+		hidden_effect = {
+			cancel_truce_both_ways = scope:attacker
+		}
+		add_truce_both_ways = {
+			character = scope:attacker
+			days = 7300
+			name = FP1_SCANDINAVIAN_ADVENTURER_VASSAL_TRUCE_NAME
+		}
+		# Plus we whack some opinion in there for good measure.
+		progress_towards_friend_effect = {
+			CHARACTER = scope:attacker
+			OPINION = 50
+			REASON = friend_fp1_renewed_trade_deal
+		}
+		# Finally, add a breather before the next SA.
+		fp1_add_realm_size_appropriate_sa_reprieve_effect = yes
+
+		stress_impact = {
+			generous = minor_stress_impact_loss
+			humble = minor_stress_impact_loss
+			content = minor_stress_impact_loss
+			fickle = minor_stress_impact_loss
+			forgiving = minor_stress_impact_loss
+			greedy = major_stress_impact_gain
+			arrogant = major_stress_impact_gain
+			ambitious = major_stress_impact_gain
+			stubborn = major_stress_impact_gain
+			vengeful = major_stress_impact_gain
+		}
+		ai_chance = {
+			# Base 0 so that only a particular kind of AI will go for this.
+			base = 0
+			ai_value_modifier = {
+				ai_rationality = 0.25
+				ai_greed = -0.5
+				ai_vengefulness = -0.75
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = generous
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = humble
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = content
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = fickle
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = forgiving
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = greedy
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = arrogant
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = ambitious
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = stubborn
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = vengeful
+			}
+		}
+	}
+	
+	# In my experience, soldiers prefer gold to glory.
+	option = {
+		name = fp1_trade_events.1131.c
+		trigger = {
+			can_make_expensive_purchase_trigger = { PRICE = monumental_gold_value }
+		}
+
+		# Pay scope:attacker's troops to sod off...
+		custom_tooltip = fp1_trade_events.1131.c.tt
+		remove_short_term_gold = monumental_gold_value
+		# ... thereby winning the war.
+		scope:sa_war = { end_war = defender }
+		reverse_add_opinion = {
+			target = scope:attacker
+			modifier = humiliated_opinion
+			opinion = -50
+		}
+		# Add a breather before the next SA.
+		fp1_add_realm_size_appropriate_sa_reprieve_effect = yes
+
+		stress_impact = {
+			generous = minor_stress_impact_loss
+			humble = minor_stress_impact_loss
+			content = minor_stress_impact_loss
+			fickle = minor_stress_impact_loss
+			forgiving = minor_stress_impact_loss
+			greedy = major_stress_impact_gain
+			arrogant = major_stress_impact_gain
+			ambitious = major_stress_impact_gain
+			stubborn = major_stress_impact_gain
+			vengeful = major_stress_impact_gain
+		}
+		ai_chance = {
+			# Base allowed to stay high, since the fiscal purchase here is pretty high and the AI usually won't make it anyway.
+			base = 100
+			ai_value_modifier = {
+				ai_rationality = 0.25
+				ai_greed = -0.5
+				ai_vengefulness = -0.75
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = generous
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = humble
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = content
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = fickle
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = forgiving
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = greedy
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = arrogant
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = ambitious
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = stubborn
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = vengeful
+			}
+		}
+	}
+
+	# Then we'll banish these Nords to the sea.
+	option = {
+		name = fp1_trade_events.1131.d
+
+		# Opt-out.
+		custom_tooltip = fp1_trade_events.1131.d.tt
+
+		# No stress impact for the opt-out.
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_energy = -0.25
+				ai_vengefulness = -0.25
+			}
+		}
+	}
+}
+
+##################################################
+# A Holy Helping Hand
+# by Ewan Cowhig Croft
+# 1171 - 1180
+##################################################
+
+scripted_trigger fp1_trade_events_1171_child_can_marry_trigger = {
+	# Rule out some unlikely candidates.
+	is_available_healthy_ai_adult = yes
+	is_ruler = no
+	OR = {
+		is_courtier_of = root.var:fp1_prime_trade_deal
+		AND = {
+			exists = host
+			host = root.var:fp1_prime_trade_deal
+		}
+	}
+	# Make sure they're compatible.
+	could_marry_character_trigger = { CHARACTER = root }
+}
+
+scripted_effect fp1_trade_events_1171_marry_partner_child_effect = {
+	# Marry scope:prospective_spouse.
+	## First, we divorce the old one. No need for checks, since we're basically regarding that marriage as invalid under the new faith.
+	if = {
+		limit = { is_married = yes }
+		every_spouse = {
+			save_temporary_scope_as = current_spouse
+			scope:raider = {
+				divorce_effect = {
+					DIVORCER = scope:raider
+					DIVORCEE = scope:current_spouse
+				}
+			}
+		}
+	}
+	## Then we perform the new marriage.
+	if = {
+		limit = {
+			has_ep2_dlc_trigger = yes
+		}
+		create_grand_wedding_betrothal = {
+			SPOUSE_1 = root
+			SPOUSE_2 = scope:prospective_spouse
+			HOST = root
+			PROMISEE = scope:partner
+		}
+	}
+	else = { marry = scope:prospective_spouse }
+	create_alliance = {
+		target = scope:partner
+		allied_through_owner = scope:raider
+		allied_through_target = scope:prospective_spouse
+	}
+	# Convert to scope:partner's faith.
+	set_character_faith_with_conversion = scope:partner.faith
+	# Do so in a very public and celebrated manner, gaining piety.
+	add_piety = massive_piety_gain
+	# Paid a dowry by scope:partner.
+	scope:partner = {
+		pay_short_term_gold = {
+			target = scope:raider
+			gold = massive_gold_value
+		}
+	}
+}
+
+#	Someone you have a raid-trade agreement with offers the hand of a child and conversion aid.
+fp1_trade_events.1171 = {
+	type = character_event
+	title = fp1_trade_events.1171.t
+	desc = fp1_trade_events.1171.desc
+	theme = alliance
+	left_portrait = {
+		character = scope:raider
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:partner
+		animation = personality_admiration
+	}
+	lower_center_portrait = scope:prospective_spouse
+	override_background = { reference = docks }
+
+	trigger = {
+		# DLC check.
+		has_fp1_dlc_trigger = yes
+		# Standard checks.
+		## Allow when commanding to be fairer to people out raiding, which we incentivise you to do personally to get pacts to begin with.
+		is_available_adult_or_is_commanding = yes
+		NOT = { has_character_flag = had_event_fp1_trade_events_1171 }
+		is_landed = yes
+		# Scope:raider's prime trade deal must still be valid & available.
+		fp1_prime_trade_partner_still_valid_trigger = {
+			RECIPIENT = root.var:fp1_prime_trade_deal
+			RAIDER = root
+		}
+		root.var:fp1_prime_trade_deal = { is_available_adult_or_is_commanding = yes }
+		# Must be of a disorganised faith and separate religion.
+		faith = {
+			has_doctrine_parameter = unreformed
+			NOT = { religion = root.var:fp1_prime_trade_deal.religion }
+			# For that matter, either root must be unmarried, or scope:partner can't have syncretic folk traditions (and so respect for their marriage.)
+			
+			# Warcraft
+			root = { is_married = no }
+		}
+		# Plus, general considerations.
+		root.var:fp1_prime_trade_deal = {
+			# They must really like scope:raider.
+			opinion = {
+				target = root
+				value >= high_positive_opinion
+			}
+			# Have a free child.
+			any_child = { fp1_trade_events_1171_child_can_marry_trigger = yes }
+			# Not be cynical, so they may care about souls.
+			NOT = { has_trait = cynical }
+			# For the sake of sanity, filter out players.
+			is_ai = yes
+			# Since it's AI, and specific enough already, we're happy to let them plunge into debt over this.
+		}
+		# Finally, just double check the
+		NAND = {
+			has_variable_list = humsacd_hofs
+			is_target_in_variable_list = {
+				name = humsacd_hofs
+				target = root.var:fp1_prime_trade_deal.faith
+			}
+		}
+	}
+	weight_multiplier = {
+		base = 1
+		
+		# Weight up a little for certain lifestyle traits, as these spread stories of your success and accomplishments.
+		modifier = {
+			add = 0.25
+			has_trait = diplomat
+		}
+		modifier = {
+			add = 0.25
+			has_trait = avaricious
+		}
+		# Weight up for this being a renewed treaty.
+		modifier = {
+			add = 1
+			exists = root.var:fp1_renewed_trade_deal
+			exists = root.var:fp1_prime_trade_deal
+			root.var:fp1_prime_trade_deal = root.var:fp1_renewed_trade_deal
+		}
+	}
+
+	immediate = {
+		# Once per lifetime.
+		add_character_flag = { flag = had_event_fp1_trade_events_1171 }
+		# Grab our actors.
+		save_scope_as = raider
+		var:fp1_prime_trade_deal = { save_scope_as = partner }
+		## Including a suitable spouse.
+		scope:partner = {
+			random_child = {
+				limit = { fp1_trade_events_1171_child_can_marry_trigger = yes }
+				save_scope_as = prospective_spouse
+			}
+		}
+	}
+
+	# SheHe _does_ make quite a compelling case...
+	option = {
+		name = fp1_trade_events.1171.a
+
+		# Gain assorted mixed awesome benefits.
+		fp1_trade_events_1171_marry_partner_child_effect = yes
+		# Step friendship.
+		progress_towards_friend_effect = {
+			CHARACTER = scope:partner
+			OPINION = 50
+			REASON = friend_fp1_converted_faith_married
+		}
+
+		stress_impact = {
+			cynical = minor_stress_impact_loss
+			trusting = minor_stress_impact_loss
+			greedy = minor_stress_impact_loss
+			paranoid = medium_stress_impact_gain
+			zealous = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_boldness = 0.5
+				ai_greed = 0.5
+				ai_zeal = -0.75
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = cynical
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = trusting
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = greedy
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = paranoid
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = zealous
+			}
+		}
+	}
+	
+	# Let us swear an oath of fraternity!
+	option = {
+		name = fp1_trade_events.1171.b
+		trigger = {
+			can_set_relation_best_friend_trigger = { CHARACTER = scope:partner }
+		}
+
+		# Gain assorted mixed awesome benefits.
+		hidden_effect = { fp1_trade_events_1171_marry_partner_child_effect = yes }
+		custom_tooltip = fp1_trade_events.1171.b.tt
+		# Also, become best friends.
+		set_relation_best_friend = { reason = best_friend_coverted_and_saved_my_soul copy_reason = friend target = scope:partner }
+
+		stress_impact = {
+			cynical = minor_stress_impact_loss
+			trusting = minor_stress_impact_loss
+			gregarious = minor_stress_impact_loss
+			paranoid = medium_stress_impact_gain
+			shy = major_stress_impact_gain
+			zealous = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_sociability = 0.5
+				ai_boldness = 0.5
+				ai_zeal = -0.75
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = cynical
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = trusting
+			}
+			modifier = {	# Weight up for stress.
+				add = 10
+				has_trait = gregarious
+			}
+			modifier = {	# Weight down for stress.
+				add = -20
+				has_trait = paranoid
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = shy
+			}
+			modifier = {	# Weight down for stress.
+				add = -30
+				has_trait = zealous
+			}
+		}
+	}
+	
+	# No manner of bribes can tempt me away.
+	option = {
+		name = {
+			trigger = { has_trait = cynical }
+			text = fp1_trade_events.1171.c.cynical
+		}
+		name = {
+			trigger = {
+				NOT = { has_trait = cynical }
+			}
+			text = fp1_trade_events.1171.c.fallback
+		}
+
+		# Needless to say, scope:partner is offended.
+		reverse_add_opinion = {
+			target = scope:partner
+			modifier = insulted_opinion
+			opinion = -40
+		}
+		# But hey, what a thing to turn down, amirite?
+		add_prestige = major_prestige_gain
+
+		# No stress for the opt-out.
+		ai_chance = {
+			base = 100
+			ai_value_modifier = {
+				ai_zeal = 0.5
+				ai_sociability = -0.5
+			}
+		}
+	}
+}
+

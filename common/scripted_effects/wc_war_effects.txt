@@ -1,1 +1,609 @@
-﻿
+﻿shatter_realm_effect = {
+	$LOSER$ = {
+		if = {
+			limit = { leads_any_this_union_trigger = yes }
+			break_union_effect = yes
+		}
+		else = {
+			leave_or_break_this_union_effect = yes
+		}
+		custom_description = {
+			text = shatter_realm_tooltip
+			
+			# Takes the Dark Portal
+			title:d_dulzin = {
+				title_and_vassal_taker_invasion_effect = { WINNER = $WINNER$ LOSER = $LOSER$ }
+			}
+			title_and_vassal_resolver_invasion_effect = { WINNER = $WINNER$ LOSER = $LOSER$ }
+			
+			# Finds kingdoms
+			every_realm_de_jure_kingdom = {
+				limit = {
+					# If controls at least 8 counties
+					any_in_de_jure_hierarchy = {
+						count >= 8
+						continue = {
+							tier > tier_county
+						}
+						exists = this
+						tier = tier_county
+						exists = holder
+						holder.top_liege = $LOSER$
+					}
+				}
+				# If there's existing kingdom, it tries to claim lands
+				if = {
+					limit = {
+						exists = holder
+						NOT = { holder.top_liege = $LOSER$ }
+						exists = holder.capital_province
+					}
+					add_to_temporary_list = claiming_kingdoms
+				}
+				# Otherwise, if there's claimant, they try to claim lands
+				else_if = {
+					limit = {
+						any_claimant = {
+							exists = this
+						}
+					}
+					add_to_temporary_list = claimed_kingdoms
+				}
+			}
+			
+			# Marks existing kingdoms that may claim some land
+			every_in_list = {
+				list = claiming_kingdoms
+				
+				save_temporary_scope_as = target_kingdom
+				
+				# Occupies lands in radius of capital
+				holder = { occupies_close_realm_of_effect = { target = $LOSER$ kingdom = scope:target_kingdom } }
+			}
+			
+			# Marks not-existing kingdoms and finds claimant
+			every_in_list = {
+				list = claimed_kingdoms
+				
+				save_temporary_scope_as = target_kingdom
+				title_capital_county = { save_temporary_scope_as = kingdom_capital }
+				
+				ordered_claimant = {
+					order_by = worthy_claimant_values
+					max = 1
+					
+					save_temporary_scope_as = worthy_claimant
+					
+					create_title_and_vassal_change = {
+						type = conquest_populist
+						save_scope_as = change
+						add_claim_on_loss = yes
+					}
+					
+					# If claimant doesn't have capital, we have to find one first
+					if = {
+						limit = {
+							NOT = { exists = capital_province }
+						}
+						
+						if = {
+							limit = {
+								scope:kingdom_capital = {
+									holder.top_liege = $LOSER$
+								}
+							}
+							scope:kingdom_capital = {
+								change_title_holder = {
+									holder = scope:worthy_claimant
+									change = scope:change
+									take_baronies = yes
+								}
+							}
+						}
+						else = {
+							scope:target_kingdom = {
+								random_in_de_jure_hierarchy = {
+									limit = {
+										tier = tier_county
+										holder.top_liege = $LOSER$
+									}
+									change_title_holder = {
+										holder = scope:worthy_claimant
+										change = scope:change
+										take_baronies = yes
+									}
+								}
+							}
+						}
+					}
+					
+					# Gives kingdom
+					scope:target_kingdom = {
+						change_title_holder = {
+							holder = scope:worthy_claimant
+							change = scope:change
+							take_baronies = yes
+						}
+					}
+					
+					resolve_title_and_vassal_change = scope:change
+					
+					# Occupies lands in radius of capital
+					occupies_close_realm_of_effect = { target = $LOSER$ kingdom = scope:target_kingdom }
+					
+					# Gives bonuses to help rebuilding
+					rebuild_kingdom_pack_effect = yes
+				}
+			}
+			
+			# Destroy primary title, free vassals
+			destroy_title_free_vassals_effect = { limit_size = tiny_realm_size }
+			
+			# Ends Horde Invasion story
+			if = {
+				limit = { any_owned_story = { story_type = story_horde_invasion } }
+				every_owned_story = {
+					limit = { story_type = story_horde_invasion }
+					end_story = yes
+				}
+			}
+		}
+	}
+}
+
+# Destroy primary title, free vassals
+destroy_title_free_vassals_effect = {
+	save_temporary_scope_as = target
+	
+	create_title_and_vassal_change = {
+		type = independency
+		save_scope_as = independency
+		add_claim_on_loss = no
+	}
+	
+	every_vassal = {
+		limit = {
+			exists = capital_province
+			OR = {
+				capital_province = { squared_distance = { target = scope:target.capital_province value > squared_distance_small } } #Becomes independent if it's far from target capital
+				sub_realm_size >= $limit_size$
+			}
+		}
+		becomes_independent = { change = scope:independency }
+	}
+	
+	resolve_title_and_vassal_change = scope:independency
+	
+	every_held_title = {
+		limit = {
+			tier = tier_empire
+		}
+		scope:target = { destroy_title = prev }
+	}
+	
+	trigger_event = game_rule.2		#Exclave independence
+}
+
+# Occupies lands in radius of capital
+occupies_close_realm_of_effect = {
+	save_temporary_scope_as = root
+
+	create_title_and_vassal_change = {
+		type = conquest_populist
+		save_scope_as = change
+		add_claim_on_loss = yes
+	}
+	
+	$kingdom$.title_capital_county.title_province = { save_temporary_scope_as = kingdom_capital_province }
+	
+	$target$ = {
+		# Finds lands to occupy
+		every_realm_county = {
+			limit = {
+				kingdom = $kingdom$
+				holder.top_liege = $target$
+				title_province = { squared_distance = { target = scope:kingdom_capital_province value < squared_distance_small } }
+			}
+			
+			add_to_list = titles_taken
+		}
+	}
+
+	title_and_vassal_resolver_invasion_effect = { WINNER = scope:root LOSER = $target$ }
+}
+
+rebuild_kingdom_pack_effect = {
+	trigger_event = WCWAR.10
+}
+
+spawn_peacekeepers_troops_effect = {
+	if = {
+		limit = { exists = capital_province }
+		spawn_army = {
+			name = peacekeepers_troops
+			levies = {
+				value = 1000
+			}
+			men_at_arms = {
+				type = pikemen_unit
+				stacks = 2
+			}
+			men_at_arms = {
+				type = armored_footmen
+				stacks = 2
+			}
+			men_at_arms = {
+				type = bowmen
+				stacks = 1
+			}
+			location = capital_province
+		}
+	}
+}
+
+title_and_vassal_taker_invasion_effect = {
+	create_title_and_vassal_change = {
+		type = conquest
+		save_scope_as = change
+		add_claim_on_loss = yes
+	}
+	
+	every_in_de_jure_hierarchy = {
+		# Warcraft
+		continue = { title_taker_invasion_continue_trigger = { WINNER = $WINNER$ LOSER = $LOSER$ } }
+		limit = { title_taker_invasion_limit_trigger = { LOSER = $LOSER$ } }
+
+		title_and_vassal_marker_invasion_effect = yes
+	}
+}
+title_and_vassal_marker_invasion_effect = {
+	add_to_list = titles_taken
+	
+	# Warcraft
+	# Mark empires and kingdoms for destruction
+	if = {
+		limit = {
+			tier > tier_duchy
+		}
+		add_to_list = titles_to_destroy
+	}
+}
+title_and_vassal_resolver_invasion_effect = {
+	every_in_list = {
+		list = titles_taken
+		holder = {
+			if = {
+				limit = {
+					NOT = { is_in_list = vassals_taken }
+					vassal_taker_invasion_limit_trigger = { WINNER = $WINNER$ LOSER = $LOSER$ }
+					NOT = { any_sub_realm_county = { NOT = { is_in_list = titles_taken } } }
+				}
+				add_to_list = vassals_taken
+			}
+		}
+	}
+
+	every_in_list = {
+		list = titles_taken
+		remove_from_list = titles_taken
+		
+		if = {
+			limit = {
+				holder = {
+					NOT = {
+						is_in_list = vassals_taken
+						any_liege_or_above = { is_in_list = vassals_taken }
+					}
+				}
+			}
+			change_title_holder = {
+				holder = $WINNER$
+				change = scope:change
+				take_baronies = yes
+			}
+		}
+	}
+
+	every_in_list = {
+		list = vassals_taken
+		remove_from_list = vassals_taken
+		
+		if = {
+			limit = { NOT = { any_liege_or_above = { is_in_list = vassals_taken } } }
+			if = {
+				limit = {
+					can_become_undead_trigger = yes
+					$WINNER$ = { has_title = title:e_scourge }
+				}
+				raise_undead_by_vassal_effect = { MASTER = $WINNER$ CHANGE = scope:change }
+			}
+			else = {
+				change_liege = {
+					liege = $WINNER$
+					change = scope:change
+				}
+			}
+		}
+	}
+	
+	resolve_title_and_vassal_change = scope:change
+	
+	hidden_effect = {
+		every_in_list = {
+			list = titles_to_destroy
+			remove_from_list = titles_to_destroy
+			
+			holder = {
+				destroy_title = prev
+			}
+		}
+	}
+}
+
+great_invader_target_evaluation_and_declaration_effect = {
+	save_scope_as = great_invader
+	add_character_flag = {
+		flag = free_mongol_cb
+		days = 14
+	}
+	every_character_to_title_neighboring_kingdom = {
+		limit = { NOT = { is_in_list = target_kingdoms } }
+		every_title_to_title_neighboring_kingdom = {
+			limit = { NOT = { is_in_list = target_kingdoms } }
+			add_to_list = target_kingdoms
+		}
+	}
+	# Select a new target
+	random_in_list = {
+		list = target_kingdoms
+		limit = { any_de_jure_top_liege = { is_good_war_target_trigger = { ATTACKER = scope:great_invader MULTIPLY = $MULTIPLY$ } } }
+		
+		weight = {
+			base = 0
+			modifier = {
+				add = horde_invasion_target_character_weight
+				scope:great_invader = { is_horde_invader_trigger = yes }
+			}
+			modifier = {
+				add = scourge_invasion_target_character_weight
+				scope:great_invader = { has_title = title:e_scourge }
+			}
+		}
+		save_temporary_scope_as = next_invasion_title_target
+		
+		random_de_jure_top_liege = {
+			limit = {
+				is_good_war_target_trigger = { ATTACKER = scope:great_invader MULTIPLY = $MULTIPLY$ }
+			}
+			weight = {
+				base = 0.001
+				modifier = {
+					add = {
+						value = 0
+						every_sub_realm_county = {
+							limit = { target_is_de_jure_liege_or_above = scope:next_invasion_title_target }
+							add = 1
+						}
+					}
+				}
+				modifier = {
+					factor = 100
+					character_is_realm_neighbor = scope:great_invader
+				}
+			}
+			
+			save_temporary_scope_as = next_invasion_target
+		}
+	}
+	# Scourge takes vrykul as vassals
+	if = {
+		limit = {
+			exists = scope:next_invasion_title_target
+			has_title = title:e_scourge
+		}
+		scourge_offer_vassalization_effect = { TITLE = scope:next_invasion_title_target }
+	}
+	if = {
+		limit = {
+			exists = scope:next_invasion_target
+			scope:next_invasion_target = {
+				is_independent_ruler = yes
+			}
+		}
+		start_war = {
+			cb = mongol_invasion_war
+			target = scope:next_invasion_target
+			target_title = scope:next_invasion_title_target
+		}
+	}
+}
+
+title_and_vassal_plague_taker_effect = {
+	custom_description = {
+		text = title_and_vassal_plague_taker
+		subject = $WINNER$
+		object = $LOSER$
+		
+		$LOSER$ = {
+			every_realm_county = {
+				limit = {
+					culture = { has_cultural_pillar = heritage_undead }
+					faith = $WINNER$.faith
+				}
+
+				title_and_vassal_marker_invasion_effect = yes
+			}
+			# Loser becomes vassal, vassals of loser may become independent
+			if = {
+				limit = { $LOSER$.faith = $WINNER$.faith }
+				every_held_title = {
+					limit = {
+						tier > tier_kingdom
+					}
+					$LOSER$ = { destroy_title = prev }
+				}
+				
+				create_title_and_vassal_change = {
+					type = independency
+					save_scope_as = independency
+					add_claim_on_loss = yes
+				}
+				every_vassal = {
+					limit = {
+						NOR = {
+							faith = $LOSER$.faith
+							$LOSER$ = primary_title.de_jure_liege.holder
+						}
+					}
+					becomes_independent = { change = scope:independency }
+				}
+				resolve_title_and_vassal_change = scope:independency
+				
+				add_to_list = vassals_taken
+			}
+		}
+	}
+}
+
+war_reparation_victory_effect = {
+	# Prestige level progress for the attacker
+	scope:attacker = {
+		add_prestige_experience = {
+			value = $PRESTIGE$
+		}
+	}
+
+	# Prestige loss for the defender
+	scope:defender = {
+		add_prestige = {
+			value = $PRESTIGE$
+			multiply = -1.0
+		}
+	}
+
+	# Prestige for the attacker's war allies
+	add_from_contribution_attackers = {
+		prestige = {
+			value = $PRESTIGE$
+			multiply = 0.75
+		}
+		opinion = { modifier = contributed_in_war }
+	}
+
+	# Prestige for the defender's war allies
+	add_from_contribution_defenders = {
+		prestige = {
+			value = $PRESTIGE$
+			multiply = 0.75
+		}
+		opinion = { modifier = contributed_in_war }
+	}
+}
+war_reparation_defeat_effect = {
+	# Prestige level loss for the attacker
+	scope:attacker = {
+		pay_short_term_gold_reparations_effect = {
+			GOLD_VALUE = $GOLD$
+		}
+		add_prestige_experience = {
+			value = $PRESTIGE$
+			multiply = -1.0
+		}
+	}
+
+	# Prestige gain for the defender
+	scope:defender = {
+		add_prestige_war_defender_effect = {
+			PRESTIGE_VALUE = $PRESTIGE$
+		}
+	}
+
+	# Prestige for the attacker's war allies
+	add_from_contribution_attackers = {
+		prestige = {
+			value = $PRESTIGE$
+			multiply = 0.75
+		}
+		opinion = { modifier = contributed_in_war }
+	}
+
+	# Prestige for the defender's war allies
+	add_from_contribution_defenders = {
+		prestige = {
+			value = $PRESTIGE$
+			multiply = 0.75
+		}
+		opinion = { modifier = contributed_in_war }
+	}
+}
+i_need_a_knight_effect = {
+	create_character = {
+		employer = root
+		template = knight
+		faith = root.faith
+		culture = root.culture
+		gender_female_chance = {
+			if = {
+				limit = { root.culture = { has_cultural_parameter = martial_custom_male_only_combatant } }
+				add = 0
+			}
+			else_if = {
+				limit = { root.culture = { has_cultural_parameter = martial_custom_female_only_combatant } }
+				add = 100
+			}
+			else = {
+				add = 50
+			}
+		}
+		save_temporary_scope_as = new_commander
+	}
+	hidden_effect_new_object = {
+		scope:new_commander = {
+			add_character_flag = {
+				flag = blocked_from_leaving
+				years = 25
+			}
+		}
+		if = {
+			limit = {
+				scope:new_commander = {
+					NOT = {
+						is_courtier_of = root
+					}
+				}
+			}
+			add_courtier = scope:new_commander
+		}
+	}
+}
+
+join_every_war_effect = {
+	$JOIN_TO$ = {
+		every_character_war = {
+			limit = {
+				is_war_leader = $JOIN_TO$
+				$JOINER$ = {
+					NOR = {
+						is_at_war_with = prev.primary_defender
+						is_at_war_with = prev.primary_attacker
+					}
+				}
+			}
+			hidden_effect = {
+				set_called_to = $JOINER$
+			}
+			if = {
+				limit = {
+					is_attacker = $JOIN_TO$
+				}
+				add_attacker = $JOINER$
+			}
+			else_if = {
+				limit = {
+					is_defender = $JOIN_TO$
+				}
+				add_defender = $JOINER$
+			}
+		}
+	}
+}

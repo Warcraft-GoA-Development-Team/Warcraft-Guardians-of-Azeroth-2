@@ -1,5 +1,50 @@
 ﻿# the effect used in all ransom interactions
 ransom_interaction_effect = {
+	# For mass actions where an option is not selected manually
+	if = {
+		limit = {
+			NOR = {
+				always = scope:extortionate_current_gold
+				always = scope:extortionate_gold
+				always = scope:gold
+				always = scope:current_gold
+				always = scope:favor
+			}
+		}
+		save_scope_value_as = {
+			name = ransom_saved_gold_value
+			value = scope:payer.current_gold_value
+		}
+		if = {
+			limit = {
+				scope:imprisoner.dynasty ?= { has_dynasty_perk = fp1_pillage_legacy_3 }
+				scope:payer.gold >= scope:prisoner.increased_ransom_cost_value
+			}
+			save_scope_value_as = { name = extortionate_current_gold value = yes }
+		}
+		else_if = {
+			limit = {
+				scope:imprisoner.dynasty ?= { has_dynasty_perk = fp1_pillage_legacy_3 }
+				scope:payer.gold < scope:prisoner.increased_ransom_cost_value
+				scope:payer.gold >= 1
+			}
+			save_scope_value_as = { name = extortionate_gold value = yes }
+		}
+		else_if = {
+			limit = { scope:payer.gold >= scope:prisoner.ransom_cost_value }
+			save_scope_value_as = { name = gold value = yes }
+		}
+		else_if = {
+			limit = {
+				scope:payer.gold < scope:prisoner.ransom_cost_value
+				scope:payer.gold >= 1
+			}
+			save_scope_value_as = { name = current_gold value = yes }
+		}
+		else = {
+			save_scope_value_as = { name = favor value = yes }
+		}
+	}
 	scope:prisoner = {
 		add_character_flag = { #To make sure you don't get spammed about the release
 			flag = block_for_prison_release_notification
@@ -13,60 +58,130 @@ ransom_interaction_effect = {
 						scope:prisoner = { is_ai = no }
 						scope:payer = { is_ai = no }
 					}
+					NOT = { scope:prisoner = { is_ai = no } }
 				}
 				add_opinion = {
 					modifier = ransomed_from_prison
 					target = scope:payer
 					years = 1
 				}
+				if = {
+					limit = {
+						is_ai = yes
+						ai_honor >= 25
+						ai_greed <= 0
+					}
+					scope:payer = {
+						if = {
+							limit = {
+								can_add_hook = {
+									target = scope:prisoner 
+									type = favor_hook
+								}
+							}
+							add_hook = {
+								target = scope:prisoner 
+								type = indebted_hook
+							}
+						}
+					}
+				}
+				else = {
+					scope:payer = {
+						progress_towards_hook_effect = {
+							CHARACTER = scope:prisoner
+							HOOK_TYPE = indebted_hook
+						}
+					}
+				}
 			}
 			else = {
 				hidden_effect = {
-					add_opinion = {
-						modifier = ransomed_from_prison
-						target = scope:payer
-						years = 1
+					if = {
+						limit = {
+							is_ai = yes
+							ai_honor >= 25
+							ai_greed <= 0
+						}
+						scope:payer = {
+							if = {
+								limit = {
+									can_add_hook = {
+										target = scope:prisoner 
+										type = favor_hook
+									}
+								}
+								add_hook = {
+									target = scope:prisoner 
+									type = indebted_hook
+								}
+							}
+						}
+					}
+					else = {
+						scope:payer = {
+							progress_towards_hook_effect = {
+								CHARACTER = scope:prisoner
+								HOOK_TYPE = indebted_hook
+							}
+						}
 					}
 				}
 			}
 		}
 	}
-	if = {
-		limit = {
-			always = scope:gold
-		}
-		scope:payer = {
-			pay_short_term_gold = {
-				gold = scope:prisoner.ransom_cost_value
-				target = scope:imprisoner
+	scope:payer = {
+		switch = {
+			trigger = always
+			# Perk: increased ransom + bonus prestige
+			scope:extortionate_gold = {
+				pay_short_term_gold = {
+					gold = scope:prisoner.increased_ransom_cost_value
+					target = scope:imprisoner
+				}
+				scope:imprisoner = { add_prestige = scope:prisoner.increased_ransom_cost_value }
+			}
+			# Perk: whatever they can pay + bonus prestige
+			scope:extortionate_current_gold = {
+				pay_short_term_gold = {
+					gold = scope:ransom_saved_gold_value # Calculated earlier in the ransom interaction.
+					target = scope:imprisoner
+				}
+				scope:imprisoner = { add_prestige = scope:ransom_saved_gold_value }
+			}
+			# Full ransom
+			scope:gold = {
+				pay_short_term_gold = {
+					gold = scope:prisoner.ransom_cost_value
+					target = scope:imprisoner
+				}
+			}
+			# Whatever they can pay
+			scope:current_gold = {
+				pay_short_term_gold = {
+					gold = scope:ransom_saved_gold_value # Calculated earlier in the ransom interaction.
+					target = scope:imprisoner
+				}
+			}
+			# Favor hook
+			scope:favor = {
+				if = {
+					limit = { scope:payer = scope:prisoner }
+					add_opinion = {
+						modifier = demanded_hook
+						target = scope:imprisoner
+					}
+				}
+				scope:imprisoner = {
+					add_hook = {
+						target = scope:payer
+						type = favor_hook
+					}
+				}
 			}
 		}
 	}
-	if = {
-		limit = {
-			always = scope:current_gold
-		}
-		scope:payer = {
-			pay_short_term_gold = {
-				gold = scope:ransom_saved_gold_value # Calculated earlier in the ransom interaction.
-				target = scope:imprisoner
-			}
-		}
-	}
-	if = {
-		limit = {
-			always = scope:favor
-		}
-		scope:imprisoner = {
-			add_hook = {
-				target = scope:payer
-				type = favor_hook
-			}
-		}
-	}
-	scope:prisoner = {
-		release_from_prison = yes
-	}
+	scope:prisoner = { release_from_prison = yes }
 }
 
 #Used for all executions
@@ -83,36 +198,110 @@ execute_prisoner_effect = {
 
 	show_as_tooltip = {
 		$VICTIM$ = {
-			death = {
-				death_reason = death_execution
-				killer = $EXECUTIONER$
-			}
+			override_death_killer_effect = { death_reason = death_execution killer = $EXECUTIONER$ }
 		}
 	}
 
 	scope:executioner = {
+		# Dread gain
 		if = {
 			limit = {
-				OR = {
-					#is_spouse_of = scope:victim
-					is_close_family_of = scope:victim
-					scope:victim = { tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_kingdom } } #Kingdom & empire
+				scope:victim = {
+					time_in_prison = { years > 15 } # No one even remembers who they are anymore
 				}
 			}
-			add_dread = major_dread_gain
+			# No dread for you
+		}
+		else_if = { # Executing Emperors/HoF is quite dreadful
+			limit = {
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_empire
+						scope:executioner.faith.religious_head = scope:victim # Your head of faith
+					}
+				}
+			}
+			add_dread = execute_interaction_massive_dread_gain
 		}
 		else_if = {
 			limit = {
-				OR = {
-					scope:victim = { tier_or_related_liege_tier_equal_trigger = { TIER = tier_duchy } }
-					scope:victim = { tier_or_related_liege_tier_equal_trigger = { TIER = tier_county } }
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_kingdom
+						tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_empire }
+						is_powerful_vassal_of = scope:executioner # Is your powerful vassal
+						target_is_vassal_or_below = scope:executioner # Your liege/s
+						is_close_family_of = scope:executioner
+					}
 				}
 			}
-			add_dread = medium_dread_gain
+			add_dread = execute_interaction_major_dread_gain
+			
+			# Warcraft
+			if = {
+				limit = { government_has_flag = government_dark_frenzy_from_executions }
+				change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+			}
 		}
-		else = {
-			add_dread = minor_dread_gain
+		else_if = {
+			limit = {
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_duchy
+						tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_kingdom }
+						AND = { # Is your vassal, and higher than Baron
+							is_vassal_of = scope:executioner
+							primary_title.tier > tier_barony
+						}
+						AND = { # Peer Vassals
+							exists = primary_title
+							primary_title.tier > tier_barony
+							exists = liege
+							liege = scope:executioner.liege
+						}
+						has_trait = peasant_leader
+					}
+				}
+			}
+			add_dread = execute_interaction_medium_dread_gain
+			
+			# Warcraft
+			if = {
+				limit = { government_has_flag = government_dark_frenzy_from_executions }
+				change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain }
+			}
 		}
+		else_if = {
+			limit = {
+				scope:victim = {
+					OR = {
+						highest_held_title_tier >= tier_county
+						tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_duchy }
+						is_vassal_of = scope:executioner # Is your Baron vassal
+						is_close_or_extended_family_of = scope:executioner
+						
+						scope:executioner = { # Executing close family of your vassals is dreadful...
+							any_vassal = {
+								is_close_family_of = scope:victim
+							}
+						}
+						scope:executioner = { # Executing close family of your liege/s is the same...
+							any_liege_or_above = {
+								is_close_family_of = scope:victim
+							}
+						}
+					}
+				}
+			}
+			add_dread = execute_interaction_minor_dread_gain
+			
+			# Warcraft
+			if = {
+				limit = { government_has_flag = government_dark_frenzy_from_executions }
+				change_dark_frenzy_effect = { VALUE = minor_dark_frenzy_gain }
+			}
+		}
+		
 		# Piety loss (or gain) from executions
 		if = {
 			limit = {
@@ -175,49 +364,186 @@ execute_prisoner_effect = {
 			limit = {
 				faith = scope:victim.faith
 				NOT = { has_perk = divine_retribution_perk }
+				scope:victim = {
+					has_no_particular_noble_roots_trigger = yes
+				}
+			}
+			add_piety = miniscule_piety_loss
+		}
+		else_if = {
+			limit = {
+				faith = scope:victim.faith
+				NOT = { has_perk = divine_retribution_perk }
 			}
 			add_piety = medium_piety_loss
 		}
-		# Stress loss		
+		
+		# Stress loss
 		if = {
-			limit = {
-				has_trait = sadistic
-			}
-			stress_impact = {
-				sadistic = medium_stress_impact_loss
-			}
-		}
-		if = {
-			limit = { #Killing infidels is relaxing
-				has_trait = zealous
-				NOT = { scope:executioner.faith = scope:victim.faith }
-			}
-			stress_impact = {
-				zealous = minor_stress_impact_loss
-			}
-		}
-		if = {
-			limit = {
-				has_relation_rival = scope:victim
-			}
-			add_prestige = medium_prestige_gain
+			limit = { has_relation_rival = scope:victim }
+
 			if = {
 				limit = {
 					NOR = {
+						has_trait = sadistic
 						has_trait = vengeful
+						has_trait = compassionate
 						has_trait = forgiving
 					}
 				}
-				add_stress = major_stress_loss
+				add_stress = medium_stress_loss
 			}
 			else = {
 				stress_impact = {
+					sadistic = major_stress_impact_loss
 					vengeful = massive_stress_impact_loss
-					forgiving = 0 #No stress reduction
+					compassionate = minor_stress_impact_gain
+					forgiving = minor_stress_impact_gain
 				}
 			}
-			
 		}
+		else_if = { #Killing infidels is relaxing
+			limit = {
+				has_trait = zealous
+				NOT = { scope:executioner.faith = scope:victim.faith }
+			}
+
+			if = {
+				limit = {
+					NOR = {
+						has_trait = sadistic
+						has_trait = compassionate
+						has_trait = forgiving
+					}
+				}
+				add_stress = medium_stress_loss
+			}
+			else = {
+				stress_impact = {
+					sadistic = major_stress_impact_loss
+					compassionate = minor_stress_impact_gain
+					forgiving = minor_stress_impact_gain
+				}
+			}
+		}
+		# Stress Gain
+		else_if = {
+			limit = {
+				exists = scope:victim
+				has_execute_reason = scope:victim
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:victim = {
+					OR = {
+						is_child_of = scope:executioner
+						is_grandchild_of = scope:executioner
+						is_great_grandchild_of = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = minor_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = minor_stress_impact_gain
+				family_first = minor_stress_impact_gain
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:victim = {
+					OR = {
+						is_child_of = scope:executioner
+						is_grandchild_of = scope:executioner
+						is_great_grandchild_of = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+				family_first = minor_stress_impact_gain
+			}
+			if = {
+				limit = {
+					exists = scope:execution_sacrifice
+					NOT = { always = scope:execution_sacrifice }
+				}
+				stress_impact = {
+					just = medium_stress_impact_gain
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = {
+					has_trait = sadistic
+				}
+				scope:victim = {
+					OR = {
+						has_relation_friend = scope:executioner
+						has_relation_lover = scope:executioner
+					}
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+				compassionate = massive_stress_impact_gain
+				forgiving = major_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+			}
+			if = {
+				limit = {
+					exists = scope:execution_sacrifice
+					NOT = { always = scope:execution_sacrifice }
+				}
+				stress_impact = {
+					just = medium_stress_impact_gain
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				exists = scope:victim
+				has_execute_reason = scope:victim
+			}
+			stress_impact = {
+				sadistic = medium_stress_impact_loss
+				compassionate = medium_stress_impact_gain
+				forgiving = minor_stress_impact_gain
+				generous = minor_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				sadistic = medium_stress_impact_loss
+				compassionate = major_stress_impact_gain
+				forgiving = medium_stress_impact_gain
+				generous = medium_stress_impact_gain
+				trusting = minor_stress_impact_gain
+				content = minor_stress_impact_gain
+			}
+			if = {
+				limit = {
+					exists = scope:execution_sacrifice
+					NOT = { always = scope:execution_sacrifice }
+				}
+				stress_impact = {
+					just = medium_stress_impact_gain
+				}
+			}
+		}
+		
 		#Kinslaying
 		add_kinslayer_trait_or_nothing_effect = { VICTIM = scope:victim }
 
@@ -233,8 +559,8 @@ execute_prisoner_effect = {
 			limit = {
 				OR = {
 					AND = {
-						has_execute_reason = scope:victim
 						NOT = { exists = scope:recipient }
+						has_execute_reason = scope:victim
 					}
 					is_at_war_with = scope:victim
 				}
@@ -284,8 +610,11 @@ execute_prisoner_effect = {
 			every_in_list = {
 				list = guest_list
 				custom = all_your_guests
+                limit = {
+                    NOT = { this = scope:executioner }
+                }
 				add_opinion = {
-					target = prev
+					target = scope:executioner
 					modifier = executed_guest_modifier
 				}
 			}
@@ -298,37 +627,84 @@ execute_prisoner_effect = {
 				}
 				scope:victim.liege = {
 					add_opinion = {
-						target = prev
+						target = scope:executioner
 						modifier = executed_my_countryman_modifier
 					}
 				}
 			}
 		}
+		
+		# If we're a clan this affects unity
+		if = {
+			limit = { # If the victim is landed and you DON'T have an execution reason, you lose more unity
+				scope:victim = { is_landed = yes }
+				NOT = { has_execute_reason = scope:victim }
+			}
+			add_clan_unity_interaction_effect = {
+				CHARACTER = scope:executioner
+				TARGET = scope:victim
+				VALUE = medium_unity_loss
+				DESC = clan_unity_execute.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
+		else_if = {
+			limit = { # If the victim is landed and you DO have an execution reason, you lose a bit less unity
+				scope:victim = { is_landed = yes }
+				has_execute_reason = scope:victim
+			}
+			add_clan_unity_interaction_effect = {
+				CHARACTER = scope:executioner
+				TARGET = scope:victim
+				VALUE = minor_unity_loss
+				DESC = clan_unity_execute.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
+		else = { # For unlanded characters, we don't care as much, but you still lose some unity
+			add_clan_unity_interaction_effect = {
+				CHARACTER = scope:executioner
+				TARGET = scope:victim
+				VALUE = miniscule_unity_loss
+				DESC = clan_unity_execute.desc
+				REVERSE_NON_HOUSE_TARGET = no
+			}
+		}
 	}
 
 	execute_opinion_effect = { VICTIM = scope:victim EXECUTIONER = scope:executioner }
+	
+	if = {
+		limit = {
+			scope:executioner = {
+				has_any_nickname = no
+				has_relation_lover = scope:victim
+			}
+		}
+		random = {
+			chance = 20
+			scope:executioner = {
+				set_nickname_effect = { NICKNAME = nick_the_heartless }
+			}
+		}
+	}
 
 	#If you have the Human Sacrifice tenet, give victim an appropriate death reason
 	hidden_effect = {
 		if = {
 			limit = {
 				scope:executioner.faith = {
-					has_doctrine = tenet_human_sacrifice
+					# Warcraft
+					has_doctrine_tenet_human_sacrifice_trigger = yes
 				}
 			}
 			$VICTIM$ = {
-				death = {
-					death_reason = death_sacrificed_to_gods
-					killer = $EXECUTIONER$
-				}
+				override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
 			}
 		}
 		else = {
 			$VICTIM$ = {
-				death = {
-					death_reason = death_execution
-					killer = $EXECUTIONER$
-				}
+				override_death_killer_effect = { death_reason = death_execution killer = $EXECUTIONER$ }
 			}
 		}
 	}
@@ -449,6 +825,9 @@ execute_opinion_effect = {
 			}
 			every_in_list = {
 				list = victim_close_relations_list
+				limit = {
+					NOT = { this = $EXECUTIONER$ }
+				}
 				custom = all_friends_and_lovers
 				add_opinion = {
 					target = $EXECUTIONER$
@@ -481,6 +860,12 @@ sacrifice_prisoner_effect = {
 				}
 			}
 			add_dread = major_dread_gain
+			
+			# Warcraft
+			if = {
+				limit = { government_has_flag = government_dark_frenzy_from_executions }
+				change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+			}
 		}
 		else_if = {
 			limit = {
@@ -490,9 +875,21 @@ sacrifice_prisoner_effect = {
 				}
 			}
 			add_dread = medium_dread_gain
+			
+			# Warcraft
+			if = {
+				limit = { government_has_flag = government_dark_frenzy_from_executions }
+				change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain }
+			}
 		}
 		else = {
 			add_dread = minor_dread_gain
+			
+			# Warcraft
+			if = {
+				limit = { government_has_flag = government_dark_frenzy_from_executions }
+				change_dark_frenzy_effect = { VALUE = minor_dark_frenzy_gain }
+			}
 		}
 		if = {
 			limit = {
@@ -615,10 +1012,7 @@ sacrifice_prisoner_effect = {
 	execute_opinion_effect = { VICTIM = scope:victim EXECUTIONER = scope:executioner }
 
 	$VICTIM$ = {
-		death = {
-			death_reason = death_sacrificed_to_gods
-			killer = $EXECUTIONER$
-		}
+		override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
 	}
 }
 
@@ -628,11 +1022,27 @@ imprison_character_effect = {
 	$IMPRISONER$ = { save_scope_as = imprisoner }
 	
 	scope:imprisonment_target = {
+		if = {
+			limit = {
+				has_opinion_modifier = {
+					modifier = imprisoned_me_past
+					target = scope:imprisoner
+				}
+			}
+			hidden_effect = {
+				remove_opinion = {
+					target = scope:imprisoner
+					modifier = imprisoned_me
+				}
+			}
+		}
 		add_opinion = {
 			target = scope:imprisoner
 			modifier = imprisoned_me
 		}
 	}
+
+	imprison_hostage_tooltip_effect = { WHO = scope:imprisonment_target }
 
 	if = {
 		limit = {
@@ -743,91 +1153,8 @@ imprison_character_effect = {
 	}
 
 	#Remove them as guardian/ward for any courtiers and give feedback about this
-	scope:imprisoner = {
-		if = {
-			limit = {
-				any_courtier = {
-					has_relation_guardian = scope:imprisonment_target
-				}
-			}
-			every_courtier = {
-				limit = {
-					has_relation_guardian = scope:imprisonment_target
-				}
-				save_scope_as = ward
+	imprison_remove_ward_guardian_effect = { IMPRISONER = scope:imprisoner PRISONER = scope:imprisonment_target }
 
-				scope:imprisoner = {
-					send_interface_message = {
-						type = event_generic_neutral
-						title = remove_guardian_interaction_notification
-						left_icon = scope:imprisonment_target
-						right_icon = scope:ward
-
-						scope:imprisonment_target = { remove_relation_ward = scope:ward }
-						scope:ward = {
-							if = {
-								limit = {
-									NOT = { host = liege }
-								}
-								return_to_court = yes
-							}
-							guardian_remove_opinion_effect = {
-								GUARDIAN = scope:imprisonment_target
-								WARD = this
-								WARD_LIEGE = scope:imprisoner
-							}
-						}
-					}
-				}
-			}
-		}
-		
-		if = {
-			limit = {
-				any_courtier = {
-					has_relation_ward = scope:imprisonment_target
-				}
-			}
-			random_courtier = {
-				limit = {
-					has_relation_ward = scope:imprisonment_target
-				}
-				save_scope_as = guardian
-				scope:imprisoner = {
-					send_interface_message = {
-						type = event_generic_neutral
-						title = remove_guardian_interaction_notification
-						left_icon = scope:imprisonment_target
-						right_icon = scope:guardian
-
-						scope:imprisonment_target = {
-							send_interface_message = {
-								type = event_generic_neutral
-								title = remove_guardian_interaction_notification
-								left_icon = scope:imprisonment_target
-								right_icon = scope:guardian
-
-								scope:guardian = {
-									remove_relation_ward = scope:imprisonment_target
-									if = {
-										limit = {
-											NOT = { host = liege }
-										}
-										return_to_court = yes
-									}
-									guardian_remove_opinion_effect = {
-										GUARDIAN = this
-										WARD = scope:imprisonment_target
-										WARD_LIEGE = scope:imprisoner
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
 }
 
 imprison_character_effect_ignore_reason = {
@@ -889,11 +1216,27 @@ imprison_character_effect_ignore_reason = {
 	}
 	
 	scope:imprisonment_target = {
+		if = {
+			limit = {
+				has_opinion_modifier = {
+					modifier = imprisoned_me_past
+					target = scope:imprisoner
+				}
+			}
+			hidden_effect = {
+				remove_opinion = {
+					target = scope:imprisoner
+					modifier = imprisoned_me
+				}
+			}
+		}
 		add_opinion = {
 			target = scope:imprisoner
 			modifier = imprisoned_me
 		}
 	}
+
+	imprison_hostage_tooltip_effect = { WHO = scope:imprisonment_target }
 
 	#Disband any scheme you have against them
 	scope:imprisoner = {
@@ -927,13 +1270,26 @@ imprison_character_effect_ignore_reason = {
 			}
 		}
 	}
+
+	#Remove them as guardian/ward for any courtiers and give feedback about this
+	imprison_remove_ward_guardian_effect = { IMPRISONER = scope:imprisoner PRISONER = scope:imprisonment_target }
 }
 
+imprison_hostage_tooltip_effect = {
+	$WHO$ = {
+		if = {
+			limit = { is_hostage = yes }
+			custom_tooltip = hostage_prison_invalidation_tt
+		}
+	}
+}
 
 
 hard_imprison_character_effect = {
 	$TARGET$ = { save_temporary_scope_as = new_target }
 	$IMPRISONER$ = { save_temporary_scope_as = new_imprisoner }
+
+	
 
 	scope:new_imprisoner = {
 		imprison = {
@@ -941,6 +1297,8 @@ hard_imprison_character_effect = {
 			type = house_arrest
 		}
 	}
+
+	imprison_hostage_tooltip_effect = { WHO = scope:new_target }
 
 	hidden_effect = {
 		#Disband any scheme you have against them
@@ -975,6 +1333,9 @@ hard_imprison_character_effect = {
 				}
 			}
 		}
+
+		#Remove them as guardian/ward for any courtiers and give feedback about this
+		imprison_remove_ward_guardian_effect = { IMPRISONER = scope:new_imprisoner  PRISONER = scope:new_target }
 	}
 }
 
@@ -1009,6 +1370,18 @@ rightfully_imprison_character_effect = {
 							NOT = { scope:imprisoner = this }
 						}
 					}
+					hidden_effect = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOT = { scope:imprisoner = this }
+							}
+							add_opinion = {
+								target = scope:imprisoner
+								modifier = imprisoned_family_member
+								opinion = -15
+							}
+						}
+					}
 					custom_tooltip = IMPRISONMENT_RELATIVES_EFFECT_HOUSE_ARREST
 				}
 			}
@@ -1028,6 +1401,18 @@ rightfully_imprison_character_effect = {
 							NOT = { scope:imprisoner = this }
 						}
 					}
+					hidden_effect = {
+						every_close_or_extended_family_member = {
+							limit = {
+								NOT = { scope:imprisoner = this }
+							}
+							add_opinion = {
+								target = scope:imprisoner
+								modifier = imprisoned_family_member
+								opinion = -15
+							}
+						}
+					}
 					custom_tooltip = IMPRISONMENT_RELATIVES_EFFECT_DUNGEON
 				}
 			}
@@ -1036,20 +1421,41 @@ rightfully_imprison_character_effect = {
 			
 	scope:imprisoner = {
 		if = {
-			limit = { exists = scope:recipient }
+			limit = { exists = scope:disable_display_rightful_imprisonment_tooltip }
+			# No tooltip if we do this.
+		}
+		else_if = {
+			limit = {
+				exists = scope:recipient
+				has_imprisonment_reason = scope:new_target
+			}
 			custom_tooltip = IS_ALLOWED_TO_IMPRISON_DESC
 		}
-		else = {
-			custom_tooltip = IS_ALLOWED_TO_IMPRISON_NO_RECIPIENT_DESC
-		}
+		else = { custom_tooltip = IS_ALLOWED_TO_IMPRISON_NO_RECIPIENT_DESC }
 	}
 	
 	scope:new_target = {
+		if = {
+			limit = {
+				has_opinion_modifier = {
+					modifier = imprisoned_me_past
+					target = scope:imprisoner
+				}
+			}
+			hidden_effect = {
+				remove_opinion = {
+					target = scope:imprisoner
+					modifier = imprisoned_me
+				}
+			}
+		}
 		add_opinion = {
 			target = scope:imprisoner
 			modifier = imprisoned_me
 		}
 	}
+
+	imprison_hostage_tooltip_effect = { WHO = scope:new_target }
 
 	#Disband any scheme you have against them
 	scope:imprisoner = {
@@ -1083,6 +1489,155 @@ rightfully_imprison_character_effect = {
 			}
 		}
 	}
+
+	#Remove them as guardian/ward for any courtiers and give feedback about this
+	imprison_remove_ward_guardian_effect = { IMPRISONER = scope:imprisoner PRISONER = scope:new_target }
+}
+
+rightfully_imprison_character_less_verbose_effect = {
+	$TARGET$ = { save_scope_as = new_target }
+	$IMPRISONER$ = { save_scope_as = imprisoner }
+	
+
+	if = {
+		limit = {
+			scope:new_target = {
+				exists = liege
+				OR = {
+					is_landed = yes
+					is_close_or_extended_family_of = liege
+					is_spouse_of = liege
+				}
+			}
+		}
+		
+		scope:imprisoner = {
+			imprison = {
+				target = scope:new_target
+				type = house_arrest
+			}
+			hidden_effect = {
+				scope:new_target = {
+					if = {
+						limit = {
+							any_close_or_extended_family_member = {
+								NOT = { scope:imprisoner = this }
+							}
+						}
+						hidden_effect = {
+							every_close_or_extended_family_member = {
+								limit = {
+									NOT = { scope:imprisoner = this }
+								}
+								add_opinion = {
+									target = scope:imprisoner
+									modifier = imprisoned_family_member
+									opinion = -15
+								}
+							}
+						}
+						custom_tooltip = IMPRISONMENT_RELATIVES_EFFECT_HOUSE_ARREST
+					}
+				}
+			}
+		}
+	}
+		
+	else = {
+		scope:imprisoner = {
+			imprison = {
+				target = scope:new_target
+				type = dungeon
+			}
+			hidden_effect = {
+				scope:new_target = {
+					if = {
+						limit = {
+							any_close_or_extended_family_member = {
+								NOT = { scope:imprisoner = this }
+							}
+						}
+						hidden_effect = {
+							every_close_or_extended_family_member = {
+								limit = {
+									NOT = { scope:imprisoner = this }
+								}
+								add_opinion = {
+									target = scope:imprisoner
+									modifier = imprisoned_family_member
+									opinion = -15
+								}
+							}
+						}
+						custom_tooltip = IMPRISONMENT_RELATIVES_EFFECT_DUNGEON
+					}
+				}
+			}
+		}
+	}
+
+	imprison_hostage_tooltip_effect = { WHO = scope:new_target }
+
+	hidden_effect = {
+		scope:imprisoner = {
+			if = {
+				limit = { exists = scope:disable_display_rightful_imprisonment_tooltip }
+				# No tooltip if we do this.
+			}
+			else_if = {
+				limit = {
+					exists = scope:recipient
+					has_imprisonment_reason = scope:new_target
+				}
+				custom_tooltip = IS_ALLOWED_TO_IMPRISON_DESC
+			}
+			else = { custom_tooltip = IS_ALLOWED_TO_IMPRISON_NO_RECIPIENT_DESC }
+		}
+		
+		scope:new_target = {
+			add_opinion = {
+				target = scope:imprisoner
+				modifier = imprisoned_me
+			}
+		}
+
+		#Disband any scheme you have against them
+		scope:imprisoner = {
+			if = {
+				limit = {
+					any_scheme = {
+						scheme_target = scope:new_target
+					}
+				}
+				every_scheme = {
+					limit = {
+						scheme_target = scope:new_target
+					}
+					end_scheme = yes
+				}
+			}
+		}
+
+		#Send break up event if they are your lover
+		scope:imprisoner = {
+			if = {
+				limit = {
+					has_relation_lover = scope:new_target
+					NOT = { has_relation_rival = scope:new_target } #To enable really strange love stories
+				}
+				scope:new_target = {
+					trigger_event = {
+						id = lover.0101
+						days = { 14 30 }
+					}
+				}
+			}
+		}
+
+		#Remove them as guardian/ward for any courtiers and give feedback about this
+		imprison_remove_ward_guardian_effect = { IMPRISONER = scope:imprisoner PRISONER = scope:new_target }
+	}
+	
 }
 
 # A lite version of imprison_character_effect without opinion penalties or other consequences (as they were captured in war, not at your command)
@@ -1117,6 +1672,8 @@ prisoner_of_war_capture_effect = {
 			}
 		}
 	}
+
+	imprison_hostage_tooltip_effect = { WHO = scope:new_target }
 }
 
 #An effect that picks imprison_character_effect or rightfully_imprison_character_effect as punishment for a sexual relationship, good to not show tyranny tooltip if imprisonment reason hasn't been set yet. But this should NEVER be used if the imprisonment reason isn't going to be set by the same piece of content.
@@ -1160,7 +1717,7 @@ prison_pet_death_effect = {
 		limit = {
 			var:prison_pet_variable = flag:spoon
 		}
-		remove_character_modifier = prison_pet_stone_modifier
+		remove_character_modifier = prison_pet_spoon_modifier
 	}
 	else_if = {
 		limit = {
@@ -1203,9 +1760,49 @@ consume_all_criminal_reasons_effect = {
 escape_from_prison_effect = {
 	play_music_cue = "mx_cue_sacredrite"
 	scope:imprisoner = {
-		capital_province = {
-			save_scope_as = background_wilderness_scope
+		if = {
+			limit = {
+				exists = capital_province
+			}
+			capital_province = {
+				save_scope_as = background_wilderness_scope
+			}
 		}
+		else = {
+			location = {
+				save_scope_as = background_wilderness_scope
+			}
+		}
+		if = {
+			limit = {
+				OR = {
+					has_revoke_title_reason = root
+					has_banish_reason = root
+					has_execute_reason = root
+				}
+			}
+			add_opinion = {
+				target = root
+				modifier = escaped_from_prison_crime
+			}
+		}
+		else = {
+			add_opinion = {
+				target = root
+				modifier = escaped_from_prison_opinion
+			}
+		}
+	}
+	create_character_memory = {
+		type = escaped_from_prison_memory
+		
+		participants = {
+			imprisoner = scope:imprisoner
+		}
+	}
+	add_character_flag = {
+		flag = escaped_from_prison_flag
+		days = 1
 	}
 	add_character_flag = { #To make sure you don't get spammed about the release
 		flag = block_for_prison_release_notification
@@ -1215,6 +1812,14 @@ escape_from_prison_effect = {
 	random_dummy_gender_soldier_effect = { SCOPE_NAME = dummy_gender }
 	hidden_effect = {
 		remove_decision_cooldown = escape_from_prison_decision
+	}
+	if = {
+		limit = { has_character_modifier = allowed_to_go_outside }
+		remove_character_modifier = allowed_to_go_outside
+	}
+	if = {
+		limit = { has_character_modifier = moldy_gruel_diet }
+		remove_character_modifier = moldy_gruel_diet
 	}
 }
 
@@ -1261,54 +1866,216 @@ imprison_HoF_consequences_effect = {
 		}
 		scope:actor = {
 			add_piety_level = -1
+			add_piety = medium_piety_loss
 		}
 	}
-	scope:actor = { add_piety = medium_piety_loss }
 }
 
+#Add tyranny if you don't have a justifiable reason
 imprison_tyranny_effect = {
+
+	# Normalize scopes for tooltip loc, because there is no god nor consistency
+	if = {
+		limit = {
+			exists = scope:imprisoner
+			NOT = { exists = scope:actor }
+		}
+		scope:imprisoner = { save_scope_as = actor }
+	}
+	if = {
+		limit = {
+			exists = scope:actor
+			NOT = { exists = scope:imprisoner }
+		}
+		scope:actor = { save_scope_as = imprisoner }
+	}
+	if = {
+		limit = {
+			exists = scope:imprisonment_target
+			NOT = { exists = scope:recipient }	
+		}
+		scope:imprisonment_target = { save_scope_as = recipient }
+	}
 	if = {
 		limit = {
 			exists = scope:recipient
-			OR = {
-				AND = {
-					exists = scope:imprisonment_target
-					has_imprisonment_reason = scope:imprisonment_target
-				}
-				AND = {
-					exists = scope:actor
-					has_imprisonment_reason = scope:actor
-				}
-			}
+			NOT = { exists = scope:imprisonment_target }	
+		}
+		scope:recipient = { save_scope_as = imprisonment_target }
+	}
+
+	# Determine if tyrannical or not
+	# Should use strife
+	if = {
+		limit = { exists = scope:use_strife_not_tyranny }
+		# If you have revocation reason, we allow that.
+		if = {
+			limit = { has_imprisonment_reason = scope:recipient }
+			consume_imprisonment_reasons = scope:recipient
+		}
+		else = { change_strife_opinion = medium_strife_gain }
+	}
+	# Got good reason
+	else_if = {
+		limit = {
+			scope:actor = { has_imprisonment_reason = scope:recipient }
 		}
 		custom_tooltip = IS_ALLOWED_TO_IMPRISON_DESC
+
 	}
+	# Is at war or edge-case pondering general imprisonment
 	else_if = {
 		limit = {
 			OR = {
-				AND = {
-					exists = scope:imprisonment_target
-					has_imprisonment_reason = scope:imprisonment_target
-					NOT = { exists = scope:recipient }
-				}
-				AND = { 
-					exists = scope:imprisonment_target
-					is_at_war_with = scope:imprisonment_target
-				}
-				AND = {
-					exists = scope:actor
-					has_imprisonment_reason = scope:actor
-					NOT = { exists = scope:recipient }
-				}
-				AND = { 
-					exists = scope:actor
-					is_at_war_with = scope:actor
-				}
+				NOT = { exists = scope:recipient }
+				scope:actor = { is_at_war_with = scope:recipient }
 			}
 		}
 		custom_tooltip = IS_ALLOWED_TO_IMPRISON_NO_RECIPIENT_DESC
 	}
+
 	else = {
 		add_tyranny = imprisonment_tyranny_gain
+	}
+}
+
+imprison_remove_ward_guardian_effect = {
+	#Remove them as guardian/ward for any courtiers and give feedback about this
+	$PRISONER$ = { save_temporary_scope_as = imprisonment_target }
+	$IMPRISONER$ = { save_temporary_scope_as = imprisoner }
+
+	scope:imprisoner ?= {
+		#Check for relations
+		if = {
+			limit = {
+				exists = scope:imprisonment_target
+				any_courtier = {
+					has_relation_guardian = scope:imprisonment_target
+					has_relation_ward = scope:imprisonment_target
+				}
+			}
+			#Save all those with a ward/guardian relation to the person being imprisoned
+			every_courtier = {
+				limit = {
+					has_relation_guardian = scope:imprisonment_target
+					has_relation_ward = scope:imprisonment_target
+				}
+				add_to_list = ward_or_guardian_list
+			}
+			# Send messages to people that need to know that the ward/guardian relationship is over	
+			every_in_list = {
+				list = ward_or_guardian_list
+				save_scope_as = their_ward_or_guardian #saved for appropriate portrait in message
+				
+				send_interface_message = {
+					type = event_generic_neutral
+					title = remove_guardian_interaction_notification
+					left_icon = scope:imprisonment_target
+					right_icon = scope:their_ward_or_guardian
+
+					scope:imprisonment_target = {
+						send_interface_message = {
+							type = event_generic_neutral
+							title = remove_guardian_interaction_notification
+							left_icon = scope:imprisonment_target
+							right_icon = scope:their_ward_or_guardian
+							#Remove appropriate relationship
+							scope:their_ward_or_guardian = {
+								if = {
+									limit = { has_relation_guardian = scope:imprisonment_target }
+									remove_guardian_effect = {
+										GUARDIAN = scope:imprisonment_target
+										WARD = scope:their_ward_or_guardian
+										RETURN_WARD = yes
+										HIDE_OPINION = no
+									}
+								}
+								else = {
+									remove_guardian_effect = {
+										GUARDIAN = scope:their_ward_or_guardian
+										WARD = scope:imprisonment_target
+										RETURN_WARD = yes
+										HIDE_OPINION = no
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+# If they recently revoked your title, or asked for your excommunication, they become your rival
+imprison_attempt_escalates_rivalry_effect = {
+	scope:recipient = {
+		if = {
+			limit = {
+				OR = {
+					has_opinion_modifier = {
+						target = scope:actor
+						modifier = revoked_title
+					}
+					AND = {
+						exists = var:requested_my_excommunication
+						var:requested_my_excommunication = scope:actor
+					}
+				}
+				NOT = { has_relation_rival = scope:actor }
+			}
+			hidden_effect = {
+				if = {
+					limit = { has_relation_potential_rival = scope:actor }
+					remove_relation_potential_rival = scope:actor
+				}
+			}
+			set_relation_rival = scope:actor
+		}
+		else = {
+			hidden_effect = {
+				progress_towards_rival_effect = {
+					CHARACTER = scope:actor
+					REASON = rival_imprisoned
+					OPINION = 0
+				}
+			}
+		}
+	}
+}
+
+diarch_imprison_general_accept_effect = {
+	illegal_imprisonment_dread_effect = yes
+	imprison_HoF_consequences_effect = yes
+	# Sort stress.
+	scope:actor = {
+		# Stress.
+		if = {
+			limit = { has_imprisonment_reason = scope:recipient }
+			stress_impact = {
+				compassionate = minor_stress_impact_gain
+				forgiving = minor_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				just = medium_stress_impact_gain
+				compassionate = medium_stress_impact_gain
+			}
+		}
+	}
+	# Imprison the actual character.
+	imprison_character_effect = {
+		TARGET = scope:recipient
+		IMPRISONER = scope:actor
+	}
+	# If they recently revoked your title, or asked for your excommunication, they become your rival
+	imprison_attempt_escalates_rivalry_effect = yes
+	# Remove hostility flag.
+	if = {
+		limit = {
+			scope:actor = { has_character_flag = flag_hostile_actions_disabled_delay }
+		}
+		scope:actor = { remove_character_flag = flag_hostile_actions_disabled_delay }
 	}
 }
