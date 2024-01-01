@@ -37,9 +37,33 @@
 					can_be_granted_theocratic_titles_by = { RULER = scope:actor }
 				}
 			}
+			NOT = { is_at_war_with = scope:actor }
+			NOT = { has_trait = devoted } # Monks are disinherited, and should not have land granted to them
+			bp2_valid_for_standard_interactions_trigger = yes
+			is_busy_in_events_localised = yes
+			trigger_if = {
+				limit = { is_ruler = no }
+				is_imprisoned = no
+			}
+			# DON'T TAKE OTHER PLAYERS' ACCLAIMED KNIGHTS
+			custom_description = {
+				text = grant_title_stealing_acclaimed_knight
+				subject = scope:recipient
+				NOR = {
+					AND = {
+						is_acclaimed = yes
+						liege ?= {
+							is_ai = no
+							NOT = { this = scope:actor }
+						}
+					}
+					AND = {
+						is_acclaimed = yes
+						scope:actor = { is_ai = yes }
+					}
+				}
+			}
 		}
-		NOT = { scope:actor = { is_at_war_with = scope:recipient } }
-		NOT = { scope:recipient = { has_trait = devoted } } # Monks are disinherited, and should not have land granted to them
 		custom_description = {
 			text = is_not_theocratic_court_chaplain
 			subject = scope:recipient
@@ -61,26 +85,43 @@
 				count > 1
 			}
 		}
-		scope:recipient = { is_busy_in_events_localised = yes }
+	}
+
+	can_send = {
 		trigger_if = {
 			limit = {
-				scope:recipient = {
-					is_ruler = no
+				scope:actor = {
+					highest_held_title_tier >= tier_kingdom
+					has_diarchy_active_parameter = primeminister_requires_duchy
+					diarch = scope:recipient
 				}
 			}
-			scope:recipient = {
-				is_imprisoned = no
+			custom_tooltip = {
+				text = primeminister_requires_duchy.tt.blocked_grant
+				any_in_list = {
+					list = target_titles
+					tier >= tier_duchy
+				}
 			}
 		}
 	}
-	
+
 	can_be_picked_title = {
 		scope:target = {
 			is_leased_out = no
 
-			custom_tooltip = {
-				is_head_of_faith = no
-				text = GRANT_TITLES_ITEM_CANT_HEAD_OF_FAITH
+
+			trigger_if = {
+				limit = {
+					is_head_of_faith = yes
+					NOT = {
+						scope:recipient.faith.religious_head = scope:actor.faith.religious_head
+					}
+				}
+				custom_tooltip = {
+					text = GRANT_TITLES_ITEM_CANT_HEAD_OF_FAITH_TO_INFIDEL
+					scope:recipient.faith.religious_head = scope:actor.faith.religious_head
+				}
 			}
 
 			trigger_if = {
@@ -100,7 +141,22 @@
 			}
 		}
 
-
+		custom_description = {
+			text = grant_titles_interaction_can_only_give_diarch_de_jure_liege_to_diarch
+			subject = scope:actor.diarch
+			NAND = {
+				# Only applies if we have an active diarchy.
+				scope:actor = { has_active_diarchy = yes }
+				# Now, prevent us from giving away our diarch's land to invalidate them...
+				scope:target = {
+					any_dejure_vassal_title_holder = { this = scope:actor.diarch }
+					# ... _unless_ we're giving it _to_ the diarch.
+					NOT = { scope:recipient = scope:actor.diarch }
+					# Plus we only care if the title is below our tier.
+					tier < scope:actor.highest_held_title_tier
+				}
+			}
+		}
 
 		custom_description = {
 			text = grant_titles_interaction_children_not_allowed_temple
@@ -148,6 +204,20 @@
 	}
 	
 	on_accept = {
+		if = {
+			limit = {
+				scope:recipient = {
+					is_acclaimed = yes
+					liege = {
+						this = scope:actor
+					}
+				}
+				scope:target = {
+					tier > tier_barony
+				}
+			}
+			custom_tooltip = grant_title_landing_acclaimed_knight_warning
+		}
 		scope:recipient = {
 			if = {
 				limit = {
@@ -155,36 +225,6 @@
 					save_temporary_scope_as = recipient_is_independent
 				}
 			}
-			#if = {
-			#	limit = {
-			#		NAND = {
-			#			has_relation_friend = scope:actor
-			#			has_relation_lover = scope:actor
-			#			has_relation_soulmate = scope:actor
-			#			has_relation_best_friend = scope:actor
-			#		}
-			#	}
-			#	if = {
-			#		# then verify the right struggle phase
-			#		limit = {
-			#			is_diff_faith_or_culture_trigger = {
-			#				CHAR = scope:actor
-			#				STATUS = involved
-			#				STRUGGLE_TYPE = iberian_struggle
-			#			}
-			#			any_character_struggle = {
-			#				involvement = involved
-			#				is_struggle_type = iberian_struggle
-			#				has_struggle_phase_parameter = struggle_grant_titles_diff_faith_culture_to_leads_to_friendship
-			#			}
-			#		}
-			#		progress_towards_friend_effect = {
-			#			REASON = friend_granted_title
-			#			CHARACTER = scope:actor
-			#			OPINION = 0
-			#		}
-			#	}
-			#}
 		}
 
 		if = {
@@ -357,6 +397,43 @@
 								target = scope:actor
 								modifier = received_title_county
 							}
+							if = {
+								limit = {
+									is_lowborn = yes
+								}
+								scope:actor = {
+									if = {
+										limit = {
+											is_ai = no
+										}
+										every_vassal = {
+											limit = {
+												has_vassal_stance = courtly
+											}
+											add_opinion = {
+												target = scope:actor
+												modifier = courtly_lowborn_grant_opinion
+												opinion = -5
+											}
+										}
+									}
+									else = { # Can't really stop the AI from landing lowborns, so throttle it a bit so that great conquerors don't annihilate their opinion
+										random = {
+											chance = 25
+											every_vassal = {
+												limit = {
+													has_vassal_stance = courtly
+												}
+												add_opinion = {
+													target = scope:actor
+													modifier = courtly_lowborn_grant_opinion
+													opinion = -5
+												}
+											}
+										}
+									}
+								}
+							}
 						}
 
 						scope:this_title = { add_to_temporary_list = titles_to_grant }
@@ -371,6 +448,23 @@
 							add_opinion = {
 								target = scope:actor
 								modifier = received_title_duchy
+							}
+							if = {
+								limit = {
+									is_lowborn = yes
+								}
+								scope:actor = {
+									every_vassal = {
+										limit = {
+											has_vassal_stance = courtly
+										}
+										add_opinion = {
+											target = scope:actor
+											modifier = courtly_lowborn_grant_opinion
+											opinion = -20
+										}
+									}
+								}
 							}
 						}
 
@@ -387,17 +481,61 @@
 								target = scope:actor
 								modifier = received_title_kingdom
 							}
+							if = {
+								limit = {
+									is_lowborn = yes
+								}
+								scope:actor = {
+									every_vassal = {
+										limit = {
+											has_vassal_stance = courtly
+										}
+										add_opinion = {
+											target = scope:actor
+											modifier = courtly_lowborn_grant_opinion
+											opinion = -50
+										}
+									}
+								}
+							}
 						}
 
 						scope:this_title = { add_to_temporary_list = titles_to_grant }
 					}
 
 					else_if = {
-						limit = { scope:this_title.tier = tier_empire }
+						limit = {
+							scope:this_title.tier = tier_empire
+						}
 
-						add_opinion = {
-							target = scope:actor
-							modifier = received_title_empire
+						hidden_effect = {
+							add_opinion = {
+								target = scope:actor
+								modifier = received_title_empire
+							}
+							if = {
+								limit = {
+									is_lowborn = yes
+								}
+								scope:actor = {
+									every_vassal = {
+										limit = {
+											has_vassal_stance = courtly
+										}
+										add_opinion = {
+											target = scope:actor
+											modifier = courtly_lowborn_grant_opinion
+											opinion = -5
+										}
+									}
+								}
+							}
+							if = {
+								limit = {
+									is_a_faction_member = yes
+								}
+								add_joined_faction_discontent = -60
+							}
 						}
 
 						scope:this_title = { add_to_temporary_list = titles_to_grant }
@@ -449,6 +587,64 @@
 			}
 		}
 
+		# Viziers may be booted from their job.
+		scope:actor = {
+			if = {
+				limit = {
+					# Assuming this is relevant at all.
+					diarch ?= scope:recipient
+					# And that scope:actor can do without a supervisor atm.
+					can_leave_diarchy_trigger = yes
+					# Aaaaand that their diarchy supports this type of thing.
+					OR = {
+						has_diarchy_parameter = primeminister_requires_county
+						has_diarchy_parameter = primeminister_requires_duchy
+					}
+				}
+				# Is this a duchy?
+				if = {
+					limit = {
+						any_in_list = {
+							list = target_titles
+							tier >= tier_duchy
+						}
+					}
+					custom_tooltip = grant_titles_interaction.tt.primeminister_title_grant.duchy_sufficient
+					end_diarchy = yes
+				}
+				# Is this a county?
+				else_if = {
+					limit = {
+						any_in_list = {
+							list = target_titles
+							tier = tier_county
+						}
+					}
+					# Is that insufficient?
+					if = {
+						limit = { has_diarchy_active_parameter = primeminister_requires_duchy }
+						custom_tooltip = grant_titles_interaction.tt.primeminister_title_grant.county_insufficient
+					}
+					# Is that sufficient?
+					else = {
+						custom_tooltip = grant_titles_interaction.tt.primeminister_title_grant.county_sufficient
+						end_diarchy = yes
+					}
+				}
+				# Is this a barony?
+				else_if = {
+					limit = {
+						any_in_list = {
+							list = target_titles
+							count = all
+							tier = tier_barony
+						}
+					}
+					custom_tooltip = grant_titles_interaction.tt.primeminister_title_grant.barony_doesnt_end
+				}
+			}
+		}
+
 		if = {
 			limit = {
 				any_in_list = {
@@ -493,6 +689,32 @@
 				}
 			}
 			custom_tooltip = grant_title_modifier_stack_baronies
+		}
+		if = {
+			limit = {
+				trigger_if = {
+					limit = { scope:actor = { is_ai = yes } }
+					scope:actor = {
+						any_vassal = {
+							has_vassal_stance = courtly
+						}
+					}
+				}
+				scope:recipient = {
+					is_lowborn = yes
+				}
+				any_in_list = {
+					list = titles_to_grant
+					tier >= tier_county
+				}
+			}
+			custom_tooltip = grant_title_modifier_courtly_lowborn_grant_penalty
+		}
+		if = {
+			limit = {
+				scope:recipient = { is_a_faction_member = yes }
+			}
+			custom_tooltip = grant_title_modifier_stack_discontent
 		}
 
 		# Jealousy check
@@ -786,26 +1008,7 @@
 						right_icon = scope:recipient
 					
 						custom_tooltip = grant_titles_interaction_notification_effect_2
-						#if = {
-						#	limit = {
-						#		exists = dynasty
-						#		is_diff_faith_or_culture_trigger = {
-						#			CHAR = scope:recipient
-						#			STATUS = involved
-						#			STRUGGLE_TYPE = iberian_struggle
-						#		}
-						#		any_character_struggle = {
-						#			involvement = involved
-						#			is_struggle_type = iberian_struggle
-						#			has_struggle_phase_parameter = struggle_grant_titles_diff_faith_culture_gives_prestige
-						#
-						#		}
-						#	}
-						#	dynasty = {
-						#		add_dynasty_prestige = minor_dynasty_prestige_gain
-						#	}
-						#
-						#}
+						
 					}
 				}
 				else_if = {
@@ -905,43 +1108,6 @@
 				}
 			}
 		}
-
-		#hidden_effect = {
-		#	# Struggle Catalyst
-		#	if = {
-		#		limit = {
-		#			scope:actor = {
-		#				is_diff_faith_or_culture_trigger = {
-		#					CHAR = scope:recipient
-		#					STATUS = involved
-		#					STRUGGLE_TYPE = iberian_struggle
-		#				}
-		#				any_character_struggle = {
-		#					involvement = involved
-		#					activate_struggle_catalyst_secondary_character_involvement_involved_trigger = {
-		#						CATALYST = catalyst_grant_privilege_to_diff_faith_culture_vassal
-		#						CHAR = scope:recipient
-		#					}
-		#				}
-		#			}
-		#		}
-		#		scope:actor = {
-		#			every_character_struggle = {
-		#				involvement = involved
-		#				limit = {
-		#					activate_struggle_catalyst_secondary_character_involvement_involved_trigger = {
-		#						CATALYST = catalyst_grant_privilege_to_diff_faith_culture_vassal
-		#						CHAR = scope:recipient
-		#					}
-		#				}
-		#				activate_struggle_catalyst = {
-		#					catalyst = catalyst_grant_privilege_to_diff_faith_culture_vassal
-		#					character = scope:actor
-		#				}
-		#			}
-		#		}
-		#	}
-		#}
 	}
 }
 
