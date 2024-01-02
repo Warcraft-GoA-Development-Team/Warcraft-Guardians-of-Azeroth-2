@@ -1,5 +1,6 @@
 ﻿seduce = {
 	skill = intrigue
+	desc = seduce_desc_general
 	# cooldown = { months = 2 }
 	is_secret = yes
 	base_secrecy = 10
@@ -9,6 +10,7 @@
 	minimum_progress_chance = 35
 	maximum_progress_chance = 90
 	maximum_success = 95
+	icon = icon_scheme_seduce
 
 	# Does not use Spymaster
 	spymaster_power_per_skill_point = 0
@@ -17,10 +19,16 @@
 	
 	allow = {
 		# Warcraft
+		wc_can_romance_trigger = yes
+		scope:target = { wc_can_romance_trigger = yes }
 		can_have_sexual_relation_with_trigger = { CHARACTER = scope:target }
 		
 		is_adult = yes
-		scope:target = { is_adult = yes }
+		is_travelling = no 
+		scope:target = {
+			is_adult = yes
+			is_travelling = no 
+		}
 
 		# Mutual attraction is a hard limit because this scheme implies real romantic feelings and we don't model romantic attraction separately from sexual attraction
 		OR = {
@@ -114,6 +122,16 @@
 	}
 	
 	valid = {
+		# Warcraft
+		NOT = { is_isolated_from_trigger = { target = scope:target } }
+		is_incapable = no
+		#seducing done by or to minors is not allowed.
+		scope:owner = {
+			is_adult = yes
+		}
+		scope:target = {
+			is_adult = yes
+		}
 		#HARD-BLOCK: Incest Target is too young
 		NOT = { 
 			custom_description = { 
@@ -161,7 +179,7 @@
 
 		# They can't consent
 		NOT = { scope:target = { has_trait = intellect_bad_3 } } # Implies a mental development level akin to an average child
-		NOT = { scope:target = { has_trait = incapable } } # Bed-ridden at best, but in many cases comatose or in a vegetative state
+		NOT = { scope:target = { is_incapable_trigger = yes } } # Bed-ridden at best, but in many cases comatose or in a vegetative state
 
 		# One of you is celibate
 		NOT = { has_trait = celibate }
@@ -201,6 +219,23 @@
 		#SCHEME OWNER#
 
 		#Seducer
+		
+		# You got a wedding night memento
+		modifier = {
+			add = 20
+			desc = "SCHEME_WNIGHT_SEDUCE_MEMENTO"
+			scope:owner = {
+				exists = var:wnight_seduce_memento_var
+				var:wnight_seduce_memento_var = scope:target
+			}
+		}
+		
+		#Language
+		modifier = {
+			add = 5
+			desc = YOU_SPEAK_THE_LANGUAGE
+			scope:owner = { knows_language_of_culture = scope:target.culture }
+		}
 		
 		modifier = { # Home Advantage perk bonus against own Courtiers and Guests
 			desc = SEDUCE_COURTIER_GUEST_PERK_BONUS
@@ -492,9 +527,12 @@
 			trigger = { scope:owner = { NOT = { is_consort_of = scope:target } } }
 			scope:target = {
 				exists = primary_spouse
-				primary_spouse = { has_strong_hook = scope:target }
+				OR = {
+					primary_spouse = { has_strong_hook = scope:target }
+					has_trait = loyal
+				}
 			}
-			add = -20
+			add = -100
 			desc = SCHEME_SEDUCE_SPOUSE_STRONG_HOOK_PENALTY
 		}
 
@@ -776,6 +814,9 @@
 			}
 		}
 
+		# Diarchs are better at schemes within their liege's realm
+		diarch_scheming_within_realm_bonus_modifier = yes
+
 		#Religious Heads
 		modifier = {
 			add = -50
@@ -861,6 +902,18 @@
 			scope:target.dynasty = scope:owner.dynasty
 		}
 
+		# House Personal Scheme Success Chance on Cultural Parameter
+		modifier = {
+			add = cultural_house_personal_scheme_success_chance
+			desc = KIN_PARAMETER_DESC
+			exists = scope:owner.house
+			exists = scope:target.house
+			scope:owner.culture = {
+				has_cultural_parameter = cultural_house_personal_scheme_success_chance
+			}
+			scope:target.house = scope:owner.house
+		}
+
 		# Thicker Than Water Perk
 		modifier = {
 			add = thicker_than_water_bonus
@@ -872,9 +925,28 @@
 				is_close_or_extended_family_of = scope:owner
 			}
 		}
+		# Charmer Accolade
+		modifier = {
+			add = accolade_seduction_vulnerability_value
+			desc = ACCOLADE_COURT_SEDUCTION_VULNERABILITY_DESC
+			scope:target = {
+				exists = host
+				host = {
+					any_active_accolade = {
+						has_accolade_parameter = accolade_court_seduction_vulnerability
+					}
+				}
+			}
+		}
 	}
 
 	on_ready = {
+		# Set up a block for the inappropriate cheating error?
+		save_scope_value_as = {
+			name = ignore_cheating_error_check
+			value = yes
+		}
+		# Proceed to rolls.
 		scheme_owner = {
 			#Do I want to proceed to a roll?
 			if = {
@@ -892,21 +964,27 @@
 	}
 
 	on_invalidated = {
+		scheme_target = {
+			save_scope_as = target
+		}
+		scheme_owner = {
+			save_scope_as = owner
+		}
 		if = {
 			limit = {
-				scheme_target = { is_alive = no }
+				scope:target = { is_alive = no }
 			}
-			scheme_owner = {
+			scope:owner = {
 				trigger_event = seduce_outcome.0005
 			}
 		}
 		#I am already their lover!
 		if = {
 			limit = {
-				NOT = { scheme_progress = 100 }
-				scheme_owner = { has_relation_lover = scope:scheme.scheme_target }
+				NOT = { scheme_progress = 10 }
+				scope:owner = { has_relation_lover = scope:target }
 			}
-			scheme_owner = {
+			scope:owner = {
 				trigger_event = seduce_outcome.0004
 			}
 		}
@@ -943,7 +1021,7 @@
 					}
 				}
 			}
-			scheme_owner = {
+			scope:owner = {
 				send_interface_message = {
 					type = event_generic_neutral
 					title = seduce
@@ -988,6 +1066,24 @@
 			scope:target = {
 				trigger_event = {
 					id = seduce_outcome.8101 #Hard reject event, ai weights on options determine yes/no
+					days = { 7 14 }
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				OR = {
+					scope:target = {
+						existing_feud_against_target_trigger = { TARGET = scope:owner }
+					}
+					scope:owner = {
+						existing_feud_against_target_trigger = { TARGET = scope:target }
+					}
+				}
+			}
+			scope:target = {
+				trigger_event = {
+					id = bp1_house_feud.0700 #Hard reject event, ai weights on options determine yes/no
 					days = { 7 14 }
 				}
 			}
@@ -1048,7 +1144,9 @@
 				trigger_event = { on_action = seduce_ongoing_milestone_2 }
 			}
 		}
-
 	}
 	success_desc = "SEDUCE_SUCCESS_DESC"
+
+	freeze_scheme_when_traveling = yes
+	freeze_scheme_when_traveling_target = yes
 }

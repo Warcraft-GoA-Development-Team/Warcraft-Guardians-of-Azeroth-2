@@ -14,67 +14,8 @@ scripted_trigger death_management_0001_valid_for_death_event_trigger = {
 
 # Calculates how much Stress a character should gain/lose from the death of someone they care about (in some fashion, love or hate) and saves that value for later event usage.
 # This must be run before the character actually dies, as death removes all extant relationships and opinion modifiers.
-scripted_effect calculate_stress_gain_loss_from_deceased_character_effect = {
-	save_scope_value_as = {
-		name = deceased_character_stress
-		value = {
-			if = {
-				# Dying character was extremely close to this character.
-				limit = {
-					OR = {
-						has_relation_soulmate = $DYING_CHARACTER$
-						has_relation_best_friend = $DYING_CHARACTER$
-					}
-				}
-				value = major_stress_gain
-			}
-			else_if = {
-				# Dying character was close and/or otherwise important to this character.
-				limit = {
-					OR = {
-						has_relation_lover = $DYING_CHARACTER$
-						has_relation_friend = $DYING_CHARACTER$
-						reverse_opinion = {
-							target = $DYING_CHARACTER$
-							value >= 75
-						}
-					}
-				}
-				value = medium_stress_gain
-			}
-			else_if = {
-				# Dying character was strongly disliked, rivaled, or was an obstacle to this character's ambitions.
-				limit = {
-					OR = {
-						has_relation_rival = $DYING_CHARACTER$
-						reverse_opinion = {
-							target = $DYING_CHARACTER$
-							value < -20
-						}
-						AND = {
-							is_heir_of = $DYING_CHARACTER$
-							ai_greed >= 50
-						}
-					}
-				}
-				value = minor_stress_loss
-			}
-			else = {
-				# Dying character was only moderately important to this character (siblings who weren't very close, for example).
-				# Characters who are less important than this shouldn't gain/lose stress at all (councillors, vassals, lieges, etc.).
-				value = minor_stress_gain
-			}
-
-			# Callous characters are less affected by the deaths of others, both positively and negatively.
-			if = {
-				limit = { has_trait = callous }
-				multiply = 0.5
-			}
-			# Sadistic and Vengeful characters are fully affected (but will probably have fewer friends and more enemies to begin with).
-		}
-	}
-	
-}
+			# Warcraft
+			# Moved to wc_stress_effects
 
 death_management.0001 = {
 	type = character_event
@@ -103,6 +44,23 @@ death_management.0001 = {
 			imprisoner = {
 				save_scope_as = house_arrest_holder
 			}
+		}
+
+		#To save battle
+		if = {
+			limit = { has_variable = battle_death_enemy }
+			var:battle_death_enemy = { save_scope_as = battle_death_enemy }
+			remove_variable = battle_death_enemy
+		}
+		if = {
+			limit = { has_variable = battle_death_leader }
+			var:battle_death_leader = { save_scope_as = battle_death_leader }
+			remove_variable = battle_death_leader
+		}
+		if = {
+			limit = { has_variable = battle_death_location }
+			var:battle_death_location = { save_scope_as = battle_death_location }
+			remove_variable = battle_death_location
 		}
 
 		#To make heir inherit a loan (make them have a money claim)
@@ -233,23 +191,39 @@ death_management.0001 = {
 				}
 			}
 		}
-
-		#To make the court physician stay in service
+		#To make the heir inherit a loan (make them owe someone money) from goblins
 		if = {
 			limit = {
-				any_relation = {
-					type = court_physician
-					count >= 1
-				}
+				has_variable = loan_quarters_paid
+				has_variable = loan_amount_owed_goblins
+				exists = var:original_debtor
+				exists = title:k_goblin_bankers.holder
 				exists = player_heir
 			}
-			random_relation = {
-				type = court_physician
-				save_scope_as = physician
+			title:k_goblin_bankers = {
+				remove_list_variable = {
+					name = debtor_list
+					target = scope:dead_character
+				}
 			}
 			player_heir = {
-				set_relation_court_physician = scope:physician
+				title:k_goblin_bankers = {
+					add_to_variable_list = { name = debtor_list target = prev }
+				}
+				set_variable = {
+					name = original_debtor
+					value = prev.var:original_debtor
+				}
+				set_variable = {
+					name = loan_quarters_paid
+					value = root.var:loan_quarters_paid
+				}
+				set_variable = {
+					name = loan_amount_owed_goblins
+					value = root.var:loan_amount_owed_goblins
+				}
 			}
+			
 		}
 
 		
@@ -296,7 +270,12 @@ death_management.0001 = {
 		}
 		#Send event about relevant death to betrothed
 		if = {
-			limit = { exists = betrothed }
+			limit = {
+				exists = betrothed
+				# Grand Weddings and their betrothals have their own invalidation
+				has_been_promised_grand_wedding = no
+				betrothed = { has_been_promised_grand_wedding = no }
+			}
 			betrothed = {
 				if = {
 					limit = { death_management_0001_valid_for_death_event_trigger = yes }
@@ -400,12 +379,15 @@ death_management.0001 = {
 			add_to_list = send_death_management_0002_friend
 			add_to_list = send_death_management_0002
 		}
-		#Send event about relevant death to friends
+		#Send event about relevant death to best friends
 		every_relation = {
 			type = best_friend
 			limit = {
 				is_alive = yes
-				death_management_0001_valid_for_death_event_trigger = yes
+				OR = {
+					death_management_0001_valid_for_death_event_trigger = yes
+					has_character_flag = dead_ritual_best_friend
+				}
 			}
 			add_to_list = send_death_management_0002_best_friend
 			add_to_list = send_death_management_0002
@@ -416,6 +398,9 @@ death_management.0001 = {
 			limit = {
 				is_alive = yes
 				death_management_0001_valid_for_death_event_trigger = yes
+				NOT = {
+					has_relation_nemesis = scope:dead_character
+				}
 			}
 			add_to_list = send_death_management_0002_rival
 			add_to_list = send_death_management_0002
@@ -533,6 +518,16 @@ death_management.0002 = {
 			}
 			NOT = { this = scope:killer } #Killers already know
 		}
+		NOT = { has_character_flag = bp1_yearly_2020_suppress_death_events }
+	}
+
+	on_trigger_fail = {
+		if = {
+			limit = {
+				has_character_flag = bp1_yearly_2020_suppress_death_events
+			}
+			remove_character_flag = bp1_yearly_2020_suppress_death_events
+		}
 	}
 
 	immediate = { #Finds most important relation for notification & mourning events
@@ -571,6 +566,14 @@ death_management.0002 = {
 
 			else_if = { #Spouse
 				limit = {
+					exists = scope:battle_death_leader
+					any_consort = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.1200 #Spouse death in battle
+			}
+
+			else_if = { #Spouse
+				limit = {
 					any_consort = { even_if_dead = yes this = scope:dead_character }
 				}
 				trigger_event = death_management.1000 #Spouse death notification
@@ -602,6 +605,15 @@ death_management.0002 = {
 					is_close_or_extended_family_of = scope:dead_character
 				}
 				trigger_event = death_management.4007 #Heir death in house arrest notification
+			}
+
+			else_if = { #Heir
+				limit = {
+					exists = scope:battle_death_leader
+					is_in_list = title_holder_list
+					is_close_or_extended_family_of = scope:dead_character
+				}
+				trigger_event = death_management.1207 #Heir death in battle notification
 			}
 
 			else_if = { #Heir
@@ -688,6 +700,14 @@ death_management.0002 = {
 
 			else_if = { #Child
 				limit = {
+					exists = scope:battle_death_leader
+					any_child = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.1201 #Child death in battle notification
+			}
+
+			else_if = { #Child
+				limit = {
 					any_child = { even_if_dead = yes this = scope:dead_character }
 				}
 				trigger_event = death_management.1001 #Child death notification
@@ -719,6 +739,14 @@ death_management.0002 = {
 				trigger_event = death_management.4002 #Parent death in house arrest notification
 			}
 
+			else_if = { #Parent died in battle
+				limit = {
+					exists = scope:battle_death_leader
+					any_parent = { even_if_dead = yes this = scope:dead_character }
+				}
+				trigger_event = death_management.1202 #Parent death in battle notification
+			}
+
 			else_if = { #Parent
 				limit = {
 					any_parent = { even_if_dead = yes this = scope:dead_character }
@@ -732,7 +760,7 @@ death_management.0002 = {
 						limit = {
 							NOT = {
 								scope:dead_character = {
-									# Warcaft
+									# Warcraft
 									age >= age_65_value
 									death_reason = death_old_age
 								}
@@ -756,7 +784,7 @@ death_management.0002 = {
 						limit = {
 							NOT = {
 								scope:dead_character = {
-									# Warcaft
+									# Warcraft
 									age >= age_65_value
 									death_reason = death_old_age
 								}
@@ -765,6 +793,14 @@ death_management.0002 = {
 						add_stress = scope:deceased_character_stress
 					}
 				}
+			}
+
+			else_if = { #Best friend died in battle
+				limit = {
+					exists = scope:battle_death_leader
+					is_in_list = send_death_management_0002_lover
+				}
+				trigger_event = death_management.1204 #Lover death in battle notification
 			}
 
 			else_if = { #Lover
@@ -803,11 +839,20 @@ death_management.0002 = {
 				}
 			}
 
+			else_if = { #Best friend died in battle
+				limit = {
+					exists = scope:battle_death_leader
+					is_in_list = send_death_management_0002_best_friend
+				}
+				trigger_event = death_management.1205 #Best friend death in battle notification
+			}
+
 			else_if = { #Best Friend
 				limit = {
 					is_in_list = send_death_management_0002_best_friend
+					has_bp1_dlc_trigger = no
 				}
-				trigger_event = death_management.1005 #Friend death notification
+				trigger_event = death_management.1005 #Best Friend death notification
 			}
 
 			else_if = { #Rival in your dungeon
@@ -817,6 +862,14 @@ death_management.0002 = {
 					is_in_list = send_death_management_0002_rival
 				}
 				trigger_event = death_management.3006 #Rival death notification
+			}
+
+			else_if = { #Rival died in battle
+				limit = {
+					exists = scope:battle_death_leader
+					is_in_list = send_death_management_0002_rival
+				}
+				trigger_event = death_management.1206 #Rival death in battle notification
 			}
 
 			else_if = { #Rival
@@ -944,7 +997,7 @@ death_management.0002 = {
 			}
 		}
 	}
-}	
+}
 
 
 ######################################################
@@ -966,6 +1019,16 @@ death_management.1000 = {
 		first_valid = {
 			triggered_desc = {
 				trigger = {
+					OR = {
+						has_variable = bloody_wedding_murder_family_var
+						has_variable = bloody_wedding_murder_solo_var
+						has_variable = bloody_wedding_murder_spouse_var
+					}
+				}
+				desc = death_management.1000.murder_wedding
+			}
+			triggered_desc = {
+				trigger = {
 					exists = scope:like
 				}
 				desc = death_management.1000.like
@@ -980,7 +1043,15 @@ death_management.1000 = {
 		}
 	}
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
+	lower_right_portrait = {
+		character = scope:killer
+		trigger = { exists = scope:known_killer }
+	}
 
 	trigger = {
 		NOT = { has_character_flag = knows_of_spouse_death_flag }
@@ -1030,15 +1101,24 @@ death_management.1000 = {
 				value = yes
 			}
 		}
-
 		if = {
 			limit = {
 				exists = scope:killer
 				scope:killer = {
-					any_secret = {
-						secret_type = secret_murder
-						secret_target = scope:dead_character
-						is_known_by = root
+					OR = {
+						# No Secret because everyone knows
+						NOT = {
+							any_secret = {
+								secret_type = secret_murder
+								secret_target = scope:dead_character
+							}
+						}
+						# Secret, but you happen to know
+						any_secret = {
+							secret_type = secret_murder
+							secret_target = scope:dead_character
+							is_known_by = root
+						}
 					}
 				}
 			}
@@ -1164,7 +1244,15 @@ death_management.1001 = {
 		}
 	}
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
+	lower_right_portrait = {
+		character = scope:killer
+		trigger = { exists = scope:known_killer }
+	}
 
 	immediate = {
 		play_music_cue = mx_cue_death
@@ -1172,10 +1260,20 @@ death_management.1001 = {
 			limit = {
 				exists = scope:killer
 				scope:killer = {
-					any_secret = {
-						secret_type = secret_murder
-						secret_target = scope:dead_character
-						is_known_by = root
+					OR = {
+						# No Secret because everyone knows
+						NOT = {
+							any_secret = {
+								secret_type = secret_murder
+								secret_target = scope:dead_character
+							}
+						}
+						# Secret, but you happen to know
+						any_secret = {
+							secret_type = secret_murder
+							secret_target = scope:dead_character
+							is_known_by = root
+						}
 					}
 				}
 			}
@@ -1285,6 +1383,7 @@ death_management.1001 = {
 # Sound Foundations stat removal
 death_management.1002 = {
 	hidden = yes
+	orphan = yes # TODO [CD] - Figure out why
 
 	immediate = {
 		every_parent = { sound_foundations_random_removal_effect = yes }
@@ -1318,6 +1417,10 @@ death_management.1004 = {
 	title = death_management.1004.t
 	desc = death_management.1004.desc
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
 
 	immediate = {
@@ -1327,9 +1430,7 @@ death_management.1004 = {
 	option = {
 		name = death_management.1004.a
 
-		stress_impact = {
-			base = minor_stress_impact_gain
-		}
+		add_stress = scope:deceased_character_stress
 		stress_save_deceased_character_for_mental_break = {
 			TARGET = scope:dead_character
 			FLAG = lover
@@ -1349,24 +1450,40 @@ death_management.1004 = {
 	}
 }
 
-#Dead friend
+#Dead best friend
 death_management.1005 = {
 	type = character_event
 	title = death_management.1005.t
-	desc = death_management.1005.desc
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:dead_ritual_best_friend }
+				desc = death_management.1005.desc.ritual_best_friend
+			}
+			desc = death_management.1005.desc
+		}
+	}
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
 
 	immediate = {
 		play_music_cue = mx_cue_death
+		# Remove the best friend flag, if it's around, but note that it was here for loc.
+		if = {
+			limit = { has_character_flag = dead_ritual_best_friend }
+			remove_character_flag = dead_ritual_best_friend
+			save_scope_as = dead_ritual_best_friend
+		}
 	}
 	
 	option = {
 		name = death_management.1005.a
 
-		stress_impact = {
-			base = minor_stress_impact_gain
-		}
+		add_stress = scope:deceased_character_stress
 		stress_save_deceased_character_for_mental_break = {
 			TARGET = scope:dead_character
 			FLAG = friend
@@ -1391,21 +1508,15 @@ death_management.1006 = {
 	title = death_management.1006.t
 	desc = death_management.1006.desc
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
 
 	immediate = {
 		play_music_cue = mx_cue_death
-	}
-	
-	option = {
-		name = death_management.1000.c
-
-		stress_impact = {
-			base = medium_stress_impact_loss
-		}
-	}
-
-	after = {
+		add_stress = scope:deceased_character_stress
 		if = {
 			limit = {
 				exists = scope:killer
@@ -1420,6 +1531,73 @@ death_management.1006 = {
 		}
 		else = {
 			custom_tooltip = death_management.1006.a.tt
+		}
+	}
+	
+	option = {
+		name = death_management.1000.c
+		trigger = {
+			NOT = {
+				existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			}
+		}
+	}
+
+	option = { # Continue
+		name = death_management.1006.d
+		trigger = {
+			existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			NOT = {
+				any_owned_story = {
+					story_type = story_cycle_house_feud
+					house_feud_wiped_out_trigger = yes
+				}
+			}
+		}
+		custom_tooltip = house_feud_continue_tt
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_vengefulness = 1
+				ai_boldness = 1
+			}
+		}
+	}
+
+	option = { # End
+		name = death_management.1006.e
+		trigger = {
+			existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			NOT = {
+				any_owned_story = {
+					story_type = story_cycle_house_feud
+					house_feud_wiped_out_trigger = yes
+				}
+			}
+		}
+		random_owned_story = {
+			limit = { story_type = story_cycle_house_feud }
+			save_scope_as = story
+		}
+		show_as_tooltip = { house_feud_end_modifier_effect = yes }
+		house_feud_end_story_effect = yes
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_vengefulness = -1
+				ai_boldness = -1
+			}
+		}
+	}
+
+	option = { # Wipe end
+		name = death_management.1006.f
+		trigger = {
+			existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			any_owned_story = {
+				story_type = story_cycle_house_feud
+				house_feud_wiped_out_trigger = yes
+			}
 		}
 	}
 }
@@ -1463,7 +1641,15 @@ death_management.1007 = {
 		desc = death_management.1007.end
 	}
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
+	lower_right_portrait = {
+		trigger = { exists = scope:known_killer }
+		character = scope:killer
+	}
 
 	trigger = {
 		exists = player_heir
@@ -1475,10 +1661,20 @@ death_management.1007 = {
 			limit = {
 				exists = scope:killer
 				scope:killer = {
-					any_secret = {
-						secret_type = secret_murder
-						secret_target = scope:dead_character
-						is_known_by = root
+					OR = {
+						# No Secret because everyone knows
+						NOT = {
+							any_secret = {
+								secret_type = secret_murder
+								secret_target = scope:dead_character
+							}
+						}
+						# Secret, but you happen to know
+						any_secret = {
+							secret_type = secret_murder
+							secret_target = scope:dead_character
+							is_known_by = root
+						}
 					}
 				}
 			}
@@ -1488,7 +1684,6 @@ death_management.1007 = {
 			}
 		}
 	}
-
 	
 	option = {
 		name = death_management.1007.a
@@ -1517,6 +1712,10 @@ death_management.1008 = {
 	title = death_management.1009.t
 	desc = death_management.1008.desc
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
 	lower_left_portrait = scope:spouse_of_dead_character
 
@@ -1547,8 +1746,16 @@ death_management.1009 = {
 	title = death_management.1009.t
 	desc = death_management.1009.desc
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 	left_portrait = scope:dead_character
 	lower_left_portrait = scope:betrothed_of_dead_character
+
+	trigger = {
+		
+	}
 
 	immediate = {
 		play_music_cue = mx_cue_death
@@ -1562,7 +1769,7 @@ death_management.1009 = {
 			text = death_management.1009.a
 		}
 		name = {
-			# Warcaft
+			# Warcraft
 			trigger = { age > age_16_value }
 			text = death_management.1008.a
 		}
@@ -1605,6 +1812,10 @@ death_management.1010 = {
 		}
 	}
 	theme = death
+	override_background = {
+		trigger = { is_travelling = yes }
+		reference = terrain
+	}
 
 	immediate = {
 		play_music_cue = mx_cue_death
@@ -1650,7 +1861,7 @@ death_management.1010 = {
 		name = {
 			text = death_management.1010.over_12_liked_educator
 			trigger = {
-				# Warcaft
+				# Warcraft
 				age >= age_12_value
 
 				opinion = {
@@ -1670,7 +1881,7 @@ death_management.1010 = {
 			trigger = {
 				OR = {
 					AND = {
-						# Warcaft
+						# Warcraft
 						age >= age_12_value
 
 						opinion = {
@@ -1689,6 +1900,1398 @@ death_management.1010 = {
 	}
 }
 
+######################################################
+# NOTIFICATION EVENTS - BATTLE DEATH EVENTS
+# 1200-1207
+######################################################
+
+scripted_effect death_in_battle_memory_effect = {
+	if = {
+		limit = {
+			this = scope:portrait_scope
+			is_alive = yes
+		}
+		if = {
+			limit = { exists = scope:battle_death_killer }
+			create_character_memory = {
+				type = witnessed_death_battle_$TYPE$_killer
+				
+				participants = {
+					dead_relation = scope:dead_character
+					relation_killer = scope:battle_death_killer
+				}
+			}
+		}
+		else = {
+			create_character_memory = {
+				type = witnessed_death_battle_$TYPE$
+				
+				participants = {
+					dead_relation = scope:dead_character
+				}
+			}
+		}
+		random_memory = {
+			limit = {
+				OR = {
+					has_memory_type = witnessed_death_battle_good_killer
+					has_memory_type = witnessed_death_battle_bad_killer
+					has_memory_type = witnessed_death_battle_good
+					has_memory_type = witnessed_death_battle_bad
+				}
+				NOT = { has_variable = battle_location }
+			}
+			set_variable = {
+				name = battle_location
+				value = scope:battle_death_location
+			}
+		}
+	}
+}
+
+scripted_effect death_in_battle_scope_effect = {
+	if = {
+        limit = {
+            is_in_army = yes
+            OR = {
+                this = scope:battle_death_enemy
+                this = scope:battle_death_leader
+            }
+        }
+        save_scope_as = portrait_scope
+    }
+    else = {
+        scope:dead_character = { save_scope_as = portrait_scope }
+    }
+    scope:dead_character = {
+    	if = {
+    		limit = {
+    			exists = killer
+    			scope:killer = {
+					is_alive = yes
+    			}
+    		}
+    		killer = {
+    			save_scope_as = battle_death_killer
+    			set_signature_weapon_effect = yes
+    		}
+    		show_as_tooltip = {
+	    		death = {
+	    			death_reason = death_battle
+	    			killer = scope:battle_death_killer
+	    		}
+		    }
+    	}
+	    else = {
+	    	show_as_tooltip = {
+	    		death = { death_reason = death_battle }
+	    	}
+		}
+	}
+}
+
+scripted_effect set_and_inform_slayer_rivalry_effect = {
+	save_scope_as = avenger
+	scope:battle_death_killer = {
+        send_interface_message = {
+        	type = send_interface_message_bad
+			left_icon = scope:avenger
+			right_icon = scope:dead_character
+			title = death_battle_new_rivalry_title
+        	set_relation_rival = {
+        		target = scope:avenger
+        		reason = rival_killed_heir
+				involved_character = scope:dead_character
+        	}
+        }
+    }
+}
+
+scripted_trigger set_and_inform_slayer_rivalry_trigger = {
+	exists = scope:battle_death_killer
+    can_set_relation_rival_trigger = { CHARACTER = scope:battle_death_killer }
+}
+
+# Spouse dies in battle
+death_management.1200 = {
+	type = character_event
+    title = death_management.1200.t
+    desc = {
+     	# Intro 1 - In battle or reading a letter?
+        first_valid = { 
+            triggered_desc = { # Died in battle you were part of
+                trigger = { this = scope:portrait_scope }
+                desc = death_management.intro.witnessed # generic
+            }
+            triggered_desc = { # Died in a battle involving your army
+                trigger = {
+                    OR = {
+                        this = scope:battle_death_enemy
+                        this = scope:battle_death_leader
+                    }
+                }
+                desc = death_management.intro.war # generic
+            }
+            desc = death_management.intro # generic
+        }
+        # Intro 2 - In battle or reading a letter?
+        first_valid = {
+        	triggered_desc = { # You saw them die, friendly
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.intro.enemy # generic
+            }
+        	triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.intro.friendly # generic
+            }
+            desc = death_management.intro.letter.spouse # unique
+        }
+        # Death details
+        first_valid = {
+            triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.death.witnessed.enemy # generic
+            }
+            triggered_desc = { # You saw them die, friendly
+                trigger = {
+                    this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.death.witnessed.friendly # generic
+            }
+            triggered_desc = { # They died on other side
+                trigger = { scope:battle_death_enemy = root }
+                desc = death_management.death.war.enemy # generic
+            }
+            triggered_desc = { # They died on your side
+                trigger = { scope:battle_death_leader = root }
+                desc = death_management.death.war.friendly # generic
+            }
+            desc = death_management.death.uninvolved # generic
+ 		}
+ 		# Killer details
+ 		first_valid = {
+            triggered_desc = { # On other side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_enemy = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.enemy # generic
+            }
+            triggered_desc = { # On same side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_leader = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.friendly # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = { exists = scope:battle_death_killer }
+                desc = death_management.killer # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = {
+					NOT = {
+						exists = scope:battle_death_killer
+					}
+				}
+                desc = death_management.no_killer # generic
+            }
+ 		}
+        desc = death_management.1200.desc # unique
+    }
+    theme = death
+    override_background = { reference = battlefield  }
+    left_portrait = {
+        character = scope:portrait_scope
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    this = scope:battle_death_enemy
+                    this = scope:battle_death_leader
+                }
+            }
+            animation = grief
+        }
+        triggered_animation = {
+            trigger = { always = yes }
+            animation = idle
+        }
+    }
+    lower_right_portrait = {
+        character = scope:battle_death_killer
+        trigger = {
+        	exists = scope:battle_death_killer
+        	NOT = { scope:battle_death_killer = root }
+        }
+    }
+    lower_center_portrait = {
+        character = scope:dead_character
+        trigger = { scope:portrait_scope = root }
+    }
+
+    immediate = {
+    	play_music_cue = mx_cue_death
+        death_in_battle_scope_effect = yes
+        # Taken from death.management.1000
+		if = {
+			limit = {
+				reverse_opinion = {
+					target = scope:dead_character
+					value >= 10
+				}
+				scope:dead_character = { has_any_bad_relationship_with_root_trigger = no }
+				OR = {
+					opinion = {
+						target = scope:dead_character
+						value >= 10
+					}
+					scope:dead_character = { has_friendly_relationship_with_root_trigger = yes }
+				}
+			}
+			save_scope_value_as = {
+				name = like
+				value = yes
+			}
+			death_in_battle_memory_effect = { TYPE = good }
+		}
+		else_if = {
+			limit = {
+				OR = {
+					has_any_bad_relationship_with_root_trigger = yes
+					opinion = {
+						target = scope:dead_character
+						value < -30
+					}
+				}
+			}
+			save_scope_value_as = {
+				name = dislike
+				value = yes
+			}
+			death_in_battle_memory_effect = { TYPE = bad }
+		}
+		else = {
+			save_scope_value_as = {
+				name = neutral
+				value = yes
+			}
+			death_in_battle_memory_effect = { TYPE = good }
+		}
+	}
+	
+	# New rival
+	option = {
+        name = death_management.1200.a
+        trigger = {
+        	NOT = { exists = scope:dislike }
+            set_and_inform_slayer_rivalry_trigger = yes
+        }
+        stress_impact = {
+			base = medium_stress_impact_gain
+			callous = minor_stress_impact_loss
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = spouse
+		}
+        set_and_inform_slayer_rivalry_effect = yes
+    }
+
+	#My beloved spouse!
+	option = {
+		name = death_management.1200.b
+		trigger = { exists = scope:like }
+		stress_impact = {
+			base = medium_stress_impact_gain
+			callous = minor_stress_impact_loss
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = spouse
+		}
+	}
+
+	#That's a shame
+	option = {
+		trigger = { exists = scope:neutral }
+		name = death_management.1200.c
+		if = {
+			limit = {
+				OR = {
+					has_any_bad_relationship_with_root_trigger = yes
+					opinion = {
+						target = scope:dead_character
+						value < -30
+					}
+				}
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+				callous = minor_stress_impact_loss
+			}
+		}
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = spouse
+		}
+	}
+	
+	#What a relief!
+	option = {
+		trigger = { exists = scope:dislike }
+		exclusive = yes
+		name = death_management.1200.d
+		stress_impact = {
+			base = minor_stress_impact_loss
+		}
+	}
+}
+
+# Child dies in battle
+death_management.1201 = {
+	type = character_event
+    title = death_management.1201.t
+    desc = {
+     	# Intro 1 - In battle or reading a letter?
+        first_valid = { 
+            triggered_desc = { # Died in battle you were part of
+                trigger = { this = scope:portrait_scope }
+                desc = death_management.intro.witnessed # generic
+            }
+            triggered_desc = { # Died in a battle involving your army
+                trigger = {
+                    OR = {
+                        this = scope:battle_death_enemy
+                        this = scope:battle_death_leader
+                    }
+                }
+                desc = death_management.intro.war # generic
+            }
+            desc = death_management.intro # generic
+        }
+        # Intro 2 - In battle or reading a letter?
+        first_valid = {
+        	triggered_desc = { # You saw them die, friendly
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.intro.enemy # generic
+            }
+        	triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.intro.friendly # generic
+            }
+            desc = death_management.intro.letter.family # unique
+        }
+        # Death details
+        first_valid = {
+            triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.death.witnessed.enemy # generic
+            }
+            triggered_desc = { # You saw them die, friendly
+                trigger = {
+                    this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.death.witnessed.friendly # generic
+            }
+            triggered_desc = { # They died on other side
+                trigger = { scope:battle_death_enemy = root }
+                desc = death_management.death.war.enemy # generic
+            }
+            triggered_desc = { # They died on your side
+                trigger = { scope:battle_death_leader = root }
+                desc = death_management.death.war.friendly # generic
+            }
+            desc = death_management.death.uninvolved # generic
+ 		}
+ 		# Killer details
+ 		first_valid = {
+            triggered_desc = { # On other side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_enemy = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.enemy # generic
+            }
+            triggered_desc = { # On same side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_leader = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.friendly # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = { exists = scope:battle_death_killer }
+                desc = death_management.killer # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = {
+					NOT = {
+						exists = scope:battle_death_killer
+					}
+				}
+                desc = death_management.no_killer # generic
+            }
+ 		}
+        desc = death_management.1201.desc # unique
+    }
+    theme = death
+    override_background = { reference = battlefield  }
+    left_portrait = {
+        character = scope:portrait_scope
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    this = scope:battle_death_enemy
+                    this = scope:battle_death_leader
+                }
+            }
+            animation = grief
+        }
+        triggered_animation = {
+            trigger = { always = yes }
+            animation = idle
+        }
+    }
+    lower_right_portrait = {
+        character = scope:battle_death_killer
+        trigger = {
+        	exists = scope:battle_death_killer
+        	NOT = { scope:battle_death_killer = root }
+        }
+    }
+    lower_center_portrait = {
+        character = scope:dead_character
+        trigger = { scope:portrait_scope = root }
+    }
+
+    immediate = {
+        play_music_cue = mx_cue_death
+        death_in_battle_scope_effect = yes
+      	death_in_battle_memory_effect = { TYPE = good }
+        # Taken from death_management.1001
+        if = {
+        	limit = {
+        		reverse_opinion = {
+					target = scope:dead_character
+					value >= 0
+				}
+        	}
+			stress_save_deceased_character_for_mental_break = {
+				TARGET = scope:dead_character
+				FLAG = child
+			}
+			if = {
+	        	limit = {
+	        		reverse_opinion = {
+						target = scope:dead_character
+						value >= 40
+					}
+	        	}
+				stress_impact = { base = medium_stress_impact_gain }
+			}
+			else_if  = {
+				limit = {
+	        		reverse_opinion = {
+						target = scope:dead_character
+						value >= 0
+					}
+	        	}
+				stress_impact = { base = minor_stress_impact_gain }
+			}
+        }
+		else = {
+			stress_impact = { base = minor_stress_impact_loss }
+		}
+    }
+
+    # New rival
+    option = { 
+        name = death_management.1201.a
+        trigger = {
+        	reverse_opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+            set_and_inform_slayer_rivalry_trigger = yes
+        }
+        set_and_inform_slayer_rivalry_effect = yes
+    }
+    
+    #Good child
+	option = {
+		name = death_management.1201.b
+		trigger = {
+			scope:dead_character = { is_adult = yes }
+			reverse_opinion = {
+				target = scope:dead_character
+				value >= 40
+			}
+		}
+	}
+
+	#Neutral
+	option = {
+		name = death_management.1201.c
+		trigger = {
+			scope:dead_character = { is_adult = yes }
+			reverse_opinion = {
+				target = scope:dead_character
+				value < 40
+			}
+			reverse_opinion = {
+				target = scope:dead_character
+				value >= 0
+			}
+		}
+	}
+	
+	#Relieved
+	option = {
+		name = death_management.1201.d
+		trigger = {
+			scope:dead_character = { is_adult = yes }
+			reverse_opinion = {
+				target = scope:dead_character
+				value < 0
+			}
+		}
+	}
+}
+
+# Parent dies in battle
+death_management.1202 = {
+	type = character_event
+    title = death_management.1202.t
+    desc = {
+     	# Intro 1 - In battle or reading a letter?
+        first_valid = { 
+            triggered_desc = { # Died in battle you were part of
+                trigger = { this = scope:portrait_scope }
+                desc = death_management.intro.witnessed # generic
+            }
+            triggered_desc = { # Died in a battle involving your army
+                trigger = {
+                    OR = {
+                        this = scope:battle_death_enemy
+                        this = scope:battle_death_leader
+                    }
+                }
+                desc = death_management.intro.war # generic
+            }
+            desc = death_management.intro # generic
+        }
+        # Intro 2 - In battle or reading a letter?
+        first_valid = {
+        	triggered_desc = { # You saw them die, friendly
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.intro.enemy # generic
+            }
+        	triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.intro.friendly # generic
+            }
+            desc = death_management.intro.letter.family # unique
+        }
+        # Death details
+        first_valid = {
+            triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.death.witnessed.enemy # generic
+            }
+            triggered_desc = { # You saw them die, friendly
+                trigger = {
+                    this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.death.witnessed.friendly # generic
+            }
+            triggered_desc = { # They died on other side
+                trigger = { scope:battle_death_enemy = root }
+                desc = death_management.death.war.enemy # generic
+            }
+            triggered_desc = { # They died on your side
+                trigger = { scope:battle_death_leader = root }
+                desc = death_management.death.war.friendly # generic
+            }
+            desc = death_management.death.uninvolved # generic
+ 		}
+ 		# Killer details
+ 		first_valid = {
+            triggered_desc = { # On other side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_enemy = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.enemy # generic
+            }
+            triggered_desc = { # On same side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_leader = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.friendly # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = { exists = scope:battle_death_killer }
+                desc = death_management.killer # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = {
+					NOT = {
+						exists = scope:battle_death_killer
+					}
+				}
+                desc = death_management.no_killer # generic
+            }
+ 		}
+        desc = death_management.1202.desc # unique
+    }
+    theme = death
+    override_background = { reference = battlefield  }
+    left_portrait = {
+        character = scope:portrait_scope
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    this = scope:battle_death_enemy
+                    this = scope:battle_death_leader
+                }
+            }
+            animation = grief
+        }
+        triggered_animation = {
+            trigger = { always = yes }
+            animation = idle
+        }
+    }
+    lower_right_portrait = {
+        character = scope:battle_death_killer
+        trigger = {
+        	exists = scope:battle_death_killer
+        	NOT = { scope:battle_death_killer = root }
+        }
+    }
+    lower_center_portrait = {
+        character = scope:dead_character
+        trigger = { scope:portrait_scope = root }
+    }
+
+    immediate = {
+        play_music_cue = mx_cue_death
+    	death_in_battle_scope_effect = yes
+    	death_in_battle_memory_effect = { TYPE = good }
+        if = {
+			limit = {
+				opinion = {
+					target = scope:dead_character
+					value >= 60
+				}
+			}
+			stress_impact = {
+				base = medium_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = {
+				base = minor_stress_impact_gain
+			}
+		}
+    }
+    
+    option = {
+        name = death_management.1202.a
+    }
+
+    option = {
+        name = death_management.1202.b
+        trigger = {
+            set_and_inform_slayer_rivalry_trigger = yes
+        }
+        set_and_inform_slayer_rivalry_effect = yes
+    }
+}
+
+# Lover dies in battle
+death_management.1204 = {
+	type = character_event
+    title = death_management.1204.t
+    desc = {
+     	# Intro 1 - In battle or reading a letter?
+        first_valid = { 
+            triggered_desc = { # Died in battle you were part of
+                trigger = { this = scope:portrait_scope }
+                desc = death_management.intro.witnessed # generic
+            }
+            triggered_desc = { # Died in a battle involving your army
+                trigger = {
+                    OR = {
+                        this = scope:battle_death_enemy
+                        this = scope:battle_death_leader
+                    }
+                }
+                desc = death_management.intro.war # generic
+            }
+            desc = death_management.intro # generic
+        }
+        # Intro 2 - In battle or reading a letter?
+        first_valid = {
+        	triggered_desc = { # You saw them die, friendly
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.intro.enemy # generic
+            }
+        	triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.intro.friendly # generic
+            }
+            desc = death_management.intro.letter.lover # unique
+        }
+        # Death details
+        first_valid = {
+            triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.death.witnessed.enemy # generic
+            }
+            triggered_desc = { # You saw them die, friendly
+                trigger = {
+                    this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.death.witnessed.friendly # generic
+            }
+            triggered_desc = { # They died on other side
+                trigger = { scope:battle_death_enemy = root }
+                desc = death_management.death.war.enemy # generic
+            }
+            triggered_desc = { # They died on your side
+                trigger = { scope:battle_death_leader = root }
+                desc = death_management.death.war.friendly # generic
+            }
+            desc = death_management.death.uninvolved # generic
+ 		}
+ 		# Killer details
+ 		first_valid = {
+            triggered_desc = { # On other side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_enemy = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.enemy # generic
+            }
+            triggered_desc = { # On same side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_leader = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.friendly # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = { exists = scope:battle_death_killer }
+                desc = death_management.killer # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = {
+					NOT = {
+						exists = scope:battle_death_killer
+					}
+				}
+                desc = death_management.no_killer # generic
+            }
+ 		}
+        desc = death_management.1204.desc # unique
+    }
+    theme = death
+    override_background = { reference = battlefield  }
+    left_portrait = {
+        character = scope:portrait_scope
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    this = scope:battle_death_enemy
+                    this = scope:battle_death_leader
+                }
+            }
+            animation = grief
+        }
+        triggered_animation = {
+            trigger = { always = yes }
+            animation = idle
+        }
+    }
+    lower_right_portrait = {
+        character = scope:battle_death_killer
+        trigger = {
+        	exists = scope:battle_death_killer
+        	NOT = { scope:battle_death_killer = root }
+        }
+    }
+    lower_center_portrait = {
+        character = scope:dead_character
+        trigger = { scope:portrait_scope = root }
+    }
+
+    immediate = {
+        play_music_cue = mx_cue_death
+    	death_in_battle_scope_effect = yes
+    	death_in_battle_memory_effect = { TYPE = good }
+    	# Taken from death_management.1004
+        add_stress = scope:deceased_character_stress
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = lover
+		}
+    }
+    
+    option = {
+        name = death_management.1204.a
+    }
+
+    option = {
+        name = death_management.1204.b
+        trigger = {
+            set_and_inform_slayer_rivalry_trigger = yes
+        }
+        set_and_inform_slayer_rivalry_effect = yes
+    }
+}
+
+# Best friend dies in battle
+death_management.1205 = {
+	type = character_event
+    title = death_management.1205.t
+    desc = {
+     	# Intro 1 - In battle or reading a letter?
+        first_valid = { 
+            triggered_desc = { # Died in battle you were part of
+                trigger = { this = scope:portrait_scope }
+                desc = death_management.intro.witnessed # generic
+            }
+            triggered_desc = { # Died in a battle involving your army
+                trigger = {
+                    OR = {
+                        this = scope:battle_death_enemy
+                        this = scope:battle_death_leader
+                    }
+                }
+                desc = death_management.intro.war # generic
+            }
+            desc = death_management.intro # generic
+        }
+        # Intro 2 - In battle or reading a letter?
+        first_valid = {
+        	triggered_desc = { # You saw them die, friendly
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.intro.enemy # generic
+            }
+        	triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.intro.friendly # generic
+            }
+            desc = death_management.intro.letter.friend # unique
+        }
+        # Death details
+        first_valid = {
+            triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.death.witnessed.enemy # generic
+            }
+            triggered_desc = { # You saw them die, friendly
+                trigger = {
+                    this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.death.witnessed.friendly # generic
+            }
+            triggered_desc = { # They died on other side
+                trigger = { scope:battle_death_enemy = root }
+                desc = death_management.death.war.enemy # generic
+            }
+            triggered_desc = { # They died on your side
+                trigger = { scope:battle_death_leader = root }
+                desc = death_management.death.war.friendly # generic
+            }
+            desc = death_management.death.uninvolved # generic
+ 		}
+ 		# Killer details
+ 		first_valid = {
+            triggered_desc = { # On other side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_enemy = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.enemy # generic
+            }
+            triggered_desc = { # On same side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_leader = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.friendly # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = { exists = scope:battle_death_killer }
+                desc = death_management.killer # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = {
+					NOT = {
+						exists = scope:battle_death_killer
+					}
+				}
+                desc = death_management.no_killer # generic
+            }
+ 		}
+        desc = death_management.1205.desc # unique
+    }
+    theme = death
+    override_background = { reference = battlefield  }
+    left_portrait = {
+        character = scope:portrait_scope
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    this = scope:battle_death_enemy
+                    this = scope:battle_death_leader
+                }
+            }
+            animation = grief
+        }
+        triggered_animation = {
+            trigger = { always = yes }
+            animation = idle
+        }
+    }
+    lower_right_portrait = {
+        character = scope:battle_death_killer
+        trigger = {
+        	exists = scope:battle_death_killer
+        	NOT = { scope:battle_death_killer = root }
+        }
+    }
+    lower_center_portrait = {
+        character = scope:dead_character
+        trigger = { scope:portrait_scope = root }
+    }
+
+    immediate = {
+    	play_music_cue = mx_cue_death
+    	death_in_battle_scope_effect = yes
+    	death_in_battle_memory_effect = { TYPE = good }
+        add_stress = scope:deceased_character_stress
+		stress_save_deceased_character_for_mental_break = {
+			TARGET = scope:dead_character
+			FLAG = friend
+		}
+    }
+    
+    # Oh no
+    option = {
+        name = death_management.1205.a
+    }
+
+    # New rival
+    option = {
+        name = death_management.1205.b
+        trigger = {
+            set_and_inform_slayer_rivalry_trigger = yes
+        }
+        set_and_inform_slayer_rivalry_effect = yes
+    }
+}
+
+# Rival dies in battle
+death_management.1206 = {
+	type = character_event
+    title = death_management.1206.t
+    desc = {
+     	# Intro 1 - In battle or reading a letter?
+        first_valid = { 
+            triggered_desc = { # Died in battle you were part of
+                trigger = { this = scope:portrait_scope }
+                desc = death_management.intro.witnessed # generic
+            }
+            triggered_desc = { # Died in a battle involving your army
+                trigger = {
+                    OR = {
+                        this = scope:battle_death_enemy
+                        this = scope:battle_death_leader
+                    }
+                }
+                desc = death_management.intro.war # generic
+            }
+            desc = death_management.intro # generic
+        }
+        # Intro 2 - In battle or reading a letter?
+        first_valid = {
+        	triggered_desc = { # You saw them die, friendly
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.intro.enemy # generic
+            }
+        	triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.intro.friendly # generic
+            }
+            desc = death_management.intro.letter.rival # unique
+        }
+        # Death details
+        first_valid = {
+            triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.death.witnessed.enemy # generic
+            }
+            triggered_desc = { # You saw them die, friendly
+                trigger = {
+                    this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.death.witnessed.friendly # generic
+            }
+            triggered_desc = { # They died on other side
+                trigger = { scope:battle_death_enemy = root }
+                desc = death_management.death.war.enemy # generic
+            }
+            triggered_desc = { # They died on your side
+                trigger = { scope:battle_death_leader = root }
+                desc = death_management.death.war.friendly # generic
+            }
+            desc = death_management.death.uninvolved # generic
+ 		}
+ 		# Killer details
+ 		first_valid = {
+            triggered_desc = { # On other side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_enemy = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.enemy # generic
+            }
+            triggered_desc = { # On same side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_leader = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.friendly # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = { exists = scope:battle_death_killer }
+                desc = death_management.killer # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = {
+					NOT = {
+						exists = scope:battle_death_killer
+					}
+				}
+                desc = death_management.no_killer # generic
+            }
+ 		}
+        desc = death_management.1206.desc # unique
+    }
+    theme = death
+    override_background = { reference = battlefield  }
+    left_portrait = {
+        character = scope:portrait_scope
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    this = scope:battle_death_enemy
+                    this = scope:battle_death_leader
+                }
+            }
+            animation = grief
+        }
+        triggered_animation = {
+            trigger = { always = yes }
+            animation = fear
+        }
+    }
+    lower_right_portrait = {
+        character = scope:battle_death_killer
+        trigger = {
+        	exists = scope:battle_death_killer
+        	NOT = { scope:battle_death_killer = root }
+        }
+    }
+    lower_center_portrait = {
+        character = scope:dead_character
+        trigger = { scope:portrait_scope = root }
+    }
+
+    immediate = {
+    	play_music_cue = mx_cue_death
+    	death_in_battle_scope_effect = yes
+    	death_in_battle_memory_effect = { TYPE = bad }
+    	# Taken from death_management.1006
+    	add_stress = scope:deceased_character_stress
+	}
+    
+    option = {
+        name = death_management.1206.a
+    }
+
+    option = {
+        name = death_management.1206.b
+        trigger = {
+            set_and_inform_slayer_rivalry_trigger = yes
+        }
+        set_and_inform_slayer_rivalry_effect = yes
+    }
+
+    option = {
+        name = death_management.1206.c
+        trigger = {
+        	exists = scope:battle_death_killer
+        	is_attracted_to_gender_of = scope:battle_death_killer
+        }
+        reverse_add_opinion = {
+        	target = scope:battle_death_killer
+        	modifier = flattered_opinion
+        	opinion = 10
+        }
+        if = {
+        	limit = {
+        		can_start_scheme = {
+        			type = seduce
+        			target = scope:battle_death_killer
+        		}
+        	}
+        	start_scheme = {
+        		type = seduce
+        		target = scope:battle_death_killer
+        	}
+        	hidden_effect = {
+				random_scheme = {
+					limit = {
+						scheme_type = seduce
+						scheme_target = scope:battle_death_killer
+					}
+					add_scheme_modifier = {
+						type = extra_success_chance_modifier
+					}
+				}
+			}
+        }
+    }
+}
+
+# Heir dies in battle
+death_management.1207 = {
+	type = character_event
+    title = death_management.1207.t
+    desc = {
+     	# Intro 1 - In battle or reading a letter?
+        first_valid = { 
+            triggered_desc = { # Died in battle you were part of
+                trigger = { this = scope:portrait_scope }
+                desc = death_management.intro.witnessed # generic
+            }
+            triggered_desc = { # Died in a battle involving your army
+                trigger = {
+                    OR = {
+                        this = scope:battle_death_enemy
+                        this = scope:battle_death_leader
+                    }
+                }
+                desc = death_management.intro.war # generic
+            }
+            desc = death_management.intro # generic
+        }
+        # Intro 2 - In battle or reading a letter?
+        first_valid = {
+        	triggered_desc = { # You saw them die, friendly
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.intro.enemy # generic
+            }
+        	triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.intro.friendly # generic
+            }
+            desc = death_management.intro.letter.heir # unique
+        }
+        # Death details
+        first_valid = {
+            triggered_desc = { # You saw them die, enemy
+                trigger = {
+                	this = scope:portrait_scope
+                	this = scope:battle_death_enemy
+                }
+                desc = death_management.death.witnessed.enemy # generic
+            }
+            triggered_desc = { # You saw them die, friendly
+                trigger = {
+                    this = scope:portrait_scope
+                	this = scope:battle_death_leader
+                }
+                desc = death_management.death.witnessed.friendly # generic
+            }
+            triggered_desc = { # They died on other side
+                trigger = { scope:battle_death_enemy = root }
+                desc = death_management.death.war.enemy # generic
+            }
+            triggered_desc = { # They died on your side
+                trigger = { scope:battle_death_leader = root }
+                desc = death_management.death.war.friendly # generic
+            }
+            desc = death_management.death.uninvolved # generic
+ 		}
+ 		# Killer details
+ 		first_valid = {
+            triggered_desc = { # On other side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_enemy = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.enemy # generic
+            }
+            triggered_desc = { # On same side
+                trigger = {
+                	this = scope:portrait_scope
+                	scope:battle_death_leader = root
+                	exists = scope:battle_death_killer
+                }
+                desc = death_management.killer.witnessed.friendly # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = { exists = scope:battle_death_killer }
+                desc = death_management.killer # generic
+            }
+            triggered_desc = { # In some other battle
+                trigger = {
+					NOT = {
+						exists = scope:battle_death_killer
+					}
+				}
+                desc = death_management.no_killer # generic
+            }
+ 		}
+        desc = death_management.1207.desc # unique
+    }
+    theme = death
+    override_background = { reference = battlefield  }
+    left_portrait = {
+        character = scope:portrait_scope
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    this = scope:battle_death_enemy
+                    this = scope:battle_death_leader
+                }
+            }
+            animation = grief
+        }
+        triggered_animation = {
+            trigger = { always = yes }
+            animation = idle
+        }
+    }
+    lower_right_portrait = {
+        character = scope:battle_death_killer
+        trigger = {
+        	exists = scope:battle_death_killer
+        	NOT = { scope:battle_death_killer = root }
+        }
+    }
+    lower_center_portrait = {
+        character = scope:dead_character
+        trigger = { scope:portrait_scope = root }
+    }
+
+    immediate = {
+        play_music_cue = mx_cue_death
+    	death_in_battle_scope_effect = yes
+    	death_in_battle_memory_effect = { TYPE = good }
+    	# Taken from death_management.1007
+		stress_impact = { base = minor_stress_impact_gain }
+	}
+    
+    option = {
+        name = death_management.1207.a
+    }
+
+    option = {
+        name = death_management.1207.b
+        trigger = {
+            set_and_inform_slayer_rivalry_trigger = yes
+        }
+        set_and_inform_slayer_rivalry_effect = yes
+    }
+}
 
 ######################################################
 # NOTIFICATION EVENTS - DUNGEON DEATH OR MURDER
@@ -2291,7 +3894,7 @@ death_management.2002 = {
 	#Like
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -2321,7 +3924,7 @@ death_management.2002 = {
 	#Neutral
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -2351,7 +3954,7 @@ death_management.2002 = {
 	#Dislike
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -2977,7 +4580,7 @@ death_management.3002 = {
 	#Like
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -2999,7 +4602,7 @@ death_management.3002 = {
 	#Neutral
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -3022,7 +4625,7 @@ death_management.3002 = {
 	#Dislike
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -3069,14 +4672,83 @@ death_management.3006 = {
 
 	immediate = {
 		play_music_cue = mx_cue_death
-	}
-
-	option = {
-		name = death_management.3006.a
 		custom_tooltip = death_management.3006.a.tt
 		add_prestige = medium_prestige_gain
 		stress_impact = {
 			base = major_stress_impact_loss
+		}
+	}
+
+	option = {
+		name = death_management.3006.a
+		trigger = {
+			NOT = {
+				existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			}
+		}
+	}
+
+	option = { # Continue
+		name = death_management.3006.b
+		trigger = {
+			existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			NOT = {
+				any_owned_story = {
+					story_type = story_cycle_house_feud
+					house_feud_wiped_out_trigger = yes
+				}
+			}
+		}
+		custom_tooltip = house_feud_continue_tt
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_vengefulness = 1
+				ai_boldness = 1
+			}
+		}
+	}
+
+	option = { # End
+		name = death_management.3006.c
+		trigger = {
+			existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			NOT = {
+				any_owned_story = {
+					story_type = story_cycle_house_feud
+					house_feud_wiped_out_trigger = yes
+				}
+			}
+		}
+		show_as_tooltip = { house_feud_end_modifier_effect = yes }
+		house_feud_end_story_effect = yes
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_vengefulness = -1
+				ai_boldness = -1
+			}
+		}
+	}
+
+	option = { # Wipe end
+		name = death_management.3006.d
+		trigger = {
+			existing_feud_against_target_trigger = { TARGET = scope:dead_character }
+			any_owned_story = {
+				story_type = story_cycle_house_feud
+				house_feud_wiped_out_trigger = yes
+			}
+		}
+		random_owned_story = {
+			limit = {
+				story_type = story_cycle_house_feud
+				house_feud_wiped_out_trigger = yes
+			}
+			show_as_tooltip = {
+				house_feud_end_modifier_effect = yes
+				end_story = yes
+			}
 		}
 	}
 }
@@ -3853,7 +5525,7 @@ death_management.4002 = {
 	#Like
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -3880,7 +5552,7 @@ death_management.4002 = {
 	#Neutral
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -3898,7 +5570,7 @@ death_management.4002 = {
 	#Dislike
 	option = {
 		trigger = {
-			# Warcaft
+			# Warcraft
 			age >= age_14_value
 			opinion = {
 				target = scope:dead_character
@@ -4237,34 +5909,22 @@ death_management.0097 = {
 
 	immediate = {
 		save_scope_as = dead_character
-		every_parent = {
-			limit = {
-				NOT = { is_in_list = loved_ones_left_behind }
-				NOT = { has_trait = callous }
-				exists = player_heir
-				player_heir = scope:dead_character
-				OR = {
-					opinion = {
-						target = scope:dead_character
-						value >= 70
-					}
-					reverse_opinion = {
-						target = scope:dead_character
-						value >= 70
-					}
-				}
-				NOR = {
-					has_relation_rival = scope:dead_character
-					has_relation_potential_rival = scope:dead_character
-				}
-			}
-			add_to_list = loved_ones_left_behind
-		}
 		every_relation = {
 			type = soulmate
 			limit = {
 				NOT = { is_in_list = loved_ones_left_behind }
 				NOT = { has_trait = callous }
+			}
+			add_to_list = loved_ones_left_behind
+			set_variable = {
+				name = mourning_soulmate
+				value = scope:dead_character
+			}
+		}
+		every_parent = {
+			limit = {
+				NOT = { is_in_list = loved_ones_left_behind }
+				NOT = { has_trait = callous }
 				OR = {
 					opinion = {
 						target = scope:dead_character
@@ -4281,28 +5941,26 @@ death_management.0097 = {
 				}
 			}
 			add_to_list = loved_ones_left_behind
+			set_variable = {
+				name = mourning_parent
+				value = scope:dead_character
+			}
 		}
 		every_relation = {
 			type = best_friend
 			limit = {
 				NOT = { is_in_list = loved_ones_left_behind }
 				NOT = { has_trait = callous }
-				OR = {
-					opinion = {
-						target = scope:dead_character
-						value >= 70
-					}
-					reverse_opinion = {
-						target = scope:dead_character
-						value >= 70
-					}
-				}
 				NOR = {
 					has_relation_rival = scope:dead_character
 					has_relation_potential_rival = scope:dead_character
 				}
 			}
 			add_to_list = loved_ones_left_behind
+			set_variable = {
+				name = mourning_friend
+				value = scope:dead_character
+			}
 		}
 
 		#Add flag
@@ -4345,6 +6003,25 @@ death_management.0095 = {
 	}
 }
 
+#Clan Succession Laws: delaying reducing of house unity on house head death, to prevent premature changing of succession laws
+death_management.0100 = {
+	type = character_event
+	hidden = yes
+	
+	immediate = {
+		house = {
+			# Needs to be add_unity_value and not add_unity_interaction_effect because add_unity_interaction_effect does not allow only one person to affect unity
+			# Value and character scopes are saved in on_death effect
+			add_unity_value = {
+				value = scope:unity_change
+				character = scope:dead_house_head
+				desc = clan_unity_house_head_died.desc
+			}
+		}
+	}
+}
+
+
 ### KNOW THYSELF PERK: Death is coming soon
 death_management.9998 = {
 	type = character_event
@@ -4371,6 +6048,10 @@ death_management.9998 = {
 ### NATURAL DEATH BY EVENT
 death_management.9999 = {
 	hidden = yes
+
+	trigger = {
+		is_alive = yes
+	}
 
 	immediate = {
 		death = natural

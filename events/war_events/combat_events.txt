@@ -419,7 +419,10 @@ combat_event.0005 = {
 			scope:friendly_commander = {
 				send_interface_toast = {
 					title = combat_event.0005.message
-					set_relation_rival = root
+					set_relation_rival = {
+						target = root
+						reason = rival_undefeated_defeated
+					}
 				}
 			}
 		}
@@ -468,6 +471,116 @@ scripted_trigger combat_event_1001_character_is_important_combatant = {
 	}
 }
 
+# Used to transfer equipped battle gear to slayer/capturer
+scripted_effect combat_transfer_equipped_artifact_effect = {
+	if = {
+		limit = {
+			any_equipped_character_artifact = { artifact_slot_type = $TYPE$ }
+		}
+		save_scope_as = artifact_knight
+		random_equipped_character_artifact = {
+			limit = { artifact_slot_type = $TYPE$ }
+			if = {
+				limit = { artifact_durability >= define:NInventory|ARTIFACT_LOW_DURABILITY }
+				save_scope_as = knight_artifact
+				if = {
+					limit = { exists = artifact_owner.house }
+					artifact_owner.house = { save_scope_as = artifact_house }
+				}
+				set_owner = {
+					target = $OWNER$
+					history = {
+						type = taken_in_battle
+						actor = scope:artifact_knight
+						recipient = $OWNER$
+						location = scope:artifact_knight.location
+					}
+				}
+				if = {
+					limit = {
+						exists = scope:artifact_house
+						NOT = {
+							any_artifact_house_claimant = {
+								this = scope:artifact_house
+							}
+						}
+					}
+					scope:artifact_house = { add_house_artifact_claim = prev }
+				}
+				scope:artifact_knight = {
+					if = {
+						limit = {
+							NOT = {
+								has_personal_artifact_claim = prev
+							}
+						}
+						add_personal_artifact_claim = prev
+					}
+				}
+				#debug_log = "ART_TRAN"
+			}
+			else = {
+				destroy_artifact = this
+				#debug_log = "ART_DEST"
+			}
+		}
+	}
+}
+
+# Used to check if a knight has fought in a battle recently.
+scripted_effect petition_knight_battle_history_effect = {
+	if = {
+		limit = {
+			is_alive = yes
+			age >= 35
+			is_landed = no
+			employer.highest_held_title_tier >= tier_kingdom # No need to set variables for knights of dukes/counts
+		}
+		if = {
+			limit = { has_variable = hc_8170_fought_battle_for }
+			remove_variable = hc_8170_fought_battle_for
+		}
+		if = {
+			limit = { has_variable = hc_8170_fought_battle_where }
+			remove_variable = hc_8170_fought_battle_where
+		}
+		if = {
+			limit = { has_variable = hc_8170_fought_battle_against }
+			remove_variable = hc_8170_fought_battle_against
+		}
+		set_variable = {
+			name = hc_8170_fought_battle_for
+			value = employer
+			years = 15
+		}
+		set_variable = {
+			name = hc_8170_fought_battle_where
+			value = location
+			years = 15
+		}
+		save_scope_as = knight_scope
+		if = { # For winner side knights
+			limit = {
+				scope:winning_side = {
+					any_side_knight = { THIS = scope:knight_scope } # this knight
+				}
+			}
+			set_variable = {
+				name = hc_8170_fought_battle_against
+				value = scope:winning_side.enemy_side.side_primary_participant
+				years = 15
+			}
+		}
+		else = { # For loser side knights
+			set_variable = {
+				name = hc_8170_fought_battle_against
+				value = scope:winning_side.side_primary_participant
+				years = 15
+			}
+		}
+	}
+}
+
 # Combat Side event which handles the combatant imprisonment and death logic.
 # Also determines which characters need to be notified about these occurances, and triggers notification events for them (combat_event.1002-1004 and 1012-1014).
 combat_event.1001 = {
@@ -480,9 +593,6 @@ combat_event.1001 = {
 		side_primary_participant = {
 			is_at_war_with = root.enemy_side.side_primary_participant
 		}
-
-		#Can not happen in the tutorial
-		NOT = { has_global_variable = lesson_chain_war_tutorial_started }
 	}
 
 	immediate = {
@@ -548,6 +658,33 @@ combat_event.1001 = {
 							is_ai = yes
 						}
 
+						#Reduced risk for character with Bodyguard(s) that are fighting by their side
+						modifier = {
+							add = 50
+							employs_court_position = bodyguard_court_position
+							any_court_position_holder = {
+								type = bodyguard_court_position
+								save_temporary_scope_as = bodyguard
+								root.enemy_side = {
+									any_side_knight = { this = scope:bodyguard }
+								}
+							}
+						}
+
+						# Warcraft
+						# #Reduced risk for character with Garuda that are fighting by their side
+						# modifier = {
+							# add = 50
+							# employs_court_position = garuda_court_position
+							# any_court_position_holder = {
+								# type = garuda_court_position
+								# save_temporary_scope_as = garuda
+								# root.enemy_side = {
+									# any_side_knight = { this = scope:garuda }
+								# }
+							# }
+						# }
+
 						# Being stackwiped greatly increases the chance of capture.
 						modifier = {
 							scope:wipe = yes
@@ -586,6 +723,13 @@ combat_event.1001 = {
 								has_trait = maimed
 							}
 						}
+
+						# State Ransoms: characters are more likely to surrender if their liege will pay their ransom.
+						modifier = {
+							factor = 2
+							liege.culture = { has_cultural_parameter = knights_die_less_but_are_captured_more }
+							NOT = { is_independent_ruler = yes }
+						}
 						
 						add_to_list = prisoners_of_war
 
@@ -605,6 +749,9 @@ combat_event.1001 = {
 			}
 		}
 
+		# Set history variables for petition events
+		every_side_knight = { petition_knight_battle_history_effect = yes }
+
 		# For each Knight on the losing side, check if they should be imprisoned/slain.
 		enemy_side = {
 			every_side_knight = {
@@ -623,6 +770,33 @@ combat_event.1001 = {
 							has_perk = stalwart_leader_perk
 							is_ai = yes
 						}
+
+						#Reduced risk for character with bodyguards that are fighting by their side
+						modifier = {
+							add = 25
+							employs_court_position = bodyguard_court_position
+							any_court_position_holder = {
+								type = bodyguard_court_position
+								save_temporary_scope_as = bodyguard
+								root.enemy_side = {
+									any_side_knight = { this = scope:bodyguard }
+								}
+							}
+						}
+
+						# Warcraft
+						# #Reduced risk for character with Garuda that are fighting by their side
+						# modifier = {
+							# add = 25
+							# employs_court_position = garuda_court_position
+							# any_court_position_holder = {
+								# type = garuda_court_position
+								# save_temporary_scope_as = garuda
+								# root.enemy_side = {
+									# any_side_knight = { this = scope:garuda }
+								# }
+							# }
+						# }
 
 						# Being stackwiped greatly increases the chance of capture and/or death.
 						modifier = {
@@ -661,6 +835,16 @@ combat_event.1001 = {
 							}
 						}
 
+						# State Ransoms: characters are more likely to surrender if their liege will pay their ransom.
+						modifier = {
+							factor = 2
+							liege.culture = { has_cultural_parameter = knights_die_less_but_are_captured_more }
+						}
+
+						# Transfer equipped armor and weapon to winner if durability not too low
+						combat_transfer_equipped_artifact_effect = { TYPE = primary_armament OWNER = scope:combat_winner }
+						combat_transfer_equipped_artifact_effect = { TYPE = armor OWNER = scope:combat_winner }
+
 						add_to_list = prisoners_of_war
 						
 						# Log a battle event so that the imprisonment shows up in the battle summary screen.
@@ -679,6 +863,9 @@ combat_event.1001 = {
 						trigger = {
 							is_alive = yes # Don't kill knights who are already dead! They will be accounted for later.
 						}
+						
+						# Warcraft
+						dark_frenzy_resurrect_modifier = { MASTER = scope:combat_winner }
 
 						# Modifiers influencing chance to occur.
 						modifier = {
@@ -732,6 +919,18 @@ combat_event.1001 = {
 							}
 						}
 
+						save_died_in_battle_variables_effect = {
+							ENEMY = scope:combat_winner
+							LEADER = scope:combat_loser
+							LOCATION = scope:combat_location
+						}
+
+						# State Ransoms: characters are more likely to surrender if their liege will pay their ransom, which makes them less likely to die.
+						modifier = {
+							factor = 0.5
+							liege.culture = { has_cultural_parameter = knights_die_less_but_are_captured_more }
+						}
+
 						# For messaging purposes.
 						add_to_list = slain_combatants
 
@@ -742,7 +941,7 @@ combat_event.1001 = {
 						scope:winning_side = {
 							random_side_knight = {
 								limit = {
-									this.prowess >= { value = scope:this_combatant.prowess multiply = 0.8 }
+									this.prowess >= scope:this_combatant.prowess_for_combat_event_opponent
 								}
 
 								weight = {
@@ -767,34 +966,82 @@ combat_event.1001 = {
 							limit = {
 								exists = scope:enemy_knight
 							}
-							root = {
-								battle_event = {
-									key = "combatant_killed_in_battle"
-									left_portrait = scope:enemy_knight
-									right_portrait = scope:this_combatant
-									type = death
-									target_right = yes
-								}
-							}
+							# Transfer equipped armor and weapon to killer if durability not too low
+							combat_transfer_equipped_artifact_effect = { TYPE = primary_armament OWNER = scope:enemy_knight }
+							combat_transfer_equipped_artifact_effect = { TYPE = armor OWNER = scope:enemy_knight }
 
-							death = {
-								death_reason = death_battle
-								killer = scope:enemy_knight
+							if = {
+								limit = {
+									can_become_undead_trigger = yes
+									
+									exists = scope:combat_winner
+									scope:combat_winner = { government_has_flag = government_resurrect_knights }
+								}
+								
+								# For messaging purposes.
+								add_to_list = resurrected_combatants
+								
+								root = {
+									battle_event = {
+										key = "combatant_resurrected_in_battle"
+										left_portrait = scope:enemy_knight
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
+
+								raise_undead_by_depose_effect = { MASTER = scope:combat_winner }
+							}
+							else = {
+								root = {
+									battle_event = {
+										key = "combatant_killed_in_battle"
+										left_portrait = scope:enemy_knight
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
+
+								override_death_killer_effect = { death_reason = death_battle killer = scope:enemy_knight }
 							}
 						}
 						else = {
-							root = {
-								battle_event = {
-									key = "combatant_killed_in_battle_no_killer"
-									left_portrait = scope:combat_winner
-									right_portrait = scope:this_combatant
-									type = death
-									target_right = yes
+							if = {
+								limit = {
+									can_become_undead_trigger = yes
+									
+									exists = scope:combat_winner
+									scope:combat_winner = { government_has_flag = government_resurrect_knights }
 								}
-							}
+								# For messaging purposes.
+								add_to_list = resurrected_combatants
+								
+								root = {
+									battle_event = {
+										key = "combatant_resurrected_in_battle_no_killer"
+										left_portrait = scope:combat_winner
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
 
-							death = {
-								death_reason = death_battle
+								raise_undead_by_depose_effect = { MASTER = scope:combat_winner }
+							}
+							else = {
+								root = {
+									battle_event = {
+										key = "combatant_killed_in_battle_no_killer"
+										left_portrait = scope:combat_winner
+										right_portrait = scope:this_combatant
+										type = death
+										target_right = yes
+									}
+								}
+
+								override_death_effect = { death_reason = death_battle }
 							}
 						}
 						clear_saved_scope = enemy_knight
@@ -803,6 +1050,7 @@ combat_event.1001 = {
 						# If the knight is already dead, don't do anything (yet).
 					}
 				}
+				petition_knight_battle_history_effect = yes # Set history variables for petition events
 			}
 			# Add the enemy knights which were killed before the end of the battle to the casualties list.
 			every_in_list = {
@@ -810,6 +1058,13 @@ combat_event.1001 = {
 				add_to_list = slain_combatants
 			}
 			clear_variable_list = slain_side_knights
+			
+			# Warcraft
+			every_in_list = {
+				variable = resurrected_side_knights
+				add_to_list = resurrected_combatants
+			}
+			clear_variable_list = resurrected_side_knights
 		}
 		
 		# Also record who already died on the winning side, so the victor knows their own casualty count.
@@ -819,6 +1074,13 @@ combat_event.1001 = {
 				add_to_list = victorious_slain_combatants
 			}
 			clear_variable_list = slain_side_knights
+			
+			# Warcraft
+			every_in_list = {
+				variable = resurrected_side_knights
+				add_to_list = victorious_resurrected_combatants
+			}
+			clear_variable_list = resurrected_side_knights
 		}
 
 
@@ -901,7 +1163,45 @@ combat_event.1001 = {
 				}
 				trigger_event = combat_event.1004
 			}
-		}		
+		}
+		
+		# Warcraft
+		# Inform about resurrected_combatants
+		if = {
+			limit = {
+				OR = {			
+					any_in_list = { list = resurrected_combatants exists = this }
+					any_in_list = { list = victorious_resurrected_combatants exists = this }
+				}
+			}
+			# Inform both sides
+			scope:combat_winner = { trigger_event = combat_event.2012 }
+			scope:combat_loser = { trigger_event = combat_event.2013 }
+
+			# Send a message to all other players who may be concerned about the fate of the slain combatants.
+			every_player = {
+				limit = {
+					NOR = {
+						this = scope:combat_winner
+						this = scope:combat_loser
+					}
+
+					save_temporary_scope_as = notification_target
+
+					OR = {				
+						any_in_list = {
+							list = resurrected_combatants
+							combat_event_1001_character_is_relevant_to_target_trigger = { TARGET = scope:notification_target }
+						}
+						any_in_list = {
+							list = victorious_resurrected_combatants
+							combat_event_1001_character_is_relevant_to_target_trigger = { TARGET = scope:notification_target }
+						}
+					}
+				}
+				trigger_event = combat_event.2014
+			}
+		}
 	}
 }
 
@@ -1026,7 +1326,7 @@ combat_event.1002 = {
 
 							combat_event_1001_character_is_important_combatant = yes
 						}
-						save_scope_as = important_hostage
+						save_scope_as = valuable_prisoner
 
 						# The imprisoner must be informed that they captured an important hostage.
 						scope:combat_winner = {
@@ -1037,7 +1337,7 @@ combat_event.1002 = {
 						if = {
 							limit = {
 								# But not if they themselves are the prisoner! (they will get an event already upon being imprisoned).
-								NOT = { scope:important_hostage = scope:primary_combat_loser }
+								NOT = { scope:valuable_prisoner = scope:primary_combat_loser }
 							}
 							scope:primary_combat_loser = {
 								trigger_event = combat_event.1006
@@ -1055,6 +1355,27 @@ combat_event.1002 = {
 						}
 					}
 				}
+			}
+			if = {
+				limit = {
+					scope:combat_winner = { is_in_army = yes }
+					any_in_list = {
+						list = relevant_prisoners_of_war
+						is_alive = yes
+						is_imprisoned_by = scope:combat_winner
+						has_relation_rival = scope:combat_winner
+					}
+				}
+				every_in_list = {
+					list = relevant_prisoners_of_war
+					limit = {
+						is_alive = yes
+						is_imprisoned_by = scope:combat_winner
+						has_relation_rival = scope:combat_winner
+					}
+					add_to_list = captured_rivals
+				}
+				scope:combat_winner = { trigger_event = bp1_yearly.8060 }
 			}
 		}
 	}
@@ -1288,14 +1609,14 @@ combat_event.1005 = {
 	immediate = {
 		if = {
 			limit = {
-				scope:important_hostage = scope:primary_combat_loser
+				scope:valuable_prisoner = scope:primary_combat_loser
 			}
 			send_interface_toast = {
 				type = msg_character_captured_by_me
 				title = combat_event.1005.pow_toast.t
 				desc = combat_event.1005.pow_toast.desc.primary
 				left_icon = scope:combat_winner
-				right_icon = scope:important_hostage
+				right_icon = scope:valuable_prisoner
 			}
 		}
 		else = {
@@ -1304,7 +1625,7 @@ combat_event.1005 = {
 				title = combat_event.1005.pow_toast.t
 				desc = combat_event.1005.pow_toast.desc
 				left_icon = scope:combat_winner
-				right_icon = scope:important_hostage
+				right_icon = scope:valuable_prisoner
 			}
 		}
 	}
@@ -1321,7 +1642,7 @@ combat_event.1006 = {
 			title = combat_event.1006.pow_toast.t
 			desc = combat_event.1006.pow_toast.desc
 			left_icon = scope:combat_winner
-			right_icon = scope:important_hostage
+			right_icon = scope:valuable_prisoner
 		}
 	}
 }
@@ -1334,14 +1655,14 @@ combat_event.1007 = {
 	immediate = {
 		if = {
 			limit = {
-				scope:important_hostage = scope:primary_combat_loser
+				scope:valuable_prisoner = scope:primary_combat_loser
 			}
 			send_interface_toast = {
 				type = msg_character_captured_by_me
 				title = combat_event.1007.pow_toast_primary.t
 				desc = combat_event.1007.pow_toast.desc.primary
 				left_icon = scope:combat_winner
-				right_icon = scope:important_hostage
+				right_icon = scope:valuable_prisoner
 			}
 		}
 		else = {
@@ -1350,7 +1671,7 @@ combat_event.1007 = {
 				title = combat_event.1007.pow_toast.t
 				desc = combat_event.1007.pow_toast.desc
 				left_icon = scope:combat_winner
-				right_icon = scope:important_hostage
+				right_icon = scope:valuable_prisoner
 			}
 		}
 	}
@@ -1503,9 +1824,7 @@ combat_event.1012 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { death_reason = death_battle }
 					}
 				}
 			}
@@ -1549,9 +1868,7 @@ combat_event.1012 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { death_reason = death_battle }
 					}
 				}
 			}
@@ -1603,9 +1920,7 @@ combat_event.1013 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { death_reason = death_battle }
 					}
 				}
 			}
@@ -1649,9 +1964,7 @@ combat_event.1013 = {
 					list = relevant_slain_combatants
 					
 					show_as_tooltip = {
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { death_reason = death_battle }
 					}
 				}
 			}
@@ -1717,9 +2030,7 @@ combat_event.1014 = {
 					every_in_list = {
 						list = relevant_slain_combatants
 						
-						death = {
-							death_reason = death_battle
-						}
+						override_death_effect = { death_reason = death_battle }
 					}
 				}
 			}
@@ -1728,5 +2039,136 @@ combat_event.1014 = {
 
 	after = {
 		clear_relevant_slain_combatants_list_effect = yes
+	}
+}
+
+# Warcraft
+
+#####################
+# Resurrected Combatants	
+
+# Casualty notification event for combat winner.
+combat_event.2012 = {
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		# Generate a list of relevant slain characters on the enemy's side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = resurrected_combatants
+			LIST_ALL_CHARACTERS = no
+		}	
+		try_to_send_resurrected_message_effect = { TYPE = good TITLE = good DESC = good }
+		clear_relevant_slain_combatants_list_effect = yes
+
+		# Repeat the above, but for casualties on our own side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = victorious_resurrected_combatants
+			LIST_ALL_CHARACTERS = yes
+		}
+		try_to_send_resurrected_message_effect = { TYPE = bad TITLE = bad DESC = bad }
+		clear_relevant_slain_combatants_list_effect = yes
+	}
+}
+
+# Casualty notification event for combat loser.
+combat_event.2013 = {
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		# Generate a list of relevant slain characters on the enemy's side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = victorious_resurrected_combatants
+			LIST_ALL_CHARACTERS = no
+		}	
+		try_to_send_resurrected_message_effect = { TYPE = good TITLE = good DESC = good }
+		clear_relevant_slain_combatants_list_effect = yes
+
+		# Repeat the above, but for casualties on our own side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = resurrected_combatants
+			LIST_ALL_CHARACTERS = yes
+		}
+		try_to_send_resurrected_message_effect = { TYPE = bad TITLE = bad DESC = bad }
+		clear_relevant_slain_combatants_list_effect = yes
+	}		
+}
+
+# Casualty notification event for other relevant characters (sends a personalized notification to a player about characters of interest who were captured in battle.)
+combat_event.2014 = {
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		every_in_list = {
+			list = resurrected_combatants
+			add_to_list = all_slain_combatants
+		}
+		every_in_list = {
+			list = victorious_resurrected_combatants
+			add_to_list = all_slain_combatants
+		}
+
+		# Generate a list of all relevant slain combatants on both sides.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = all_slain_combatants
+			LIST_ALL_CHARACTERS = no
+		}
+		
+		try_to_send_resurrected_message_effect = { TYPE = neutral TITLE = neutral DESC = bad }
+	}
+
+	after = {
+		clear_relevant_slain_combatants_list_effect = yes
+	}
+}
+
+#####################
+# Accolade Glory Changes
+
+#	Battle Won: glory goes up.
+combat_event.2101 = {
+	hidden = yes
+	scope = combat_side
+
+	trigger = {
+		any_side_knight = {
+			exists = accolade
+			accolade = { is_accolade_active = yes }
+		}
+	}
+
+	immediate = {
+		every_side_knight = {
+			limit = {
+				exists = accolade
+				accolade = { is_accolade_active = yes }
+			}
+			accolade = { add_glory = minor_glory_gain }
+		}
+	}
+}
+
+#	Battle Lost: glory goes down [sad trombone noises].
+combat_event.2111 = {
+	hidden = yes
+	scope = combat_side
+
+	trigger = {
+		any_side_knight = {
+			exists = accolade
+			accolade = { is_accolade_active = yes }
+		}
+	}
+
+	immediate = {
+		every_side_knight = {
+			limit = {
+				exists = accolade
+				accolade = { is_accolade_active = yes }
+			}
+			accolade = { add_glory = minimal_glory_loss }
+		}
 	}
 }
