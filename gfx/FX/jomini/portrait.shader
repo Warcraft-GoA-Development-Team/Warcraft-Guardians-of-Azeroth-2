@@ -1,13 +1,17 @@
 Includes = {
-	"cw/pdxmesh.fxh"
 	"cw/pdxmesh_blendshapes.fxh"
+	"cw/pdxmesh.fxh"
 	"cw/utility.fxh"
 	"cw/shadow.fxh"
 	"cw/camera.fxh"
+	"cw/alpha_to_coverage.fxh"
 	"jomini/jomini_lighting.fxh"
 	"jomini/jomini_fog.fxh"
+	"jomini/portrait_accessory_variation.fxh"
+	"jomini/portrait_coa.fxh"
+	"jomini/portrait_decals.fxh"
+	"jomini/portrait_user_data.fxh"
 	"constants.fxh"
-	"standardfuncsgfx.fxh"
 }
 
 PixelShader =
@@ -21,7 +25,7 @@ PixelShader =
 		SampleModeU = "Wrap"
 		SampleModeV = "Wrap"
 	}
-	TextureSampler SpecularMap
+	TextureSampler PropertiesMap
 	{
 		Index = 1
 		MagFilter = "Linear"
@@ -39,6 +43,15 @@ PixelShader =
 		SampleModeU = "Wrap"
 		SampleModeV = "Wrap"
 	}
+	TextureSampler SSAOColorMap
+	{
+		Index = 3
+		MagFilter = "Linear"
+		MinFilter = "Linear"
+		MipFilter = "Linear"
+		SampleModeU = "Wrap"
+		SampleModeV = "Wrap"
+	}
 	TextureSampler EnvironmentMap
 	{
 		Ref = JominiEnvironmentMap
@@ -49,48 +62,9 @@ PixelShader =
 		SampleModeV = "Clamp"
 		Type = "Cube"
 	}
-	TextureSampler DecalDiffuseArray
-	{
-		Ref = JominiPortraitDecalDiffuseArray
-		MagFilter = "Linear"
-		MinFilter = "Linear"
-		MipFilter = "Linear"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
-		type = "2darray"
-	}
-	TextureSampler DecalNormalArray
-	{
-		Ref = JominiPortraitDecalNormalArray
-		MagFilter = "Linear"
-		MinFilter = "Linear"
-		MipFilter = "Linear"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
-		type = "2darray"
-	}
-	TextureSampler DecalPropertiesArray
-	{
-		Ref = JominiPortraitDecalPropertiesArray
-		MagFilter = "Linear"
-		MinFilter = "Linear"
-		MipFilter = "Linear"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
-		type = "2darray"
-	}
-	TextureSampler DecalData
-	{
-		Index = 9
-		MagFilter = "point"
-		MinFilter = "point"
-		MipFilter = "point"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
-	}
 	TextureSampler DiffuseMapOverride
 	{
-		Index = 10
+		Index = 9
 		MagFilter = "Linear"
 		MinFilter = "Linear"
 		MipFilter = "Linear"
@@ -99,6 +73,15 @@ PixelShader =
 	}
 	TextureSampler NormalMapOverride
 	{
+		Index = 10
+		MagFilter = "Linear"
+		MinFilter = "Linear"
+		MipFilter = "Linear"
+		SampleModeU = "Wrap"
+		SampleModeV = "Wrap"
+	}
+	TextureSampler PropertiesMapOverride
+	{
 		Index = 11
 		MagFilter = "Linear"
 		MinFilter = "Linear"
@@ -106,14 +89,14 @@ PixelShader =
 		SampleModeU = "Wrap"
 		SampleModeV = "Wrap"
 	}
-	TextureSampler SpecularMapOverride
+	TextureSampler CoaTexture 
 	{
 		Index = 12
 		MagFilter = "Linear"
 		MinFilter = "Linear"
 		MipFilter = "Linear"
-		SampleModeU = "Wrap"
-		SampleModeV = "Wrap"
+		SampleModeU = "Clamp"
+		SampleModeV = "Clamp"
 	}
 	TextureSampler ShadowTexture
 	{
@@ -126,18 +109,12 @@ PixelShader =
 		CompareFunction = less_equal
 		SamplerType = "Compare"
 	}
-}
 
-VertexShader = {
-	TextureSampler BlendShapeTexture
+	VertexStruct PS_COLOR_SSAO
 	{
-		Index = 15
-		MagFilter = "Point"
-		MinFilter = "Point"
-		MipFilter = "Point"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
-	}
+		float4 Color : PDX_COLOR0;
+		float4 SSAOColor : PDX_COLOR1;
+	};
 }
 
 VertexStruct VS_OUTPUT_PDXMESHPORTRAIT
@@ -148,9 +125,11 @@ VertexStruct VS_OUTPUT_PDXMESHPORTRAIT
 	float3 	Bitangent		: TEXCOORD2;
 	float2 	UV0				: TEXCOORD3;
 	float2 	UV1				: TEXCOORD4;
-	float3 	WorldSpacePos	: TEXCOORD5;
-	float4 	ShadowProj		: TEXCOORD6;
-	uint 	InstanceIndex	: TEXCOORD7;
+	float2 	UV2				: TEXCOORD5;
+	float3 	WorldSpacePos	: TEXCOORD6;
+	float4 	ShadowProj		: TEXCOORD7;
+	# This instance index is used to fetch custom user data from the Data[] array (see pdxmesh.fxh)
+	uint 	InstanceIndex	: TEXCOORD8;
 };
 
 VertexStruct VS_INPUT_PDXMESHSTANDARD_ID
@@ -162,18 +141,22 @@ VertexStruct VS_INPUT_PDXMESHSTANDARD_ID
 @ifdef PDX_MESH_UV1     	
 	float2 UV1				: TEXCOORD3;
 @endif
+@ifdef PDX_MESH_UV2
+	float2 UV2				: TEXCOORD4;
+@endif
 
-	uint2 InstanceIndices 	: TEXCOORD4;
+
+	uint2 InstanceIndices 	: TEXCOORD5;
 	
 @ifdef PDX_MESH_SKINNED
-	uint4 BoneIndex 		: TEXCOORD5;
-	float3 BoneWeight		: TEXCOORD6;
+	uint4 BoneIndex 		: TEXCOORD6;
+	float3 BoneWeight		: TEXCOORD7;
 @endif
 
 	uint VertexID			: PDX_VertexID;
 };
 
-# Portrait constants
+# Portrait constants (SPortraitConstants)
 ConstantBuffer( 5 )
 {
 	float4 		vPaletteColorSkin;
@@ -191,7 +174,17 @@ ConstantBuffer( 5 )
 	int			DecalCount;
 	int         PreSkinColorDecalCount
 	int			TotalDecalCount;
-	float		TextureOverride;
+	int 		_; // Alignment
+
+	float4 		PatternColorOverrides[16];
+	float4		CoaColor1;
+	float4		CoaColor2;
+	float4		CoaColor3;
+	float4		CoaOffsetAndScale;
+
+	float		HasDiffuseMapOverride;
+	float		HasNormalMapOverride;
+	float		HasPropertiesMapOverride;
 };
 Code
 [[
@@ -216,165 +209,12 @@ VertexShader = {
 			Out.Bitangent = In.Bitangent;
 			Out.UV0 = In.UV0;
 			Out.UV1 = In.UV1;
+			Out.UV2 = In.UV2;
 			Out.WorldSpacePos = In.WorldSpacePos;
-			Out.ShadowProj = mul( ShadowMapTextureMatrix, float4( Out.WorldSpacePos, 1.0 ) );
 			return Out;
 		}
-		
-		void ProcessBlendShapes( out float3 PosDiff, out float3 NormalDiff, out float4 TangentDiff, in int nVertIndex )
-		{
-			PosDiff = float3(0.0, 0.0, 0.0);
-			NormalDiff = float3(0.0, 0.0, 0.0);
-			TangentDiff = float4(0.0, 0.0, 0.0, 0.0);
-			int nVector = 0, nElement = 0;
-			for ( int i = 0; i < int( nActiveBlendShapes ); ++i )
-			{
-				int nRow = int( blendShapeIndices[nVector][nElement] ) * 3;
-				float vWeight = blendShapeWeights[nVector][nElement];
-				PosDiff += PdxTex2DLoad0( BlendShapeTexture, int2(nVertIndex, nRow) ).xyz * vWeight;
-				++nRow;
-				NormalDiff += PdxTex2DLoad0( BlendShapeTexture, int2(nVertIndex, nRow) ).xyz * vWeight;
-				++nRow;
-				TangentDiff += PdxTex2DLoad0( BlendShapeTexture, int2(nVertIndex, nRow) ).xyzw * vWeight;
-				++nRow;
-				++nElement;
-				if (nElement == 4)
-				{
-					nElement = 0;
-					++nVector;
-				}
-			}
-		}
-		
-		void ProcessBlendShapesPositionOnly( out float3 PosDiff, in int nVertIndex )
-		{
-			PosDiff = float3(0.0, 0.0, 0.0);
-			int nVector = 0, nElement = 0;
-			for ( int i = 0; i < int( nActiveBlendShapes ); ++i )
-			{
-				int nRow = int( blendShapeIndices[nVector][nElement] ) * 3;
-				float vWeight = blendShapeWeights[nVector][nElement];
-				PosDiff += PdxTex2DLoad0( BlendShapeTexture, int2(nVertIndex, nRow) ).xyz * vWeight;
-				++nElement;
-				if (nElement == 4)
-				{
-					nElement = 0;
-					++nVector;
-				}
-			}
-		}
 	]]
-	
-	MainCode VS_portrait_blend_shapes
-	{
-		Input = "VS_INPUT_PDXMESHSTANDARD_ID"
-		Output = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Code
-		[[
-			PDX_MAIN
-			{
-			  	VS_OUTPUT_PDXMESHPORTRAIT Out;
-				
-				float4 vPosition = float4( Input.Position.xyz, 1.0f );
-				float3 vBlendPositionDiff, vBlendNormalDiff;
-				float4 vBlendTangentDiff;
-				int nVertIndex = int( nBlendShapesVertexOffset ) + int( Input.VertexID );
-				ProcessBlendShapes( vBlendPositionDiff, vBlendNormalDiff, vBlendTangentDiff, nVertIndex );
-				vPosition.xyz += vBlendPositionDiff;
-				
-				float4x4 WorldMatrix = PdxMeshGetWorldMatrix( Input.InstanceIndices.y );
-			#ifdef PDX_MESH_SKINNED
-				float4 vSkinnedPosition = float4( 0, 0, 0, 0 );
-				float3 vSkinnedNormal = float3( 0, 0, 0 );
-				float3 vSkinnedTangent = float3( 0, 0, 0 );
-				float3 vSkinnedBitangent = float3( 0, 0, 0 );
-			
-				float4 vWeight = float4( Input.BoneWeight.xyz, 1.0f - Input.BoneWeight.x - Input.BoneWeight.y - Input.BoneWeight.z );
-			
-				for( int i = 0; i < PDXMESH_MAX_INFLUENCE; ++i )
-			    {
-					int nIndex = int( Input.BoneIndex[i] );
-					float4x4 mat = BoneMatrices[nIndex + Input.InstanceIndices.x];
-					vSkinnedPosition += mul( mat, vPosition ) * vWeight[i];
-			
-					float3 vNormal = mul( CastTo3x3(mat), Input.Normal + vBlendNormalDiff );
-					float3 vTangent = mul( CastTo3x3(mat), Input.Tangent.xyz + vBlendTangentDiff.xyz );
-					float3 vBitangent = cross( vNormal, vTangent ) * (Input.Tangent.w + vBlendTangentDiff.w);
-			
-					vSkinnedNormal += vNormal * vWeight[i];
-					vSkinnedTangent += vTangent * vWeight[i];
-					vSkinnedBitangent += vBitangent * vWeight[i];
-				}
-			
-				Out.Position = mul( WorldMatrix, vSkinnedPosition );
-				
-				Out.Normal = normalize( mul( CastTo3x3(WorldMatrix), normalize( vSkinnedNormal ) ) );
-				Out.Tangent = normalize( mul( CastTo3x3(WorldMatrix), normalize( vSkinnedTangent ) ) );
-				Out.Bitangent = normalize( mul( CastTo3x3(WorldMatrix), normalize( vSkinnedBitangent ) ) );
-			#else
-				Out.Position = mul( WorldMatrix, vPosition );
-				
-				Out.Normal = normalize( mul( CastTo3x3( WorldMatrix ), Input.Normal + vBlendNormalDiff ) );
-				Out.Tangent = normalize( mul( CastTo3x3( WorldMatrix ), Input.Tangent.xyz + vBlendTangentDiff.xyz ) );
-				Out.Bitangent = normalize( cross( Out.Normal, Out.Tangent ) * (Input.Tangent.w + vBlendTangentDiff.w) );
-			#endif
-			
-				Out.WorldSpacePos.xyz = Out.Position.xyz;
-				Out.WorldSpacePos /= WorldMatrix[3][3];
-				Out.Position = FixProjectionAndMul( ViewProjectionMatrix, Out.Position );
-				
-				Out.ShadowProj = mul( ShadowMapTextureMatrix, float4( Out.WorldSpacePos, 1.0 ) );
-				
-				Out.UV0 = Input.UV0;
-			#ifdef PDX_MESH_UV1
-				Out.UV1 = Input.UV1;
-			#else
-				Out.UV1 = vec2( 0.0 );
-			#endif
-				Out.InstanceIndex = Input.InstanceIndices.y;
-				return Out;
-			}
-		]]
-	}
 
-	MainCode VS_portrait_blend_shapes_shadow
-	{
-		Input = "VS_INPUT_PDXMESHSTANDARD_ID"
-		Output = "VS_OUTPUT_PDXMESHSHADOWSTANDARD"
-		Code
-		[[
-			PDX_MAIN
-			{
-			  	VS_OUTPUT_PDXMESHSHADOWSTANDARD Out;
-				
-				float4 vPosition = float4( Input.Position.xyz, 1.0 );
-				float3 vBlendPositionDiff;
-				int nVertIndex = int( nBlendShapesVertexOffset ) + int( Input.VertexID );
-				ProcessBlendShapesPositionOnly( vBlendPositionDiff, nVertIndex );
-				vPosition.xyz += vBlendPositionDiff;
-				
-				float4x4 WorldMatrix = PdxMeshGetWorldMatrix( Input.InstanceIndices.y );
-			#ifdef PDX_MESH_SKINNED
-				float4 vSkinnedPosition = float4( 0, 0, 0, 0 );
-			
-				float4 vWeight = float4( Input.BoneWeight.xyz, 1.0f - Input.BoneWeight.x - Input.BoneWeight.y - Input.BoneWeight.z );
-				for( int i = 0; i < PDXMESH_MAX_INFLUENCE; ++i )
-			    {
-					int nIndex = int( Input.BoneIndex[i] );
-					float4x4 mat = BoneMatrices[nIndex + Input.InstanceIndices.x];
-					vSkinnedPosition += mul( mat, vPosition ) * vWeight[i];
-				}
-				Out.Position = mul( WorldMatrix, vSkinnedPosition );
-			#else
-				Out.Position = mul( WorldMatrix, vPosition );
-			#endif
-			
-				Out.Position = FixProjectionAndMul( ViewProjectionMatrix, Out.Position );
-				Out.UV_InstanceIndex = float3( Input.UV0, Input.InstanceIndices.y );
-				return Out;
-			}
-		]]
-	}
 	
 	MainCode VS_standard
 	{
@@ -396,15 +236,92 @@ PixelShader =
 {
 	Code
 	[[
-		// Warcraft
-		// Should match SPortraitDecalTextureSet::BlendMode
-		#define BLEND_MODE_OVERLAY 0
-		#define BLEND_MODE_REPLACE 1
-		#define BLEND_MODE_HARD_LIGHT 2
-		#define BLEND_MODE_MULTIPLY 3
-		// Special handling of normal Overlay blend mode (in shader only)
-		#define BLEND_MODE_OVERLAY_NORMAL 4
+		struct SPortraitPointLight
+		{
+			float3 _Position;
+			float _Radius;
+			float3 _Color;
+			float _Falloff;
+		};
+		struct SPortraitSpotLight
+		{
+			SPortraitPointLight	_PointLight;
+			float3 _ConeDirection;
+			float _ConeInnerCosAngle;
+			float _ConeOuterCosAngle;
+		};
+
+		SPortraitPointLight GetPortraitPointLight( float4 PositionAndRadius, float4 ColorAndFalloff )
+		{
+			SPortraitPointLight PointLight;
+			PointLight._Position = PositionAndRadius.xyz;
+			PointLight._Radius = PositionAndRadius.w;
+			PointLight._Color = ColorAndFalloff.xyz;
+			PointLight._Falloff = ColorAndFalloff.w;
+			return PointLight;
+		}
+	
+		SPortraitSpotLight GetPortraitSpotLight( float4 PositionAndRadius, float4 ColorAndFalloff, float3 Direction, float InnerCosAngle, float OuterCosAngle )
+		{
+			SPortraitSpotLight Ret;
+			Ret._PointLight = GetPortraitPointLight( PositionAndRadius, ColorAndFalloff );
+			Ret._ConeDirection = Direction;
+			Ret._ConeInnerCosAngle = InnerCosAngle;
+			Ret._ConeOuterCosAngle = OuterCosAngle;
+			return Ret;
+		}
 		
+		void GGXPointLight( SPortraitPointLight Pointlight, float3 WorldSpacePos, float ShadowTerm, SMaterialProperties MaterialProps, inout float3 DiffuseLightOut, inout float3 SpecularLightOut )
+		{
+			float3 PosToLight = Pointlight._Position - WorldSpacePos;
+			float DistanceToLight = length( PosToLight );
+
+			float LightIntensity = CalcLightFalloff( Pointlight._Radius, DistanceToLight, Pointlight._Falloff );
+			if ( LightIntensity > 0.0 )
+			{
+				SLightingProperties LightingProps;
+				LightingProps._ToCameraDir = normalize( CameraPosition - WorldSpacePos );
+				LightingProps._ToLightDir = PosToLight / DistanceToLight;
+				LightingProps._LightIntensity = Pointlight._Color * LightIntensity;
+				LightingProps._ShadowTerm = ShadowTerm;
+				LightingProps._CubemapIntensity = 0.0;
+				LightingProps._CubemapYRotation = Float4x4Identity();
+				
+				float3 DiffuseLight;
+				float3 SpecularLight;
+				CalculateLightingFromLight( MaterialProps, LightingProps, DiffuseLight, SpecularLight );
+				DiffuseLightOut += DiffuseLight;
+				SpecularLightOut += SpecularLight;
+			}
+		}
+		
+		void GGXSpotLight( SPortraitSpotLight Spot, float3 WorldSpacePos, float ShadowTerm, SMaterialProperties MaterialProps, inout float3 DiffuseLightOut, inout float3 SpecularLightOut )
+		{
+			float3 	PosToLight = Spot._PointLight._Position - WorldSpacePos;
+			float 	DistanceToLight = length(PosToLight);
+			float3	ToLightDir = PosToLight / DistanceToLight;
+			
+			float LightIntensity = CalcLightFalloff( Spot._PointLight._Radius, DistanceToLight, Spot._PointLight._Falloff );
+			float PdotL = dot( -ToLightDir, Spot._ConeDirection );
+			LightIntensity *= smoothstep( Spot._ConeOuterCosAngle, Spot._ConeInnerCosAngle, PdotL );
+			if ( LightIntensity > 0.0 )
+			{
+				SLightingProperties LightingProps;
+				LightingProps._ToCameraDir = normalize( CameraPosition - WorldSpacePos );
+				LightingProps._ToLightDir = ToLightDir;
+				LightingProps._LightIntensity = Spot._PointLight._Color * LightIntensity;
+				LightingProps._ShadowTerm = ShadowTerm;
+				LightingProps._CubemapIntensity = 0.0;
+				LightingProps._CubemapYRotation = Float4x4Identity();
+				
+				float3 DiffuseLight;
+				float3 SpecularLight;
+				CalculateLightingFromLight( MaterialProps, LightingProps, DiffuseLight, SpecularLight );
+				DiffuseLightOut += DiffuseLight;
+				SpecularLightOut += SpecularLight;
+			}
+		}
+
 		void CalculatePortraitLights( float3 WorldSpacePos, float ShadowTerm, SMaterialProperties MaterialProps, inout float3 DiffuseLightOut, inout float3 SpecularLightOut )
 		{
 			for( int i = 0; i < LIGHT_COUNT; ++i )
@@ -420,12 +337,12 @@ PixelShader =
 				{
 					float InnerAngle = Light_InnerCone_OuterCone_AffectedByShadows[i].x;
 					float OuterAngle = Light_InnerCone_OuterCone_AffectedByShadows[i].y;
-					SpotLight Spot = GetSpotLight( Light_Position_Radius[i], Color_Fallof, Light_Direction_Type[i].xyz, InnerAngle, OuterAngle );
+					SPortraitSpotLight Spot = GetPortraitSpotLight( Light_Position_Radius[i], Color_Fallof, Light_Direction_Type[i].xyz, InnerAngle, OuterAngle );
 					GGXSpotLight( Spot, WorldSpacePos, LightShadowTerm, MaterialProps, DiffuseLight, SpecularLight );
 				}
 				else if( Light_Direction_Type[i].w == LIGHT_TYPE_POINTLIGHT )
 				{
-					PointLight Light = GetPointLight( Light_Position_Radius[i], Color_Fallof );
+					SPortraitPointLight Light = GetPortraitPointLight( Light_Position_Radius[i], Color_Fallof );
 					GGXPointLight( Light, WorldSpacePos, LightShadowTerm, MaterialProps, DiffuseLight, SpecularLight );
 				}
 				else if( Light_Direction_Type[i].w == LIGHT_TYPE_DIRECTIONAL )
@@ -436,6 +353,8 @@ PixelShader =
 					LightingProps._LightIntensity = Color_Fallof.rgb;
 					LightingProps._ShadowTerm = LightShadowTerm;
 					LightingProps._CubemapIntensity = 0.0;
+					LightingProps._CubemapYRotation = Float4x4Identity();
+
 					CalculateLightingFromLight( MaterialProps, LightingProps, DiffuseLight, SpecularLight );
 				}
 				
@@ -491,6 +410,17 @@ PixelShader =
 				Color += EmissiveColor;
 
 			#endif
+
+			//EK2 EMISSIVE SHADER
+			//Use for emissive in normal BLUE channel.
+			#ifdef EMISSIVE_NORMAL_BLUE
+
+				float EmissiveStrength = 1.0f;
+				float emissiveMask = PdxTex2D( NormalMap, Input.UV0 ).b;
+				float3 emissiveColor = Diffuse.rgb * EmissiveStrength;
+				Color = lerp(Color, emissiveColor, emissiveMask);
+
+			#endif
 			//EK2 EMISSIVE SHADER
 			
 			Color = ApplyDistanceFog( Color, Input.WorldSpacePos );
@@ -498,511 +428,186 @@ PixelShader =
 			DebugReturn( Color, MaterialProps, LightingProps, EnvironmentMap, SssColor, SssMask );			
 			return Color;
 		}
-		float3 UnpackDecalNormal( float4 NormalSample, float DecalStrength )
+
+		// Remaps Value to [IntervalStart, IntervalEnd]
+		// Assumes Value is in [0,1] and that 0 <= IntervalStart < IntervalEnd <= 1
+		float RemapToInterval( float Value, float IntervalStart, float IntervalEnd )
 		{
-			float3 Normal;
-			//Sample format is RRxG
-			Normal.xy = NormalSample.ga * 2.0 - vec2(1.0);
-			Normal.y = -Normal.y;
-			
-			//Filter out "weak" normals. Compression/precision errors will scale with the number of decals used, so try to remove errors where artists intended the normals to be neutral
-			float NormalXYSquared = dot( Normal.xy, Normal.xy );
-			const float FilterMin = 0.0004f;
-			const float FilterWidth = 0.05f;
-			float Filter = smoothstep( FilterMin, FilterMin+FilterWidth*FilterWidth, NormalXYSquared );
-			
-			Normal.xy *= DecalStrength * Filter;
-			Normal.z = sqrt( saturate( 1.0 - dot(Normal.xy,Normal.xy) ) );
-			return Normal;
-		}
-		float3 OverlayNormal( in float3 Base, in float3 Overlay )
-		{
-			float3 Normal = Base;
-			Normal.xy += Overlay.xy;
-			Normal.z *= Overlay.z;
-			return Normal;
-		}
-		
-		// Warcraft
-		uint GetBodyPartIndex( uint InstanceIndex )
-		{
-			uint Offset = InstanceIndex + PDXMESH_USER_DATA_OFFSET;
-			return uint( Data[Offset].x );
+			return IntervalStart + Value * ( IntervalEnd - IntervalStart );
 		}
 
-		float OverlayDecal( float Target, float Blend )
+		// The skin, eye and hair assets come with a special texture  (the "Color Mask", typically packed into 
+		// another texture) that determines the Diffuse-PaletteColor blend. Artists also supply a remap interval 
+		// used to bias this texture's values; essentially allowing the texture's full range of values to be 
+		// mapped into a small interval of the diffuse lerp (e.g. [0.8, 1]).
+		// If the texture value is 0.0, that is a special case indicating there shouldn't be any palette color, 
+		// (it is used for non-hair things such as hair bands, earrings etc)
+		float3 GetColorMaskColorBLend( float3 DiffuseColor, float3 PaletteColor, uint InstanceIndex, float ColorMaskStrength )
 		{
-			return float( Target > 0.5f ) * ( 1.0f - ( 2.0f * ( 1.0f - Target ) * ( 1.0f - Blend ) ) ) +
-				   float( Target <= 0.5f ) * ( 2.0f * Target * Blend );
-		}
-
-		float HardLightDecal( float Target, float Blend )
-		{
-			return float( Blend > 0.5f ) * ( 1.0f - ( 2.0f * ( 1.0f - Target ) * ( 1.0f - Blend ) ) ) +
-				   float( Blend <= 0.5f ) * ( 2.0f * Target * Blend );
-		}
-		
-		// Warcraft
-		float4 BlendDecal( uint BlendMode, float4 Target, float4 Blend, float Weight , uint TextureType )
-		{
-			float4 Result = vec4( 0.0f );
-
-			if ( BlendMode == BLEND_MODE_OVERLAY )
+			if ( ColorMaskStrength == 0.0 )
 			{
-				// Warcraft
-				// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply overlay blending as usual.
-				if( Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f && TextureType == 1 )
-				{
-					Result = float4( 
-						OverlayDecal( Target.r, vPaletteColorHair.r ),
-						OverlayDecal( Target.g, vPaletteColorHair.g ),
-						OverlayDecal( Target.b, vPaletteColorHair.b ),
-						OverlayDecal( Target.a, Blend.a ) 
-					);
-				}
-				
-				else
-				{
-					Result = float4( 
-						OverlayDecal( Target.r, Blend.r ),
-						OverlayDecal( Target.g, Blend.g ),
-						OverlayDecal( Target.b, Blend.b ),
-						OverlayDecal( Target.a, Blend.a ) 
-					);
-				}
+				return DiffuseColor;
 			}
-			else if ( BlendMode == BLEND_MODE_REPLACE )
+			else
 			{
-				// Warcraft
-				// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply replace blending as usual.
-				if( Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f && TextureType == 1 )
-				{
-					Result = float4(
-						vPaletteColorHair.r,
-						vPaletteColorHair.g,
-						vPaletteColorHair.b,
-						Target.a
-					);
-				}
-				else
-				{
-					Result = Blend;
-				}
+				float2 Interval = GetColorMaskRemapInterval( InstanceIndex );
+				float LerpTarget = RemapToInterval( ColorMaskStrength, Interval.x, Interval.y );
+				return lerp( DiffuseColor.rgb, DiffuseColor.rgb * PaletteColor, LerpTarget );
 			}
-
-			else if ( BlendMode == BLEND_MODE_HARD_LIGHT )
-			{
-				// Warcraft
-				// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply hard light blending as usual.
-				if( Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f && TextureType == 1 )
-				{
-					Result = float4(
-						HardLightDecal( Target.r, vPaletteColorHair.r ),
-						HardLightDecal( Target.g, vPaletteColorHair.g ),
-						HardLightDecal( Target.b, vPaletteColorHair.b ),
-						HardLightDecal( Target.a, Blend.a )
-					);
-				}
-				
-				else
-				{
-					Result = float4(
-						HardLightDecal( Target.r, Blend.r ),
-						HardLightDecal( Target.g, Blend.g ),
-						HardLightDecal( Target.b, Blend.b ),
-						HardLightDecal( Target.a, Blend.a )
-					);
-				}
-			}
-
-
-			else if ( BlendMode == BLEND_MODE_MULTIPLY )
-			{
-				// Warcraft
-				// If Red channel is white, and blue and green are black, then colour the decal to the Hair Colour palette. Else, apply multiply blending as usual.
-				if(Blend.r == 1.0f && Blend.g == 0.0f && Blend.b == 0.0f)
-				{
-					Result = float4(
-						( Target.r * vPaletteColorHair.r ),
-						( Target.g * vPaletteColorHair.g ),
-						( Target.b * vPaletteColorHair.b ),
-						( Target.a * Blend.a )
-					);
-				}
-				
-				else
-				{
-					Result = Target * Blend;
-				}
-			}
-			else if ( BlendMode == BLEND_MODE_OVERLAY_NORMAL )
-			{
-				Result = float4( OverlayNormal( Target.xyz, Blend.xyz ), Target.a );
-			}
-
-			return lerp( Target, Result, Weight );
-		}
-
-		void AddDecals( inout float3 Diffuse, inout float3 Normals, inout float4 Properties, float2 UV, uint InstanceIndex, uint From, uint To )
-		{
-			// Body part index is scripted on the mesh asset and should match ECharacterPortraitPart
-			uint BodyPartIndex = GetBodyPartIndex( InstanceIndex );
-
-			// Data for each decal is stored in two texels
-			uint DataTexelCountPerDecal = 2;
-			float DecalDivisor = TotalDecalCount * DataTexelCountPerDecal;
-			float Offset = 1.0f / ( DecalDivisor * DataTexelCountPerDecal );
-			uint FromDataTexel = From * DataTexelCountPerDecal;
-			uint ToDataTexel = To * DataTexelCountPerDecal;
-
-			// Sorted after priority
-			for ( uint i = FromDataTexel; i <= ToDataTexel; i += DataTexelCountPerDecal )
-			{
-				// Texel n is { diffuse_index, normal_index, properties_index, body_part_index }
-				// Index 255 => unused
-				float4 IndexData = PdxTex2DLod0( DecalData, float2( ( i / DecalDivisor ) + Offset, 0.0f ) );
-				uint Index = uint( IndexData.a * 255.0f );
-
-				if ( Index == BodyPartIndex )
-				{
-					// Texel n + 1 is { diffuse_blend_mode, normal_blend_mode, properties_blend_mode, weight }
-					float4 BlendData = PdxTex2DLod0( DecalData, float2( ( ( i + 1 ) / DecalDivisor ) + Offset, 0.0f ) );
-					float Weight = BlendData.a;
-
-					float DiffuseIndex = IndexData.x * 255.0f;
-					float NormalIndex = IndexData.y * 255.0f;
-					float PropertiesIndex = IndexData.z * 255.0f;
-
-					// Warcraft
-					uint TextureType = 0;
-					
-					if ( DiffuseIndex < 255.0f )
-					{
-						// Warcraft
-						TextureType = 1;
-						
-						uint DiffuseBlendMode = uint( BlendData.x * 255.0f );
-						float4 DiffuseSample = PdxTex2D( DecalDiffuseArray, float3( UV, DiffuseIndex ) );
-						Weight = DiffuseSample.a * Weight;
-						Diffuse = BlendDecal( DiffuseBlendMode, float4( Diffuse, 0.0f ), DiffuseSample, Weight, TextureType ).rgb;
-					}
-
-					if ( NormalIndex < 255.0f )
-					{
-						// Warcraft
-						TextureType = 2;
-						
-						uint NormalBlendMode = uint( BlendData.y * 255.0f );
-						if ( NormalBlendMode == BLEND_MODE_OVERLAY )
-						{
-							NormalBlendMode = BLEND_MODE_OVERLAY_NORMAL;
-						}
-						float3 NormalSample = UnpackDecalNormal( PdxTex2D( DecalNormalArray, float3( UV, NormalIndex ) ), Weight );
-						Normals = BlendDecal( NormalBlendMode, float4( Normals, 0.0f ), float4( NormalSample, 0.0f ), Weight, TextureType ).xyz;
-					}
-
-					if ( PropertiesIndex < 255.0f )
-					{
-						// Warcraft
-						TextureType = 3;
-						
-						uint PropertiesBlendMode = uint( BlendData.z * 255.0f );
-						float4 PropertiesSample = PdxTex2D( DecalPropertiesArray, float3( UV, PropertiesIndex ) );
-						Properties = BlendDecal( PropertiesBlendMode, Properties, PropertiesSample, Weight, TextureType );
-					}
-				}
-			}
-
-			Normals = normalize( Normals );
 		}
 	]]
 
 	MainCode PS_skin
 	{
 		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Output = "PDX_COLOR"
+		Output = "PS_COLOR_SSAO"
 		Code
 		[[
 			PDX_MAIN
 			{			
+				PS_COLOR_SSAO Out;
+
 				float2 UV0 = Input.UV0;
 				float4 Diffuse;
 				float4 Properties;
 				float3 NormalSample;
+				
 
-				#ifdef ENABLE_TEXTURE_OVERRIDE
-				if( TextureOverride > 0.5f )
+			#ifdef ENABLE_TEXTURE_OVERRIDE
+				if ( HasDiffuseMapOverride > 0.5f )
 				{
-					Diffuse = PdxTex2D( DiffuseMapOverride, UV0 );						
-					Properties = PdxTex2D( SpecularMapOverride, UV0 );
+					Diffuse = PdxTex2D( DiffuseMapOverride, UV0 );
+				}
+				else
+				{
+					Diffuse = PdxTex2D( DiffuseMap, UV0 );
+				}
+				if ( HasPropertiesMapOverride > 0.5f )
+				{
+					Properties = PdxTex2D( PropertiesMapOverride, UV0 );
+				}
+				else
+				{
+					Properties = PdxTex2D( PropertiesMap, UV0 );
+				}
+				if ( HasNormalMapOverride > 0.5f )
+				{
 					NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMapOverride, UV0 ) );
 				}
 				else
-				#endif
 				{
-					Diffuse = PdxTex2D( DiffuseMap, UV0 );						
-					Properties = PdxTex2D( SpecularMap, UV0 );
 					NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 				}
-				
-				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+			#else
+				Diffuse = PdxTex2D( DiffuseMap, UV0 );
+				Properties = PdxTex2D( PropertiesMap, UV0 );
+				NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
+			#endif
 				
 				//Warcraft
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
+				#ifdef DECALS
+					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+				#endif
+				
+				#ifdef ALPHA_TO_COVERAGE
+					float ColorMaskStrength = 1.0f;
+				#else
+					float ColorMaskStrength = Diffuse.a;
+				#endif
 
-				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorSkin.rgb, Input.InstanceIndex, ColorMaskStrength );
+				
+				//Warcraft
+				#ifdef DECALS
+					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				
-				//Warcraft
-				return float4( Color, Diffuse.a );
+				#ifdef ALPHA_TO_COVERAGE
+					Out.Color = float4( Color, Diffuse.a );
+				#else
+					Out.Color = float4( Color, 1.0f );
+				#endif
+
+				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
+				Out.SSAOColor.rgb *= vPaletteColorSkin.rgb;
+
+				return Out;
 			}
 			
-		]]
-	}
-	
-	# Warcraft
-	MainCode PS_skin_attachment
-	{
-		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Output = "PDX_COLOR"
-		Code
-		[[
-			PDX_MAIN
-			{
-				float2 UV0 = Input.UV0;
-				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
-				float4 Properties = PdxTex2D( SpecularMap, UV0 );
-				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
-				
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
-				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				
-				return float4( Color, Diffuse.a );
-			}
 		]]
 	}
 	
 	MainCode PS_eye
 	{
 		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Output = "PDX_COLOR"
+		Output = "PS_COLOR_SSAO"
 		Code
 		[[
 			PDX_MAIN
 			{
+				PS_COLOR_SSAO Out;
+
 				float2 UV0 = Input.UV0;
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
-				float4 Properties = PdxTex2D( SpecularMap, UV0 );
+				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
-				
+
+				//Warcraft
 				#ifdef DECALS
-				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
 				#endif
 				
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorEyes.rgb, Diffuse.a );
-				
+				float ColorMaskStrength = Diffuse.a;
+				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorEyes.rgb, Input.InstanceIndex, ColorMaskStrength );
+
+				//Warcraft
 				#ifdef DECALS
-				AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				Out.Color = float4( Color, 1.0f );
 				
-				return float4( Color, 1.0f );
+				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
+				Out.SSAOColor.rgb *= vPaletteColorEyes.rgb;
+	
+				return Out;
 			}
 		]]
 	}
 
 	MainCode PS_attachment
 	{		
-		TextureSampler PatternMask
-		{
-			Ref = PdxMeshCustomTexture0
-			MagFilter = "Linear"
-			MinFilter = "Linear"
-			MipFilter = "Linear"
-			SampleModeU = "Clamp"
-			SampleModeV = "Clamp"
-		}
-		TextureSampler PatternColorPalette
-		{
-			Ref = PdxMeshCustomTexture1
-			MagFilter = "Point"
-			MinFilter = "Point"
-			MipFilter = "Point"
-			SampleModeU = "Wrap"
-			SampleModeV = "Wrap"
-		}
-		TextureSampler PatternColorMasks
-		{
-			Ref = PdxMeshCustomTexture2
-			MagFilter = "Linear"
-			MinFilter = "Linear"
-			MipFilter = "Linear"
-			SampleModeU = "Wrap"
-			SampleModeV = "Wrap"
-			type = "2darray"
-		}
-		TextureSampler PatternNormalMaps
-		{
-			Ref = PdxMeshCustomTexture3
-			MagFilter = "Linear"
-			MinFilter = "Linear"
-			MipFilter = "Linear"
-			SampleModeU = "Wrap"
-			SampleModeV = "Wrap"
-			type = "2darray"
-		}
-		TextureSampler PatternPropertyMaps
-		{
-			Ref = PdxMeshCustomTexture4
-			MagFilter = "Linear"
-			MinFilter = "Linear"
-			MipFilter = "Linear"
-			SampleModeU = "Wrap"
-			SampleModeV = "Wrap"
-			type = "2darray"
-		}
-		
 		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Output = "PDX_COLOR"
+		Output = "PS_COLOR_SSAO"
 		Code
 		[[
-			#ifdef VARIATIONS_ENABLED
-			// C++ layout
-			//	struct SVariationRenderConstants
-			//	{
-			//		struct STransform
-			//		{
-			//			float		_Scale = 1.0f;
-			//			float		_Rotation = 0.0f;
-			//			CVector2f	_Offset = CVector2f::Zero();
-			//		};
-			//		STransform	_Transforms[4];
-			//		CVector4f	_ColorMaskIndices;
-			//		CVector4f	_NormalMapIndices;
-			//		CVector4f	_PropertyIndices;
-			//		float		_RandomNumber;
-			//	};
-			struct SPatternDesc
-			{
-				float 	_Scale;
-				float	_Rotation;
-				float2	_Offset;
-				float	_ColorMaskIndex;
-				float	_NormalMapIndex;
-				float	_PropertyMapIndex;
-			};
-			
-			struct SPatternOutput
-			{
-				float4	_Diffuse;
-				float4	_Properties;
-				float3	_Normal;
-			};
-			
-			SPatternDesc GetPatternDesc( uint InstanceIndex, uint PatternIndex )
-			{
-				SPatternDesc Desc;
-				uint Offset = InstanceIndex + PDXMESH_USER_DATA_OFFSET;
-				Desc._Scale 	= Data[Offset+PatternIndex].r;
-				Desc._Rotation 	= Data[Offset+PatternIndex].g;
-				Desc._Offset 	= Data[Offset+PatternIndex].ba;
-				Desc._ColorMaskIndex = Data[Offset+4][PatternIndex];
-				Desc._NormalMapIndex = Data[Offset+5][PatternIndex];
-				Desc._PropertyMapIndex = Data[Offset+6][PatternIndex];
-				return Desc;
-			}
-			
-			float GetRandomNumber( uint InstanceIndex )
-			{
-				uint Offset = InstanceIndex + PDXMESH_USER_DATA_OFFSET + 7;
-				return Data[Offset].r;
-			}
-
-			SPatternOutput ApplyPattern( float2 UV, float Mask, SPatternDesc Desc, float RandomNumber, float4 Diffuse, float4 Properties, float3 Normal, int MaskIndex )
-			{
-				// Rotate and scale around (0.5,0.5)
-				float2 Rotate = float2( cos( Desc._Rotation ), sin( Desc._Rotation ) );
-				UV -= vec2(0.5f);
-				UV = float2( UV.x * Rotate.x - UV.y * Rotate.y, UV.x * Rotate.y + UV.y * Rotate.x );
-				UV /= Desc._Scale;
-				UV += vec2(0.5f);
-				UV += Desc._Offset;
-				
-				float4 ColorMask = PdxTex2D( PatternColorMasks, float3( UV, Desc._ColorMaskIndex ) );
-				
-				
-				float4 PatternColor = float4( 1, 1, 1, 0 );
-				float4 PatternProperties = PdxTex2D( PatternPropertyMaps, float3( UV, Desc._PropertyMapIndex ) );
-				float4 PatternNormalSample = PdxTex2D( PatternNormalMaps, float3( UV, Desc._NormalMapIndex ) );
-				
-				//Sample the color palette once for each channel in the mask
-				for( int i = 0; i < 4; ++i )
-				{
-					if( ColorMask[i] > 0.0f )
-					{
-						// Select from 16-width color palette
-						float HorizontalSample = ( MaskIndex * 4.0f ) + i;
-						HorizontalSample = ( HorizontalSample + 0.5f ) / 16.0f;
-						
-						float3 Sample = PdxTex2D( PatternColorPalette, float2( HorizontalSample, RandomNumber ) ).rgb;
-						PatternColor.rgb = lerp( PatternColor.rgb, Sample, ColorMask[i] );
-						PatternColor.a = max( PatternColor.a, ColorMask[i] );
-					}
-				}
-				
-				SPatternOutput PatternOutput;
-				PatternOutput._Diffuse 		= PatternColor;
-				PatternOutput._Normal 		= UnpackDecalNormal( PatternNormalSample, PatternColor.a );
-				PatternOutput._Properties 	= PatternProperties;
-				
-				return PatternOutput;
-			}
-			
-			void ApplyVariationPatterns( in VS_OUTPUT_PDXMESHPORTRAIT Input, inout float4 Diffuse, inout float4 Properties, inout float3 NormalSample )
-			{
-				float4 Mask = PdxTex2D( PatternMask, Input.UV0 );
-				float4 PatternDiffuse = float4( 1, 1, 1, 1 );
-				float3 PatternNormal = float3( 0.5, 0.5, 1 );
-				float4 PatternProperties = Properties;
-				
-				float RandomNumber = GetRandomNumber( Input.InstanceIndex );
-				for( int i = 0; i < 4; ++i )
-				{
-					if( Mask[i] > 0.0f )
-					{
-						SPatternOutput PatternOutput = ApplyPattern( Input.UV1, Mask[i], GetPatternDesc( Input.InstanceIndex, i ), RandomNumber, Diffuse, Properties, NormalSample, i );
-						
-						PatternDiffuse.rgb	= lerp( PatternDiffuse.rgb, PatternOutput._Diffuse.rgb, Mask[i] );
-						PatternNormal	 	= lerp( PatternNormal, PatternOutput._Normal.rgb, Mask[i] );
-						PatternProperties	= lerp( PatternProperties, PatternOutput._Properties, Mask[i] );
-					}
-				}
-				
-				Diffuse.rgb *= PatternDiffuse.rgb;
-				Diffuse.rgb *= PatternProperties.rrr; // pattern AO
-				
-				NormalSample = OverlayNormal( NormalSample, PatternNormal );
-				Properties = PatternProperties;
-			}
-			#endif
-			
 			PDX_MAIN
 			{
+				PS_COLOR_SSAO Out;
+
 				float2 UV0 = Input.UV0;
-				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
-				float4 Properties = PdxTex2D( SpecularMap, UV0 );
+				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );
+				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );		
 				Properties.r = 1.0; // wipe this clean now, ready to be modified later
 				
 				#ifdef VARIATIONS_ENABLED
-				ApplyVariationPatterns( Input, Diffuse, Properties, NormalSample );
+					ApplyVariationPatterns( Input, Diffuse, Properties, NormalSample );
 				#endif
+				#ifdef COA_ENABLED
+					ApplyCoa( Input, Diffuse, CoaColor1, CoaColor2, CoaColor3, CoaOffsetAndScale.xy, CoaOffsetAndScale.zw, CoaTexture, Properties.r );
+				#endif
+
+
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				return float4( Color, Diffuse.a );
+
+				Out.Color = float4( Color, Diffuse.a );
+				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
+
+				return Out;
 			}
 		]]
 	}
@@ -1021,24 +626,34 @@ PixelShader =
 	MainCode PS_hair
 	{
 		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Output = "PDX_COLOR"
+		Output = "PS_COLOR_SSAO"
 		Code
 		[[
 			PDX_MAIN
-			{			
+			{
+				PS_COLOR_SSAO Out;
+
 				float2 UV0 = Input.UV0;
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
-				float4 Properties = PdxTex2D( SpecularMap, UV0 );
-				float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
-				float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw );
-				
+				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				Properties *= vHairPropertyMult;
-				Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorHair.rgb, NormalSampleRaw.b );
+				float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
+				float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw ) * ( PDX_IsFrontFace ? 1 : -1 );
+
+				float ColorMaskStrength = NormalSampleRaw.b;
+				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorHair.rgb, Input.InstanceIndex, ColorMaskStrength );
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				
+
+				#ifdef ALPHA_TO_COVERAGE
+					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, UV0, DiffuseMap );
+
+					const float CUTOFF = 0.5f;
+					Diffuse.a = SharpenAlpha( Diffuse.a, CUTOFF );
+				#endif
+
 				#ifdef WRITE_ALPHA_ONE
-					return float4( Color, 1.0f );
+					Out.Color = float4( Color, 1.0f );
 				#else
 					#ifdef HAIR_TRANSPARENCY_HACK
 						// TODO [HL]: Hack to stop clothing fragments from being discarded by transparent hair,
@@ -1046,42 +661,50 @@ PixelShader =
 						// https://beta.paradoxplaza.com/browse/PSGE-3103
 						clip( Diffuse.a - 0.5f );
 					#endif
-					return float4( Color, Diffuse.a );
+
+					Out.Color = float4( Color, Diffuse.a );
 				#endif
+
+				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
+				Out.SSAOColor.rgb *= vPaletteColorHair.rgb;
+
+				return Out;
 			}
 		]]
 	}
 	MainCode PS_hair_double_sided
 	{
 		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
-		Output = "PDX_COLOR"
+		Output = "PS_COLOR_SSAO"
 		Code
 		[[
 			PDX_MAIN
 			{
+				PS_COLOR_SSAO Out;
+
 				float2 UV0 = Input.UV0;
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );
 				#ifdef ALPHA_TEST
 				clip( Diffuse.a - 0.5f );
 				Diffuse.a = 1.0f;
 				#endif
-				float4 Properties = PdxTex2D( SpecularMap, UV0 );
+				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 
 				Properties *= vHairPropertyMult;
 				Diffuse.rgb *= vPaletteColorHair.rgb;
 
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
-				return float4( Color, Diffuse.a );
+
+				Out.Color = float4( Color, Diffuse.a );
+				
+				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
+				Out.SSAOColor.rgb *= vPaletteColorHair.rgb;
+
+				return Out;
 			}
 		]]
 	}
-}
-
-
-BlendState BlendState
-{
-	BlendEnable = no
 }
 
 BlendState hair_alpha_blend
@@ -1125,6 +748,7 @@ RasterizerState ShadowRasterizerState
 	DepthBias = 500
 	SlopeScaleDepthBias = 2
 }
+
 RasterizerState ShadowRasterizerStateBackfaces
 {
 	DepthBias = 1000
@@ -1134,40 +758,55 @@ RasterizerState ShadowRasterizerStateBackfaces
 
 Effect portrait_skin
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "EMISSIVE" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" }
 }
 
-# Warcraft
-Effect portrait_skin_attachment_alpha_to_coverage
+Effect wc_portrait_skin_attachment_alpha_to_coverage
 {
-	VertexShader = "VS_portrait_blend_shapes"
-	PixelShader = "PS_skin_attachment"
+	VertexShader = "VS_standard"
+	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skinShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_teeth
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_skin"
+	Defines = { "FAKE_SSS_EMISSIVE" }
+}
+
+Effect portrait_teeth
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_skin"
+	Defines = { "FAKE_SSS_EMISSIVE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skin_face
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" }
+	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" "DECALS" }
 }
+
 Effect portrait_skin_faceShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
-	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" }
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_eye
@@ -1176,101 +815,136 @@ Effect portrait_eye
 	PixelShader = "PS_eye"
 	Defines = { "EMISSIVE" "DECALS" }
 }
-Effect portrait_eye_no_decal
+
+Effect wc_portrait_eye_no_decal
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
 	Defines = { "EMISSIVE" }
 }
 
-Effect portrait_eyeShadow
-{
-	VertexShader = "VertexPdxMeshStandardShadow"
-	PixelShader = "PixelPdxMeshStandardShadow"
-	RasterizerState = "ShadowRasterizerState"
-}
-
 Effect portrait_attachment
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
+}
+Effect wc_portrait_attachment_emissive
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachmentShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
-	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" }
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_pattern
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "VARIATIONS_ENABLED" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_patternShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
-	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" }
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_pattern_alpha_to_coverage
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
-	Defines = { "VARIATIONS_ENABLED" }
+	Defines = { "EMISSIVE_NORMAL_BLUE" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES"}
 }
 
 Effect portrait_attachment_pattern_alpha_to_coverageShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
-	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" }
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_variedShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_alpha_to_coverage
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_alpha_to_coverageShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_with_coa
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	BlendState = "alpha_to_coverage"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_with_coa_and_variations
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa_and_variations
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	BlendState = "alpha_to_coverage"
+	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_hair"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
+	Defines = { "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair_transparency_hack
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_hair"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "HAIR_TRANSPARENCY_HACK" }
+	Defines = { "HAIR_TRANSPARENCY_HACK" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hairShadow
@@ -1283,11 +957,12 @@ Effect portrait_hairShadow
 
 Effect portrait_hair_double_sided
 {
-	VertexShader = "VS_portrait_blend_shapes"
+	VertexShader = "VS_standard"
 	PixelShader = "PS_hair_double_sided"
 	BlendState = "alpha_to_coverage"
 	#DepthStencilState = "test_and_write"
 	RasterizerState = "rasterizer_no_culling"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair_alpha
@@ -1296,6 +971,7 @@ Effect portrait_hair_alpha
 	PixelShader = "PS_hair"
 	BlendState = "hair_alpha_blend"
 	DepthStencilState = "hair_alpha_blend"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair_opaque
@@ -1303,9 +979,9 @@ Effect portrait_hair_opaque
 	VertexShader = "VS_standard"
 	PixelShader = "PS_hair"
 	
-	Defines = { "WRITE_ALPHA_ONE"}
+	Defines = { "WRITE_ALPHA_ONE" "PDX_MESH_BLENDSHAPES" }
 }
-
+	
 Effect portrait_hair_opaqueShadow
 {
 	VertexShader = "VertexPdxMeshStandardShadow"
@@ -1324,9 +1000,10 @@ Effect portrait_attachment_alpha
 
 Effect portrait_attachment_alphaShadow
 {
-	VertexShader = "VS_portrait_blend_shapes_shadow"
+	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
 	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair_backside

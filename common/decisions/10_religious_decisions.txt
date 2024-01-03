@@ -27,6 +27,9 @@
 	ai_check_interval = 120
 
 	ai_potential = {
+		faith = {
+			has_doctrine_parameter = vows_of_poverty_active
+		}
 		# AI considers taking if their income exceeds their expenses * 1.4 (decision will reduce it by 20%).
 		monthly_character_income > monthly_character_expenses_plus_fourty_percent
 	}
@@ -43,7 +46,7 @@
 }
 
 renounce_vow_of_poverty_decision = {
-	picture = "gfx/interface/illustrations/decisions/decision_personal_religious.dds"
+	picture = "gfx/interface/illustrations/decisions/decision_spend_money.dds"
 
 	desc = renounce_vow_of_poverty_decision_desc
 	selection_tooltip = renounce_vow_of_poverty_decision_tooltip
@@ -70,6 +73,7 @@ renounce_vow_of_poverty_decision = {
 	ai_check_interval = 60
 
 	ai_potential = {
+		has_character_modifier = vow_of_poverty_modifier
 		# AI will consider if we're spending more money than we're making, and their treasury is low.
 		monthly_character_expenses > monthly_character_income
 		short_term_gold < minor_gold_value
@@ -116,7 +120,7 @@ initiate_consolamentum_decision = {
 		hidden_effect = {
 			add_piety_level = 1
 		}
-		override_death_effect = { DEATH_REASON = death_suicide }
+		override_death_effect = { death_reason = death_suicide }
 		show_as_tooltip = {
 			add_piety_level = 1
 		}
@@ -180,6 +184,10 @@ seek_aid_of_the_spirits_decision = {
 	effect = {
 		custom_tooltip = seek_aid_of_the_spirits_decision_effect.tt
 		trigger_event = religious_decision.0001
+		add_character_flag = {
+			flag = flag_sought_aid_of_spirits
+			days = 1825
+			}
 	}
 
 	ai_check_interval = 60
@@ -209,8 +217,12 @@ meditate_in_seclusion_decision = {
 	selection_tooltip = meditate_in_seclusion_decision_tooltip
 
 	is_shown = {
-		faith = {
-			has_doctrine_parameter = meditation_mechanics_active
+		OR = {
+			faith = {
+				has_doctrine_parameter = meditation_mechanics_active
+			}
+			has_character_modifier = fp3_sufi_initiate_modifier #FP3 addition
+			has_trait = calm 
 		}
 		holds_landed_title = yes
 	}
@@ -221,6 +233,7 @@ meditate_in_seclusion_decision = {
 
 	is_valid_showing_failures_only = {
 		is_available_adult = yes
+		location = capital_province
 	}
 
 	effect = {
@@ -243,6 +256,8 @@ meditate_in_seclusion_decision = {
 
 give_sky_burial_decision = {
 	picture = "gfx/interface/illustrations/decisions/decision_personal_religious.dds"
+	
+	sort_order = 75
 
 	desc = give_sky_burial_decision_desc
 	selection_tooltip = give_sky_burial_decision_tooltip
@@ -291,6 +306,7 @@ give_sky_burial_decision = {
 	}
 
 	ai_check_interval = 36
+	cooldown = { months = 12 }
 	
 	ai_potential = {
 		always = yes
@@ -308,12 +324,9 @@ raise_runestone_decision = {
 	selection_tooltip = raise_runestone_decision_tooltip
 
 	is_shown = {
-		OR = {
-			# Warcraft
-			like_norse_religion_trigger = yes
-
-			has_character_modifier = embraced_local_traditions_modifier
-		}
+		# Has access to a valid method of raising runestones.
+		fp1_can_raise_stele_trigger = yes
+		# Has a suitable ancestor available to bury.
 		has_variable = ancestor_to_bury
 		var:ancestor_to_bury = { dynasty = root.dynasty }
 		# Use expanded version if we have FP1.
@@ -352,9 +365,7 @@ raise_runestone_decision = {
 		remove_variable = ancestor_to_bury
 		add_piety = medium_piety_value
 		every_vassal = {
-			limit = {
-				like_norse_religion_trigger = yes
-			}
+			limit = { fp1_can_raise_stele_trigger = yes }
 			custom = raise_runestone_vassals
 			add_opinion = {
 				modifier = pleased_opinion
@@ -365,6 +376,33 @@ raise_runestone_decision = {
 		#Show a warning about it being destroyed if someone outside of your dynasty takes over the county it's built in
 		custom_description_no_bullet = {
 			text = raise_runestone_decision_warning
+		}
+
+		# Saga in Stone achievement tracking.
+		if = {
+			limit = {
+				# Grab the player and any dynasty members of theirs.
+				any_player = { dynasty = root.dynasty }
+			}
+			dynasty = {
+				# Start a count if we don't have one.
+				if = {
+					limit = {
+						NOT = { exists = var:saga_in_stone_achievement_tally }
+					}
+					set_variable = {
+						name = saga_in_stone_achievement_tally
+						value = 1
+					}
+				}
+				# Otherwise, increment it.
+				else = {
+					change_variable = {
+						name = saga_in_stone_achievement_tally
+						add = 1
+					}
+				}
+			}
 		}
 	}
 
@@ -427,22 +465,20 @@ divine_the_stars_decision = {
 
 revoke_false_conversion_decision = {	#Reveal yourself as a crypto-religionist.
 	ai_check_interval = 60
-	picture = "gfx/interface/illustrations/decisions/decision_major_religion.dds"
+	picture = "gfx/interface/illustrations/decisions/fp3/fp3_decision_secret_faith.dds"
 
 	desc = revoke_false_conversion_decision.desc
 	selection_tooltip = revoke_false_conversion_decision.tt
 
 	is_shown = {
-		has_variable = false_convert
-		NOR = {
-			this = faith.religious_head
-			var:false_convert = faith
+		any_secret = {
+			secret_type = secret_crypto_religionist
 		}
+		NOT = { this = faith.religious_head }
 	}
 
 	is_valid = {
 		is_adult = yes
-		NOT = { has_trait = zealous }
 	}
 
 	is_valid_showing_failures_only = {
@@ -456,50 +492,63 @@ revoke_false_conversion_decision = {	#Reveal yourself as a crypto-religionist.
 	}
 
 	cost = {
-		piety = major_piety_value
+		piety = {
+			value = major_piety_value
+			# Free if secret faith has sanctioned false conversions tenet
+			if = {
+				limit = { secret_faith ?= { has_doctrine_parameter = sanctioned_false_conversion } }
+				multiply = 0
+			}
+		}
 	}
 
 	cooldown = { years = 20 }
 
 	effect = {
+		save_scope_value_as = {
+			name = decision_piety_cost
+			value = {
+				add = major_piety_value
+				if = { # Free if secret faith has sanctioned false conversions tenet
+					limit = {
+						secret_faith ?= {
+							has_doctrine_parameter = sanctioned_false_conversion
+						}
+					}
+					multiply = 0
+				}
+			}
+		}
 		trigger_event = false_conversion.0020
 		custom_tooltip = revoke_false_conversion_decision.desc.tt
 		custom_tooltip = revoke_false_conversion_decision.desc.tt_own_faith_counties
 	}
 
 	ai_potential = {
-		has_variable = false_convert
-		save_temporary_scope_as = current_character
-		liege.faith = {
-			faith_hostility_level_comparison = { scope:current_character.var:false_convert <= root.faith }
-		}
+		exists = secret_faith
+		any_secret = { secret_type = secret_crypto_religionist }
+		liege.faith = { faith_hostility_level_comparison = { root.secret_faith <= root.faith } }
 	}
 
 	ai_will_do = {
 		base = 25
 
-		modifier = {	#Having a tolerant liege helps.
+		modifier = {	# Having a tolerant liege helps.
 			add = 25
 			liege.faith = { has_doctrine = doctrine_pluralism_pluralistic }
 		}
-		modifier = {	#If no one is fussed, and your old faith waxes while your current one wanes, then that seems like a good reason to jump ship.
+		modifier = {	# If no one is fussed, and your old faith waxes while your current one wanes, then that seems like a good reason to jump ship.
 			add = 35
-			NOT = {
-				liege.faith = { has_doctrine = doctrine_pluralism_fundamentalist }
-			}
-			var:false_convert = {
-				fervor >= medium_fervor_value
-			}
-			faith = {
-				fervor <= medium_fervor_value
-			}
+			NOT = { liege.faith = { has_doctrine = doctrine_pluralism_fundamentalist } }
+			secret_faith ?= { fervor >= medium_fervor_value }
+			faith = { fervor <= medium_fervor_value }
 		}
 	}
 }
 
-encourage_confession_of_false_conversions_decision = {	#Ask that crypto-religionists in your realm start practicing in the open.
+encourage_confession_of_false_conversions_decision = {	# Ask that crypto-religionists in your realm start practicing in the open.
 	ai_check_interval = 120
-	picture = "gfx/interface/illustrations/decisions/decision_personal_religious.dds"
+	picture = "gfx/interface/illustrations/decisions/fp3/fp3_decision_secret_faith.dds"
 
 	desc = encourage_confession_of_false_conversions_decision.desc
 	selection_tooltip = encourage_confession_of_false_conversions_decision.tt
@@ -508,15 +557,15 @@ encourage_confession_of_false_conversions_decision = {	#Ask that crypto-religion
 
 	is_shown = {
 		OR = {
-			AND = {	#Pluralists will encourage anyone to convert.
+			AND = {	# Pluralists will encourage anyone to convert.
 				OR = {
 					any_vassal = {	#... Be they person...
-						has_variable = false_convert
-						save_temporary_scope_as = current_character
-						root.faith = {
-							faith_hostility_level_comparison = {
-								scope:current_character.var:false_convert <= scope:current_character.faith
-							}
+						any_secret = {
+							secret_type = secret_crypto_religionist
+							is_known_by = root
+						}
+						liege.faith = {
+							faith_hostility_level_comparison = { prev.secret_faith <= root.faith }
 						}
 					}
 					any_sub_realm_county = {	#... Or county.
@@ -531,13 +580,16 @@ encourage_confession_of_false_conversions_decision = {	#Ask that crypto-religion
 				}
 				faith = { has_doctrine = doctrine_pluralism_pluralistic }
 			}
-			any_vassal = {	#Otherwise, you can have a vassal who practices your faith in secret.
-				has_variable = false_convert
-				var:false_convert = root.faith
+			any_vassal = {	#Otherwise, you can have a vassal who practices your faith in secret.		
+				any_secret = {
+					secret_type = secret_crypto_religionist
+					is_known_by = root
+				}
+				secret_faith = root.secret_faith
 			}
 			any_sub_realm_county = {	#... Or a county!
 				has_variable = false_convert
-				var:false_convert = root.faith
+				var:false_convert = root.secret_faith
 			}
 		}
 	}
@@ -582,7 +634,7 @@ encourage_confession_of_false_conversions_decision = {	#Ask that crypto-religion
 			add = 5
 			liege.faith = { has_doctrine = doctrine_pluralism_pluralistic }
 		}
-		modifier = {	#A tolerant top-lliege, including yourself, *also* makes this more likely.
+		modifier = {	#A tolerant top-liege, including yourself, *also* makes this more likely.
 			add = 5
 			top_liege.faith = { has_doctrine = doctrine_pluralism_pluralistic }
 		}
@@ -605,132 +657,123 @@ encourage_confession_of_false_conversions_decision = {	#Ask that crypto-religion
 	}
 }
 
-go_on_pilgrimage_decision = {
-	picture = "gfx/interface/illustrations/decisions/decision_personal_religious.dds"
+abandon_crypto_faith_decision = {	#Abandon your secret faith.
 	ai_check_interval = 60
+	picture = "gfx/interface/illustrations/decisions/fp3/fp3_decision_secret_faith.dds"
 
-	desc = go_on_pilgrimage_decision_desc
-	selection_tooltip = go_on_pilgrimage_decision_tooltip
-
-	cooldown = { years = pilgrimage_cooldown_year_amount }
+	desc = abandon_crypto_faith_decision.desc
+	selection_tooltip = abandon_crypto_faith_decision.tt
 
 	is_shown = {
-		is_landed = yes
-		
-		# Warcraft
-
-		# Also we must have an actual holy site we can visit.
-		faith = {	
-			any_holy_site = {
-				exists = this
-			}
-		}
+		any_secret = { secret_type = secret_crypto_religionist }
 	}
 
-	is_valid_showing_failures_only = {
-		is_available_adult = yes
-		is_at_war = no
+	is_valid = {
+		is_adult = yes
+		NOT = { has_trait = zealous }
 	}
+
+
+	cost = {
+		#It shouldn't _cost_ piety to abandon your crypto faith in favor of your actual faith
+	}
+
+	cooldown = { years = 20 }
 
 	effect = {
-		custom_tooltip = pilgrimage_effect_1
-		custom_tooltip = pilgrimage_effect_2
-		if = { #What is the minimum you will have to pay?
-			limit = {
-				faith = {
-					any_holy_site = {
-						squared_distance = {
-							target = root.capital_province
-							value <= short_pilgrimage_max_length
-						}
-					}
-				}
-			}
-			custom_tooltip = pilgrimage_effect_3
+		custom_tooltip = abandon_crypto_faith_decision.tt
+		random_secret = {
+			limit = { secret_type = secret_crypto_religionist }
+			remove_secret = yes
 		}
-		else_if = {
-			limit = {
-				faith = {
-					any_holy_site = {
-						squared_distance = {
-							target = root.capital_province
-							value <= medium_pilgrimage_max_length
-						}
-					}
-				}
-			}
-			custom_tooltip = pilgrimage_effect_4
+		#Something to remember it by
+		create_character_memory = {
+			type = abandoned_crypto_faith_memory
 		}
-		else_if = {
-			limit = {
-				faith = {
-					any_holy_site = {
-						squared_distance = {
-							target = root.capital_province
-							value <= long_pilgrimage_max_length
-						}
-					}
-				}
+		scope:new_memory = {
+			set_variable = {
+				name = old_faith_to_reminisce
+				value = prev.secret_faith #The one taking the decision
 			}
-			custom_tooltip = pilgrimage_effect_5
-		}
-		else = {
-			custom_tooltip = pilgrimage_effect_6
 		}
 		if = {
-			limit = { has_trait = ill }
-			custom_tooltip = line_break
-			custom_tooltip = pilgrimage_illness_warning
+			limit = { exists = var:old_faith_to_reminisce }
+			#To prevent 'unused except in loc' errors :catto:
 		}
-		if = {
-			limit = { is_ai = yes }
-			trigger_event = pilgrimage.0999
-		}
-		else = {
-			trigger_event = pilgrimage.0001
-		}
+		hidden_effect = { remove_character_secret_faith = yes }
 	}
 
 	ai_potential = {
-		is_landed = yes
+		exists = secret_faith
+		any_secret = {
+			secret_type = secret_crypto_religionist
+		}
+		liege.faith = {
+			faith_hostility_level_comparison = { root.secret_faith <= root.faith }
+		}
 	}
 
 	ai_will_do = {
-		base = 20
-		modifier = {
-			add = -100
-			NOT = { short_term_gold >= pilgrimage_medium_extra_cost }
-		}
-		modifier = {
-			add = 30
-			short_term_gold >= pilgrimage_long_extra_cost
-		}
-		modifier = {
-			add = 20
-			piety_level <= 2
-		}
-		modifier = {
-			add = 20
-			has_trait = zealous
-		}
-		modifier = {
-			add = 20
-			has_trait = zealous
-			NOT = { has_trait = pilgrim }
-		}
-		modifier = {
-			add = -30
-			has_trait = cynical
-		}
-		modifier = {
-			add = -30
-			has_trait = pilgrim
+		base = 0
+		ai_value_modifier = {
+			ai_zeal = -0.5
 		}
 	}
 }
 
-# Warcraft
-# go_on_hajj_decision = {
 
-# Warcraft
-# return_rome_decision = {
+ai_create_head_of_faith_decision = {
+	picture = "gfx/interface/illustrations/decisions/decision_personal_religious.dds"
+	major = yes
+
+	# Never shown, so it doesn't matter what we write here
+	title = placeholder
+	desc = placeholder
+	confirm_text = placeholder
+	selection_tooltip = placeholder
+
+	is_shown = {
+		is_ai = yes
+		can_create_head_of_faith_title_trigger = { FAITH = root.faith }
+		OR = {
+			is_independent_ruler = yes
+			AND = {
+				is_independent_ruler = no
+				NOT = {
+					any_liege_or_above = {
+						faith = root.faith
+					}
+				}
+			}
+		}
+		OR = {
+			government_has_flag = government_is_tribal
+			government_has_flag = government_is_feudal
+			government_has_flag = government_is_clan
+			has_government = necro_government
+			has_government = demonic_government
+			has_government = eldritch_government
+		}
+	}
+
+	effect = {
+		faith = { save_scope_as = faith }
+		create_head_of_faith_title_effect = yes
+	}
+	
+	ai_check_interval = 12
+
+	ai_potential = {
+		is_adult = yes
+		NOR = {
+			faith = {
+				has_doctrine_parameter = no_head_of_faith
+			}
+			exists = faith.religious_head
+		}
+	}
+
+	ai_will_do = {
+		base = 100
+	}
+}

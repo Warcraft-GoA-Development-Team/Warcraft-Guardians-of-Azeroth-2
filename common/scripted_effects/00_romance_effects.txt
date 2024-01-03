@@ -140,7 +140,7 @@ lover_activity_set_variable_effect = {
 				}
 				modifier = {
 					OR = {
-						has_trait = reveler_1
+						has_trait = lifestyle_reveler
 						has_trait = drunkard
 					}
 					factor = 10
@@ -169,7 +169,7 @@ lover_activity_set_variable_effect = {
 					}
 				}
 				modifier = {
-					has_trait = hunter_1
+					has_trait = lifestyle_hunter
 					factor = 5
 				}
 				set_variable = {
@@ -359,8 +359,62 @@ lover_activity_remove_flag_effect = {
 
 
 had_sex_with_effect = {
-	save_temporary_scope_as = had_sex_root_character
+	save_scope_as = had_sex_root_character
 	$CHARACTER$ = { save_scope_as = had_sex_with_effect_partner }
+
+	# Error logging
+	## Children should never run this effect.
+	if = {
+		limit = {
+			OR = {
+				scope:had_sex_root_character = { is_adult = no }
+				scope:had_sex_with_effect_partner = { is_adult = no }
+			}
+		}
+		error_log = "Trying to run had_sex_with_effect but one or more partners is a child"
+	}
+	## Did you forget to run the check for whether adultery was valid?
+	if = {
+		limit = {
+			# Rarely, we may also want to block this check (e.g., seduction schemes or monogamous threesomes).
+			NOT = { exists = scope:ignore_cheating_error_check }
+		}
+		# Check whether the root char is cheating.
+		if = {
+			limit = {
+				scope:had_sex_root_character = {
+					NOR = {
+						is_consort_of = scope:had_sex_with_effect_partner
+						has_relation_lover = scope:had_sex_with_effect_partner
+					}
+					might_cheat_on_every_partner_trigger = no
+				}
+			}
+			# The weird structure here is so that we can use prev scope in loc to grab both chars.
+			scope:had_sex_with_effect_partner = {
+				scope:had_sex_root_character = { error_log = had_sex_with_effect.log.root_cheated_inappropriately }
+			}
+		}
+		# Check whether their partner is cheating.
+		## Though this does lead to potential duplication in the error log, where you'll get an entry for X cheating with Y _and_ for Y cheating with X, it is necessary: it's perfectly possible for one char to be cheating but the other not.
+		if = {
+			limit = {
+				scope:had_sex_with_effect_partner = {
+					NOR = {
+						is_consort_of = scope:had_sex_root_character
+						has_relation_lover = scope:had_sex_root_character
+					}
+					might_cheat_on_every_partner_trigger = no
+				}
+			}
+			# The weird structure here is so that we can use prev scope in loc to grab both chars.
+			scope:had_sex_root_character = {
+				scope:had_sex_with_effect_partner = { error_log = had_sex_with_effect.log.target_cheated_inappropriately }
+			}
+		}
+	}
+	### Plus, remove the blocking scope we might have.
+	clear_saved_scope = ignore_cheating_error_check
 
 	if = {
 		limit = { this = root }
@@ -374,9 +428,37 @@ had_sex_with_effect = {
 		custom_tooltip = had_sex_with_effect.third_person.tt
 	}
 
+	create_character_memory = {
+		type = had_sex
+		participants = {
+			sex_partner = scope:had_sex_with_effect_partner
+		}
+	}
 
 	#Stress
-	$CHARACTER$ = {
+	if = {
+		limit = { # For use with events that add/remove more stress than these values, to avoid ugly tooltips
+			NOT = {
+				has_character_flag = no_sex_stress_loss
+			}
+		}
+		$CHARACTER$ = {
+			if = {
+				limit = { this = root }
+				stress_impact = {
+					lustful = minor_stress_impact_loss
+					rakish = minor_stress_impact_loss
+				}
+			}
+			else = {
+				hidden_effect = {
+					stress_impact = {
+						lustful = minor_stress_impact_loss
+						rakish = minor_stress_impact_loss
+					}
+				}
+			}
+		}
 		if = {
 			limit = { this = root }
 			stress_impact = {
@@ -393,22 +475,6 @@ had_sex_with_effect = {
 			}
 		}
 	}
-	if = {
-		limit = { this = root }
-		stress_impact = {
-			lustful = minor_stress_impact_loss
-			rakish = minor_stress_impact_loss
-		}
-	}
-	else = {
-		hidden_effect = {
-			stress_impact = {
-				lustful = minor_stress_impact_loss
-				rakish = minor_stress_impact_loss
-			}
-		}
-	}	
-	
 
 	#Pregnancy & story cycles
 	hidden_effect = {
@@ -437,6 +503,11 @@ had_sex_with_effect = {
 						is_landed = no
 						is_courtier = no
 					}
+					NOT = {
+						any_scheme = {
+							scheme_target = $CHARACTER$
+						}
+					}
 				}
 				set_variable = {
 					name = story_peasant_affair_target
@@ -451,52 +522,55 @@ had_sex_with_effect = {
 				$CHARACTER$ = { is_female = yes }
 				possible_pregnancy_after_sex_with_character_trigger = { CHARACTER = scope:had_sex_with_effect_partner }
 			}
+			$CHARACTER$ = {
+				add_to_variable_list = {
+					name = potential_father_variable_list
+					target = scope:had_sex_with_effect_partner
+				}
+			}
 			if = {
+				limit = {
+					NOT = { has_character_flag = had_story_cycle_peasant_affair }
+					is_ruler = yes
+					$CHARACTER$ = {
+						is_lowborn = yes
+						is_landed = no
+						is_courtier = no
+					}
+					NOT = {
+						any_scheme = {
+							scheme_target = $CHARACTER$
+						}
+					}
+				}
+				set_variable = {
+					name = story_peasant_affair_target
+					value = $CHARACTER$
+				}
 				$CHARACTER$ = {
-					add_to_variable_list = {
-						name = potential_father_variable_list
-						target = scope:had_sex_with_effect_partner
-					}
-				}
-				if = {
-					limit = {
-						NOT = { has_character_flag = had_story_cycle_peasant_affair }
-						is_ruler = yes
-						$CHARACTER$ = {
-							is_lowborn = yes
-							is_landed = no
-							is_courtier = no
+					if = {
+						limit = {
+							is_pregnant = no
+							fertility >= 0.1
+							is_visibly_fertile = yes
 						}
-					}
-					set_variable = {
-						name = story_peasant_affair_target
-						value = $CHARACTER$
-					}
-					$CHARACTER$ = {
-						if = {
-							limit = {
-								is_pregnant = no
-								fertility >= 0.1
-								is_visibly_fertile = yes
-							}
-							random = {
-								chance = $PREGNANCY_CHANCE$
-								add_character_flag = {
-									flag = peasant_is_pregnant
-									days = 560
-								}
-							}
-						}
-					}
-					create_story = story_peasant_affair
-				}
-				else = {
-					$CHARACTER$ = {
 						random = {
 							chance = $PREGNANCY_CHANCE$
-							make_pregnant = {
-								father = scope:had_sex_root_character
+							add_character_flag = {
+								flag = peasant_is_pregnant
+								days = 560
 							}
+						}
+					}
+				}
+				create_story = story_peasant_affair
+			}
+			else = {
+				$CHARACTER$ = {
+					random = {
+						chance = $PREGNANCY_CHANCE$
+						make_pregnant = {
+							father = scope:had_sex_root_character
 						}
 					}
 				}
@@ -599,6 +673,9 @@ had_sex_with_effect = {
 			$CHARACTER$ = { give_homosexual_secret_or_nothing_with_target_effect = { CHARACTER = scope:had_sex_root_character } }
 		}
 	}
+
+	# Achievements
+	#fp2_had_friend_with_benefits = yes # FP2 History's Best Friend
 }
 
 #For having sex with "someone" (not a character)
