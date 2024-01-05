@@ -1,0 +1,375 @@
+﻿# Interaction used to convert people when you hybridize or diverge culture
+# Note that it will only be applied to vassals of the parent culture(s)
+# Acceptance is checked *before* culture conversion happens so that it'll be correct in the UI
+# This has the culture traits available in the traits list:
+# modifier = {
+# 	add = 10
+# 	desc = TEST
+# 	culture_pillar:ethos_bellicose = { is_in_list = traits }
+# }
+
+request_culture_conversion_interaction = {
+	category = interaction_category_religion
+	special_interaction = request_culture_conversion_interaction
+	popup_on_receive = yes
+
+	desc = ask_for_conversion_interaction_desc
+
+	hidden = yes
+	
+	is_shown = {
+		NOT = { scope:actor.culture = scope:recipient.culture }
+		scope:recipient.liege = scope:actor
+	}
+
+	is_valid_showing_failures_only = {
+	}
+	
+	ai_accept = {
+		base = -10
+		opinion_modifier = {
+			opinion_target = scope:actor
+			who = scope:recipient
+			multiplier = 1
+		}
+		
+		modifier = {
+			desc = ASK_FOR_CONVERSION_SAME_CULTURE_PRESTIGE_LEVEL
+			add = {
+				value = 10
+				multiply = scope:actor.prestige_level
+			}
+			scope:actor.prestige_level > 0
+			scope:recipient.culture = scope:actor.culture
+		}
+
+		modifier = {
+			desc = ASK_FOR_CONVERSION_RECIPIENT_DIPLOMACY
+			add = {
+				value = scope:actor.diplomacy
+				subtract = scope:recipient.diplomacy
+				multiply = 5
+			}
+		}
+		
+		modifier = {
+			desc = ASK_FOR_CONVERSION_RECIPIENT_IS_CYNICAL
+			add = 30
+			scope:recipient = {
+				has_trait = cynical
+			}
+		}
+		
+		modifier = {
+			desc = ASK_FOR_CONVERSION_RECIPIENT_IS_STUBBORN
+			add = -30
+			scope:recipient = {
+				has_trait = stubborn
+			}
+		}
+			
+		modifier = {
+			add = intimidated_external_reason_value
+			scope:recipient = {
+				has_dread_level_towards = {
+					target = scope:actor
+					level = 1
+				}
+			}
+			desc = INTIMIDATED_REASON
+		}
+		modifier = {
+			add = cowed_external_reason_value
+			scope:recipient = {
+				has_dread_level_towards = {
+					target = scope:actor
+					level = 2
+				}
+			}
+			desc = COWED_REASON
+		}
+		# Unity modifiers
+		evaluate_action_increasing_house_unity = {
+			VALUE = 100
+		}
+	}
+	
+	ai_min_reply_days = 1
+	ai_max_reply_days = 5
+	
+	on_accept = {
+		new_culture_created_vassal_conversion_effect = {
+			CONVERTEE = scope:recipient
+			CONVERTER = scope:actor
+			CULTURE = scope:actor.culture
+		}
+	}
+}
+
+ai_cultural_hybridization_interaction = {
+
+	hidden = yes
+	
+	auto_accept = yes
+	
+	ai_potential = {
+		has_dlc_feature = hybridize_culture
+		OR = {
+			is_independent_ruler = yes
+			highest_held_title_tier >= tier_kingdom
+		}
+		is_landed = yes
+		realm_size >= 4
+		is_physically_able_adult = yes
+		is_at_war = no
+		exists = capital_county
+		capital_county.holder = root
+		NOT = {
+			has_game_rule = none_hybrid_culture_ai_frequency
+		}
+	}
+
+	is_shown = {
+		scope:actor = {
+			is_ai = yes
+		}
+		exists = scope:target
+	}
+	
+	ai_set_target = {
+		scope:actor = {
+			if = {
+				limit = {
+					exists = capital_county
+					any_sub_realm_county = {
+						NOT = {
+							culture = scope:actor.culture
+						}
+						culture = {
+							cultural_acceptance = { target = scope:actor.culture value >= hybridization_ai_threshold_value }
+							scope:actor = {
+								can_hybridize = prev
+							}
+						}
+					}
+				}
+				every_sub_realm_county = {
+					limit = {
+						NOT = {
+							culture = scope:actor.culture
+						}
+						culture = {
+							cultural_acceptance = { target = scope:actor.culture value >= hybridization_ai_threshold_value }
+							scope:actor = {
+								can_hybridize = prev
+							}
+						}
+					}
+					culture = {
+						add_to_list = culture_list
+					}
+				}
+				
+				ordered_in_list = {
+					list = culture_list
+					limit = { culture_realm_size >= 3 }
+					order_by = culture_realm_size
+
+					save_scope_as = target
+				}
+			}
+		}
+	}
+
+	on_accept = {
+		# Global cooldowns for the lower frequency game rule settings
+		if = {
+			limit = {
+				has_game_rule = less_common_hybrid_culture_ai_frequency
+			}
+			set_global_variable = { name = has_ai_hybrid_event_cooldown value = yes days = 3650 }
+		}
+		scope:actor = {
+			create_hybrid_culture_with_side_effects = scope:target
+		}
+	}
+	
+	ai_targets = {
+		ai_recipients = self
+	}
+	
+	ai_frequency = 60
+
+	ai_will_do = {
+		base = 100
+
+		# Unity modifiers
+		evaluate_action_increasing_house_unity = {
+			VALUE = 100
+		}
+		
+		modifier = {
+			factor = 0.2
+			has_game_rule = less_common_hybrid_culture_ai_frequency
+		}
+		
+		modifier = {
+			factor = 0
+			exists = global_var:has_ai_hybrid_event_cooldown
+		}
+		
+		modifier = {
+			factor = 0
+			culture = {
+				has_cultural_parameter = harder_to_hybridize
+			}
+		}
+		
+		modifier = { # The AI should only want to hybridize if they're the second ruler of their culture for their primary title
+			factor = 0
+			OR = {
+				NOT = {
+					exists = primary_title.previous_holder
+				}
+				AND = {
+					exists = primary_title.previous_holder
+					NOT = {
+						primary_title.previous_holder.culture = scope:actor.culture
+					}
+				}
+			}
+		}
+		
+		modifier = { # The AI doesn't want to hybridize if their culture is more than X% bigger than the targeted culture within the same realm (unless it's in the capital, and the capital is the De Jure capital of the primary title)
+			factor = 0
+			scope:actor.culture.culture_realm_size > scope:target.culture_realm_size_larger_30_percent
+			NAND = {
+				scope:actor.primary_title.title_capital_county = scope:actor.capital_county
+				scope:actor.capital_county.culture = scope:target
+			}
+		}
+		
+		modifier = { # Do not hybridize if 30% or more of your vassals of the relevant culture/s dislike you
+			factor = 0
+			scope:actor = {
+				any_vassal = {
+					percent >= 0.3
+					OR = {
+						culture = scope:actor.culture
+						culture = scope:target
+					}
+					highest_held_title_tier >= tier_county
+					opinion = {
+						target = scope:actor
+						value <= 0
+					}
+				}
+			}
+		}
+		
+		modifier = { # The AI does not want to create multiple hybrids from the same cultures
+			factor = 0
+			any_in_global_list = {
+				variable = hybrid_cultures
+				any_parent_culture = { this = scope:target }
+				any_parent_culture = { this = scope:actor.culture }
+			}
+		}
+		
+		# Loose requirements
+		modifier = { # The AI does not want to create a hybrid with a hybrid culture that has the same roots
+			factor = 0
+			has_game_rule = very_relaxed_hybrid_culture_ai_restrictions
+			scope:target = { is_hybrid_culture = yes }
+			scope:actor.culture = {
+				is_hybrid_culture = yes
+				any_parent_culture = {
+					save_temporary_scope_as = parent_culture_check
+					scope:target = {
+						any_parent_culture = {
+							this = scope:parent_culture_check
+						}
+					}
+				}
+			}
+		}
+		
+		modifier = { # The AI does not want to create a hybrid with a hybrid culture (unless a historical hybrid)
+			factor = 0
+			has_game_rule = relaxed_hybrid_culture_ai_restrictions
+			scope:target = {
+				is_hybrid_culture = yes
+				culture_is_not_historical_hybrid_trigger = yes
+			}
+			scope:actor.culture = {
+				is_hybrid_culture = yes
+				culture_is_not_historical_hybrid_trigger = yes
+			}
+		}
+		
+		modifier = { # The AI does not want to create a hybrid with a hybrid culture or if the target is a hybrid (unless a historical hybrid)
+			factor = 0
+			has_game_rule = default_hybrid_culture_ai_restrictions
+			OR = {
+				scope:target = {
+					is_hybrid_culture = yes
+					culture_is_not_historical_hybrid_trigger = yes
+				}
+				scope:actor.culture = {
+					is_hybrid_culture = yes
+					culture_is_not_historical_hybrid_trigger = yes
+				}
+			}
+		}
+		
+		modifier = { # The AI does not want to create a hybrid with a hybrid culture that their culture is a parent of, or share heritage of
+			factor = 0
+			scope:target = {
+				is_hybrid_culture = yes
+				any_parent_culture = {
+					OR = {
+						this = scope:actor.culture
+						has_same_culture_heritage = scope:actor.culture
+					}
+				}
+			}
+		}
+		
+		modifier = { # The AI does not want to create a hybrid if their culture is a hybrid of the target culture, or share heritage of
+			factor = 0
+			scope:actor.culture = {
+				is_hybrid_culture = yes
+				any_parent_culture = {
+					OR = {
+						this = scope:target
+						has_same_culture_heritage = scope:target
+					}
+				}
+			}
+		}
+		
+		modifier = { # Avoid hybridizing if your realm is of a significant size and elective, we don't want the HRE Emperor to hybdridize in ugly ways...
+			factor = 0
+			primary_title = {
+				has_order_of_succession = election
+				tier >= tier_kingdom
+			}
+			realm_size >= 50
+			any_vassal = {
+				highest_held_title_tier >= tier_county
+				NOT = {
+					culture = scope:actor.culture
+				}
+			}
+		}
+		
+		modifier = { # Theocrats such as the Pope shouldn't hybridize; they have an influx of different cultures, it's just weird
+			factor = 0
+			government_has_flag = government_is_theocracy
+		}
+		
+		# Warcraft
+		
+		# Note: As we're checking if we can hybridize with a culture *right now*, a suboptimal culture might be checked. A buffer of 10 acceptance is used by the AI to alleviate this.
+	}
+}

@@ -43,7 +43,8 @@ excommunicate_character = {
 			}
 			progress_towards_rival_effect = {
 				CHARACTER = scope:requesting_character
-				OPINION = no
+				REASON = rival_requested_excommunication
+				OPINION = 0
 			}
 			set_variable = { #TO save who wanted you excommunicated
 				name = requested_my_excommunication
@@ -92,6 +93,44 @@ excommunicate_character = {
 	}
 }
 
+lift_character_excommunication_effect = {
+	$REQUESTING_CHARACTER$ = {
+		hidden_effect = {
+			send_interface_toast = {	
+				title = lift_excommunicate_interaction_desc.tt
+				left_icon = $TARGET_CHARACTER$
+				$TARGET_CHARACTER$ = {
+					show_as_tooltip = { remove_trait = excommunicated }
+				}
+			}
+		}
+	}
+	$TARGET_CHARACTER$ = {
+		remove_trait = excommunicated
+		add_character_modifier = {
+			modifier = excommunication_recently_lifted
+			years = 10
+		}
+		add_opinion = {
+			modifier = grateful_opinion
+			target = $REQUESTING_CHARACTER$
+			opinion = 30
+		}
+		# To nudge friendship.
+		hidden_effect = {
+			if = {
+				limit = {
+					NOR = {
+						has_relation_friend = $REQUESTING_CHARACTER$
+						has_relation_potential_friend = $REQUESTING_CHARACTER$
+					}
+				}
+				set_relation_potential_friend = $REQUESTING_CHARACTER$
+			}
+		}
+	}
+}
+
 # Saves the target kingdom to scope:target_kingdom, and the target character to scope:target_character
 determine_ghw_target_effect = {
 	# Find every *possible* kingdom
@@ -116,22 +155,22 @@ determine_ghw_target_effect = {
 		}
 	}
 	
-	# Pick out the 3 "best" ones
+	# Pick out the 10 "best" ones
 	ordered_in_list = {
 		list = potential_kingdoms
 		order_by = great_holy_war_target_kingdom_weight
 		
 		min = 0
-		max = 3
+		max = 10
 		check_range_bounds = no
 		
 		add_to_list = filtered_potential_kingdoms
 	}
-	# Pick one of the top 3 at random (weighted)
+	# Pick one of the top 10 at random (weighted)
 	random_in_list = {
 		list = filtered_potential_kingdoms
 		weight = {
-			base = 0
+			base = 10
 			modifier = {
 				add = great_holy_war_target_kingdom_weight
 			}
@@ -908,9 +947,15 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 	}
 }
 
-demand_conversion_interaction_effect = {
-	# Spouses convert
+# SECRET FAITH EFFECTS
+
+# When someone is demanded to change their faith, find out which of their spouses/family will also convert
+grab_spouses_and_family_to_convert_effect = {
 	scope:recipient = {
+		# Add yourself
+		add_to_list = spouses_and_family_to_convert
+		add_character_flag = spouse_or_family_to_convert
+		# Spouses convert
 		every_spouse = {
 			limit = {
 				OR = {
@@ -919,8 +964,116 @@ demand_conversion_interaction_effect = {
 					is_vassal_of = scope:actor
 					is_vassal_of = scope:recipient
 				}
+				NOT = { has_character_flag = spouse_or_family_to_convert }
 			}
+		add_to_list = spouses_and_family_to_convert
+		add_character_flag = spouse_or_family_to_convert
+		}
+		# Family in recipient's court also convert
+		if = {
+			limit = {
+				is_ruler = yes
+			}
+			every_close_or_extended_family_member = {
+				custom = all_family_members_at_court
+				limit = {
+					exists = employer
+					employer = scope:recipient
+					faith = scope:recipient.faith
+					NOT = { faith = scope:actor.faith }
+					is_ai = yes
+					NOT = { has_character_flag = spouse_or_family_to_convert }
+					# Don't add the recipient twice
+					#NOT = { root = scope:recipient }
+				}
+				add_to_list = spouses_and_family_to_convert
+				add_character_flag = spouse_or_family_to_convert
+			}
+		}
+	}
+	every_in_list = {
+		list = spouses_and_family_to_convert
+		remove_character_flag = spouse_or_family_to_convert
+	}
+}
+
+# Default conversion effect; allows the recipient to demure whether to keep a secret faith or not
+demand_conversion_interaction_effect = {
+	grab_spouses_and_family_to_convert_effect = yes
+	show_as_tooltip = {
+		convert_family_to_faith_effect = {
+			FALSE_CONVERSION = no
+			FORCED = yes
+		}
+	}
+	every_in_list = {
+		list = spouses_and_family_to_convert
+		# Don't say that people can convert when you know they can't
+		if = {
+			limit = {
+				faith = scope:recipient.faith
+				NOT = { has_crypto_religionist_secret_known_by_character_trigger = { CHARACTER = scope:actor } }
+				NOT =  { exists = secret_faith }
+			}
+			custom_tooltip = ask_for_conversion_interaction_accept_tooltip
+		}
+	}
+	scope:recipient = {
+		trigger_event = false_conversion.0900
+	}
+}
+
+# Switch a character to the specified faith and keep their old faith as a secret (or not)
+# Assumes that spouses and family to convert have already been grabbed
+convert_family_to_faith_effect = {
+	every_in_list = {
+		list = spouses_and_family_to_convert
+		# Make crypto-religionists of them, if applicable
+		if = {
+			limit = {
+				$FALSE_CONVERSION$ = yes
+				faith = scope:recipient.faith
+			}
+			scope:recipient.faith = { save_temporary_scope_as = old_faith }
 			set_character_faith = scope:actor.faith
+			make_character_crypto_religionist_effect = { CRYPTO_RELIGION = scope:old_faith }
+			# Grab the character's recently added crypto secret
+			if = {
+				limit = {
+					any_secret = { secret_type = secret_crypto_religionist }
+					exists = secret_faith
+					# Ignore the crypto secret if it's not new
+					# This prevents the edge case of family members finding out about other family's different crypto faiths
+					secret_faith = scope:old_faith
+				}
+				random_secret = {
+					limit = {
+						secret_type = secret_crypto_religionist
+					}
+					save_scope_as = crypto_religionist_secret
+				}
+			}
+			# Make the secret known to all other family members
+			every_in_list = {
+				list = spouses_and_family_to_convert
+				if = {
+					limit = {
+						exists = scope:crypto_religionist_secret
+						NOT = { prev = this }
+					}
+					scope:crypto_religionist_secret = {
+						reveal_to_without_events_effect = { CHARACTER = prev }
+					}
+				}
+			}
+		}
+		else = {
+			set_character_faith = scope:actor.faith
+		}
+		if = {
+			limit = {
+				$FORCED$ = yes
+			}
 			hidden_effect = {
 				add_character_flag = {
 					flag = converted_by_forced_conversion_interaction
@@ -929,47 +1082,244 @@ demand_conversion_interaction_effect = {
 			}
 		}
 	}
-	# Family in recipient's court also convert
+	scope:recipient = {
+		bastard_to_wild_oat_conversion_interaction_effect = yes
+	}
+	# Struggle Catalysts.
+	#if = {
+	#	limit = {
+	#		scope:recipient = { is_important_or_vip_struggle_character = yes }
+	#		scope:actor = {
+	#			any_character_struggle = {
+	#				involvement = involved
+	#				activate_struggle_catalyst_secondary_character_involvement_involved_trigger = {
+	#					CATALYST = catalyst_demanding_important_conversion
+	#					CHAR = scope:recipient
+	#				}
+	#			}
+	#		}
+	#	}
+	#	scope:actor = {
+	#		every_character_struggle = {
+	#			involvement = involved
+	#			limit = {
+	#				activate_struggle_catalyst_secondary_character_involvement_involved_trigger = {
+	#					CATALYST = catalyst_demanding_important_conversion
+	#					CHAR = scope:recipient
+	#				}
+	#			}
+	#			activate_struggle_catalyst = {
+	#				catalyst = catalyst_demanding_important_conversion
+	#				character = scope:actor
+	#			}
+	#		}
+	#	}
+	#}
+}
+
+make_character_crypto_religionist_effect = {
 	if = {
 		limit = {
-			scope:recipient = {
-				is_ruler = yes
-				any_close_or_extended_family_member = {
-					exists = court_owner
-					court_owner = scope:recipient
-					faith = scope:recipient.faith
-					NOT = { faith = scope:actor.faith }
-					is_ai = yes
-				}	
-			}	
+			NOR = {
+				any_secret = { secret_type = secret_crypto_religionist }
+				exists = secret_faith
+				$CRYPTO_RELIGION$ = faith
+			}
 		}
-		scope:recipient = {
-			every_close_or_extended_family_member = {
-				custom = all_family_members_at_court
-				limit = {
-					exists = court_owner
-					court_owner = scope:recipient
-					faith = scope:recipient.faith
-					NOT = { faith = scope:actor.faith }
-					is_ai = yes
+		hidden_effect = { set_character_secret_faith = $CRYPTO_RELIGION$ }
+		add_secret = {
+			type = secret_crypto_religionist
+		}
+	}
+}
+
+make_county_crypto_religionists_effect = {
+	set_variable = {
+		name = false_convert
+		value = $FAITH$
+		days = 18250
+	}
+	add_county_modifier = {
+		modifier = false_convert_modifier
+		years = 50
+	}
+}
+
+# Makes the target a crypto-religionist of the root's faith and exposes both secrets to one another
+# Owner_Crypto_Secret needs to be already scoped before calling this effect
+spread_crypto_religion_to_target_effect = {
+	$TARGET$ = {
+		if = {
+			limit = {
+				NOT = {
+					any_secret = { secret_type = secret_crypto_religionist }
 				}
-				set_character_faith = scope:actor.faith
+			}
+
+			make_character_crypto_religionist_effect = { CRYPTO_RELIGION = scope:owner.secret_faith }
+			random_secret = {
+				limit = { secret_type = secret_crypto_religionist }
+				reveal_to_without_events_effect = { CHARACTER = root }
+			}
+			if = {
+				limit = {
+					NOT = { scope:owner_crypto_secret = { is_known_by = $TARGET$ } }
+				}
+				scope:owner_crypto_secret = {
+					reveal_to_without_events_effect = { CHARACTER = $TARGET$ }
+				}
+			}
+		}
+	}
+}
+
+child_secret_faith_conversion_success_effect = {
+	scope:child = {
+		make_character_crypto_religionist_effect = {
+			CRYPTO_RELIGION = scope:guardian.secret_faith
+		}
+	}
+	# Notify the actor
+	scope:guardian = {
+		send_interface_message = {
+			type = event_generic_good
+			title = secret_faith.1001.message
+			left_icon = scope:child
+			scope:child = {
+				random_secret = {
+					limit = {
+						NOT = { is_known_by = scope:guardian }
+						secret_type = secret_crypto_religionist
+					}
+					reveal_to = scope:guardian
+				}
+				add_opinion = {
+					target = PREV
+					modifier = impressed_opinion
+					opinion = 20
+				}
+			}
+			random_secret = {
+				limit = {
+					NOT = { is_known_by = scope:child }
+					secret_type = secret_crypto_religionist
+				}
+				reveal_to = scope:child
+			}
+		}
+	}
+}
+
+child_secret_faith_conversion_failure_effect = {
+	scope:guardian = {
+		send_interface_toast = {
+			title = child_secret_faith_conversion_failure_effect.desc
+			left_icon = scope:child
+			scope:child = {
+			 	add_opinion = {
+					target = scope:guardian
+					modifier = suspicion_opinion
+					opinion = -15
+				}
+			}
+		}
+		scope:guardian = {
+			if = {
+				limit = { this = root }
 				hidden_effect = {
-					add_character_flag = {
-						flag = converted_by_forced_conversion_interaction
-						years = 5
+					add_opinion = {
+						target = scope:child
+						modifier = disappointed_opinion
+						opinion = -15
+					}
+				}
+			}
+			else = {
+				add_opinion = {
+					target = scope:child
+					modifier = disappointed_opinion
+					opinion = -15
+				}
+			}
+		}
+	}
+}
+
+child_secret_faith_conversion_critical_failure_effect = {
+	hidden_effect = {
+		# Save and reveal secret
+		scope:guardian = {
+			random_secret = {
+				limit = {
+					secret_type = secret_crypto_religionist
+				}
+				save_scope_as = guardian_secret_faith_secret
+				if = {
+					limit = { NOT = { is_known_by = scope:child } }
+					reveal_to = scope:child
+				}
+			}
+		}
+		scope:child = {
+			# Inform the child's liege if relevant
+			if = {
+				limit = {
+					is_ruler = yes
+					NOR = {
+						liege = this
+						liege ?= scope:guardian
+					}
+				}
+				liege = {
+					send_interface_message = {
+						title = child_secret_faith_conversion_critical_failure_effect.liege.desc
+						left_icon = scope:child
+						right_icon = scope:guardian
+						show_as_tooltip = {
+							scope:guardian_secret_faith_secret = { expose_secret = scope:child }
+							scope:child = {
+								add_opinion = {
+									target = scope:guardian
+									modifier = hate_opinion
+									opinion = -30
+								}
+							}
+						}
 					}
 				}
 			}
 		}
 	}
-	scope:recipient = {
-		bastard_to_wild_oat_conversion_interaction_effect = yes
-		set_character_faith = scope:actor.faith
-		hidden_effect = {
-			add_character_flag = {
-				flag = converted_by_forced_conversion_interaction
-				years = 5
+	scope:child = {
+		# Inform the child
+		send_interface_toast = {
+			title = child_secret_faith_conversion_critical_failure_effect.desc
+			left_icon = scope:child
+			right_icon = scope:guardian
+	 		scope:guardian_secret_faith_secret = { expose_secret = scope:child }
+		 	add_opinion = {
+				target = scope:guardian
+				modifier = hate_opinion
+				opinion = -30
+			}
+		}
+	}
+	scope:guardian = {
+		if = {
+			limit = { this = root }
+			hidden_effect = {
+				add_opinion = {
+					target = scope:child
+					modifier = hate_opinion
+					opinion = -30
+				}
+			}
+		}
+		else = {
+			add_opinion = {
+				target = scope:child
+				modifier = hate_opinion
+				opinion = -30
 			}
 		}
 	}
@@ -989,68 +1339,10 @@ new_faith_created_conversion_effect = {
 			set_county_faith = scope:actor.faith
 		}
 	}
-	# Spouses convert
-	scope:recipient = {
-		every_spouse = {
-			limit = {
-				OR = {
-					is_courtier_of = scope:actor
-					is_courtier_of = scope:recipient
-					is_vassal_of = scope:actor
-					is_vassal_of = scope:recipient
-				}
-			}
-			set_character_faith = scope:actor.faith
-			hidden_effect = {
-				add_character_flag = {
-					flag = converted_by_forced_conversion_interaction
-					years = 5
-				}
-			}
-		}
-	}
-	# Family in recipient's court also convert
-	if = {
-		limit = {
-			scope:recipient = {
-				is_ruler = yes
-				any_close_or_extended_family_member = {
-					exists = court_owner
-					court_owner = scope:recipient
-					faith = scope:recipient.faith
-					NOT = { faith = scope:actor.faith }
-					is_ai = yes
-				}	
-			}	
-		}
-		scope:recipient = {
-			every_close_or_extended_family_member = {
-				custom = all_family_members_at_court
-				limit = {
-					exists = court_owner
-					court_owner = scope:recipient
-					faith = scope:recipient.faith
-					NOT = { faith = scope:actor.faith }
-					is_ai = yes
-				}
-				set_character_faith = scope:actor.faith
-				hidden_effect = {
-					add_character_flag = {
-						flag = converted_by_forced_conversion_interaction
-						years = 5
-					}
-				}
-			}
-		}
-	}
-	scope:recipient = {
-		set_character_faith = scope:actor.faith
-		hidden_effect = {
-			add_character_flag = {
-				flag = converted_by_forced_conversion_interaction
-				years = 5
-			}
-		}
+	grab_spouses_and_family_to_convert_effect = yes
+	convert_family_to_faith_effect = {
+		FALSE_CONVERSION = no
+		FORCED = yes
 	}
 }
 
@@ -1067,73 +1359,21 @@ adopt_religion_interaction_effect = {
 			set_county_faith = scope:recipient.faith
 		}
 	}
-	# Spouses convert
-	if = {
-		limit = {
-			scope:actor = {
-				any_spouse = {
-					NOT = { faith = scope:recipient.faith }
-					OR = {
-						is_courtier_of = scope:actor
-						is_courtier_of = scope:recipient
-						is_vassal_of = scope:actor
-						is_vassal_of = scope:recipient
-					}
-				}
-			}
-		}
-		scope:actor = {
-			every_spouse = {
-				limit = {
-					NOT = { faith = scope:recipient.faith }
-					OR = {
-						is_courtier_of = scope:actor
-						is_courtier_of = scope:recipient
-						is_vassal_of = scope:actor
-						is_vassal_of = scope:recipient
-					}
-				}
-				set_character_faith = scope:recipient.faith
-			}
-		}
-	}
-	# Family in actor's court also convert
-	if = {
-		limit = {
-			scope:actor = {
-				is_ruler = yes
-				any_close_or_extended_family_member = {
-					exists = court_owner
-					court_owner = scope:actor
-					faith = scope:actor.faith
-					NOT = { faith = scope:recipient.faith }
-					is_ai = yes
-				}	
-			}	
-		}
-		scope:actor = {
-			every_close_or_extended_family_member = {
-				custom = all_family_members_at_court_converison
-				limit = {
-					exists = court_owner
-					court_owner = scope:actor
-					faith = scope:actor.faith
-					NOT = { faith = scope:recipient.faith }
-					is_ai = yes
-				}
-				set_character_faith = scope:recipient.faith
-			}
-		}
-	}
-	scope:actor = {
-		set_character_faith = scope:recipient.faith
+	# Spouses and family convert
+	grab_spouses_and_family_to_convert_effect = yes
+	convert_family_to_faith_effect = {
+		FALSE_CONVERSION = no
+		FORCED = no
 	}
 }
 
 
 sun_trial_death_effect = {
 	scope:prisoner = {
-		override_death_killer_effect = { DEATH_REASON = death_sun_trial KILLER = scope:imprisoner }
+		override_death_killer_effect = {
+			death_reason = death_sun_trial
+			killer = scope:imprisoner
+		}
 	}
 
 	#Opinion penalties
@@ -1223,7 +1463,12 @@ humsacd_a_hof_effect = {
 			# Save scopes for future events.
 			save_scope_as = sacrificed_hof
 			# Up fervour.
-			faith = { change_fervor = hof_humsacd_fervour_gain }
+			faith = {
+				change_fervor = {
+					value = hof_humsacd_fervour_gain
+					desc = fervor_sacrificed_our_head_of_faith
+				}
+			}
 			# Martyr the HoF explicitly if possible.
 			if = {
 				limit = {
