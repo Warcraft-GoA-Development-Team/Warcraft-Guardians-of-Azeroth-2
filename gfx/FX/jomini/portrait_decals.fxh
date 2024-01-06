@@ -113,7 +113,7 @@ PixelShader =
 		{
 			// This function (originally GetMIP6Level()) was graciously provided by Buck (EK2).
 
-			#ifdef PDX_OPENGL
+			#ifdef PDX_DIRECTX_11
 				// If running on DX, use the below to get decal texture size.
 				float3 TextureSize;
 				DecalDiffuseArray._Texture.GetDimensions( TextureSize.x , TextureSize.y , TextureSize.z );
