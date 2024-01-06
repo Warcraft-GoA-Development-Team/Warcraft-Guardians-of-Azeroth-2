@@ -118,8 +118,14 @@ PixelShader =
 				float3 TextureSize;
 				DecalDiffuseArray._Texture.GetDimensions( TextureSize.x , TextureSize.y , TextureSize.z );
 			#else
+				#ifdef PDX_VULKAN
+				// If running on VULKAN, use the below to get decal texture size.
+				float3 TextureSize;
+				DecalDiffuseArray._Texture.GetDimensions( TextureSize.x , TextureSize.y , TextureSize.z );
+				#else
 				// If running on OpenGL, use the below to get decal texture size.
 				ivec3 TextureSize = textureSize(DecalDiffuseArray, 0);
+				#endif
 			#endif
 
 			// Get log base 2 for current texture size (1024px - 10, 512px - 9, etc.)
