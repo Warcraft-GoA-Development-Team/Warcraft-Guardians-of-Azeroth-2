@@ -4,6 +4,7 @@
 # 0001 - Courtier is planning to leave
 # 0102 - Courtier with claim is wanting to leave
 # 0500 - Guests leaves
+# 0999 - Maintenance - Force move to pool
 
 #GUESTS ARRIVING
 # 1001 - Guest arriving, message if they're great
@@ -78,6 +79,7 @@ courtier_guest_management.0101 = {
 		#Liege gets "last chance to make them stay"-event for claimants
 		if = {
 			limit = {
+				scope:liege = { is_ai = no }
 				any_in_list = {
 					list = characters
 					save_temporary_scope_as = check_character
@@ -126,10 +128,7 @@ courtier_guest_management.0101 = {
 			}
 		}
 		else = {
-			random_in_list = {
-				list = characters
-				select_and_move_to_pool_effect = yes
-			}
+			move_to_pool_effect = yes
 		}
 	}
 }
@@ -144,7 +143,7 @@ courtier_guest_management.0102 = { #by Mathilda Bjarnehed
 	right_portrait = scope:courtier_claim
 	theme = crown
 	override_background = {
-		event_background = courtyard
+		reference = courtyard
 	}
 	
 	trigger = {
@@ -275,6 +274,7 @@ courtier_guest_management.0500 = {
 				NOT = { has_character_flag = guest_has_given_warning_about_leaving }
 				#To double check that they actually can leave
 				is_pool_guest_of = scope:host
+				scope:host = { is_ai = no }
 				any_traveling_family_member = {
 					count = all
 					guest_allowed_to_leave_trigger = yes
@@ -342,9 +342,21 @@ courtier_guest_management.0500 = {
 					has_character_flag = guest_has_given_warning_about_leaving
 				}
 				remove_character_flag = guest_has_given_warning_about_leaving
+
+				# Now a month out of date, so lets update it
+				select_pool_to_move_to_effect = yes
 			}
-			select_and_move_to_pool_effect = yes
+			move_to_pool_effect = yes
 		}
+	}
+}
+
+# Maintenance - Force move to pool
+courtier_guest_management.0999 = {
+	hidden = yes
+	
+	immediate = {
+		select_and_move_to_pool_effect = yes
 	}
 }
 
@@ -362,6 +374,7 @@ scripted_trigger courtier_guest_management_1001_exceptional_claimant_trigger = {
 scripted_trigger courtier_guest_management_1001_exceptional_marriage_candidate_trigger = {
 	save_temporary_scope_as = marriage_candidate
 	guest_marriage_candidate_trigger = yes
+	age > 14
 	OR = {
 		num_of_good_genetic_traits = 3
 		AND = {
@@ -483,6 +496,41 @@ courtier_guest_management.1001 = {
 			}
 		}
 		
+		# To update Adventure Inspiration to make sure that the target destination isn't in the realm they just arrived to. If it is we remove it and make them pick a new destination!
+		every_in_list = {
+			list = guest_arrival_list
+			limit = {
+				exists = inspiration
+				inspiration = { has_inspiration_type = adventure_inspiration }
+				exists = var:adventure_destination #They know where they want to go
+			}
+			get_adventure_inspiration_start_location = { ADVENTURER = this }
+			if = {
+				limit = {
+					scope:host = {
+						any_sub_realm_county = {
+							this = scope:location.county
+						}
+					}
+				}
+				remove_variable = adventure_destination
+				if = {
+					limit = {
+						adventure_inspiration_average_skill_value >= high_inspiration_skill
+					}
+					set_adventure_location_effect = {
+						BASE_SCOPE = this
+						NO_DESTINATION = yes
+					}
+				}
+				else = {
+					set_adventure_location_effect = {
+						BASE_SCOPE = this
+						NO_DESTINATION = no
+					}
+				}
+			}
+		}
 
 		###DEVELOPMENT EFFECT###
 		#Because the characters spend so little time in the pool, we also run it now
@@ -558,6 +606,28 @@ courtier_guest_management.1001 = {
 						limit = {
 							scope:host = {
 								any_child = {
+									count >= 1
+									child_available_for_guest_marriage_trigger = yes
+									can_marry_character_trigger = { CHARACTER = scope:exceptional_guest }
+									is_male = yes
+								}
+								any_child = {
+									count >= 1
+									child_available_for_guest_marriage_trigger = yes
+									can_marry_character_trigger = { CHARACTER = scope:exceptional_guest }
+									is_female = yes
+								}
+							}
+						}
+						save_scope_value_as = {
+							name = marriage_message_target
+							value = flag:children
+						}
+					}
+					else_if = {
+						limit = {
+							scope:host = {
+								any_child = {
 									count >= 2
 									child_available_for_guest_marriage_trigger = yes
 									can_marry_character_trigger = { CHARACTER = scope:exceptional_guest }
@@ -586,7 +656,7 @@ courtier_guest_management.1001 = {
 							value = flag:daughters
 						}
 					}
-					else_if = {
+					if = {
 						limit = {
 							scope:host = {
 								any_child = {
@@ -620,7 +690,7 @@ courtier_guest_management.1001 = {
 						send_interface_message = {
 							type = character_arrived
 							left_icon = scope:exceptional_guest
-							right_icon = scope:guest_claim
+							right_icon = scope:marriage_child
 							title = courtier_guest_management.1001.t
 							desc = {
 								desc = courtier_guest_management.1001.marriage_start.desc
@@ -631,6 +701,13 @@ courtier_guest_management.1001 = {
 											scope:marriage_message_target = flag:me
 										}
 										desc = courtier_guest_management.1001.marriage_me.desc
+									}
+									triggered_desc = {
+										trigger = {
+											exists = scope:marriage_message_target
+											scope:marriage_message_target = flag:children
+										}
+										desc = courtier_guest_management.1001.marriage_my_children.desc
 									}
 									triggered_desc = {
 										trigger = {
@@ -646,7 +723,10 @@ courtier_guest_management.1001 = {
 										}
 										desc = courtier_guest_management.1001.marriage_my_daughters.desc
 									}
-									desc = courtier_guest_management.1001.marriage_my_child.desc
+									triggered_desc = {
+										trigger = { exists = scope:marriage_child }
+										desc = courtier_guest_management.1001.marriage_my_child.desc
+									}
 								}
 							}
 						}
@@ -740,10 +820,10 @@ courtier_guest_management.2001 = {
 					limit = { # Warcraft
 					age_in_relation_to_humans_less_than_trigger = { age = 65 } 
 					}
-					override_death_effect = { DEATH_REASON = death_accident }
+					override_death_effect = { death_reason = death_accident }
 				}
 				else = {
-					override_death_effect = { DEATH_REASON = death_old_age }
+					override_death_effect = { death_reason = death_old_age }
 				}
 			}
 			else = { # Otherwise, go somewhere else.
@@ -837,7 +917,7 @@ scripted_trigger courtier_guest_management_3001_interesting_trigger = {
 		is_lowborn = no
 		has_trait = intellect_good
 		has_trait = physique_good
-		has_trait = beauty_good
+		has_trait_beauty_good_trigger = yes
 
 		# Warcraft 
 		has_trait = magic_good
@@ -1058,7 +1138,7 @@ courtier_guest_management.3001 = {
 							}
 
 							add_to_list = already_updated
-							set_relation_friend = scope:current_character
+							set_random_friendship_reason = { TARGET = scope:current_character }
 						}
 					}
 					# Lover
@@ -1159,7 +1239,7 @@ courtier_guest_management.3001 = {
 
 							add_to_list = already_updated
 
-							set_relation_lover = scope:current_character
+							set_random_lover_reason = { TARGET = scope:current_character }
 						}
 					}
 					
@@ -1209,7 +1289,7 @@ courtier_guest_management.3001 = {
 							}
 
 							add_to_list = already_updated
-							set_relation_rival = scope:current_character
+							set_random_rivalry_reason = { TARGET = scope:current_character }
 						}
 					}
 					# Best friend
@@ -1229,7 +1309,7 @@ courtier_guest_management.3001 = {
 							}
 
 							add_to_list = already_updated
-							set_relation_best_friend = scope:current_character
+							set_relation_best_friend = { reason = best_friend_bonded_at_court copy_reason = friend target = scope:current_character involved_character = root.liege }
 						}
 					}
 					# Soulmate
@@ -1249,7 +1329,7 @@ courtier_guest_management.3001 = {
 							}
 
 							add_to_list = already_updated
-							set_relation_soulmate = scope:current_character
+							set_relation_soulmate = { reason = soulmate_love_at_court copy_reason = lover target = scope:current_character }
 						}
 					}
 					# Nemesis
@@ -1269,7 +1349,11 @@ courtier_guest_management.3001 = {
 							}
 
 							add_to_list = already_updated
-							set_relation_nemesis = scope:current_character
+							set_relation_nemesis = {
+								reason = nemesis_at_court
+								copy_reason = rival
+								target = scope:current_character
+							}
 						}
 					}
 
