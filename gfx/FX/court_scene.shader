@@ -1304,7 +1304,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
@@ -1312,7 +1312,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_skinShadow

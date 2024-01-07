@@ -472,7 +472,6 @@ PixelShader =
 				float4 Properties;
 				float3 NormalSample;
 				
-
 			#ifdef ENABLE_TEXTURE_OVERRIDE
 				if ( HasDiffuseMapOverride > 0.5f )
 				{
@@ -498,7 +497,12 @@ PixelShader =
 				{
 					NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 				}
-				
+			#else
+				Diffuse = PdxTex2D( DiffuseMap, UV0 );
+				Properties = PdxTex2D( PropertiesMap, UV0 );
+				NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
+			#endif
+			
 				//Warcraft
 				#ifdef DECALS
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
@@ -517,12 +521,14 @@ PixelShader =
 				#else
 					Diffuse.rgb = lerp( Diffuse.rgb, Diffuse.rgb * vPaletteColorSkin.rgb, 1.0f );
 				#endif
+				
 				//Warcraft
 				#ifdef DECALS
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
-				#endif
+				#endif	
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+
 				#ifdef ALPHA_TO_COVERAGE
 					Out.Color = float4( Color, Diffuse.a );
 				#else
@@ -769,7 +775,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" "HAIR_COLOR_OVERRIDE" }
+	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" "HAIR_COLOR_OVERRIDE" }
 }
 
 Effect portrait_skinShadow
