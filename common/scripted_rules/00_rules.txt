@@ -65,6 +65,7 @@ faith_creation = {
 				COUNT = 3
 			}
 		}
+		# Warcraft
 	}
 }
 
@@ -75,6 +76,12 @@ faith_conversion = {
 	is_adult = yes
 	NOT = { faith.religious_head = root }
 	is_in_ongoing_great_holy_war = no
+	
+	# Warcraft
+	trigger_if = {
+		limit = { has_title = title:e_scourge }
+		scope:new_faith = { has_doctrine_parameter = death_magic_openly_learnable }
+	}
 }
 
 # Determines if the mother of a character should spread the house to a bastard.
@@ -88,7 +95,7 @@ should_mother_give_house_to_bastard = {
 # Root is the potential knight
 can_be_knight = {
 	trigger_if = {
-		limit = { 
+		limit = {
 			OR = {
 				is_landed = no
 				root = root.court_owner 
@@ -96,34 +103,38 @@ can_be_knight = {
 			NOT = { exists = liege } 
 		}
 		can_be_knight_trigger = { ARMY_OWNER = root.court_owner }
-	} 
+	}
 	trigger_else = {
 		can_be_knight_trigger = { ARMY_OWNER = liege }
 	}
 }
 
-# Determines if a character is allowed to be granted titles by another character
+# Determines if a character is allowed to be granted specific title by another character
 # Root is the target character
 # scope:liege is the granter
+# scope:landed_title is the title in question
 allowed_to_be_granted_titles_by = {
-	can_be_granted_titles_by = { RULER = scope:liege }
+	trigger_if = {
+		limit = {
+			scope:landed_title = {
+				tier <= tier_county
+				title_province = { has_holding_type = church_holding }
+			}
+			scope:liege.faith = {
+				NOT = { has_doctrine_parameter = lay_clergy }
+			}
+		}
+		custom_tooltip = {
+			text = grant_title_clerical_gender_tt
+			can_be_granted_theocratic_titles_by = { RULER = scope:liege }
+		}
+	}
+	trigger_else = {
+		can_be_granted_titles_by = { RULER = scope:liege }
+	}
 }
 
 is_character_allowed_to_be_player = {
-	trigger_if = {
-		limit = {
-			scope:will_override_government = no
-		}
-		custom_description = {
-			text = "GAME_OVER_CANNOT_PLAY_THEOCRACY"
-			NOT = { has_government = theocracy_government }
-		}
-
-		custom_description = {
-			text = "GAME_OVER_CANNOT_PLAY_REPUBLIC"
-			NOT = { has_government = republic_government }
-		}
-	}
 }
 
 # Determines if a secret is considered available for blackmail for use in the GUI (icon/tooltip listing a secret you know as usable for blackmail)
@@ -173,12 +184,22 @@ passes_faction_hard_block = {
 
 	custom_description = {
 		text = "FACTION_CANT_JOIN_CREATE_IMPRISONED"
-		is_imprisoned = no		
+		trigger_if = {
+			limit = {
+				exists = joined_faction
+				joined_faction = {
+					faction_is_at_war = yes
+				}
+			}
+		}
+		trigger_else = {
+			is_imprisoned = no		
+		}
 	}	
 
 	custom_description = {
 		text = "FACTION_CANT_JOIN_CREATE_INCAPABLE"
-		NOT = { has_trait = incapable }
+		NOT = { is_incapable_trigger = yes }
 	}
 
 	custom_description = {
@@ -235,15 +256,45 @@ is_alliance_valid = {
 		is_parent_of = scope:second
 		is_child_of = scope:second
 		is_sibling_of = scope:second
+		is_grandparent_of = scope:second
+		is_great_grandparent_of = scope:second
+		is_grandchild_of = scope:second
+		is_great_grandchild_of = scope:second
+		is_uncle_or_aunt_of = scope:second
+		is_nibling_of = scope:second
 		scope:second = {
-			has_opinion_modifier = {
-				modifier = perk_negotiated_alliance_opinion
-				target = root
+			OR = {
+				has_opinion_modifier = {
+					modifier = perk_negotiated_alliance_opinion
+					target = root
+				}
+				has_opinion_modifier = {
+					modifier = event_negotiated_alliance_opinion
+					target = root
+				}
 			}
 		}
-		
+		#childhood friendship with hostage event, where they swear to be friends forever
+		AND = {
+			OR = {
+				has_relation_friend = scope:second
+				has_relation_best_friend = scope:second
+			}
+			OR = {
+				any_memory = {
+					has_memory_type = hostage_oath_of_friendship
+					has_memory_participant = scope:second
+				}
+				scope:second = {
+					any_memory = {
+						has_memory_type = hostage_oath_of_friendship
+						has_memory_participant = root
+					}
+				}
+			}
+		}
 		# Warcraft
-		is_in_same_faction_trigger = { TARGET = scope:second }
+		is_in_same_union_trigger = { TARGET = scope:second }
 	}
 }
 
@@ -256,6 +307,8 @@ can_designate_heir = {
 # Does the character care about having a council position? Used for powerful vassals that have no council position for whether they should get the opinion penalty
 cares_about_powerful_vassal_council_position = {
 	can_be_councillor_basics_trigger = yes
+	NOT = { this = liege.diarch }
+	is_designated_diarch = no
 }
 
 # Does the character approve of succession law changes? Used for the succession law change GUI to designate oppose vs. approve for powerful vassals
@@ -290,7 +343,40 @@ can_refund_perks = {
 # scope:attacker is the attacker
 # scope:defender is the defender
 can_defensively_join_holy_war = {
-
+	is_landed = yes
+	exists = scope:defender.capital_province
+	exists = capital_province
+	gold >= ai_war_chest_defender_holy_war_gold_value
+	is_at_war = no
+	NOR = {
+		is_vassal_or_below_of = scope:defender
+		is_allied_to = scope:attacker
+		has_relation_friend = scope:attacker
+		has_relation_lover = scope:attacker
+		has_trait = craven
+		has_relation_rival = scope:defender
+	}
+	OR = {
+		primary_title.tier >= tier_duchy # Of significant size
+		current_military_strength >= scope:defender.current_military_strength # Avoid having too many small counts join in
+	}
+	OR = {
+		character_is_realm_neighbor = scope:defender # Needs to be an independent realm neighbour
+		AND = { # Unless very zealous or friendly, within a reasonable distance
+			OR = {
+				ai_zeal >= 75
+				has_relation_friend = scope:defender
+				has_relation_lover = scope:defender
+				is_close_family_of = scope:defender
+			}
+			capital_province = {
+				squared_distance = {
+					target = scope:defender.capital_province
+					value <= squared_distance_medium #250 map-pixels. Roughly one Ireland away (top to bottom).
+				}
+			}
+		}
+	}
 }
 
 # Can a character be fire from being a councillor
@@ -327,26 +413,18 @@ can_start_raid = {
 
 # Can this character cross water (sea, rivers) while on raid?
 # root: the potential raider
-can_raid_across_water = {
-	OR = {
-		culture = {
-			# Warcraft
-			has_sea_invader_innovation = yes
-		}
-		AND = {
-			exists = dynasty
-			dynasty = { has_dynasty_modifier = fp1_legacy_of_piracy_modifier }
-		}
-	}
-}
+can_raid_across_water = { can_raid_across_water_trigger = yes }
 
 # Can this character traverse rivers using boats?
 # root: the owner of the army
 can_traverse_river = {
 	OR = {
 		culture = {
-			# Warcraft
-			has_sea_invader_innovation = yes
+			OR = {
+				has_innovation = innovation_longboats
+				#has_innovation = innovation_african_canoes
+				has_cultural_parameter = can_travel_along_rivers
+			}
 		}
 		AND = {
 			exists = dynasty
@@ -555,6 +633,99 @@ ai_wants_matrilineal_marriage = {
 	}
 }
 
+# Does the AI want to have a grand wedding instead of an instant marriage
+# root: the arranging AI character
+# scope:actor: the arranging AI character
+# scope:secondary_actor: character being married that AI can control
+# scope:recipient: the character who can accept the marriage proposal
+# scope:secondary_recipient: the character to be married
+ai_wants_grand_wedding_promise = {
+	OR = {
+		# Propose grand wedding to the player, the players primary heir, and their oldest child (both sexes)
+		scope:recipient = {
+			is_ai = no
+			scope:secondary_recipient = {
+				OR = {
+					this = scope:recipient
+					is_primary_heir_of = scope:recipient
+					AND = {
+						is_child_of = scope:recipient
+						NOT = {
+							any_sibling = {
+								sex_same_as = scope:secondary_recipient
+								age > scope:secondary_recipient.age
+							}
+						}
+					}
+				}
+			}
+		}
+		# An unmarried ruler wants it for their primary wedding
+		scope:actor = {
+			this = scope:secondary_actor
+			is_married = no
+			is_ruler = yes
+		}
+		# A ruler wants it for their primary heir's primary wedding
+		AND = {
+			scope:actor.primary_title = {
+				place_in_line_of_succession = {
+					target = scope:secondary_actor
+					value <= 1
+				}
+			}
+			scope:secondary_actor = {
+				is_married = no
+			}
+		}
+		# Very prestigious rulers just want to show off
+		AND = {
+			scope:actor = {
+				highest_held_title_tier >= tier_kingdom
+				has_personality_extroverted_trigger = yes
+				ai_greed <= -50
+			}
+			OR = {
+				scope:actor.dynasty = { dynasty_prestige_level >= 4 }
+				scope:actor = { prestige_level >= 4 }
+			}
+		}
+		# Swimming in money and not greedy
+		AND = {
+			scope:actor.ai_greed <= 0
+			scope:actor.gold >= 7000
+		}
+	}
+	# Let's try to prevent the AI from going bankrupt
+	scope:actor = { gold >= ai_wedding_promise_gold_actor }
+	scope:actor = {
+		OR = {
+			# You're getting at least an alliance out of it 
+			yields_alliance = {
+				candidate = scope:secondary_actor
+				target = scope:recipient
+				target_candidate = scope:secondary_recipient
+			}
+			# Or it's an ally you want to strengthen the bonds with
+			is_allied_to = scope:recipient
+			# Or you just have the perfect personality for it!
+			AND = {
+				has_personality_extroverted_trigger = yes
+				ai_greed <= -50
+				ai_rationality <= -25
+				exists = scope:secondary_actor.dynasty
+			}
+		}
+		is_at_war = no
+	}
+	# Only do Grand Weddings for rulers of your tier or above
+	exists = scope:recipient.primary_title
+	OR = {
+		scope:recipient.primary_title.tier >= primary_title.tier
+		scope:recipient.primary_title.tier >= tier_kingdom
+	}
+}
+
 # Is this character blocked from having buildings enabled?
 #Scope it to potential backer
 buildings_enabled = {
@@ -581,4 +752,185 @@ can_potentially_call_ally = {
 	}
 }
 
+# Is this character allowed to hybridize their culture with the target culture?
+# root: Character
+# scope:culture: The culture they want to hybridize with
+can_hybridize_culture = {
+	can_hybridize_culture_trigger = {
+		CULTURE = scope:culture
+		CHARACTER = root
+	}
+}
 
+# Is this character allowed to diverge their culture?
+# root: Character
+can_diverge_culture = {
+	culture = { culture_age >= culture_divergence_cooldown }
+	custom_description = {
+		text = culture_present_in_realm_for_divergence
+		any_sub_realm_county = {
+			culture = root.culture
+		}
+	}
+}
+
+# Is this character allowed to add a tradition to their culture?
+# root: Character
+can_add_tradition = {
+	custom_description = {
+		text = culture_has_tradition_cooldown
+		culture = {
+			NOT = { has_variable = tradition_cooldown }
+		}
+	}
+}
+
+# Is this character allowed to replace a pillar of their culture?
+# root: Character
+can_replace_pillar = {
+}
+
+# Is this character potentially eligible to hold a court position?
+# root: Character
+is_eligible_for_court_positions = {
+	is_adult = yes
+	NOT = { has_trait = incapable }
+}
+
+# Can we rename a character?
+# Root is the renamer (E.G., the player)
+# scope:child is the person we want to rename
+can_name_after_birth = {
+	scope:child = { is_adult = no }
+	allow_naming_on_birth_of_child_trigger = { CHILD = scope:child }
+}
+
+# Can a language be adopted as the court language
+# Only used by the AI
+# Native language bypasses this
+# root = ruler
+# scope:target = ruler to copy language from
+# scope:my_language_counties = counties in the AI's realm with a culture with their native language
+# scope:their_language_counties = counties in the AI's realm with a culture with the target court language
+# scope:total_counties = counties in the AI's realm
+# See also the court_language_ai_score value
+# scope:courts_with_language = how many royal courts use the same court language? Includes the target
+# scope:checking_native_language = are we scoring our own language?
+can_adopt_court_language = {
+	in_diplomatic_range = scope:target
+}
+
+
+# Should AI for this character repair the artifact
+# Before getting here in code we check: if Durability <= NInventory::ARTIFACT_LOW_DURABILITY, if Artifact is equipped, if Character can afford this
+# root: character (Artifact Owner)
+# scope:artifact: the artifact
+ai_should_repair_artifact = {
+	NOR = {
+		root = {
+			is_at_war = yes
+		}
+		scope:artifact = {
+			artifact_slot_type = miscellaneous
+		}
+	}
+}
+
+# Can this character be a guest at any activity at all held by the host, checked in the UI and in the invite to activity special interaction type
+# root = character
+# scope:host = the activity host
+can_be_activity_guest = {
+	is_available_allow_travelling = yes
+	OR = {
+		is_travelling = no
+		# If travelling then it must be already to this activity after it has been created
+		AND = {
+			exists = scope:host.involved_activity
+			exists = current_travel_plan.travel_plan_activity
+			scope:host.involved_activity = current_travel_plan.travel_plan_activity
+		}
+	}
+	# Diarchs with official responsibilities can't come out to play, unless within their liege's realm.
+	trigger_if = {
+		limit = {
+			exists = liege
+			OR = {
+				is_diarch = yes
+				is_designated_diarch = yes
+			}
+			#If you have promised a grand wedding, you must be able to go through with it!
+			NOR = {
+				has_promised_a_grand_wedding = yes
+				has_been_promised_grand_wedding = yes
+			}
+		}
+		scope:host.involved_activity.activity_location.county.holder ?= {
+			OR = {
+				this = root.liege
+				any_liege_or_above = { this = root.liege }
+			}
+		}
+	}
+}
+
+# Is target character displayed as loyal diarch
+# If both or neither loyal and disloyal, we show unknown loyalty
+# root - Diarch or potential diarch character
+is_diarch_visibly_loyal = {
+	diarch_loyalty >= diarch_loyalty_visibly_loyal_threshold
+}
+
+# Is target character displayed as disloyal diarch
+# If both or neither loyal and disloyal, we show unknown loyalty
+# root - Diarch or potential diarch character
+is_diarch_visibly_disloyal = {
+	diarch_loyalty <= diarch_loyalty_visibly_disloyal_threshold
+}
+
+# Can the target diarch fulfil their diarch duties
+# root - the diarch whos ability is being tested
+is_diarch_able = { is_diarch_able_trigger = yes }
+
+# Can target character even be considered serving as diarch, or are they
+# completely unable to fulfil their diarch duties and should be replaced
+# root - the diarch whos ability is being tested
+is_diarch_valid = { is_diarch_valid_trigger = yes }
+
+# If ruler should go into diarchy
+# Used in code when people become landed or receive incapacitating traits
+# root - the liege who is tested for diarchy
+should_have_diarchy = {
+	basic_eligible_for_diarchy_trigger = yes
+	regency_for_personal_reasons_trigger = yes
+}
+
+# Does target character fulfil the basic requirements to be an Acclaimed Knight
+# root - Acclaimed Knight, or potential candidate
+can_be_acclaimed_knight = {
+	is_knight = yes
+	highest_held_title_tier <= tier_barony
+}
+
+# Can target character be considered a valuable hostage
+# It's checked on an already taken hostages, so regular links to warden and home court
+# can be used to check the relations between these 3 people
+# root - hostage being evaluated
+is_hostage_valid = {
+	OR = {
+		is_child_of = home_court
+		is_grandchild_of = home_court
+		is_sibling_of = home_court
+		is_nibling_of = home_court
+		AND = {
+			age < 16
+			OR = {
+				mother = {
+					is_hostage_of = root.warden
+				}
+				father = {
+					is_hostage_of = root.warden
+				}
+			}
+		}
+	}
+}

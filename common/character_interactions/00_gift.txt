@@ -1,9 +1,21 @@
 ﻿#Give characters money to improve their opinion of you
 gift_interaction = {
+	icon = icon_gold
 	category = interaction_category_friendly
 	common_interaction = yes
 	interface_priority = 60
 	desc = gift_interaction_desc
+	use_diplomatic_range = {
+		trigger_if = {
+			limit = {
+				scope:actor = { has_variable = this_union }
+				scope:recipient ?= { has_variable = this_union }
+			}
+			NOT = {
+				scope:actor.var:this_union = scope:recipient.var:this_union
+			}
+		}
+	}
 
 	greeting = positive
 	notification_text = SEND_GIFT_PROPOSAL
@@ -16,6 +28,9 @@ gift_interaction = {
 	}
 	ai_targets = {
 		ai_recipients = liege
+	}
+	ai_targets = {
+		ai_recipients = head_of_faith
 	}
 	ai_targets = {
 		ai_recipients = neighboring_rulers
@@ -50,7 +65,7 @@ gift_interaction = {
 
 	is_valid_showing_failures_only = {
 		scope:actor.gold >= gift_value
-		scope:recipient = { is_diplomatically_available = yes }
+		scope:recipient = { is_busy_in_events_localised = yes }
 	}
 
 	on_auto_accept = {
@@ -60,28 +75,22 @@ gift_interaction = {
 	}
 
 	on_accept = {
-		scope:actor = {
-			send_interface_message = {
-				type = event_generic_neutral
-				title = gift_interaction_notification
-				right_icon = scope:recipient
-				pay_short_term_gold = {
-					gold = gift_value
-					target = scope:recipient
-				}
-				stress_impact = {
-					greedy = medium_stress_impact_gain
-					generous = medium_stress_impact_loss
-				}
-				scope:recipient = {
-					add_opinion = {
-						target = scope:actor
-						modifier = gift_opinion
-						opinion = send_gift_opinion
+		scope:recipient = {
+			# Verify that they could become friend
+			if = {
+				limit = {
+					NAND = {
+						has_relation_friend = scope:actor
+						has_relation_lover = scope:actor
+						has_relation_soulmate = scope:actor
+						has_relation_best_friend = scope:actor
 					}
 				}
+				gifting_leads_towards_friendship_effect = yes
 			}
+		}
 
+		scope:actor = {
 			# Warning for multiple gifts
 			if = {
 				limit = {
@@ -94,14 +103,99 @@ gift_interaction = {
 				}
 				custom_tooltip = ALREADY_SENT_GIFT_WARNING
 			}
-			if = { # for tutorial purposes
-				limit = {
-					is_ai = no
-					scope:recipient = { is_child_of = scope:actor }
+			
+			send_interface_message = {
+				type = event_generic_neutral
+				title = gift_interaction_notification
+				right_icon = scope:recipient
+				pay_short_term_gold = {
+					gold = gift_value
+					target = scope:recipient
 				}
-				add_character_flag = {
-					flag = tutorial_sent_gift
-					days = 200
+				stress_impact = {
+					greedy = medium_stress_impact_gain
+				}
+				if = {
+					limit = {
+						scope:recipient = {
+							NOT = {
+								is_heir_of = scope:actor
+							}
+						}
+					}
+					stress_impact = {
+						generous = medium_stress_impact_loss
+					}
+				}
+				
+				#FP3 Tenet Communal Possessions Perk - piety gain for gift giving. 
+				if = {
+					limit = {
+						scope:actor = {
+							faith = {
+					 			has_doctrine_parameter = piety_from_gifts_active
+					 		}
+					 	}
+					}
+					scope:actor = {
+						add_piety = minor_piety_gain
+					}
+				}
+				
+				# Check if the target already has been sent a gift or not. If not, apply the following effects
+				if = {
+					limit = {
+						NOT = {
+							scope:recipient = {
+								has_opinion_modifier = {
+									target = scope:actor
+									modifier = gift_opinion
+								}
+							}
+						}
+					}
+					
+					# Struggle Catalyst
+					
+					
+					# FP2 Urbanism Legacy Perk 2: increase cultural acceptance when gifting a republican vassal
+					if = {
+						limit = {
+							scope:actor = {
+								exists = dynasty
+								dynasty = { has_dynasty_perk = fp2_urbanism_legacy_4 }
+							}
+							scope:recipient = {
+								AND = {
+									is_vassal_of = scope:actor
+									government_has_flag = government_is_republic
+								}
+							}
+							NOT = {
+								scope:actor.culture = scope:recipient.capital_province.county.culture
+							}
+						}
+						scope:recipient.capital_province.county.culture = {
+							change_cultural_acceptance = {
+								target = scope:actor.culture
+								value = {
+									value = 20
+									multiply = scope:recipient.capital_province.county.development_level
+									divide = 100
+								}
+								desc = cultural_acceptance_gain_gift_dynasty_perk
+							}
+						}
+					}
+				}
+				
+				# Let's apply the opinion modifier last, as to apply everything else correctly first
+				scope:recipient = {
+					add_opinion = {
+						target = scope:actor
+						modifier = gift_opinion
+						opinion = send_gift_opinion
+					}
 				}
 			}
 		}
@@ -113,10 +207,17 @@ gift_interaction = {
 			add = 100
 			desc = GOLD_REASON
 		}
+
+		# Struggle motive
+		
+
+		# Warcraft
+		scourge_interaction_modifiers = yes
+
 	}
 	
 	ai_potential = {
-		is_adult = yes
+		is_available_at_peace_ai_adult = yes
 		ai_greed < medium_positive_ai_value
 		short_term_gold >= gift_interaction_cutoff
 		NOT = {
@@ -154,30 +255,79 @@ gift_interaction = {
 			factor = 0
 			scope:recipient = {
 				NOR = {
-					AND = { # Bankrupt vassals, lovers, friends and a bankrupt liege should be considered
+					AND = { # Bankrupt lovers, friends and a bankrupt liege should be considered
 						OR = {
-							is_vassal_of = scope:actor
-							AND = {
-								exists = liege
-								liege = scope:actor
+							scope:actor = {
+								any_liege_or_above = {
+									this = scope:recipient
+								}
 							}
-							has_secret_relation_lover = scope:recipient
-							has_relation_lover = scope:recipient
-							has_relation_soulmate = scope:recipient
-							has_relation_friend = scope:recipient
-							has_relation_best_friend = scope:recipient
+							has_secret_relation_lover = scope:actor
+							has_relation_lover = scope:actor
+							has_relation_soulmate = scope:actor
+							has_relation_friend = scope:actor
+							has_relation_best_friend = scope:actor
 						}
 						gold < 0
 					}
 					AND = { # Generous characters will give gifts to their friends/lovers
 						OR = {
-							has_secret_relation_lover = scope:recipient
-							has_relation_lover = scope:recipient
-							has_relation_soulmate = scope:recipient
-							has_relation_friend = scope:recipient
-							has_relation_best_friend = scope:recipient
+							has_secret_relation_lover = scope:actor
+							has_relation_lover = scope:actor
+							has_relation_soulmate = scope:actor
+							has_relation_friend = scope:actor
+							has_relation_best_friend = scope:actor
 						}
-						ai_greed <= high_negative_ai_value
+						scope:actor = {
+							OR = {
+								ai_greed <= high_negative_ai_value
+								AND = {
+									ai_greed < 0
+									culture = {
+										has_cultural_parameter = gives_more_gifts
+									}
+								}
+							}
+						}
+					}
+					AND = { # Characters with the Generous Cultural Tradition will give gifts to more people
+						is_ruler = yes
+						OR = {
+							is_allied_to = scope:actor
+							is_close_or_extended_family_of = scope:actor
+						}
+						scope:actor = {
+							ai_greed < 0
+							culture = {
+								has_cultural_parameter = gives_more_gifts
+							}
+						}
+					}
+					AND = { # Characters with the loyal trait more likely to give gifts to friends/lieges
+						OR = {
+							scope:actor.liege ?= this
+							has_relation_friend = scope:actor
+							has_relation_best_friend = scope:actor
+							is_allied_to = scope:actor
+							is_close_or_extended_family_of = scope:actor
+						}
+						scope:actor = {
+							ai_greed <= 0
+							has_trait = loyal
+						}
+					}
+					AND = { # Zealous characters want to support the defending side in GHW's
+						gold < 200
+						any_character_war = {
+							OR = {
+								using_cb = undirected_great_holy_war
+								using_cb = directed_great_holy_war
+							}
+							primary_defender = scope:recipient
+						}
+						scope:actor = {
+							ai_zeal >= 50
+						}
 					}
 					AND = { # Powerful vassals should be considered
 						is_powerful_vassal_of = scope:actor
@@ -195,7 +345,6 @@ gift_interaction = {
 					AND = { # Factioneering vassals should be considered
 						is_vassal_of = scope:actor
 						is_a_faction_member = yes
-						#ai_greed > 0
 						NOT ={
 							has_opinion_modifier = {
 								target = scope:actor
@@ -208,6 +357,10 @@ gift_interaction = {
 							faith = { has_doctrine = doctrine_theocracy_temporal }
 							exists = cp:councillor_court_chaplain
 							cp:councillor_court_chaplain = scope:recipient
+						}
+						opinion = {
+							target = scope:actor
+							value <= 25
 						}
 						NOT = {
 							has_opinion_modifier = {
@@ -226,6 +379,9 @@ gift_interaction = {
 				}
 			}
 		}
+
+		# Struggle
+		
 		
 		modifier = {
 			factor = 0.1
@@ -240,6 +396,13 @@ gift_interaction = {
 						ai_rationality > 50
 					}
 				}
+			}
+		}
+		
+		modifier = {
+			factor = 0.1
+			scope:recipient = {
+				has_relation_rival = scope:actor
 			}
 		}
 	}

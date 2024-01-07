@@ -300,14 +300,14 @@ split_noncontiguous_counties_from_revolt_effect = {
 				culture = scope:county_of_origin.culture
 				faith = scope:county_of_origin.faith
 				gender_female_chance = 50
-				#Warcraft
-				age = age_32_value
+				age = 32
 				save_scope_as = new_county_holder
 			}
 			
 			# Warcraft
 			scope:new_county_holder = {
 				trigger_race_giving_no_gene_effect = yes			#Assigns race trait
+				set_age = age_32_value
 			}
 				
 			create_title_and_vassal_change = {
@@ -370,7 +370,7 @@ successful_popular_revolt_outcome_effect = {
 			add_to_list = siezed_counties
 		}
 	}
-	# Additionally, if we're at war (and not just pressing demands), add all occupied counties and connected counties of the correct culture/faith.
+	# Additionally, if we're at war (and not just pressing demands)...
 	if = {
 		limit = {
 			$FACTION_LEADER$ = {
@@ -381,17 +381,24 @@ successful_popular_revolt_outcome_effect = {
 			every_sub_realm_county = {
 				limit = {
 					county_controller = $FACTION_LEADER$
+					faith = $FACTION_LEADER$.faith
 				}
 				add_to_list = siezed_counties
 			}
 		}
 
-		every_in_list = {
-			list = siezed_counties
-			add_adjacent_valid_counties_to_list = {
-				FAITH = $FACTION_LEADER$.faith
-				TOP_LIEGE = scope:faction_target
-				LIST = siezed_counties
+		# And add any war members that aren't already in the faction.
+		$FACTION_LEADER$ = {
+			every_character_war = {
+				limit = {
+					is_defender = scope:faction_target
+				}
+				every_war_attacker = {
+					limit = {
+						NOT = { is_in_list = faction_members }
+					}
+					add_to_list = faction_members
+				}
 			}
 		}
 	}
@@ -422,6 +429,14 @@ successful_popular_revolt_outcome_effect = {
 						}
 						add = 0.50
 					}
+
+					# Remove 75% for counties owned by a player.
+					if = {
+						limit = {
+							holder = { is_ai = no }
+						}
+						subtract = 0.75
+					}
 				}
 			}
 
@@ -446,7 +461,29 @@ successful_popular_revolt_outcome_effect = {
 		}
 		resolve_title_and_vassal_change = scope:change_zero
 	}
-
+	
+	# Let's add in any additional counties belonging to other participants, which isn't part of the faction already, so that we can assign a kingdom/duchy tier title properly.
+	# (We'll remove these again further down.)
+	if = {
+		limit = {
+			any_in_list = {
+				list = faction_members
+				NOT = { this = $FACTION_LEADER$ }
+			}
+		}
+		every_in_list = {
+			list = faction_members
+			limit = {
+				NOT = { this = $FACTION_LEADER$ }
+			}
+			every_sub_realm_county = {
+				limit = {
+					NOT = { is_in_list = siezed_counties }
+				}
+				add_to_list = siezed_counties
+			}
+		}
+	}
 
 	# CHANGE ONE: Give the leader an appropriately-ranked title.
 	create_title_and_vassal_change = {
@@ -457,22 +494,22 @@ successful_popular_revolt_outcome_effect = {
 	if = {
 		# If 11+ counties were taken, give them a Kingdom.
 		limit = {
-			any_in_list = {
-				list = siezed_counties
-				count >= 11
-			}
-		}
-
-		# Check if we can create or usurp a De Jure Kingdom from the map
-		every_in_list = {
-			list = siezed_counties
-			kingdom = {
-				if = {
-					limit = {
+			OR = {
+				any_in_list = { # If the realm is large enough to make a duchy unfeasible.
+					list = siezed_counties
+					count >= 20
+				}
+				any_in_list = { # If there is a kingdom title available for creation/usurpation.
+					list = siezed_counties
+					kingdom = {
+						any_de_jure_county = {
+							percent >= 0.5
+							is_in_list = siezed_counties
+						}
 						OR = {
-							NOT = { exists = holder}
+							NOT = { exists = holder }
 							trigger_if = {
-								limit = { exists = holder}
+								limit = { exists = holder }
 								holder.top_liege = scope:faction_target 
 
 								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
@@ -493,6 +530,7 @@ successful_popular_revolt_outcome_effect = {
 								trigger_if = {
 									limit = {
 										holder = { is_ai = no }
+										NOT = { holder = holder.top_liege }
 									}
 									holder = {
 										any_held_title = {
@@ -504,8 +542,65 @@ successful_popular_revolt_outcome_effect = {
 							}
 						}
 						# Special block to stop populist factions from creating Germany if the HRE is still alive and kicking.
-						
-						# Warcraft
+						#NAND = {
+						#	this = title:k_east_francia
+						#	exists = title:e_hre.holder
+						#}
+					}
+				}
+			}
+		}
+
+		# Check if we can create or usurp a De Jure Kingdom from the map
+		every_in_list = {
+			list = siezed_counties
+			kingdom = {
+				if = {
+					limit = {
+						any_de_jure_county = {
+							percent >= 0.5
+							is_in_list = siezed_counties
+						}
+						OR = {
+							NOT = { exists = holder }
+							trigger_if = {
+								limit = { exists = holder }
+								holder.top_liege = scope:faction_target 
+
+								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+								trigger_if = {
+									limit = {
+										this = holder.primary_title
+										holder = holder.top_liege
+									}
+									holder = {
+										any_held_title = {
+											tier = tier_kingdom
+											count >= 2
+										}
+									}
+								}
+
+								# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
+								trigger_if = {
+									limit = {
+										holder = { is_ai = no }
+										NOT = { holder = holder.top_liege }
+									}
+									holder = {
+										any_held_title = {
+											tier = tier_kingdom
+											count >= 2
+										}
+									}
+								}
+							}
+						}
+						# Special block to stop populist factions from creating Germany if the HRE is still alive and kicking.
+						#NAND = {
+						#	this = title:k_east_francia
+						#	exists = title:e_hre.holder
+						#}
 					}
 					add_to_list = potential_kingdoms
 				}
@@ -562,9 +657,55 @@ successful_popular_revolt_outcome_effect = {
 	else_if = {
 		# If 5+ counties were taken, give them a Duchy.
 		limit = {
-			any_in_list = {
-				list = siezed_counties
-				count >= 5
+			OR = {
+				any_in_list = { # If the realm is large enough to make a county as the highest tier unfeasible.
+					list = siezed_counties
+					count >= 8
+				}
+				any_in_list = { # If there is a duchy title available for creation/usurpation.
+					list = siezed_counties
+					duchy = {
+						any_de_jure_county = {
+							percent >= 0.5
+							is_in_list = siezed_counties
+						}
+						OR = {
+							NOT = { exists = holder }
+							trigger_if = {
+								limit = { exists = holder }
+								holder.top_liege = scope:faction_target
+			
+								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+								trigger_if = {
+									limit = {
+										this = holder.primary_title
+										holder = holder.top_liege
+									}
+									holder = {
+										any_held_title = {
+											tier = tier_duchy
+											count >= 2
+										}
+									}
+								}
+			
+								# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
+								trigger_if = {
+									limit = {
+										holder = { is_ai = no }
+										NOT = { holder = holder.top_liege }
+									}
+									holder = {
+										any_held_title = {
+											tier = tier_duchy
+											count >= 2
+										}
+									}
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 
@@ -574,10 +715,14 @@ successful_popular_revolt_outcome_effect = {
 			duchy = {
 				if = {
 					limit = {
+						any_de_jure_county = {
+							percent >= 0.4
+							is_in_list = siezed_counties
+						}
 						OR = {
-							NOT = { exists = holder}
+							NOT = { exists = holder }
 							trigger_if = {
-								limit = { exists = holder}
+								limit = { exists = holder }
 								holder.top_liege = scope:faction_target
 
 								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
@@ -598,19 +743,7 @@ successful_popular_revolt_outcome_effect = {
 								trigger_if = {
 									limit = {
 										holder = { is_ai = no }
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_duchy
-											count >= 2
-										}
-									}
-								}
-
-								# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
-								trigger_if = {
-									limit = {
-										holder = { is_ai = no }
+										NOT = { holder = holder.top_liege }
 									}
 									holder = {
 										any_held_title = {
@@ -689,9 +822,26 @@ successful_popular_revolt_outcome_effect = {
 		save_scope_as = change_two
 		add_claim_on_loss = yes
 	}
+	if = { # But remove counties from any faction/war member first.
+		limit = {
+			any_in_list = {
+				list = faction_members
+				NOT = { this = $FACTION_LEADER$ }
+			}
+		}
+		every_in_list = {
+			list = faction_members
+			limit = {
+				NOT = { this = $FACTION_LEADER$ }
+			}
+			every_sub_realm_county = {
+				remove_from_list = siezed_counties
+			}
+		}
+	}
 	every_in_list = {
 		list = siezed_counties
-
+		
 		change_title_holder = {
 			holder = $FACTION_LEADER$
 			change = scope:change_two
@@ -721,6 +871,23 @@ successful_popular_revolt_outcome_effect = {
 				change = scope:change_three
 			}
 		}
+		# Same or higher-ranked vassal get independence.
+		else_if = {
+			limit = {
+				NOT = { this = $FACTION_LEADER$ }
+			}
+			hidden_effect = {
+				becomes_independent = {
+					change = scope:change_three
+				}
+				send_interface_toast = {
+					title = POPULIST_FACTION_INDEPENDENCE_TITLE
+					custom_tooltip = POPULIST_FACTION_INDEPENDENCE_DESC
+					left_icon = $FACTION_LEADER$
+					right_icon = scope:faction_target
+				}
+			}
+		}
 	}
 
 	resolve_title_and_vassal_change = scope:change_three
@@ -729,9 +896,20 @@ successful_popular_revolt_outcome_effect = {
 	$FACTION_LEADER$ = { fp1_remove_humsac_offended_counties_effect = yes }
 
 	# CHANGE FOUR: If there are any disconnected counties, split them off via exclave independence rules.
-	scope:capital_county = {
-		split_noncontiguous_counties_from_revolt_effect = {
-			FACTION_LEADER = $FACTION_LEADER$
+	# However. We don't do this if there is a player in the faction, since it can remove land from the player, or in worst case, make the player game over.
+	if = {
+		limit = {
+			NOT = {
+				any_in_list = {
+					list = faction_members
+					is_ai = no
+				}
+			}
+		}
+		scope:capital_county = {
+			split_noncontiguous_counties_from_revolt_effect = {
+				FACTION_LEADER = $FACTION_LEADER$
+			}
 		}
 	}
 
@@ -750,17 +928,30 @@ successful_popular_revolt_outcome_effect = {
 	#Set up government type.
 	hidden_effect = {
 		$FACTION_LEADER$ = {
-			#If sourced from tribal, make tribal.
+			# Warcraft
 			if = {
+				limit = { can_get_necro_government_trigger = yes }
+				change_necro_government_effect = yes
+			}
+			else_if = {
+				limit = { can_get_demonic_government_trigger = yes }
+				change_demonic_government_effect = yes
+			}
+			else_if = {
+				limit = { can_get_eldritch_government_trigger = yes }
+				change_eldritch_government_effect = yes
+			}
+			
+			#If sourced from tribal, make tribal.
+			else_if = {
 				limit = {
-					$SOURCE_GOVERNMENT$ = { has_government = tribal_government }
+					$SOURCE_GOVERNMENT$ = { government_has_flag = government_is_tribal }
 				}
 				change_government = tribal_government
 				add_realm_law = tribal_authority_0
-				if = { limit = { has_realm_law = crown_authority_0 } remove_realm_law = crown_authority_0 }
-				if = { limit = { has_realm_law = crown_authority_1 } remove_realm_law = crown_authority_1 }
-				if = { limit = { has_realm_law = crown_authority_2 } remove_realm_law = crown_authority_2 }
-				if = { limit = { has_realm_law = crown_authority_3 } remove_realm_law = crown_authority_3 }
+				
+				# Warcraft
+				remove_realm_crown_authority_effect = yes
 			}
 			#If sourced from clan, make clan.
 			else_if = {
@@ -776,23 +967,6 @@ successful_popular_revolt_outcome_effect = {
 				}
 				change_government = feudal_government
 			}
-			#If sourced elsewhere, and Islamic, make clan.
-			else_if = {
-				limit = {
-					$SOURCE_GOVERNMENT$ = {
-						NOR = {
-							has_government = tribal_government
-							has_government = clan_government
-							has_government = feudal_government
-						}
-					}
-					
-					# Warcraft
-					always = no
-					# has_religion = religion:islam_religion
-				}
-				change_government = clan_government
-			}
 			#If sourced elsewhere, and not Islamic, make feudal.
 			else_if = {
 				limit = {
@@ -805,9 +979,26 @@ successful_popular_revolt_outcome_effect = {
 					}
 					
 					# Warcraft
-					# NOT = { has_religion = religion:islam_religion }
+					# NOT = { like_islam_religion_trigger = yes }
 				}
 				change_government = feudal_government
+			}
+		}
+	}
+	
+	# Give the leader some gold if they don't have any - We do this at the very end to make sure the gold is applied correctly.
+	hidden_effect = {
+		if = {
+			limit = {
+				$FACTION_LEADER$ = {
+					gold < 10
+				}
+			}
+			every_in_list = { # Scale the amount on the number of counties taken.
+				list = siezed_counties
+				$FACTION_LEADER$ = {
+					add_gold = 50
+				}
 			}
 		}
 	}
@@ -841,6 +1032,182 @@ create_popular_revolt_title_effect = {
 	}
 }
 
+spawn_popular_revolt_troops = {
+	# Spawn Levies
+	spawn_army = {
+		levies = {
+			value = 0
+			joined_faction = {
+				every_faction_county_member = {
+					limit = {
+						duchy = scope:local_center_of_rebellion.duchy
+					}
+					add = county_levies_to_raise
+				}
+			}
+		}
+		location = scope:local_center_of_rebellion
+		war = root.faction_war
+		name = populist_faction_event_troops
+	}
+	
+	# Spawn MAAs - An appropriate amount of troops dependent on the terrain type they spawn in
+	if = {
+		limit = {
+			scope:local_center_of_rebellion = {
+				OR = {
+					terrain = forest
+					terrain = taiga
+					terrain = jungle
+					terrain = plains
+					terrain = drylands
+					terrain = oasis
+					terrain = desert
+					terrain = wetlands
+					terrain = steppe
+				}
+			}
+		}
+		spawn_army = {
+			men_at_arms = {
+				type = light_footmen
+				stacks = {
+					value = 0
+					joined_faction = {
+						every_faction_county_member = {
+							limit = {
+								duchy = scope:local_center_of_rebellion.duchy
+							}
+							add = county_maa_to_raise
+						}
+					}
+				}
+			}
+			location = scope:local_center_of_rebellion
+			war = root.faction_war
+			name = populist_faction_event_troops
+		}
+	}
+	else_if = {
+		limit = {
+			scope:local_center_of_rebellion = {
+				OR = {
+					terrain = mountains
+					terrain = desert_mountains
+				}
+			}
+		}
+		spawn_army = {
+			men_at_arms = {
+				type = pikemen_unit
+				stacks = {
+					value = 0
+					joined_faction = {
+						every_faction_county_member = {
+							limit = {
+								duchy = scope:local_center_of_rebellion.duchy
+							}
+							add = county_maa_to_raise
+						}
+					}
+				}
+			}
+			location = scope:local_center_of_rebellion
+			war = root.faction_war
+			name = populist_faction_event_troops
+		}
+	}
+	else_if = {
+		limit = {
+			scope:local_center_of_rebellion = {
+				OR = {
+					terrain = hills
+					terrain = farmlands
+					terrain = floodplains
+				}
+			}
+		}
+		spawn_army = {
+			men_at_arms = {
+				type = bowmen
+				stacks = {
+					value = 0
+					joined_faction = {
+						every_faction_county_member = {
+							limit = {
+								duchy = scope:local_center_of_rebellion.duchy
+							}
+							add = county_maa_to_raise
+						}
+					}
+				}
+			}
+			location = scope:local_center_of_rebellion
+			war = root.faction_war
+			name = populist_faction_event_troops
+		}
+	}
+	
+	# Spawn Siege Weapons depending on discovered innovations
+	if = {
+		limit = {
+			culture = { has_innovation = innovation_bombard }
+		}
+		spawn_army = {
+			men_at_arms = {
+				type = bombard
+				stacks = 1
+			}
+			location = scope:local_center_of_rebellion
+			war = root.faction_war
+			name = populist_faction_event_troops
+		}
+	}
+	else_if = {
+		limit = {
+			culture = { has_innovation = innovation_trebuchet }
+		}
+		spawn_army = {
+			men_at_arms = {
+				type = trebuchet
+				stacks = 1
+			}
+			location = scope:local_center_of_rebellion
+			war = root.faction_war
+			name = populist_faction_event_troops
+		}
+		
+	}
+	else_if = {
+		limit = {
+			culture = { has_innovation = innovation_mangonel }
+		}
+		spawn_army = {
+			men_at_arms = {
+				type = mangonel
+				stacks = 1
+			}
+			location = scope:local_center_of_rebellion
+			war = root.faction_war
+			name = populist_faction_event_troops
+		}
+	}
+	else_if = {
+		limit = {
+			culture = { has_innovation = innovation_catapult }
+		}
+		spawn_army = {
+			men_at_arms = {
+				type = onager
+				stacks = 1
+			}
+			location = scope:local_center_of_rebellion
+			war = root.faction_war
+			name = populist_faction_event_troops
+		}
+	}
+}
+
 peasant_faction_demands_enforced = {
 	$FACTION$ = {
 		every_faction_county_member = {
@@ -852,6 +1219,7 @@ peasant_faction_demands_enforced = {
 			}
 		}
 		hidden_effect = {
+			clean_revolt_county_modifiers_from_faction_members_effect = yes
 			destroy_faction = yes
 		}
 	}
@@ -865,6 +1233,7 @@ invalidate_claimant_factions_on_death_effect = {
 				exists = faction_war
 			}
 			faction_war = {
+				clear_claimant = yes
 				set_casus_belli = depose_war
 			}
 			faction_remove_war = yes # else the war gets invalidated when we destroy the faction
@@ -938,7 +1307,7 @@ setup_populist_leader_effect = {
 		}
 		create_character = {
 			location = scope:peasant_county.title_province
-			template = peasant_faction_leader_template
+			template = populist_faction_leader_template
 			faith = scope:peasant_county.faith
 			culture = scope:peasant_county.culture
 			gender_female_chance = {
@@ -1010,28 +1379,38 @@ setup_populist_leader_effect = {
 
 setup_peasant_leader_effect = {
 	save_scope_as = faction
-	random_faction_county_member = {
-		save_scope_as = peasant_county
-	}
-	create_character = {
-		location = scope:peasant_county.title_province
-		template = peasant_faction_leader_template
-		faith = scope:peasant_county.faith
-		culture = scope:peasant_county.culture
-		gender_female_chance = {
-			if = {
-				limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_male_dominated } }
-				add = 0
-			}
-			else_if = {
-				limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_female_dominated } }
-				add = 100
-			}
-			else = {
-				add = 50
-			}
+	# Does a peasant capital county already exist?
+	if = {
+		limit = {
+			NOT = { exists = scope:peasant_county }
 		}
-		save_scope_as = peasant_leader
+		random_faction_county_member = { save_scope_as = peasant_county }
+	}
+	# Does a peasant leader already exist?
+	if = {
+		limit = {
+			NOT = { exists = scope:peasant_leader }
+		}
+		create_character = {
+			location = scope:peasant_county.title_province
+			template = peasant_faction_leader_template
+			faith = scope:peasant_county.faith
+			culture = scope:peasant_county.culture
+			gender_female_chance = {
+				if = {
+					limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_male_dominated } }
+					add = 0
+				}
+				else_if = {
+					limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_female_dominated } }
+					add = 100
+				}
+				else = {
+					add = 50
+				}
+			}
+			save_scope_as = peasant_leader
+		}
 	}
 	scope:peasant_leader = {
 		add_character_flag = peasant_faction_random_peasant

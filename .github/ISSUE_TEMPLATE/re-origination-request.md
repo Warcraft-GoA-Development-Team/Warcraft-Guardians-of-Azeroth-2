@@ -2,7 +2,7 @@
 name: Re-Origination Request
 about: Report a bug.
 title: Issue Title
-labels: "bug :beetle:, priority low :grey_exclamation:"
+labels: "bug :bug:, priority low :grey_exclamation:"
 assignees: ''
 
 ---
