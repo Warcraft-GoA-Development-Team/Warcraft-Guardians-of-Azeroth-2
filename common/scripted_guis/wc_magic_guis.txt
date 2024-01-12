@@ -12,6 +12,7 @@ open_spellbook_sgui = {
 
 			# set_global_variable = spellbook_init
 		}
+		# Temporary list so spell types will be displayed
 		add_to_variable_list = { name = spell_types target = flag:light }
 		add_to_variable_list = { name = spell_types target = flag:shadow }
 		add_to_variable_list = { name = spell_types target = flag:life }
@@ -28,9 +29,11 @@ open_spellbook_sgui = {
 close_spellbook_sgui = {
 	scope = character 
 	effect = {
+		# Remove all spell-related variables
 		remove_variable = current_spell_name
 		remove_variable = current_spell_rank
 		remove_variable = current_spell_class
+		remove_variable = current_target_type
 		remove_variable = elemental_type
 
 		remove_variable = spellbook_open
@@ -61,6 +64,30 @@ set_current_spell_sgui = {
 		set_variable = {
 			name = current_spell_name
 			value = scope:spell
+		}
+		if = {
+			limit = { NOT = { has_variable = current_spell_rank } }
+			set_variable = {
+				name = current_spell_rank
+				value = 1
+			}
+		}
+		# getting the target type by rank
+		if = {
+			limit = { spell_target_is_character_list_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
+			set_variable = { name = current_target_type value = flag:character_list }
+		}
+		else_if = {
+			limit = { spell_target_is_province_or_title_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
+			set_variable = { name = current_target_type value = flag:title }
+		}
+		else_if = {
+			limit = { spell_target_is_character_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
+			set_variable = { name = current_target_type value = flag:character }
+		}
+		else_if = {
+			limit = { spell_target_is_province_or_title_list_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
+			set_variable = { name = current_target_type value = flag:title_list }
 		}
 	}
 }
@@ -104,17 +131,8 @@ set_spirit_decay_sgui = {
 	}
 }
 
-is_spell_selected_sgui = {
-	scope = character
-	saved_scopes = { spell } 
-	is_valid = {
-		var:current_spell_name ?= scope:spell
-	}
-}
-
 is_spell_elemental_sgui = {
 	scope = character
-	saved_scopes = { spell } 
 	is_valid = {
 		spell_is_elemental_trigger = { SPELL_NAME = var:current_spell_name  }
 	}
@@ -168,20 +186,18 @@ can_cast_spell_sgui = {
 			SPELL_NAME = var:current_spell_name
 			SPELL_RANK = var:current_spell_rank
 		}
-		if = {
-			limit = {
+		OR = {
+			AND = {
 				has_variable_list = spell_targets_list
-			}
-			every_in_List = {
-				variable = spell_targets_list
-				save_scope_as = spell_target
-				can_cast_spell_trigger = {
-					SPELL_NAME = var:current_spell_name
-					TARGET = scope:spell_target
+				every_in_List = {
+					variable = spell_targets_list
+					save_scope_as = spell_target
+					can_cast_spell_trigger = {
+						SPELL_NAME = var:current_spell_name
+						TARGET = scope:spell_target
+					}
 				}
 			}
-		}
-		else = {
 			can_cast_spell_trigger = {
 				SPELL_NAME = var:current_spell_name
 				TARGET = scope:spell_recipient # can be character or title
@@ -190,7 +206,54 @@ can_cast_spell_sgui = {
 	}
 }
 
-is_spell_target_valid = {
+set_target_or_add_sgui = {
+	scope = character 
+	saved_scopes = { spell_target }
+	effect = {
+		if = {
+			limit = {
+				OR = {
+					var:current_target_type = flag:character_list
+					var:current_target_type = flag:title_list
+				}
+			}
+			add_to_variable_list = {
+				name = spell_targets_list
+				target = scope:spell_target
+			}
+		}
+		else = {
+			set_variable = {
+				name = spell_recipient
+				value = scope:spell_target
+			}
+		}
+	}
+}
+
+remove_target_sgui = {
+	scope = character 
+	saved_scopes = { spell_target }
+	effect = {
+		if = {
+			limit = {
+				OR = {
+					var:current_target_type = flag:character_list
+					var:current_target_type = flag:title_list
+				}
+			}
+			remove_list_variable = {
+				name = spell_targets_list
+				target = scope:spell_target
+			}
+		}
+		else = {
+			remove_variable = spell_recipient
+		}
+	}
+}
+
+is_spell_target_valid_sgui = {
 	scope = character 
 	saved_scopes = { target }
 	is_valid = {
@@ -199,6 +262,7 @@ is_spell_target_valid = {
 				spell_target_is_only_self_trigger = { SPELL_NAME = var:current_spell_name }
 				var:spell_recipient = root
 			}
+			exists = scope:target
 			list_size:spell_targets_list = 3 # Target cap cannot be reached
 			NOT = { any_in_list = { variable = spell_targets_list this = scope:target } } # Cant be already targeted
 		}
@@ -208,31 +272,6 @@ is_spell_target_valid = {
 cast_spell_sgui = {
 	scope = character 
 	effect = {
-		# getting the target type by rank
-		if = {
-			limit = { spell_target_is_character_list_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
-			set_variable = { name = current_target_type value = flag:character_list }
-		}
-		else_if = {
-			limit = { spell_target_is_province_or_title_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
-			set_variable = { name = current_target_type value = flag:title }
-		}
-		else_if = {
-			limit = { spell_target_is_character_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
-			set_variable = { name = current_target_type value = flag:character }
-		}
-		else_if = {
-			limit = { spell_target_is_province_or_title_list_trigger = { SPELL_NAME = var:current_spell_name RANK_VALUE = var:current_spell_rank } }
-			set_variable = { name = current_target_type value = flag:title_list }
-		}
-		if = {
-			limit = {
-				spell_is_elemental_trigger = { SPELL_NAME = var:current_spell_name }
-			}
-			cast_elemental_spell_effect = yes
-		}
-		else = {
-
-		}
+		cast_spell_effect = yes 
 	}
 }
