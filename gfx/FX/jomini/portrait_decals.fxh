@@ -14,8 +14,8 @@ PixelShader =
 		MagFilter = "Linear"
 		MinFilter = "Linear"
 		MipFilter = "Linear"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
+		SampleModeU = "Wrap"
+		SampleModeV = "Wrap"
 		type = "2darray"
 	}
 
@@ -25,8 +25,8 @@ PixelShader =
 		MagFilter = "Linear"
 		MinFilter = "Linear"
 		MipFilter = "Linear"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
+		SampleModeU = "Wrap"
+		SampleModeV = "Wrap"
 		type = "2darray"
 	}
 
@@ -36,8 +36,8 @@ PixelShader =
 		MagFilter = "Linear"
 		MinFilter = "Linear"
 		MipFilter = "Linear"
-		SampleModeU = "Clamp"
-		SampleModeV = "Clamp"
+		SampleModeU = "Wrap"
+		SampleModeV = "Wrap"
 		type = "2darray"
 	}
 
@@ -63,11 +63,12 @@ PixelShader =
 
 			uint2 _AtlasPos;
 			float2 _UVOffset;
+uint2 _UVTiling;
 
 			uint _AtlasSize;
 		};
 
-		DecalData GetDecalData( int Index, uint MaxValue )
+		DecalData GetDecalData( int Index )
 		{
 			// Data for each decal is stored in multiple texels as specified by DecalData
 
@@ -85,13 +86,13 @@ PixelShader =
 				Data._NormalBlendMode = BLEND_MODE_OVERLAY_NORMAL;
 			}
 			Data._PropertiesBlendMode = PdxReadBuffer( DecalDataBuffer, Index + 6 );
-			Data._Weight = float( PdxReadBuffer( DecalDataBuffer, Index + 7 ) ) / MaxValue;
+			Data._Weight = Unpack16BitUnorm( PdxReadBuffer( DecalDataBuffer, Index + 7 ) );
 
 			Data._AtlasPos = uint2( PdxReadBuffer( DecalDataBuffer, Index + 8 ), PdxReadBuffer( DecalDataBuffer, Index + 9 ) );
-			Data._UVOffset = float2( PdxReadBuffer( DecalDataBuffer, Index + 10 ), PdxReadBuffer( DecalDataBuffer, Index + 11 ) );
-			Data._UVOffset /= MaxValue;
+			Data._UVOffset = float2( Unpack16BitUnorm( PdxReadBuffer( DecalDataBuffer, Index + 10 ) ), Unpack16BitUnorm( PdxReadBuffer( DecalDataBuffer, Index + 11 ) ) );
+			Data._UVTiling = uint2( PdxReadBuffer( DecalDataBuffer, Index + 12 ), PdxReadBuffer( DecalDataBuffer, Index + 13 ) );
 
-			Data._AtlasSize = PdxReadBuffer( DecalDataBuffer, Index + 12 );
+			Data._AtlasSize = PdxReadBuffer( DecalDataBuffer, Index + 14 );
 
 			return Data;
 		}
@@ -99,33 +100,30 @@ PixelShader =
 		// MOD(godherja)
 
 		//
-		// Service
+		// Macros
 		//
 
-		float2 GH_ToDecalUV(DecalData Data, float U, float V)
-		{
-			float AtlasFactor = 1.0f / Data._AtlasSize;
+		#ifndef PDX_OPENGL
+			#define GH_PdxTex2DArrayLoad(samp,uvi,lod) (samp)._Texture.Load( int4((uvi), (lod)) )
+		#else
+			#define GH_PdxTex2DArrayLoad texelFetch
+		#endif
 
-			return ( float2(U, V) - Data._UVOffset ) + ( Data._AtlasPos * AtlasFactor );
-		}
+		//
+		// Service
+		//
 
 		float GH_MipLevelToLod(float MipLevel)
 		{
 			// This function (originally GetMIP6Level()) was graciously provided by Buck (EK2).
 
-			#ifdef PDX_DIRECTX_11
+			#ifndef PDX_OPENGL
 				// If running on DX, use the below to get decal texture size.
 				float3 TextureSize;
 				DecalDiffuseArray._Texture.GetDimensions( TextureSize.x , TextureSize.y , TextureSize.z );
 			#else
-				#ifdef PDX_VULKAN
-				// If running on VULKAN, use the below to get decal texture size.
-				float3 TextureSize;
-				DecalDiffuseArray._Texture.GetDimensions( TextureSize.x , TextureSize.y , TextureSize.z );
-				#else
 				// If running on OpenGL, use the below to get decal texture size.
 				ivec3 TextureSize = textureSize(DecalDiffuseArray, 0);
-				#endif
 			#endif
 
 			// Get log base 2 for current texture size (1024px - 10, 512px - 9, etc.)
@@ -135,16 +133,31 @@ PixelShader =
 			return MipLevel - (10.0f - log2(TextureSize.x));
 		}
 
-		GH_SMarkerTexels GH_ExtractMarkerTexels(DecalData Data)
+		GH_SMarkerTexels GH_ExtractMarkerTexels(uint DiffuseIndex)
 		{
-			static float MarkerLod = GH_MipLevelToLod(GH_MARKER_MIP_LEVEL);
+			// Max pixel coordinate for the GH_MARKER_MIP_LEVEL-th mip-map.
+			// TODO: Actually use a formula based on GH_MARKER_MIP_LEVEL here, instead of a literal?
+			static const int MAX_MARKER_PIXEL_COORD = 15; // 6th mip-map is 16x16 for decals
 
-			float2 TopLeftDecalUV  = GH_ToDecalUV(Data, 0.0f, 0.0f);
-			float2 TopRightDecalUV = GH_ToDecalUV(Data, 1.0f, 0.0f);
+			static int MarkerLod = int(GH_MipLevelToLod(GH_MARKER_MIP_LEVEL));
+
+			static const int2 TOP_LEFT_UV     = int2(0, 0);
+			static const int2 TOP_RIGHT_UV    = int2(MAX_MARKER_PIXEL_COORD, 0);
+			static const int2 BOTTOM_RIGHT_UV = int2(MAX_MARKER_PIXEL_COORD, MAX_MARKER_PIXEL_COORD);
+			static const int2 BOTTOM_LEFT_UV  = int2(0, MAX_MARKER_PIXEL_COORD);
 
 			GH_SMarkerTexels MarkerTexels;
-			MarkerTexels.TopLeftTexel  = PdxTex2DLod(DecalDiffuseArray, float3(TopLeftDecalUV, Data._DiffuseIndex), MarkerLod);
-			MarkerTexels.TopRightTexel = PdxTex2DLod(DecalDiffuseArray, float3(TopRightDecalUV, Data._DiffuseIndex), MarkerLod);
+			MarkerTexels.TopLeftTexel     = GH_PdxTex2DArrayLoad(DecalDiffuseArray, int3(TOP_LEFT_UV, DiffuseIndex), MarkerLod);
+			MarkerTexels.TopRightTexel    = GH_PdxTex2DArrayLoad(DecalDiffuseArray, int3(TOP_RIGHT_UV, DiffuseIndex), MarkerLod);
+
+			// #ifndef PIXEL_SHADER
+			// 	MarkerTexels.BottomRightTexel = GH_PdxTex2DArrayLoad(DecalDiffuseArray, int3(BOTTOM_RIGHT_UV, DiffuseIndex), MarkerLod);
+			// 	MarkerTexels.BottomLeftTexel  = GH_PdxTex2DArrayLoad(DecalDiffuseArray, int3(BOTTOM_LEFT_UV, DiffuseIndex), MarkerLod);
+			// #else
+			// 	// The other two corners are not currently used by pixel shaders, so no use sampling them from there.
+			// 	MarkerTexels.BottomRightTexel = float4(0.0f, 0.0f, 0.0f, 0.0f);
+			// 	MarkerTexels.BottomLeftTexel  = float4(0.0f, 0.0f, 0.0f, 0.0f);
+			// #endif // !PIXEL_SHADER
 
 			return MarkerTexels;
 		}
@@ -160,7 +173,7 @@ PixelShader =
 
 			// NOTE: The following is based on AddDecals() and needs
 			//       to be kept in sync with it on vanilla updates.
-			const int TEXEL_COUNT_PER_DECAL = 13;
+			const int TEXEL_COUNT_PER_DECAL = 15;
 			int FromDataTexel = From * TEXEL_COUNT_PER_DECAL;
 			int ToDataTexel   = To * TEXEL_COUNT_PER_DECAL;
 
@@ -173,14 +186,14 @@ PixelShader =
 
 			for (int i = FromDataTexel; i <= ToDataTexel; i += TEXEL_COUNT_PER_DECAL)
 			{
-				DecalData Data = GetDecalData(i, MAX_VALUE);
+				DecalData Data = GetDecalData(i);
 
 				// TODO: Filter by bodypart index for an early continue?
 
 				if (Data._DiffuseIndex >= MAX_VALUE || Data._Weight <= 0.001f)
 					continue;
 
-				GH_SMarkerTexels MarkerTexels = GH_ExtractMarkerTexels(Data);
+				GH_SMarkerTexels MarkerTexels = GH_ExtractMarkerTexels(Data._DiffuseIndex);
 
 				//if (GH_MarkerTexelEquals(MarkerTexels.TopLeftTexel, GH_MARKER_TOP_LEFT_FLAT))
 					//Effect.Type = GH_PORTRAIT_EFFECT_TYPE_FLAT;
@@ -204,16 +217,16 @@ PixelShader =
 			// Body part index is scripted on the mesh asset and should match ECharacterPortraitPart
 			uint BodyPartIndex = GetBodyPartIndex( InstanceIndex );
 
-			const int TEXEL_COUNT_PER_DECAL = 13;
+			const int TEXEL_COUNT_PER_DECAL = 15;
 			int FromDataTexel = From * TEXEL_COUNT_PER_DECAL;
 			int ToDataTexel = To * TEXEL_COUNT_PER_DECAL;
 
-			const uint MAX_VALUE = 65535;
+			static const uint MAX_VALUE = 65535;
 
 			// Sorted after priority
 			for ( int i = FromDataTexel; i <= ToDataTexel; i += TEXEL_COUNT_PER_DECAL )
 			{
-				DecalData Data = GetDecalData( i, MAX_VALUE );
+				DecalData Data = GetDecalData( i );
 
 				// Max index => unused
 				if ( Data._BodyPartIndex == BodyPartIndex )
@@ -225,16 +238,25 @@ PixelShader =
 					if ( ( ( UV.x >= Data._UVOffset.x ) && ( UV.x < ( Data._UVOffset.x + AtlasFactor ) ) ) &&
 						 ( ( UV.y >= Data._UVOffset.y ) && ( UV.y < ( Data._UVOffset.y + AtlasFactor ) ) ) )
 					{
-						float2 DecalUV = ( UV - Data._UVOffset ) + ( Data._AtlasPos * AtlasFactor );
+						float2 DecalUV;
+						float TilingMaskSample = 1;
+						//UVTiling is incompatible with Decal Atlases, so we only use one of them. 
+						//If a tiling value is provided, the tiling feature will be used.
+						if ( Data._UVTiling.x == 1 && Data._UVTiling.y == 1 )
+						{
+							DecalUV = ( UV - Data._UVOffset ) + ( Data._AtlasPos * AtlasFactor );
+} 
+						else
+						{
+							DecalUV = UV * Data._UVTiling;
+							float2 TilingMaskUV = ( UV - Data._UVOffset ) + ( Data._AtlasPos * AtlasFactor );
+							TilingMaskSample = PdxTex2D( DecalPropertiesArray, float3( TilingMaskUV, Data._PropertiesIndex ) ).r;
+						}
 
 						if ( Data._DiffuseIndex < MAX_VALUE )
 						{
 							float4 DiffuseSample = PdxTex2D( DecalDiffuseArray, float3( DecalUV, Data._DiffuseIndex ) );
-							if (DiffuseSample.r == 1.0f && DiffuseSample.g == 0.0f && DiffuseSample.b == 0.0f)
-							{
-								DiffuseSample.rgb = vPaletteColorHair.rgb;
-							}
-							Weight = DiffuseSample.a * Weight;
+							Weight = DiffuseSample.a * Weight * TilingMaskSample;
 							Diffuse = BlendDecal( Data._DiffuseBlendMode, float4( Diffuse, 0.0f ), DiffuseSample, Weight ).rgb;
 						}
 
