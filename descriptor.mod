@@ -1,5 +1,5 @@
 name="Warcraft: Guardians of Azeroth Reforged (Release Alpha)"
-version="0.5.1"
+version="0.5.2"
 picture="thumbnail.png"
 tags={
 	"Total Conversion"
