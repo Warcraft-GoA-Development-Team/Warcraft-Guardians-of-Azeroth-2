@@ -1,4 +1,4 @@
-name="Warcraft: Guardians of Azeroth Reforged (Release Alpha)"
+﻿name="Warcraft: Guardians of Azeroth Reforged (Release Alpha)"
 version="0.5.1"
 picture="thumbnail.png"
 tags={
