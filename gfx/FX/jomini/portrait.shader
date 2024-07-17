@@ -12,6 +12,9 @@ Includes = {
 	"jomini/portrait_decals.fxh"
 	"jomini/portrait_user_data.fxh"
 	"constants.fxh"
+	# MOD(godherja)
+	"GH_portrait_effects.fxh"
+	# END MOD
 }
 
 PixelShader =
@@ -374,8 +377,11 @@ PixelShader =
 			#endif
 		}
 
-		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input )
+		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input, in GH_SPortraitEffect PortraitEffect )
 		{
+			// MOD(godherja)
+			GH_TryApplyStatueEffect(PortraitEffect, Diffuse, Properties);
+			// END MOD
 			float3x3 TBN = Create3x3( normalize( Input.Tangent ), normalize( Input.Bitangent ), normalize( Input.Normal ) );
 			float3 Normal = normalize( mul( NormalSample, TBN ) );
 			
@@ -391,6 +397,10 @@ PixelShader =
 			CalculatePortraitLights( Input.WorldSpacePos, LightingProps._ShadowTerm, MaterialProps, DiffuseLight, SpecularLight );
 			
 			float3 Color = DiffuseIBL + SpecularIBL + DiffuseLight + SpecularLight;
+
+			#ifdef VARIATIONS_ENABLED
+				ApplyClothFresnel( Input, CameraPosition, Normal, Color );
+			#endif
 			
 			float3 SssColor = vec3(0.0f);
 			float SssMask = Properties.r;
@@ -503,7 +513,9 @@ PixelShader =
 				Properties = PdxTex2D( PropertiesMap, UV0 );
 				NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 			#endif
-				
+				// MOD(godherja)
+				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				// END MOD
 				//Warcraft
 				#ifdef DECALS
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
@@ -522,7 +534,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 				#ifdef ALPHA_TO_COVERAGE
 					Out.Color = float4( Color, Diffuse.a );
 				#else
@@ -561,12 +573,16 @@ PixelShader =
 				float ColorMaskStrength = Diffuse.a;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorEyes.rgb, Input.InstanceIndex, ColorMaskStrength );
 
+				// MOD(godherja)
+				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				// END MOD
+
 				//Warcraft
 				#ifdef DECALS
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 				Out.Color = float4( Color, 1.0f );
 				
 				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
@@ -590,7 +606,14 @@ PixelShader =
 				float2 UV0 = Input.UV0;
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );
 				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
+
+				#ifdef DOUBLE_SIDED_ENABLED
+					float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
+					float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw ) * ( PDX_IsFrontFace ? 1 : -1 );
+				#else
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );		
+				#endif
+
 				Properties.r = 1.0; // wipe this clean now, ready to be modified later
 				
 				#ifdef VARIATIONS_ENABLED
@@ -600,9 +623,12 @@ PixelShader =
 					ApplyCoa( Input, Diffuse, CoaColor1, CoaColor2, CoaColor3, CoaOffsetAndScale.xy, CoaOffsetAndScale.zw, CoaTexture, Properties.r );
 				#endif
 
+				// MOD(godherja)
+				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				// END MOD
 
 				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 
 				Out.Color = float4( Color, Diffuse.a );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
@@ -643,7 +669,11 @@ PixelShader =
 				float ColorMaskStrength = NormalSampleRaw.b;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorHair.rgb, Input.InstanceIndex, ColorMaskStrength );
 				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				// MOD(godherja)
+				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				// END MOD
+
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 
 				#ifdef ALPHA_TO_COVERAGE
 					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, UV0, DiffuseMap );
@@ -694,7 +724,11 @@ PixelShader =
 				Properties *= vHairPropertyMult;
 				Diffuse.rgb *= vPaletteColorHair.rgb;
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+
+				// MOD(godherja)
+				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				// END MOD
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 
 				Out.Color = float4( Color, Diffuse.a );
 				
@@ -737,7 +771,10 @@ RasterizerState rasterizer_no_culling
 {
 	CullMode = "none"
 }
-
+RasterizerState rasterizer_back_culling
+{
+	CullMode = "back"
+}
 RasterizerState rasterizer_backfaces
 {
 	FrontCCW = yes
@@ -760,7 +797,7 @@ Effect portrait_skin
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect wc_portrait_skin_attachment_alpha_to_coverage
@@ -906,12 +943,28 @@ Effect portrait_attachment_with_coa
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
+Effect portrait_attachment_with_coaShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
+}
+
 Effect portrait_attachment_alpha_to_coverage_with_coa
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coaShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_with_coa_and_variations
@@ -921,12 +974,28 @@ Effect portrait_attachment_with_coa_and_variations
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
+Effect portrait_attachment_with_coa_and_variationsShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
+}
+
 Effect portrait_attachment_alpha_to_coverage_with_coa_and_variations
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa_and_variationsShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair
