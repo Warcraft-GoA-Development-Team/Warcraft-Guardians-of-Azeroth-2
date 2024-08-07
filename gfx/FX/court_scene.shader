@@ -1,4 +1,4 @@
-Includes = {
+﻿Includes = {
 	"cw/pdxmesh_blendshapes.fxh"
 	"cw/pdxmesh.fxh"
 	"cw/utility.fxh"
@@ -1332,12 +1332,17 @@ BlendState hair_alpha_blend
 	WriteMask = "RED|GREEN|BLUE|ALPHA"
 }
 
-DepthStencilState hair_alpha_blend
+BlendState ice_alpha_blend
 {
-	DepthWriteEnable = no
+	BlendEnable = yes
+	SourceBlend = "SRC_ALPHA"
+	DestBlend = "INV_SRC_ALPHA"
+	SourceAlpha = "ONE"
+	DestAlpha = "INV_SRC_ALPHA"
+	WriteMask = "RED|GREEN|BLUE|ALPHA"
 }
 
-DepthStencilState ice_alpha_blend
+DepthStencilState hair_alpha_blend
 {
 	DepthWriteEnable = no
 }
