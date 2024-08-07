@@ -1435,6 +1435,22 @@ Effect portrait_attachment_selection
 	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
+Effect wc_portrait_attachment_ice
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	BlendState = "hair_alpha_blend"
+	Defines = { "USE_CHARACTER_DATA" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect wc_portrait_attachment_ice_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court_selection"
+	BlendState = "hair_alpha_blend"
+	Defines = { "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+}
+
 Effect wc_portrait_attachment_emissive
 {
 	VertexShader = "VS_standard"
