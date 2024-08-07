@@ -998,7 +998,6 @@ Effect wc_portrait_attachment_ice
 	VertexShader = "VS_standard"
 	PixelShader = "PS_wc_ice"
 	BlendState = "ice_alpha_blend"
-	Defines = { "ICE_TRANSPARENCY_HACK" }
 }
 Effect wc_portrait_attachment_emissive
 {
