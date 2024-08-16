@@ -138,6 +138,40 @@ wc_on_spell_cast_started = {
 				}
 			}
 		}
+
+		if = {
+			limit = {
+				var:current_spell_name = flag:conjure_refreshment
+				var:current_spell_rank < 3
+			}
+			trigger_event = wc_magic_spell_events.2001
+		}
+        
+		# Flame and Frost synergy
+		if = {
+			limit = {
+				spell_is_arcane_frost = {
+					SPELL = var:current_spell_name
+				}
+			}
+			remove_variable = freeze_time_mult
+
+			set_variable = {
+				name = freeze_time_mult
+				value = {
+					value = 0.01
+					multiply = var:current_cost
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				spell_is_arcane_fire = {
+					SPELL = var:current_spell_name
+				}
+			}
+			remove_character_flag = frost_synergy
+		}
 	}
 }
 
@@ -170,12 +204,138 @@ wc_on_spell_cast_started_title = {
 ## root is the caster
 ### upon finishing the spell cast, before the spell is executed ###
 ### Setting the var should_cast to no will stop the actual execution of the spell effect
+### Setting the var should_reflect to yes will execute the spell effects on the caster instead
 ### Setting the var should_include to no on a spell target will stop it from being included in the effects
 ### Variable prefix: casted_
 ### Variables: spell, recipient, targets_list (variable list), rank, type (for elemental type), class (spell class), target_type
 ### e.g. var:casted_spell = flag:lava_lash
 wc_on_spell_cast_before_cast = {
 	effect = {
+		if = {
+			limit = {
+				has_variable = casted_target_type
+				var:casted_target_type = flag:character
+				has_variable = casted_recipient
+				spell_is_harmful_trigger = {
+					SPELL = var:casted_spell
+				}
+			}
+			if = {
+				limit = {
+					spell_is_harmful_trigger = {
+						SPELL = var:casted_spell
+					}
+					NOT = {
+						var:casted_spell = flag:spellsteal
+					}
+					var:casted_recipient = {
+						has_character_modifier = wc_counterspell_modifier
+					}
+				}
+				var:casted_recipient = {
+					remove_character_modifier = wc_counterspell_modifier
+				}
+				set_variable = {
+					name = should_reflect
+					value = yes
+				}
+			}
+			else_if = {
+				limit = {
+					var:casted_recipient = {
+						has_character_modifier = wc_frost_armor_modifier
+					}
+				}
+				root = {
+					save_scope_as = ice_caster
+				}
+				var:casted_recipient = {
+					save_scope_as = blocker
+					trigger_event = wc_magic_spell_events.0001
+				}
+				root = {
+					send_interface_toast = {
+						title = wc_ice_block
+						left_icon = var:$SPELL$_recipient
+						right_icon = root
+						custom_tooltip = wc_iceblock_tt
+					}
+				}
+				set_variable = {
+					name = should_cast
+					value = no
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				has_variable = casted_target_type
+				var:casted_target_type = flag:character_list
+				has_variable = casted_targets_list
+				spell_is_harmful_trigger = {
+					SPELL = var:casted_spell
+				}
+			}
+			if = {
+				limit = {
+					any_in_list = {
+						variable = casted_targets_list
+						has_character_modifier = wc_counterspell_modifier
+					}
+					NOT = {
+						var:casted_spell = flag:spellsteal
+					}
+				}
+				every_in_list = {
+					variable = casted_targets_list
+					limit = {
+						has_character_modifier = wc_counterspell_modifier
+					}
+					remove_character_modifier = wc_counterspell_modifier
+					set_variable = {
+						name = should_include
+						value = no
+					}
+					root = {
+						set_variable = {
+							name = should_reflect
+							value = yes
+						}
+					}
+				}
+			}
+			else_if = {
+				limit = {
+					any_in_list = {
+						variable = casted_targets_list
+						has_character_modifier = wc_frost_armor_modifier
+					}
+				}
+				every_in_list = {
+					variable = casted_targets_list
+					limit = {
+						has_character_modifier = wc_frost_armor_modifier
+					}
+					root = {
+						save_scope_as = ice_caster
+					}
+					save_scope_as = blocker
+					trigger_event = wc_magic_spell_events.0001
+					root = {
+						send_interface_toast = {
+							title = wc_ice_block
+							left_icon = var:$SPELL$_recipient
+							right_icon = root
+							custom_tooltip = wc_iceblock_tt
+						}
+					}
+					set_variable = {
+						name = should_include
+						value = no
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -329,6 +489,88 @@ wc_on_spell_cast_finish = {
 
 		## BURNOUT
 		clear_burnout_effect = yes
+
+		# Burn caster when target has Fire Shield
+		if = {
+			limit = {
+				exists = var:casted_recipient
+				OR = {
+					var:casted_target_type = flag:army
+					var:casted_target_type = flag:friendly_army
+					var:casted_target_type = flag:enemy_army
+				}
+				NOT = { var:casted_recipient.army_owner = root }
+				NOT = { var:casted_recipient.army_commander = root }
+				var:casted_recipient.army_commander = {
+					has_character_modifier = wc_fire_shield_modifier
+					has_perk = order_magic_tree_4_perk_6
+				}
+				spell_is_harmful_trigger = {
+					SPELL = var:casted_spell
+				}
+			}
+
+			root = {
+				add_or_increase_burned_effect = yes
+
+				send_interface_toast = {
+					title = wc_spell_reflected
+					left_icon = root
+					right_icon = var:casted_recipient
+					custom_tooltip = wc_fire_shield_reflect_tt
+				}
+			}
+		}
+
+		# Frost Synergy and Icy Veins
+		if = {
+			limit = {
+				spell_is_arcane_frost = {
+					SPELL = var:casted_spell
+				}
+			}
+
+			remove_character_flag = flame_synergy
+
+			if = {
+				limit = {
+					has_perk = order_magic_tree_4_perk_5
+				}
+				add_character_flag = frost_synergy
+			}
+
+			if = {
+				limit = {
+					has_perk = order_magic_tree_5_perk_4
+					NOT = {
+						var:casted_spell = flag:frostbolt
+					}
+				}
+				add_character_flag = icy_veins
+			}
+			else = {
+				remove_character_flag = icy_veins
+			}
+		}
+		else_if = {
+			limit = {
+				has_perk = order_magic_tree_5_perk_6
+				spell_is_arcane_fire = {
+					SPELL = var:casted_spell
+				}
+			}
+
+			add_character_flag = flame_synergy
+		}
+
+		# Freeze time
+		if = {
+			limit = {
+				spell_is_arcane_chronomancy_trigger = { SPELL = var:casted_spell }
+				has_variable = freeze_time_mult
+			}
+			remove_variable = freeze_time_mult
+		}
 	}
 }
 
@@ -431,6 +673,103 @@ wc_on_spell_cast_finish_character = {
 						CHANGE = add
 						VALUE = 5
 					}
+				}
+			}
+		}
+
+		# Clear Scorch cooldown when hit with elemental or fel hostile magic
+		if = {
+			limit = {
+				NOT = { scope:current_target_character = root }
+				OR = {
+					var:casted_class = flag:elemental_fire
+					var:casted_class = flag:elemental_earth
+					var:casted_class = flag:elemental_water
+					var:casted_class = flag:elemental_air
+					var:casted_class = flag:disorder
+				}
+				spell_is_harmful_trigger = {
+					SPELL = var:casted_spell
+				}
+			}
+
+			scope:current_target_character = {
+				remove_spell_cooldown_effect = { SPELL = scorch }
+			}
+		}
+
+		# Burn caster when target has Fire Shield
+		if = {
+			limit = {
+				scope:current_target_character = {
+					has_character_modifier = wc_fire_shield_modifier
+				}
+				spell_is_harmful_trigger = {
+					SPELL = var:casted_spell
+				}
+			}
+
+			# TODO: Maybe remove Fire Shield modifier?
+
+			root = {
+				add_or_increase_burned_effect = yes
+
+				send_interface_toast = {
+					title = wc_spell_reflected
+					left_icon = root
+					right_icon = scope:current_target_character
+					custom_tooltip = wc_fire_shield_reflect_tt
+				}
+			}
+		}
+
+		# Netherburn
+		if = {
+			limit = {
+				NOT = {
+					has_character_flag = netherburn_triggered
+				}
+				var:casted_class = flag:order
+				has_perk = order_magic_tree_4_perk_2
+				spell_is_harmful_trigger = {
+					SPELL = var:casted_spell
+				}
+			}
+			scope:current_target_character = {
+				save_scope_value_as = {
+					name = spell_dodge_chance
+					value = wc_order_magic_resistance_dodge_value
+				}
+			}
+			random_list = {
+				25 = {
+					burned_target_frostbite_modifier = { TARGET = var:casted_recipient CHANGE = add }
+					scope:current_target_character = {
+						add_or_increase_burned_effect = yes
+						add_opinion = {
+							modifier = wc_burned_me
+							target = scope:current_target_character
+						}
+					}
+
+					send_interface_toast = {
+						title = wc_netherburn_triggered
+						left_icon = root
+						right_icon = scope:current_target_character
+						custom_tooltip = wc_netherburn_tt
+					}
+
+					add_character_flag = {
+						flag = netherburn_triggered
+						years = 1
+					}
+				}
+				75 = {
+					modifier = {
+						is_alive = yes
+						add = scope:spell_dodge_chance
+					}
+					burned_target_frostbite_modifier = { TARGET = var:casted_recipient CHANGE = subtract }
 				}
 			}
 		}
