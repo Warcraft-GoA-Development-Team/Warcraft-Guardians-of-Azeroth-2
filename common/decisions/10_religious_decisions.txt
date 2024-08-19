@@ -263,10 +263,22 @@ give_sky_burial_decision = {
 	selection_tooltip = give_sky_burial_decision_tooltip
 
 	is_shown = {
+		NOT = {
+			has_dlc_feature = legends_of_the_dead
+		}
 		faith = {
 			has_doctrine_parameter = sky_burials_active
 		}
 		has_variable = ancestor_to_bury
+		var:ancestor_to_bury = {
+			OR = {
+				NOT = { exists = var:body_has_been_disposed }
+				AND = {
+					exists = var:body_has_been_disposed
+					var:body_has_been_disposed = no
+				}
+			}
+		}
 	}
 
 	is_valid = {
@@ -299,6 +311,15 @@ give_sky_burial_decision = {
 						target = root
 						opinion = 20
 					}
+				}
+			}
+		}
+		hidden_effect = {
+			var:ancestor_to_bury = {
+				set_dead_character_variable = {
+					name = body_has_been_disposed
+					value = yes
+					years = 5
 				}
 			}
 		}
@@ -539,7 +560,12 @@ revoke_false_conversion_decision = {	#Reveal yourself as a crypto-religionist.
 		}
 		modifier = {	# If no one is fussed, and your old faith waxes while your current one wanes, then that seems like a good reason to jump ship.
 			add = 35
-			NOT = { liege.faith = { has_doctrine = doctrine_pluralism_fundamentalist } }
+			NOT = { liege.faith = { 
+				OR = {
+					has_doctrine = doctrine_pluralism_fundamentalist
+					has_doctrine = doctrine_pluralism_dark
+				}
+			} }
 			secret_faith ?= { fervor >= medium_fervor_value }
 			faith = { fervor <= medium_fervor_value }
 		}
@@ -770,6 +796,182 @@ ai_create_head_of_faith_decision = {
 				has_doctrine_parameter = no_head_of_faith
 			}
 			exists = faith.religious_head
+		}
+	}
+
+	ai_will_do = {
+		base = 100
+	}
+}
+
+appoint_a_righteous_caliph_decision = { # Separate From Zandalari Religious Control
+	# PIC CREDIT https://phillipzhang.artstation.com/
+	picture = "gfx/interface/illustrations/decisions/zulian_restoration.dds" # Temp
+	major = yes
+
+	ai_check_interval = 24
+
+	selection_tooltip = appoint_a_righteous_caliph_decision_tooltip
+
+
+	is_shown = {
+		# Standard filter checks.
+		is_landed = yes
+		# Check some religious stuff; namely that you're the correct religion and your existing-HoF doesn't share your faith.
+		religion = religion:loa_group
+		exists = faith.religious_head
+		NOT = { faith = faith.religious_head.faith }
+		# And filter out anyone who'd make this unreliable.
+		OR = {
+			government_has_flag = government_is_tribal
+			government_has_flag = government_is_feudal
+			government_has_flag = government_is_clan
+		}
+	}
+
+	is_valid = {
+		# Must be independent.
+		is_independent_ruler = yes
+		# Should have a decent piety level.
+		piety_level >= high_piety_level
+		# Must have a decent proportion of sub-realm counties of the faith.
+		custom_description = {
+			text = appoint_a_righteous_caliph_decision.need_at_least_ten_same_faith_counties
+			any_sub_realm_county = {
+				count >= appoint_a_righteous_caliph_decision_same_faith_county_count
+				faith = root.faith
+			}
+		}
+		# Plus, you shouldn't be _too_ sinful, even with your piety level.
+		custom_description = {
+			text = appoint_a_righteous_caliph_decision.no_more_than_x_sinful_traits
+			num_sinful_traits <= 2
+		}
+		# Now, pick any two of the valid reasons.
+		calc_true_if = {
+			amount >= 2
+			
+			# Being outside of your head's diplo range helps.
+			custom_description = {
+				text = appoint_a_righteous_caliph_decision.caliph_not_in_diplo_range
+				NOT = { in_diplomatic_range = faith.religious_head }
+			}
+			# Having a holy site.
+			custom_description = {
+				text = appoint_a_righteous_caliph_decision.control_one_holy_site
+				faith = {
+					any_holy_site = {
+						count >= 1
+						holder.top_liege = root
+					}
+				}
+			}
+			# Having *2* holy sites.
+			custom_description = {
+				text = appoint_a_righteous_caliph_decision.control_two_holy_sites
+				faith = {
+					any_holy_site = {
+						count >= 2
+						holder.top_liege = root
+					}
+				}
+			}
+			# Having a higher-than-minimum piety level.
+			piety_level >= very_high_piety_level
+			# And just having a caliph who doesn't live up to the root's faith's ideals.
+			custom_description = {
+				text = appoint_a_righteous_caliph_decision.caliph_has_x_or_more_traits_sinful_to_your_faith
+				faith.religious_head = {
+					num_sinful_traits = {
+						value >= 2
+						faith = root.faith
+					}
+				}
+			}
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		is_available_adult = yes
+		# Has to be around for the ceremony.
+		not = { exists = involved_activity }
+		has_contagious_deadly_disease_trigger = no
+		is_at_war = no
+	}
+
+	effect = {
+		save_scope_as = founder
+		faith.religious_head = {
+			save_scope_as = old_religious_head
+		}
+		create_character = {
+			template = priest_character_template
+			dynasty = none
+			location = scope:founder.location
+			save_scope_as = new_religious_head
+		}
+
+		appoint_a_righteous_caliph_scripted_effect = yes
+
+		# Notify co-faithists; we do this first so we can sort the feed message for how many did/didn't convert.
+		faith = {
+			every_faith_ruler = {
+				limit = {
+					highest_held_title_tier >= tier_county
+					NOT = { this = root }
+				}
+				trigger_event = { 
+					id = religious_decision.0602 
+					#days = 1 
+				}
+			}
+		}
+
+		# Now notify other players.
+		#every_ruler = {
+		every_player = {
+			limit = {
+				OR = {
+					religion = religion:loa_group
+					any_neighboring_and_across_water_top_liege_realm_owner = { this = root }
+					any_liege_or_above = { religion = religion:loa_group }
+				}
+				# Exempt same-faith characters, who already got an event.
+				NOT = { faith = root.faith }
+			}
+			# Players who share the religion get 
+			trigger_event = { 
+				id = religious_decision.0603 
+				#days = 1 
+			}
+		}
+		# Finally, we trigger the main conversion.
+		trigger_event = { 
+			id = religious_decision.0601 
+			#days = 2 
+		}
+	}
+
+	cost = {
+		gold = 500
+		piety = 1000
+	}
+
+	ai_potential = {
+		# Must be independent.
+		is_independent_ruler = yes
+		# Should have a decent piety level.
+		piety_level >= high_piety_level
+		OR = {
+			# Zealous people think they know better.
+			has_trait = zealous
+			# And cynics want that power for themselves.
+			has_trait = cynical
+			# Dislikes HoF
+			opinion = {
+				target = faith.religious_head
+				value < -25
+			}
 		}
 	}
 
