@@ -10,6 +10,7 @@ open_spellbook_sgui = {
                 NOT = { exists = global_var:spellbook_init }
             }
             init_elemental_fire_spells_effect = yes
+            init_order_spells_effect = yes
 
             # set_global_variable = spellbook_init
         }
@@ -101,13 +102,14 @@ close_spellbook_sgui = {
         remove_variable = current_target_type
         if = {
             limit = {
-                exists = var:elemental_type
+                has_variable = elemental_type
             }
             set_variable = {
                 name = last_elemental_type
                 value = var:elemental_type
             }
         }
+        remove_variable = current_secondary_interaction
 
         remove_variable = elemental_type
         remove_variable = spellbook_open
@@ -392,6 +394,7 @@ set_current_spell_sgui = {
             }
             remove_variable = spell_recipient
         }
+        set_spell_secondary_interaction_effect = { SPELL = var:current_spell_name }
         # something for lists ?
         remove_variable = old_target_type
     }
@@ -588,38 +591,83 @@ can_select_spell_sgui = {
     scope = character
     saved_scopes = { spell }
     is_valid = {
-        is_known_spell_trigger = {
-            SPELL = scope:spell
-        }
-        NOT = {
-            ritual_on_cooldown_trigger = {
+        trigger_if = {
+            limit = {
+                spell_hack_activated_trigger = no
+                wc_presence_of_mind_activated_trigger = no
+                wc_reverse_causality_activated_trigger = no
+            }
+            is_known_spell_trigger = {
                 SPELL = scope:spell
             }
+            NOT = {
+                ritual_on_cooldown_trigger = {
+                    SPELL = scope:spell
+                }
+            }
+            NOT = {
+                spell_on_cooldown_trigger = {
+                    SPELL = scope:spell
+                }
+            }
+            NOT = {
+                is_casting_spell_trigger = {
+                    SPELL = scope:spell
+                }
+            }
+            satisfy_spell_triggers = {
+                SPELL = scope:spell
+            }
+            custom_description = {
+                text = only_target_self_trigger
+                trigger_if = {
+                    limit = {
+                        spell_target_is_only_self_trigger = {
+                            SPELL = scope:spell
+                        }
+                    }
+                    OR = {
+                        var:original_recipient ?= root
+                        var:spell_recipient ?= root
+                    }
+                }
+            }
         }
-        NOT = {
+        trigger_else_if = {
+            limit = {
+                spell_hack_activated_trigger = yes
+            }
+            NOT = { spell_cant_be_hacked_trigger = { SPELL = scope:spell } }
+        }
+        trigger_else_if = {
+            limit = {
+                wc_presence_of_mind_activated_trigger = yes
+            }
+            custom_tooltip = {
+                text = WC_CANT_REDUCE_RITUAL_SPELL
+                NOT = { spell_is_ritual_trigger = { SPELL = scope:spell } }
+            }
+
             spell_on_cooldown_trigger = {
                 SPELL = scope:spell
             }
         }
-        NOT = {
-            is_casting_spell_trigger = {
+        trigger_else = {
+            is_known_spell_trigger = {
                 SPELL = scope:spell
             }
-        }
-        satisfy_spell_triggers = {
-            SPELL = scope:spell
-        }
-        custom_description = {
-            text = only_target_self_trigger
-            trigger_if = {
-                limit = {
-                    spell_target_is_only_self_trigger = {
-                        SPELL = scope:spell
-                    }
+            custom_tooltip = {
+                text = WC_CANT_REVERSE_RITUAL_SPELL
+                NOT = { spell_is_ritual_trigger = { SPELL = scope:spell } }
+            }
+            NOT = {
+                spell_on_cooldown_trigger = {
+                    SPELL = scope:spell
                 }
-                OR = {
-                    var:original_recipient ?= root
-                    var:spell_recipient ?= root
+            }
+            NOT = {
+                is_casting_spell_trigger = {
+                    SPELL = scope:spell
                 }
             }
         }
@@ -644,7 +692,17 @@ can_cast_spell_sgui = {
 
     is_valid = {
         exists = var:current_spell_name
-        all_requirements_for_casting_satisfied_trigger = yes
+        trigger_if = {
+            limit = {
+                spell_hack_activated_trigger = no
+                wc_presence_of_mind_activated_trigger = no
+                wc_reverse_causality_activated_trigger = no
+            }
+            all_requirements_for_casting_satisfied_trigger = yes
+        }
+        trigger_else = {
+            has_spell_selected_trigger = yes
+        }
     }
 }
 
@@ -819,9 +877,51 @@ is_selected_target_sgui = {
 cast_spell_sgui = {
     scope = character
     effect = {
-        execute_scoped_spell_effect = {
-            EFFECT = spell_cast_effect
-            SPELL = var:current_spell_name
+        if = {
+            limit = {
+                spell_hack_activated_trigger = no
+                wc_presence_of_mind_activated_trigger = no
+                wc_reverse_causality_activated_trigger = no
+            }
+            execute_scoped_spell_effect = {
+                EFFECT = spell_cast_effect
+                SPELL = var:current_spell_name
+            }
+        }
+        else_if = {
+            limit = {
+                spell_hack_activated_trigger = yes
+            }
+            execute_scoped_spell_effect = {
+                EFFECT = wc_learn_spell_effect_external
+                SPELL = var:current_spell_name
+            }
+            remove_variable = wc_spell_hack_activated
+        }
+        else_if = {
+            limit = {
+                wc_presence_of_mind_activated_trigger = yes
+            }
+            execute_scoped_spell_effect = {
+                EFFECT = wc_halve_cooldown_effect
+                SPELL = var:current_spell_name
+            }
+            remove_variable = wc_presence_of_mind_activated
+            trigger_event = {
+                on_action = regenerate_presence_of_mind
+                years = 1
+            }
+        }
+        else = {
+            execute_scoped_spell_effect = {
+                EFFECT = wc_reverse_causality_effect
+                SPELL = var:current_spell_name
+            }
+            remove_variable = wc_reverse_causality_activated
+            trigger_event = {
+                on_action = regenerate_reverse_causality
+                years = 5
+            }
         }
     }
 }
@@ -1261,6 +1361,13 @@ has_targets_list_sgui = {
     }
 }
 
+player_has_spell_hack = {
+    scope = character
+    is_valid = {
+        spell_hack_activated_trigger = yes
+    }
+}
+
 
 # Sidebar GUI
 wc_in_diplo_range_sgui = {
@@ -1326,5 +1433,30 @@ wc_monitoring_burnout_sgui = {
     is_valid = {
         has_variable = burnout_victim
         has_character_modifier = wc_burnout_good_modifier
+    }
+}
+
+wc_monitoring_chronomancy_sgui = {
+    scope = character
+    is_valid = {
+        has_character_flag = chronomancy_active
+        OR = {
+            has_variable_list = chronomancy_modifier_list
+            has_variable_list = chronomancy_trait_list
+        }
+    }
+}
+
+chronomancy_trait_list_sgui = {
+    scope = character
+    is_valid = {
+        has_variable_list = chronomancy_trait_list
+    }
+}
+
+chronomancy_modifier_list_sgui = {
+    scope = character
+    is_valid = {
+        has_variable_list = chronomancy_modifier_list
     }
 }
