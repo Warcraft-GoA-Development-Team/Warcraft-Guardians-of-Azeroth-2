@@ -1,10 +1,14 @@
-Includes = {
+﻿Includes = {
 	"cw/camera.fxh"
 	"jomini/jomini_flat_border.fxh"
 	"jomini/jomini_fog.fxh"
 	"jomini/jomini_fog_of_war.fxh"
 	"jomini/jomini_lighting.fxh"
 	"standardfuncsgfx.fxh"
+	# MOD(WC)
+	"cw/pdxterrain.fxh"
+	"WC_map.fxh"
+	# END MOD
 }
 
 VertexStruct VS_OUTPUT_PDX_BORDER
@@ -109,6 +113,10 @@ PixelShader =
 					SLightingProperties LightingProps = GetSunLightingProperties( Input.WorldSpacePos, ShadowTerm );
 					Diffuse.rgb = CalculateSunLighting( MaterialProps, LightingProps, EnvironmentMap );
 				}
+				// MOD(WC)
+                float2 ColorMapCoords = Input.WorldSpacePos.xz * WorldSpaceToTerrain0To1;
+                Diffuse.a = WC_GetTerraIncognitaAlpha(float2( ColorMapCoords.x, 1.0 - ColorMapCoords.y ), Diffuse);
+				// END MOD
 
 				return Diffuse;
 			}
@@ -140,6 +148,10 @@ PixelShader =
 					SLightingProperties LightingProps = GetSunLightingProperties( Input.WorldSpacePos, ShadowTerm );
 					Diffuse.rgb = CalculateSunLighting( MaterialProps, LightingProps, EnvironmentMap );
 				}
+				// MOD(WC)
+                float2 ColorMapCoords = Input.WorldSpacePos.xz * WorldSpaceToTerrain0To1;
+                Diffuse.a = WC_GetTerraIncognitaAlpha(float2( ColorMapCoords.x, 1.0 - ColorMapCoords.y ), Diffuse);
+				// END MOD
 
 				return Diffuse;
 			}
@@ -176,6 +188,10 @@ PixelShader =
 					SLightingProperties LightingProps = GetSunLightingProperties( Input.WorldSpacePos, ShadowTerm );
 					Diffuse.rgb = CalculateSunLighting( MaterialProps, LightingProps, EnvironmentMap );
 				}
+				// MOD(WC)
+                float2 ColorMapCoords = Input.WorldSpacePos.xz * WorldSpaceToTerrain0To1;
+                Diffuse.a = WC_GetTerraIncognitaAlpha(float2( ColorMapCoords.x, 1.0 - ColorMapCoords.y ), Diffuse);
+				// END MOD
 
 				return Diffuse;
 			}

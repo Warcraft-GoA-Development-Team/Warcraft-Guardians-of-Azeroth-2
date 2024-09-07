@@ -1,10 +1,14 @@
-Includes = {
+﻿Includes = {
 	"jomini/countrynames.fxh"
 	"jomini/jomini_fog.fxh"
 	"jomini/jomini_fog_of_war.fxh"
 	"standardfuncsgfx.fxh"
 	"cw/lighting.fxh"
 	"jomini/jomini_lighting.fxh"
+	# MOD(WC)
+	"cw/pdxterrain.fxh"
+	"WC_map.fxh"
+	# END MOD
 }
 
 VertexShader =
@@ -108,6 +112,10 @@ PixelShader =
 				SLightingProperties NamesLightingProps = GetSunLightingProperties( Input.WorldSpacePos, ShadowTerm );
 				MixedColor.rgb = CalculateSunLighting( NamesMaterialProps, NamesLightingProps, EnvironmentMap );
 			}
+            // MOD(WC)
+            float2 ColorMapCoords = Input.WorldSpacePos.xz * WorldSpaceToTerrain0To1;
+            MixedColor.a = WC_GetTerraIncognitaAlpha(float2( ColorMapCoords.x, 1.0 - ColorMapCoords.y ), MixedColor);
+            // END MOD
 			
 			return MixedColor;
 			}

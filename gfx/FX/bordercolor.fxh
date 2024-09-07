@@ -1,4 +1,4 @@
-Includes = {
+﻿Includes = {
 	"cw/pdxterrain.fxh"
 	"jomini/jomini_colormap.fxh"
 	"jomini/jomini_colormap_constants.fxh"
@@ -27,8 +27,11 @@ PixelShader = {
 		float4 GetHighlightColor( in float2 WorldSpacePosXZ )
 		{
 			float4 HighlightColor = BilinearColorSampleAtOffset( WorldSpacePosXZ, IndirectionMapSize, InvIndirectionMapSize, ProvinceColorIndirectionTexture, ProvinceColorTexture, HighlightProvinceColorsOffset );
+			// MOD(WC)
+			WC_TryDiscardOverlayColor(HighlightColor, WorldSpacePosXZ);
+			// END MOD
 			HighlightColor.rgb *= 0.25;
-			
+
 			float3 Desaturated = vec3( ( HighlightColor.r + HighlightColor.g + HighlightColor.b ) / 3 );
 			HighlightColor.rgb = lerp( HighlightColor.rgb, Desaturated, 0.35 );
 

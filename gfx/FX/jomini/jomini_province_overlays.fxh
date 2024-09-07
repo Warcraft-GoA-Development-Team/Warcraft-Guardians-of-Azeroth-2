@@ -1,7 +1,10 @@
-Includes = {
+﻿Includes = {
 	"jomini/jomini_colormap.fxh"
 	"jomini/jomini_colormap_constants.fxh"
 	"jomini/gradient_border_constants.fxh"
+	# MOD(WC)
+	"WC_map.fxh"
+	# END MOD
 }
 
 PixelShader = 
@@ -97,11 +100,22 @@ PixelShader =
 			Color.a = Color.a * ( 1.0f - AlternateColor.a ) + AlternateColor.a;
 		}
 
+        // MOD(WC)
+		void WC_TryDiscardOverlayColor(inout float4 OverlayColor, in float2 NormalizedCoordinate)
+		{
+            OverlayColor.a = WC_GetTerraIncognitaAlpha(float2( NormalizedCoordinate.x, 1.0 - NormalizedCoordinate.y ), OverlayColor);
+		}
+		// END MOD
+
 		// This default implementation is using the primary province colors with the gradiant border system; it is highly customizeable through the GradientBorders constant buffer. 
 		// Typically, this function is used to draw gradient borders and/or uniform "province colors"
 		float4 CalcPrimaryProvinceOverlay( in float2 NormalizedCoordinate, in float DistanceFieldValue )
 		{
 			float4 PrimaryColor = BilinearColorSample( NormalizedCoordinate, IndirectionMapSize, InvIndirectionMapSize, ProvinceColorIndirectionTexture, ProvinceColorTexture );
+
+			// MOD(WC)
+			WC_TryDiscardOverlayColor(PrimaryColor, NormalizedCoordinate);
+			// END MOD
 
 			float GradientAlpha = lerp( GB_GradientAlphaInside, GB_GradientAlphaOutside, RemapClamped( DistanceFieldValue, GB_EdgeWidth + GB_GradientWidth, GB_EdgeWidth, 0.0f, 1.0f ) );
 			float Edge = smoothstep( GB_EdgeWidth + max( 0.0001f, GB_EdgeSmoothness ), GB_EdgeWidth, DistanceFieldValue );
