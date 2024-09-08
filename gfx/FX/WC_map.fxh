@@ -1,3 +1,8 @@
+includes = {
+	"cw/pdxmesh_buffers.fxh"
+	"gh_portrait_constants.fxh"
+	"gh_portrait_decals_shared.fxh"
+}
 
 PixelShader =
 {
@@ -23,9 +28,9 @@ PixelShader =
             int tempp = int(tiValue*255);
 
             if ( tempp == 85 ) {
-                #ifdef ti_pandaria
+                if (GH_GetPandariaHiddenValue() == 1) {
                     alpha = 0;
-                #endif
+                }
             }
 
 			return alpha;
