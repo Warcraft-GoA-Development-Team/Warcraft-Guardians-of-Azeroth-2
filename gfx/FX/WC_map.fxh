@@ -27,8 +27,10 @@ PixelShader =
             float tiValue = PdxTex2D( tiMask, UV ).g;
             int tempp = int(tiValue*255);
 
+            float pandariaValue = GH_GetPandariaHiddenValue();
+
             if ( tempp == 85 ) {
-                if (GH_GetPandariaHiddenValue() == 1) {
+                if (pandariaValue > 0.5) {
                     alpha = 0;
                 }
             }
