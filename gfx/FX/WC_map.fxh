@@ -29,8 +29,14 @@ PixelShader =
 
             float pandariaValue = GH_GetPandariaHiddenValue();
 
-            if ( tempp == 85 ) {
-                if (pandariaValue > 0.5) {
+            if (pandariaValue > 0.5) {
+                if ( tempp == 85 ) {
+                    alpha = 0;
+                }
+            }
+            else if (pandariaValue > 0.1 && pandariaValue < 0.5)
+            {
+                if ( tempp != 85 ) {
                     alpha = 0;
                 }
             }
