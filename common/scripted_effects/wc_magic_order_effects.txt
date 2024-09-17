@@ -8,6 +8,7 @@
     add_to_global_variable_list = { name = order_spells target = flag:chronomancy }
     add_to_global_variable_list = { name = order_spells target = flag:evocation }
     add_to_global_variable_list = { name = order_spells target = flag:arcane_dome }
+    add_to_global_variable_list = { name = order_spells target = flag:create_portal }
 
     # Fire
     add_to_global_variable_list = { name = order_spells target = flag:scorch }
@@ -1588,5 +1589,219 @@ cast_blizzard_effect = {
                 }
             }
         }
+    }
+}
+
+cast_create_portal_effect = {
+    if = {
+        limit = { exists = var:create_portal_recipient }
+        var:create_portal_recipient = {
+            save_temporary_scope_as = this_recipient
+        }
+    }
+    else_if = {
+        limit = {
+            exists = var:current_spell_name
+            var:current_spell_name = flag:create_portal
+            exists = var:spellbook_open
+            exists = var:spell_recipient
+        }
+        var:spell_recipient = {
+            save_temporary_scope_as = this_recipient
+        }
+    }
+
+    if = {
+        limit = {
+            OR = {
+                AND = {
+                    exists = var:spellbook_open
+                    var:current_spell_rank = 1
+                }
+                var:create_portal_rank ?= 1
+            }
+            scope:this_recipient ?= { is_travelling = yes }
+        }
+        scope:this_recipient.current_travel_plan.next_destination_province = {
+            save_scope_as = portal_destination
+        }
+    }
+
+    if = {
+        limit = {
+            OR = {
+                exists = scope:portal_destination
+                exists = var:create_portal_destination
+            }
+        }
+        var:create_portal_destination ?= {
+            save_scope_as = portal_destination
+        }
+        if = { # Character
+            limit = {
+                exists = scope:this_recipient
+                OR = {
+                    AND = {
+                        exists = var:spellbook_open
+                        var:current_spell_rank = 1
+                    }
+                    var:create_portal_rank ?= 1
+                }
+            }
+            if = {
+                limit = {
+                    scope:this_recipient = { is_travelling = yes }
+                }
+                custom_tooltip = WC_TRAVEL_ENTOURAGE_TOOLTIP
+            }
+            scope:this_recipient = {
+                teleport_character_effect = { DESTINATION = scope:portal_destination }
+            }
+            if = {
+                limit = {
+                    has_variable = create_portal_rank
+                }
+                remove_variable = create_portal_destination
+                remove_variable = current_destination
+            }
+        }
+        else_if = { # Multiple characters - tooltip
+            limit = { has_variable_list = spell_targets_list }
+            every_in_list = {
+                variable = spell_targets_list
+                save_scope_as = this_recipient 
+                teleport_character_effect = { DESTINATION = scope:portal_destination }
+            }
+        }
+        else_if = { # Multiple characters - real
+            limit = { 
+                has_variable_list = create_portal_targets_list
+                var:create_portal_rank ?= 2
+            }
+            every_in_list = {
+                variable = create_portal_targets_list
+                save_scope_as = this_recipient 
+                teleport_character_effect = { DESTINATION = scope:portal_destination }
+            }
+            remove_variable = create_portal_destination
+            remove_variable = current_destination
+        }
+        else_if = { # Armies - tooltip
+            limit = {
+                var:current_spell_rank = 3
+                exists = scope:this_recipient
+            }
+            scope:this_recipient = {
+                teleport_army_effect = { DESTINATION = scope:portal_destination }
+            }
+        }
+        else_if = { # Armies - real
+            limit = {
+                exists = scope:this_recipient
+                var:create_portal_rank ?= 3
+            }
+            scope:this_recipient = {
+                teleport_army_effect = { DESTINATION = scope:portal_destination }
+            }
+            remove_variable = create_portal_destination
+            remove_variable = current_destination
+        }
+    }
+}
+
+teleport_character_effect = {
+    save_scope_as = portal_recipient
+    if = {
+        limit = {
+            location.county = $DESTINATION$.county
+        }
+        custom_tooltip = wc_spell_create_portal_tt_not
+    }
+    else = {
+        if = {
+            limit = {
+                is_commanding_army = yes
+                NOR = {
+                    var:create_portal_rank ?= 3
+                    var:current_spell_rank ?= 3
+                }
+            }
+            custom_tooltip = WC_ARMY_TOOLTIP_BAD
+        }
+        else_if = {
+            limit = {
+                is_travelling = yes
+                OR = {
+                    var:create_portal_rank ?= 2
+                    var:current_spell_rank ?= 2
+                }
+            }
+            custom_tooltip = WC_TRAVEL_ENTOURAGE_TOOLTIP_BAD
+        }
+        else = {
+            custom_tooltip = {
+                text = wc_spell_create_portal_tt
+                set_location = {
+                    location = $DESTINATION$.title_province
+                    stick_to_location = yes
+                }
+                add_character_flag = {
+                    flag = recently_teleported
+                    months = 6
+                }
+            }
+            custom_tooltip = WC_TELEPORT_TOOLTIP_CD
+        }
+        if = {
+            limit = {
+                is_travelling = yes
+                OR = {
+                    var:create_portal_rank ?= 1
+                    var:current_spell_rank ?= 1
+                }
+            }
+            custom_tooltip = {
+                text = wc_spell_create_portal_tt_entourage
+                current_travel_plan = {
+                    every_entourage_character = {
+                        set_location = {
+                            location = $DESTINATION$.title_province
+                            stick_to_location = yes
+                        }
+                        add_character_flag = {
+                            flag = recently_teleported
+                            months = 6
+                        }
+                    }
+                    add_destination_progress = {
+                        days = 100000
+                    }
+                }
+            }
+        }
+    }
+}
+
+teleport_army_effect = {
+    save_scope_as = army_recipient
+    if = {
+        limit = {
+            location.county = $DESTINATION$.county
+        }
+        custom_tooltip = wc_spell_create_portal_tt_army_not
+    }
+    else = {
+        custom_tooltip = {
+            text = wc_spell_create_portal_tt_army
+            set_army_location = $DESTINATION$.title_province
+            army_commander = {
+                save_scope_as = portal_recipient
+                add_character_flag = {
+                    flag = recently_teleported
+                    months = 6
+                }
+            }
+        }
+        custom_tooltip = WC_TELEPORT_TOOLTIP_CD
     }
 }
