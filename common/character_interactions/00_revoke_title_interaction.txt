@@ -1,11 +1,55 @@
 ﻿revoke_title_interaction = {
-
 	category = interaction_category_vassal
 	common_interaction = yes
 	highlighted_reason = HIGHLIGHTED_HAS_REVOKE_TITLE_REASON
 	notification_text = REVOKE_TITLE_PROPOSAL
 
-	desc = revoke_title_interaction_desc
+	name = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:actor = {
+						government_allows = administrative
+					}
+					scope:recipient = {
+						government_allows = administrative
+					}
+				}
+				desc = revoke_governorship_interaction
+			}
+			desc = revoke_title_interaction
+		}
+	}
+
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:actor = {
+						government_allows = administrative
+					}
+					scope:recipient = {
+						government_allows = administrative
+					}
+				}
+				desc = revoke_governorship_interaction_desc
+			}
+			desc = revoke_title_interaction_desc
+		}
+	}
+
+	icon = {
+		trigger = {
+			scope:actor = {
+				government_allows = administrative
+			}
+			scope:recipient = {
+				government_allows = administrative
+			}
+		}
+		reference = revoke_governorship
+	}
+	icon = revoke_title
 
 	special_interaction = revoke_title_interaction
 	interface = revoke_title
@@ -15,7 +59,6 @@
 	can_send_despite_rejection = yes
 	popup_on_receive = yes
 	pause_on_receive = yes
-	icon = revoke_title
 
 	interface_priority = 60
 	ai_min_reply_days = 4
@@ -28,13 +71,13 @@
 
 	is_shown = {
 		scope:recipient = {
-			is_landed = yes
+			is_landed_or_landless_administrative = yes
 			# should be shown but be disabled for indirect vassals
 			target_is_liege_or_above = scope:actor
 			# is_vassal_of = scope:actor
 		}
 	}
-	
+
 	is_valid_showing_failures_only = {
 		title_revocation_standard_valid_showing_failures_only_trigger = yes
 		# Plus make sure there's a legal right to revoke.
@@ -46,10 +89,10 @@
 					has_realm_law_flag = title_revocation_allowed
 				}
 			}
-			trigger_if = {
-				limit = {
-					NOT = { government_has_flag = government_is_tribal }
-				}
+			trigger_else_if = {
+				limit = { government_allows = administrative }
+			}
+			trigger_else = {
 				custom_description = {
 					text = "has_law_allowing_title_revocation_crown"
 					has_realm_law_flag = title_revocation_allowed
@@ -69,6 +112,22 @@
 				}
 			}
 		}
+		trigger_if = {
+			limit = {
+				scope:recipient = {
+					vassal_contract_has_flag = admin_cannot_revoke_titles_without_cause
+				}
+				scope:actor = {
+					NOT = { has_revoke_title_reason = scope:recipient }
+				}
+			}
+			custom_tooltip = {
+				text = admin_contract_forbids_revocation_desc
+				scope:recipient = {
+					NOT = { vassal_contract_has_flag = admin_cannot_revoke_titles_without_cause }
+				}
+			}
+		}
 		# And uhh... the sensible check.
 		scope:recipient = {
 			is_vassal_of = scope:actor
@@ -78,6 +137,10 @@
 		custom_tooltip = {
 			text = cannot_take_overt_hostile_actions_against_diarch.tt
 			NOT = { scope:recipient ?= scope:actor.diarch }
+		}
+		custom_tooltip = {
+			text = protected_from_revocation.tt
+			NOT = { scope:recipient = { has_character_flag = titles_protected } }
 		}
 	}
 
@@ -89,7 +152,7 @@
 			}
 		}
 	}
-	
+
 	# Highlighted in the interaction menu when right-clicking a character
 	is_highlighted = {
 		OR = {
@@ -110,9 +173,29 @@
 			}
 		}
 	}
-		
+
 	can_be_picked_title = {
-		scope:target = { title_revocation_standard_can_pick_title_trigger = yes }
+		scope:target = {
+			title_revocation_standard_can_pick_title_trigger = yes
+			trigger_if = {
+				limit = {
+					scope:actor = { government_allows = administrative }
+					scope:recipient = { government_allows = administrative }
+				}
+				custom_description = {
+					text = "admin_revoke_primary_tier_only"
+					subject = scope:actor
+					object = scope:target
+					scope:target.tier = scope:recipient.highest_held_title_tier
+				}
+			}
+		}
+	}
+
+	has_valid_target = {
+		scope:target = {
+			NOT = { is_noble_family_title = yes }
+		}
 	}
 
 	#Use hook
@@ -132,16 +215,119 @@
 
 	send_options_exclusive = no
 
-	cost = {
-		# Usually, this action is free, but during certain diarchies, we want it to cost.
-		prestige = liege_diarchy_surcharge_interaction_revoke_title_interaction_value
-	}
-
 	on_send = {
 		scope:actor = {
 			add_character_flag = {
 				flag = flag_hostile_actions_disabled_delay
 				days = 10
+			}
+		}
+	}
+
+	cost = {
+		# Usually, this action is free, but during certain diarchies, we want it to cost.
+		prestige = liege_diarchy_surcharge_interaction_revoke_title_interaction_value
+		
+		# Admin has to pay an influence cost unless they have a revocation reason on the recipient
+		influence = {
+			value = 0
+			if = {
+				limit = {
+					scope:actor = {
+						government_allows = administrative
+						NOT = { has_revoke_title_reason = scope:recipient }
+					}
+					scope:recipient = {
+						highest_held_title_tier >= tier_county
+					}
+				}
+				scope:recipient ?= {
+					if = {
+						limit = {
+							any_held_title = {
+								tier = tier_kingdom
+								is_landless_type_title = no
+								is_noble_family_title = no
+							}
+						}
+						add = {
+							add = {
+								value = scope:recipient.massive_influence_value
+								multiply = 3
+							}
+							desc = GOVERNOR_RESIGNATION_KINGDOM_COST
+						}
+					}
+					else_if = {
+						limit = {
+							any_held_title = {
+								tier = tier_duchy
+								is_landless_type_title = no
+								is_noble_family_title = no
+							}
+						}
+						add = {
+							add = scope:recipient.massive_influence_value
+							desc = GOVERNOR_RESIGNATION_DUCHY_COST
+						}
+					}
+					else = {
+						add = {
+							add = scope:recipient.major_influence_value
+							desc = concept_county
+						}
+					}
+					if = {
+						limit = { house ?= { is_powerful_family = yes } }
+						add = {
+							value = scope:recipient.massive_influence_value
+							desc = GOVERNOR_RESIGNATION_POWERFUL_COST
+						}
+					}
+					else_if = {
+						limit = { house ?= { is_dominant_family = yes } }
+						add = {
+							value = scope:recipient.monumental_influence_value
+							desc = GOVERNOR_RESIGNATION_DOMINANT_COST
+						}
+					}
+					if = {
+						limit = { scope:recipient.governor_efficiency < 1 }
+						add = {
+							value = -100
+							add = {
+								value = scope:recipient.governor_efficiency
+								multiply = 100
+							}
+							desc = GOVERNOR_RESIGNATION_EFFICIENCY_COST
+						}
+					}
+					else_if = {
+						limit = { scope:recipient.governor_efficiency > 1 }
+						add = {
+							value = -100
+							add = {
+								value = scope:recipient.governor_efficiency
+								multiply = 100
+							}
+							desc = GOVERNOR_RESIGNATION_EFFICIENCY_COST
+						}
+					}
+					if = {
+						limit = {
+							influence_level != 1
+						}
+						add = {
+							value = {
+								value = influence_level
+								subtract = 1
+							}
+							multiply = 50
+							desc = GOVERNOR_RESIGNATION_INFLUENCE_LEVEL_COST
+						}
+					}
+					multiply = 1.25
+				}
 			}
 		}
 	}
@@ -157,8 +343,117 @@
 			name = revoke_title_interaction
 			value = yes
 		}
-		
+		if = { # Safety flag to ensure admin revocations behave properly
+			limit = {
+				scope:actor = { government_has_flag = government_is_administrative }
+				scope:recipient = { government_has_flag = government_is_administrative }
+			}
+			save_scope_value_as = {
+				name = administrative_revocation
+				value = yes
+			}
+		}
 		scope:actor = {
+			if = { # Admin has to pay an influence cost unless they have a revocation reason on the recipient
+				limit = {
+					government_allows = administrative
+					NOT = { has_revoke_title_reason = scope:recipient }
+					scope:recipient = {
+						highest_held_title_tier >= tier_county
+					}
+				}
+				show_as_tooltip = { # Actual cost is deducted in the the interaction cost
+					change_influence = {
+						scope:recipient ?= {
+							if = {
+								limit = {
+									any_held_title = {
+										tier = tier_kingdom
+										is_landless_type_title = no
+										is_noble_family_title = no
+									}
+								}
+								add = {
+									add = {
+										value = scope:recipient.massive_influence_value
+										multiply = 3
+									}
+									desc = GOVERNOR_RESIGNATION_KINGDOM_COST
+								}
+							}
+							else_if = {
+								limit = {
+									any_held_title = {
+										tier = tier_duchy
+										is_landless_type_title = no
+										is_noble_family_title = no
+									}
+								}
+								add = {
+									add = scope:recipient.massive_influence_value
+									desc = GOVERNOR_RESIGNATION_DUCHY_COST
+								}
+							}
+							else = {
+								add = {
+									add = scope:recipient.major_influence_value
+									desc = concept_county
+								}
+							}
+							if = {
+								limit = { house ?= { is_powerful_family = yes } }
+								add = {
+									value = scope:recipient.massive_influence_value
+									desc = GOVERNOR_RESIGNATION_POWERFUL_COST
+								}
+							}
+							else_if = {
+								limit = { house ?= { is_dominant_family = yes } }
+								add = {
+									value = scope:recipient.monumental_influence_value
+									desc = GOVERNOR_RESIGNATION_DOMINANT_COST
+								}
+							}
+							if = {
+								limit = { scope:recipient.governor_efficiency < 1 }
+								add = {
+									value = -100
+									add = {
+										value = scope:recipient.governor_efficiency
+										multiply = 100
+									}
+									desc = GOVERNOR_RESIGNATION_EFFICIENCY_COST
+								}
+							}
+							else_if = {
+								limit = { scope:recipient.governor_efficiency > 1 }
+								add = {
+									value = -100
+									add = {
+										value = scope:recipient.governor_efficiency
+										multiply = 100
+									}
+									desc = GOVERNOR_RESIGNATION_EFFICIENCY_COST
+								}
+							}
+							if = {
+								limit = {
+									influence_level != 1
+								}
+								add = {
+									value = {
+										value = influence_level
+										subtract = 1
+									}
+									multiply = 50
+									desc = GOVERNOR_RESIGNATION_INFLUENCE_LEVEL_COST
+								}
+							}
+						}
+						multiply = -1.25
+					}
+				}
+			}
 			trigger_event = char_interaction.0199
 		}
 		revoke_title_interaction_effect = yes
@@ -172,16 +467,121 @@
 	}
 
 	on_decline = {
+		scope:actor = {
+			if = { # Admin has to pay an influence cost unless they have a revocation reason on the recipient
+				limit = {
+					government_allows = administrative
+					NOT = { has_revoke_title_reason = scope:recipient }
+					scope:recipient = {
+						highest_held_title_tier >= tier_county
+					}
+				}
+				show_as_tooltip = { # Actual cost is deducted in the the interaction cost
+					change_influence = {
+						scope:recipient ?= {
+							if = {
+								limit = {
+									any_held_title = {
+										tier = tier_kingdom
+										is_landless_type_title = no
+										is_noble_family_title = no
+									}
+								}
+								add = {
+									add = {
+										value = scope:recipient.massive_influence_value
+										multiply = 3
+									}
+									desc = GOVERNOR_RESIGNATION_KINGDOM_COST
+								}
+							}
+							else_if = {
+								limit = {
+									any_held_title = {
+										tier = tier_duchy
+										is_landless_type_title = no
+										is_noble_family_title = no
+									}
+								}
+								add = {
+									add = scope:recipient.massive_influence_value
+									desc = GOVERNOR_RESIGNATION_DUCHY_COST
+								}
+							}
+							else = {
+								add = {
+									add = scope:recipient.major_influence_value
+									desc = concept_county
+								}
+							}
+							if = {
+								limit = { house ?= { is_powerful_family = yes } }
+								add = {
+									value = scope:recipient.massive_influence_value
+									desc = GOVERNOR_RESIGNATION_POWERFUL_COST
+								}
+							}
+							else_if = {
+								limit = { house ?= { is_dominant_family = yes } }
+								add = {
+									value = scope:recipient.monumental_influence_value
+									desc = GOVERNOR_RESIGNATION_DOMINANT_COST
+								}
+							}
+							if = {
+								limit = { scope:recipient.governor_efficiency < 1 }
+								add = {
+									value = -100
+									add = {
+										value = scope:recipient.governor_efficiency
+										multiply = 100
+									}
+									desc = GOVERNOR_RESIGNATION_EFFICIENCY_COST
+								}
+							}
+							else_if = {
+								limit = { scope:recipient.governor_efficiency > 1 }
+								add = {
+									value = -100
+									add = {
+										value = scope:recipient.governor_efficiency
+										multiply = 100
+									}
+									desc = GOVERNOR_RESIGNATION_EFFICIENCY_COST
+								}
+							}
+							if = {
+								limit = {
+									influence_level != 1
+								}
+								add = {
+									value = {
+										value = influence_level
+										subtract = 1
+									}
+									multiply = 50
+									desc = GOVERNOR_RESIGNATION_INFLUENCE_LEVEL_COST
+								}
+							}
+						}
+						multiply = -1.25
+					}
+				}
+			}
+		}
 		if = {
 			limit = {
 				scope:landed_title.tier != tier_barony
 			}
 			scope:actor = {
-				revocation_tyranny_effect = yes
-				title_revocation_stress_effect = yes
+				revocation_tyranny_effect = { VASSAL = scope:recipient }
+				title_revocation_stress_effect = { VASSAL = scope:recipient }
 			}
 		}
-		war_for_revoke_effect = yes
+		war_for_revoke_effect = {
+			LIEGE = scope:actor
+			REBEL = scope:recipient
+		}
 		scope:recipient = {
 			add_opinion = {
 				target = scope:actor
@@ -235,6 +635,15 @@
 						NOT = { is_imprisoned_by = scope:actor }
 					}
 				}
+				custom_tooltip = {
+					text = "has_admin_gov"
+					scope:actor = { government_allows = administrative }
+					scope:recipient = {
+						government_allows = administrative
+						highest_held_title_tier = tier_county
+						is_ai = yes
+					}
+				}
 			}
 		}
 	}
@@ -253,7 +662,7 @@
 			multiplier = 0.8
 			desc = AI_OPINION_REASON
 		}
-		
+
 		modifier = {
 			add = 20
 			scope:actor = {
@@ -261,7 +670,7 @@
 			}
 			desc = AI_REFUSAL_IS_TREASON
 		}
-		
+
 		modifier = {
 			add = 20
 			scope:recipient = {
@@ -269,7 +678,7 @@
 			}
 			desc = TAKE_THE_VOWS_TRUSTING
 		}
-		
+
 		modifier = {
 			add = 20
 			scope:recipient = {
@@ -277,7 +686,7 @@
 			}
 			desc = INTERACTION_CONTENT
 		}
-		
+
 		modifier = {
 			add = 20
 			scope:actor.current_military_strength > scope:recipient.current_military_strength
@@ -286,7 +695,7 @@
 			}
 			desc = INTERACTION_CRAVEN
 		}
-		
+
 		modifier = {
 			exists = scope:actor.primary_title.title_capital_county
 			OR = {
@@ -296,7 +705,7 @@
 			add = 50
 			desc = AI_TITLE_IS_REALM_CAPITAL
 		}
-		
+
 		modifier = {
 			exists = scope:actor.primary_title.title_capital_county
 			NOR = {
@@ -307,7 +716,7 @@
 			add = 30
 			desc = AI_TITLE_IS_IN_CAPITAL_DUCHY
 		}
-		
+
 		modifier = {
 			add = 30
 			scope:actor = {
@@ -347,8 +756,9 @@
 			}
 			add = -20
 		}
-		modifier = { #Title is part of vassal's primary title de-jure.
+		modifier = { #Title is part of vassal's primary title de-jure. Not relevant for Admin.
 			add = -25
+			NOT = { scope:recipient = { government_allows = administrative } }
 			scope:recipient.primary_title.tier > tier_county
 			OR = {
 				scope:recipient.primary_title = {
@@ -424,7 +834,7 @@
 			scope:actor = {
 				OR = {
 					NOT = {
-						title_revocation_is_tyrannical_trigger = yes
+						title_revocation_is_tyrannical_trigger = { VASSAL = scope:recipient }
 					}
 					AND = {
 						ai_rationality <= very_high_negative_ai_value
@@ -447,14 +857,20 @@
 				ai_honor <= 50
 				scope:recipient = {
 					is_imprisoned = yes
-					is_ai = yes # Be kinder to players
+					trigger_if = {
+						limit = {
+							NOT = { has_dlc_feature = landless_playable }
+						}
+						# Be kinder to players if they'd get game overed.
+						is_ai = yes
+					}
 					opinion = {
 						target = scope:actor
 						value <= 0
 					}
 				}
 				NOT = {
-					title_revocation_is_tyrannical_trigger = yes
+					title_revocation_is_tyrannical_trigger = { VASSAL = scope:recipient }
 				}
 				OR = {
 					has_opinion_modifier = {
@@ -494,7 +910,7 @@
 					is_imprisoned = yes
 				}
 				NOT = {
-					title_revocation_is_tyrannical_trigger = yes
+					title_revocation_is_tyrannical_trigger = { VASSAL = scope:recipient }
 				}
 			}
 			add = {
@@ -527,7 +943,7 @@
 					is_ai = no
 				}
 				scope:actor = {
-					title_revocation_is_tyrannical_trigger = yes
+					title_revocation_is_tyrannical_trigger = { VASSAL = scope:recipient }
 				}
 			}
 			add = 1100
@@ -553,7 +969,7 @@
 			trigger_if = {
 				limit = {
 					scope:actor = {
-						title_revocation_is_tyrannical_trigger = yes
+						title_revocation_is_tyrannical_trigger = { VASSAL = scope:recipient }
 						domain_size > 3
 					}
 				}
@@ -611,13 +1027,13 @@
 					is_title_created = no
 				}
 			}
-			
+
 			scope:landed_title.de_jure_liege = scope:actor.primary_title.title_capital_county.de_jure_liege # Under the same Duchy as your capital
-			
+
 			scope:recipient = { # Not from players
 				is_ai = yes
 			}
-			
+
 			OR = { # Tyranny tolerance is based on rationality
 				AND = {
 					scope:actor.ai_rationality < 0
@@ -671,7 +1087,7 @@
 					scope:actor = { has_revoke_title_reason = scope:recipient }
 				}
 			}
-			
+
 			add = 1100
 		}
 		# Revoke counties we're dejure liege of if below domain limit
@@ -721,7 +1137,7 @@
 						NOT = { faith = scope:actor.faith }
 						primary_title.tier > tier_barony
 						is_imprisoned_by = scope:actor
-						time_in_prison < { years = 1 }
+						time_in_prison = { years < 1 }
 					}
 				}
 			}
@@ -739,6 +1155,9 @@
 		}
 		# Slight preference for higher-tier titles
 		modifier = {
+			NOT = {
+				scope:actor = { government_allows = administrative }
+			}
 			add = scope:landed_title.tier
 		}
 		# Do not revoke titles from certain characters
@@ -777,7 +1196,7 @@
 			}
 			add = -2000
 		}
-		
+
 		modifier = { # The AI will always use a Hook if they can
 			scope:hook = yes
 			add = 1
@@ -802,7 +1221,7 @@
 				}
 			}
 		}
-		
+
 		# Clan Government: Avoid revoking titles from house members if the AI wants to have high unity
 		modifier = {
 			scope:actor = {
@@ -831,6 +1250,43 @@
 					highest_held_title_tier = tier_barony
 				}
 			}
+		}
+
+		# Admin Government: Do not revoke titles from your house unless it's really needed
+		modifier = {
+			scope:actor = { government_allows = administrative }
+			scope:actor.house = scope:recipient.house
+			add = -500
+		}
+		# Admin rulers should be less likely to revoke titles without a revocation reason, as they should prefer to depose governors
+		modifier = {
+			scope:actor = {
+				government_allows = administrative
+				NOT = { has_revoke_title_reason = scope:recipient }
+			}
+			scope:recipient = {
+				government_allows = administrative
+				highest_held_title_tier >= tier_duchy
+			}
+			factor = { # Honorable AI's will never revoke titles without a reason
+				value = 0
+				if = {
+					limit = {
+						ai_honor < 0
+					}
+					add = 0.5
+				}
+			}
+		}
+		#Don't revoke titles from the frankokratia leader
+		modifier = {
+			scope:recipient = {
+				any_owned_story = {
+					story_type = frankokratia_story
+					NOT = { has_variable = franko_war_complete }
+				}
+			}
+			factor = 0
 		}
 	}
 }
