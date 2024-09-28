@@ -1,0 +1,287 @@
+﻿overthrow_regent = {
+	# Basic Setup
+	skill = intrigue
+	desc = "overthrow_regent_desc_general"
+	success_desc = "OVERTHROW_REGENT_SUCCESS_DESC"
+	discovery_desc = "OVERTHROW_REGENT_DISCOVERY_DESC"
+	icon = icon_scheme_claim_throne
+	illustration = "gfx/interface/illustrations/event_scenes/corridor.dds"
+	category = hostile
+	target_type = character
+	is_secret = yes
+	maximum_breaches = 5
+	cooldown = { years = 5 }
+	
+	# Parameters
+	speed_per_skill_point = t3_spsp_owner_value
+	speed_per_target_skill_point = t3_spsp_target_value
+	base_progress_goal = t3_base_phase_length_value
+	maximum_secrecy = 85
+	base_maximum_success = t2_base_max_success_value
+	phases_per_agent_charge = 1
+	success_chance_growth_per_skill_point = t3_scgpsp_value
+	
+	# Core Triggers
+	allow = {
+		exists = liege
+		liege ?= diarch
+		NOT = { this = liege.diarch }
+	}
+	valid = {
+		is_incapable = no
+		scope:target = {
+			is_diarch = yes
+			is_imprisoned = no
+			exists = location
+			in_diplomatic_range = scope:owner
+		}
+		# You can't scheme to become diarch if you'd immediately invalidate out of it.
+		scope:owner = { is_diarch_valid_trigger = yes }
+		# You can't overthrow non-regencies. At least not this way.
+		scope:owner.liege ?= { has_diarchy_parameter = diarchy_is_regency }
+	}
+
+	# Agents
+	agent_leave_threshold = -25
+	agent_join_chance = {
+		base = 0
+
+		ai_agent_join_chance_basic_suite_modifier = yes
+		ai_agent_join_chance_hostile_grievous_modifier = yes
+	}
+	valid_agent = { is_valid_agent_standard_trigger = yes }
+	agent_groups_owner_perspective = { courtiers guests scripted_relations }
+	agent_groups_target_character_perspective = { courtiers vassals }
+
+	odds_prediction = {
+		add = hostile_scheme_base_odds_prediction_target_is_char_value
+		add = odds_skill_contribution_intrigue_value
+		add = agent_groups_owner_perspective_value
+		add = agent_groups_target_character_perspective_value
+		add = odds_diarch_scheme_misc_value
+		min = 0
+	}
+
+	# Base Chances
+	base_success_chance = {
+		base = 0
+		scheme_type_skill_success_chance_modifier = { SKILL = INTRIGUE }
+
+		hostile_scheme_base_chance_modifier = yes
+
+		# Countermeasures.
+		apply_calculated_scheme_success_chance_adjustments_modifier = yes
+
+		# Spiritual Head of Faith
+		modifier = {
+			add = -50
+			desc = "SCHEME_VS_SPIRITUAL_HOF"
+			scope:target = {
+				faith = scope:owner.faith
+				faith = {
+					has_doctrine = doctrine_spiritual_head
+				}
+				faith = {
+					exists = religious_head
+					religious_head = {
+			 			this = scope:target
+			 		}
+				}
+			}
+		}
+
+		# Scope:target's strife.
+		modifier = {
+			add = {
+				value = scope:target.strife_opinion
+				multiply = 0.25
+				min = 5
+				max = 40
+			}
+			scope:target = { strife_opinion >= 1 }
+		}
+
+		# Family Feud
+		house_feud_hostile_scheme_success_modifier = yes
+
+		# At War
+		first_valid = {
+			modifier = {
+				add = -200
+				desc = "SCHEME_AT_WAR"
+				scope:target = {
+					is_at_war_with = scope:owner
+				}
+			}
+			modifier = {
+				add = -150
+				scope:target = {
+					is_playable_character = no
+					exists = liege
+					liege = {
+						is_at_war_with = scope:owner
+					}
+				}
+				desc = "SCHEME_AT_WAR_WITH_LIEGE"
+			}
+			modifier = {
+				add = -100
+				scope:target = {
+					is_playable_character = yes
+					exists = liege
+					liege = {
+						is_at_war_with = scope:owner
+					}
+				}
+				desc = "SCHEME_AT_WAR_WITH_LIEGE"
+			}
+		}
+	}
+	base_secrecy = {
+		add = secrecy_base_value
+		add = countermeasure_apply_secrecy_maluses_value
+	}
+
+	# On Actions
+	on_start = {
+		set_variable = {
+			name = apply_countermeasures
+			value = flag:calculating
+		}
+		add_scheme_starting_opportunities_intrigue_effect = yes
+		# Fallback agents — a balanced config if you start the scheme from script.
+		if = {
+			limit = {
+				scheme_owner = {
+					NOT = { has_variable = agents_added }
+				}
+			}
+			add_agent_slot = agent_thug
+			add_agent_slot = agent_ambusher
+			add_agent_slot = agent_muscle
+			add_agent_slot = agent_footpad
+			add_agent_slot = agent_lookout
+		}
+	}
+	on_phase_completed = {
+		suppress_scheme_follow_up_event_till_input_given_effect = yes
+		overthrow_regent_scheme_prep_effect = yes
+		cap_schemes_and_fire_reminders_effect = yes
+	}
+	on_hud_click  = { overthrow_regent_scheme_prep_effect = yes }
+	on_monthly = {
+		hostile_scheme_monthly_discovery_chance_effect = yes
+		if = {
+			limit = {
+				NOT = { exists = scope:discovery_event_happening }
+			}
+			scheme_owner = {
+				trigger_event = {
+					on_action = abduct_ongoing
+					days = { 1 30 }
+				}
+			}
+		}
+	}
+	on_semiyearly = {
+		if = {
+			limit = {
+				scheme_owner = { is_ai = yes }
+			}
+			overthrow_regent_scheme_prep_effect = yes
+		}
+	}
+	on_invalidated = {
+		scheme_target_character = { save_scope_as = target }
+		scheme_owner = { save_scope_as = owner }
+		# Scope:target is dead.
+		if = {
+			limit = {
+				scope:target = { is_alive = no }
+			}
+			scope:owner = {
+				send_interface_toast = {
+					title = overthrow_regent_scheme_invalidated_title
+					left_icon = scope:target
+					custom_description_no_bullet = {
+						object = scope:target
+						text = scheme_target_died
+					}
+				}
+			}
+		}
+		# Scope:target has been preemptively 
+		else_if = {
+			limit = {
+				scope:target = {
+					is_imprisoned = yes
+					imprisoner = scope:owner
+				}
+				scope:owner = {
+					NOT = { has_character_flag = is_in_event_diarchy_0501 }
+				}
+			}
+			scope:owner = {
+				send_interface_message = {
+					title = overthrow_regent_scheme_invalidated_title
+					type = abduct_invalidated_i_imprisoned_message
+					desc = overthrow_regent_scheme_i_imprisoned_them_message
+					left_icon = scope:target
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				scope:target = {
+					is_imprisoned = yes
+					NOT = { imprisoner = scope:owner }
+				}
+			}
+			scope:target.imprisoner = { save_scope_as = other_imprisoner }
+			scope:owner = {
+				send_interface_toast = {
+					title = overthrow_regent_scheme_invalidated_title
+					left_icon = scope:target
+					right_icon = scope:other_imprisoner
+					custom_description_no_bullet = {
+						subject = scope:other_imprisoner
+						object = scope:target
+						text = scheme_target_imprisoned_by_other
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				scope:target = {
+					NOT = { in_diplomatic_range = scope:owner }
+				}
+			}
+			scope:owner = {
+				send_interface_toast = {
+					title = overthrow_regent_scheme_invalidated_title
+					left_icon = scope:target
+					custom_description_no_bullet = {
+						object = scope:target
+						text = scheme_target_not_in_diplomatic_range
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				scope:owner = { is_diarch_valid_trigger = no }
+			}
+			scope:owner = {
+				send_interface_toast = {
+					title = overthrow_regent_scheme_cannot_become_regent
+					left_icon = scope:target
+					custom_description_no_bullet = {
+						object = scope:target
+						text = i_could_not_take_their_place
+					}
+				}
+			}
+		}
+	}
+}
