@@ -1,7 +1,7 @@
-# THIS IS A GENERATED FILE.
+﻿# THIS IS A GENERATED FILE.
 #
 # Source template:
-# added_folders/templates/gfx/FX/gh_constants.fxh.jinja
+# ../GHTemplates/gfx/FX/gh_constants.fxh.jinja
 #
 # Please avoid manually editing this file: your changes WILL be overwritten when it gets regenerated.
 # Instead, edit the source template and/or variables, then run render_templates.bat .
@@ -21,9 +21,9 @@ Code [[
 
 	static const int GH_MAX_FULL_MARKER_MASK = 255;
 
-	static const int GH_MARKERS_PER_TERRAIN_VARIANT_INDEX_BIT = 1;
-	static const int GH_TERRAIN_VARIANTS_COUNT_LOG2           = 1; // Number of bits (per region), needed to encode an index for one of the 5 terrain variants (base map included).
-	static const int GH_DYNAMIC_TERRAIN_MARKERS_COUNT         = 1; // GH_MARKERS_PER_TERRAIN_VARIANT_INDEX_BIT*GH_TERRAIN_VARIANTS_COUNT_LOG2;
+	static const int GH_MARKERS_PER_TERRAIN_VARIANT_INDEX_BIT = 75;
+	static const int GH_TERRAIN_VARIANTS_COUNT_LOG2           = 2; // Number of bits (per region), needed to encode an index for one of the 3 terrain variants (base map included).
+	static const int GH_DYNAMIC_TERRAIN_MARKERS_COUNT         = 150; // GH_MARKERS_PER_TERRAIN_VARIANT_INDEX_BIT*GH_TERRAIN_VARIANTS_COUNT_LOG2;
 
 	static const float GH_ADJACENT_TERRAIN_BLEND_PROXIMITY_RANGE    = 0.2f;
 	static const float GH_ADJACENT_POSTEFFECT_BLEND_PROXIMITY_RANGE = 1.0f;
