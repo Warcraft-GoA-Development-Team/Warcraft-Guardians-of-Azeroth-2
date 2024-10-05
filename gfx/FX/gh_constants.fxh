@@ -1,4 +1,4 @@
-﻿# THIS IS A GENERATED FILE.
+# THIS IS A GENERATED FILE.
 #
 # Source template:
 # ../GHTemplates/gfx/FX/gh_constants.fxh.jinja

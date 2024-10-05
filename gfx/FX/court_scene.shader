@@ -16,6 +16,7 @@
 	"parallax.fxh"
 	# MOD(godherja)
 	"gh_portrait_effects.fxh"
+	"gh_pdxmesh_court_scene.fxh"
 	# END MOD
 }
 
@@ -692,11 +693,15 @@ PixelShader =
 		#endif // !GH_IGNORE_PORTRAIT_EFFECT
 		// END MOD
 
+		// MOD(godherja)
+		//float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input, float HoverMult )
 		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, inout float3 Emissive, in VS_OUTPUT_PDXMESHPORTRAIT Input, in GH_SPortraitEffect PortraitEffect, float HoverMult )
+		// END MOD
 		{
 			// MOD(godherja)
 			GH_TryApplyStatueEffect(PortraitEffect, Input.UV0, Diffuse, NormalSample, Properties);
 			// END MOD
+
 			float3x3 TBN = Create3x3( normalize( Input.Tangent ), normalize( Input.Bitangent ), normalize( Input.Normal ) );
 			float3 Normal = normalize( mul( NormalSample, TBN ) );
 			
@@ -968,7 +973,7 @@ PixelShader =
 					float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
 					float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw ) * ( PDX_IsFrontFace ? 1 : -1 );
 				#else
-				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
+				    float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 				#endif
 
 				Properties.r = 1.0; // wipe this clean now, ready to be modified later

@@ -16,7 +16,10 @@ VertexStruct VS_OUTPUT_PDX_BORDER
 	float4 Position : PDX_POSITION;
 	float3 WorldSpacePos : TEXCOORD0;
 	float2 UV : TEXCOORD1;
-    float4 ShadowProj		: TEXCOORD2;
+	float4 ShadowProj		: TEXCOORD2;
+	# MOD(godherja)
+	int GH_TerrainVariantIndex : TEXCOORD3;
+	# END MOD
 };
 
 

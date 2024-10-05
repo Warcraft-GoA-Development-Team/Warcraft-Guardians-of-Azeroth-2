@@ -12,6 +12,11 @@ Code = [[
 
 	#ifdef GH_ENABLE_DYNAMIC_TERRAIN
 
+		#ifdef GH_VANILLA_TREE
+			#define GH_USE_DYNAMIC_TERRAIN_FILTER
+			#define GH_DYNAMIC_TERRAIN_FILTER_NOT_desert
+		#endif // GH_VANILLA_TREE
+
 		#ifdef RIVER
 			#define GH_USE_DYNAMIC_TERRAIN_FILTER
 			#define GH_DYNAMIC_TERRAIN_FILTER_NOT_desert
