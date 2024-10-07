@@ -95,10 +95,10 @@ Code
 		return float(MarkerRawWeight) / GH_VANILLA_DATA_MAX_VALUE;
 	}
 
-	//float GH_GetPandariaHiddenValue()
-	//{
-	//	return GH_GetDynamicTerrainMarkerValue(0);
-	//}
+	float GH_GetPandariaHiddenValue()
+	{
+		return GH_GetDynamicTerrainMarkerValue(0);
+	}
 
 	float GH_MipLevelToLod(float MipLevel)
 	{
