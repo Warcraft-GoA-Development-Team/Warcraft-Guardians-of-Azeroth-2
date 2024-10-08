@@ -95,7 +95,7 @@ Code
 		return float(MarkerRawWeight) / GH_VANILLA_DATA_MAX_VALUE;
 	}
 
-	float GH_GetPandariaHiddenValue()
+	float WC_GetPandariaHiddenValue()
 	{
 		return GH_GetDynamicTerrainMarkerValue(0);
 	}

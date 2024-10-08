@@ -8,37 +8,50 @@ PixelShader =
 {
 	TextureSampler tiMask
     {
-        Index = 28
-        MagFilter = "Linear"
-		MinFilter = "Linear"
-		MipFilter = "Linear"
-		SampleModeU = "Clamp"
-		SampleModeV = "Wrap"
-		Border_Color = { 1 1 1 1 }
+        Index = 27
+		MagFilter = "Point"
+		MinFilter = "Point"
+		MipFilter = "Point"
+		SampleModeU = "Wrap"
+		SampleModeV = "Border"
+		Border_Color = { 0 0 0 0 }
         File = "gfx/map/surround_map/ti_mask.dds"
-
     }
 
     Code
     [[
-		float WC_GetTerraIncognitaAlpha( float2 UV, float4 OverlayColor )
+		bool WC_GetTerraIncognitaEnabled( float2 UV )
 		{
-			float alpha = OverlayColor.a;
+			bool isEnabled = false;
             float tiValue = PdxTex2D( tiMask, UV ).g;
             int tempp = int(tiValue*255);
 
-            float pandariaValue = GH_GetPandariaHiddenValue();
+            float pandariaValue = WC_GetPandariaHiddenValue();
 
-            if (pandariaValue > 0.5) {
-                if ( tempp == 85 ) {
-                    alpha = 0;
+            if (pandariaValue > 0.5)
+            {
+                if ( tempp == 85 )
+                {
+                    isEnabled = true;
                 }
             }
             else if (pandariaValue > 0.1 && pandariaValue < 0.5)
             {
                 if ( tempp != 85 ) {
-                    alpha = 0;
+                    isEnabled = true;
                 }
+            }
+
+			return isEnabled;
+		}
+
+		float WC_GetTerraIncognitaAlpha( float2 UV, float4 OverlayColor )
+		{
+			float alpha = OverlayColor.a;
+
+            if (WC_GetTerraIncognitaEnabled(UV))
+            {
+                alpha = 0;
             }
 
 			return alpha;
