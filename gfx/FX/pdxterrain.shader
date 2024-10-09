@@ -621,8 +621,8 @@ PixelShader =
 				#endif
 
 				#ifdef TERRAIN_COLOR_OVERLAY
-					ApplyDiseaseDiffuse( FinalColor, ColorMapCoords );
-					ApplyLegendDiffuse( FinalColor, ColorMapCoords );
+                    ApplyDiseaseDiffuse( FinalColor, ColorMapCoords );
+                    ApplyLegendDiffuse( FinalColor, ColorMapCoords );
 				#endif
 
 				// MOD(godherja)

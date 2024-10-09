@@ -113,10 +113,6 @@ PixelShader =
 		{
 			float4 PrimaryColor = BilinearColorSample( NormalizedCoordinate, IndirectionMapSize, InvIndirectionMapSize, ProvinceColorIndirectionTexture, ProvinceColorTexture );
 
-			// MOD(WC)
-			WC_TryDiscardOverlayColor(PrimaryColor, NormalizedCoordinate);
-			// END MOD
-
 			float GradientAlpha = lerp( GB_GradientAlphaInside, GB_GradientAlphaOutside, RemapClamped( DistanceFieldValue, GB_EdgeWidth + GB_GradientWidth, GB_EdgeWidth, 0.0f, 1.0f ) );
 			float Edge = smoothstep( GB_EdgeWidth + max( 0.0001f, GB_EdgeSmoothness ), GB_EdgeWidth, DistanceFieldValue );
 
@@ -139,8 +135,16 @@ PixelShader =
 			float DistanceFieldValue = CalcDistanceFieldValue( NormalizedCoordinate );
 			float4 ProvinceOverlayColorWithAlpha = CalcPrimaryProvinceOverlay( NormalizedCoordinate, DistanceFieldValue );
 
-			ApplySecondaryProvinceOverlay( NormalizedCoordinate, DistanceFieldValue, ProvinceOverlayColorWithAlpha );
-			ApplyAlternateProvinceOverlay( NormalizedCoordinate, ProvinceOverlayColorWithAlpha );
+			// MOD(WC)
+			WC_TryDiscardOverlayColor(ProvinceOverlayColorWithAlpha, NormalizedCoordinate);
+			bool tiEnabled = WC_GetTerraIncognitaEnabled(float2( NormalizedCoordinate.x, 1.0 - NormalizedCoordinate.y ));
+
+			if(!tiEnabled)
+			{
+                ApplySecondaryProvinceOverlay( NormalizedCoordinate, DistanceFieldValue, ProvinceOverlayColorWithAlpha );
+                ApplyAlternateProvinceOverlay( NormalizedCoordinate, ProvinceOverlayColorWithAlpha );
+			}
+			// END MOD
 
 			GetGradiantBorderBlendValues( ProvinceOverlayColorWithAlpha, PreLightingBlend, PostLightingBlend );
 			ProvinceOverlayColor = ProvinceOverlayColorWithAlpha.rgb;

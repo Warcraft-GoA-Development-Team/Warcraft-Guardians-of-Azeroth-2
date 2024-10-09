@@ -253,9 +253,11 @@ PixelShader =
 		void ApplyDiseaseDiffuse( inout float3 TerrainColor, in float2 Coordinate )
 		{
 #ifndef LOW_SPEC_SHADERS
+            //MOD(WC)
 			bool tiEnabled = WC_GetTerraIncognitaEnabled(float2( Coordinate.x, 1.0 - Coordinate.y ));
 
 			if ( !IsEnabled || tiEnabled )
+			//END MOD
 			{
 				return;
 			}
