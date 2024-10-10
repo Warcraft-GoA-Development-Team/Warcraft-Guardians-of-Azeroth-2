@@ -870,7 +870,7 @@ Effect wc_portrait_attachment_emissive
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
-	Defines = { "EMISSIVE_NORMAL_BLUE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "EMISSIVE" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachmentShadow
