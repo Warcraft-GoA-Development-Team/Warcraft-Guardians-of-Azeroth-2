@@ -5,9 +5,11 @@ Includes = {
 	"jomini/jomini_lighting.fxh"
 	#"gh_jomini_lighting.fxh"
 	# END MOD
+	# MOD(WC)
+	#"jomini/jomini_fog.fxh"
+	"wc_jomini_fog.fxh"
+	# END MOD
 	# MOD(godherja)
-	"jomini/jomini_fog.fxh"
-	#"gh_jomini_fog.fxh"
 	"jomini/jomini_fog_of_war.fxh"
 	#"gh_atmospheric.fxh"
 	# END MOD

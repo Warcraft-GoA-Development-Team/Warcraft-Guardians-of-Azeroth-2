@@ -1,13 +1,15 @@
 ﻿Includes = {
 	"cw/camera.fxh"
 	"jomini/jomini_flat_border.fxh"
-	"jomini/jomini_fog.fxh"
+	# MOD(WC)
+	#"jomini/jomini_fog.fxh"
+	"wc_jomini_fog.fxh"
+	# END MOD
 	"jomini/jomini_fog_of_war.fxh"
 	"jomini/jomini_lighting.fxh"
 	"standardfuncsgfx.fxh"
 	# MOD(WC)
 	"cw/pdxterrain.fxh"
-	"WC_map.fxh"
 	# END MOD
 }
 

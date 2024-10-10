@@ -1,13 +1,16 @@
 ﻿Includes = {
 	"jomini/countrynames.fxh"
-	"jomini/jomini_fog.fxh"
+	# MOD(WC)
+	#"jomini/jomini_fog.fxh"
+	"wc_jomini_fog.fxh"
+	# END MOD
 	"jomini/jomini_fog_of_war.fxh"
 	"standardfuncsgfx.fxh"
 	"cw/lighting.fxh"
 	"jomini/jomini_lighting.fxh"
 	# MOD(WC)
 	"cw/pdxterrain.fxh"
-	"WC_map.fxh"
+	"wc_map.fxh"
 	# END MOD
 }
 

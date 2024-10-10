@@ -3,7 +3,7 @@
 	"jomini/jomini_colormap_constants.fxh"
 	"jomini/gradient_border_constants.fxh"
 	# MOD(WC)
-	"WC_map.fxh"
+	"wc_map.fxh"
 	# END MOD
 }
 
@@ -139,7 +139,7 @@ PixelShader =
 			WC_TryDiscardOverlayColor(ProvinceOverlayColorWithAlpha, NormalizedCoordinate);
 			bool tiEnabled = WC_GetTerraIncognitaEnabled(float2( NormalizedCoordinate.x, 1.0 - NormalizedCoordinate.y ));
 
-			if(!tiEnabled)
+			if(!tiEnabled) //TODO: Combine with above
 			{
                 ApplySecondaryProvinceOverlay( NormalizedCoordinate, DistanceFieldValue, ProvinceOverlayColorWithAlpha );
                 ApplyAlternateProvinceOverlay( NormalizedCoordinate, ProvinceOverlayColorWithAlpha );
