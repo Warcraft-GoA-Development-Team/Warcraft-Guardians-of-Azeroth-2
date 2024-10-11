@@ -1,4 +1,4 @@
-Includes = {
+﻿Includes = {
 	"cw/heightmap.fxh"
 	"bordercolor.fxh"
 	"jomini/jomini_water_default.fxh"
@@ -132,9 +132,17 @@ Effect lake
 {
 	VertexShader = "VS_jomini_water_mesh"
 	PixelShader = "PixelShader"
+
+    # MOD(WC)
+	Defines = { "GH_ENABLE_DYNAMIC_TERRAIN" }
+	# END MOD
 }
 Effect lake_mapobject
 {
 	VertexShader = "VS_jomini_water_mapobject"
 	PixelShader = "PixelShader"
+
+    # MOD(WC)
+	Defines = { "GH_ENABLE_DYNAMIC_TERRAIN" }
+	# END MOD
 }
