@@ -34,7 +34,7 @@ Code
 	    return Settings;
 	}
 
-	WC_FogSettings WC_GetFogSettings(int TerrainVariantIndex, int AdjacentTerrainVariantIndex, bool tiEnabled, bool adjacentTIEnabled, float AdjacentBlendAmount)
+	WC_FogSettings WC_GetFogSettings(int TerrainVariantIndex, int AdjacentTerrainVariantIndex, bool tiEnabled, float AdjacentBlendAmount)
 	{
 	    WC_FogSettings Settings = WC_GetFogSettingsImpl(TerrainVariantIndex, tiEnabled);
 
@@ -42,7 +42,7 @@ Code
             if (TerrainVariantIndex == AdjacentTerrainVariantIndex || AdjacentBlendAmount < 0.01f)
                 return Settings;
 
-            WC_FogSettings AdjacentSettings = WC_GetFogSettingsImpl(AdjacentTerrainVariantIndex, adjacentTIEnabled);
+            WC_FogSettings AdjacentSettings = WC_GetFogSettingsImpl(AdjacentTerrainVariantIndex, tiEnabled);
 
             Settings.FogMax = lerp(Settings.FogMax, AdjacentSettings.FogMax, AdjacentBlendAmount);
             Settings.FogBegin2 = lerp(Settings.FogBegin2, AdjacentSettings.FogBegin2, AdjacentBlendAmount);

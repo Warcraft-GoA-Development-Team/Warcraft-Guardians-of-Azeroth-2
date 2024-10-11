@@ -33,8 +33,12 @@ Code
     bool WC_GetTerraIncognitaEnabled( float2 UV )
     {
         bool isEnabled = false;
-        float tiValue = PdxTex2D( tiMask, UV ).g;
-        float tiAlpha = PdxTex2D( tiMask, UV ).a;
+        float tiValue;
+        #ifdef PIXEL_SHADER
+            tiValue = PdxTex2D( tiMask, UV ).g;
+        #else
+            tiValue = PdxTex2DLod0( tiMask, UV ).g;
+        #endif
         int tempp = int(tiValue*255);
 
         float pandariaValue = WC_GetPandariaHiddenValue();
@@ -48,7 +52,8 @@ Code
         }
         else if (pandariaValue > 0.1 && pandariaValue < 0.5)
         {
-            if ( tempp != 85 || (tempp == 85 && tiAlpha != 1.0 ) ) {
+            if ( tempp != 85 )
+            {
                 isEnabled = true;
             }
         }
@@ -68,47 +73,21 @@ Code
         return alpha;
     }
 
-    float WC_GetTIProximityToAdjacentRegion(float2 WorldSpacePosXZ)
+    float WC_GetTIProximityToAdjacentRegion(float2 UV)
     {
-        float2 MapUV = WorldSpacePosXZ * WorldSpaceToTerrain0To1;
-        MapUV.y = 1.0f - MapUV.y;
-        float tiValue = PdxTex2D( tiMask, MapUV ).g;
-        float tiAlpha = PdxTex2D( tiProximity, MapUV ).a;
-        int tempp = int(tiValue*255);
+        float tiAlpha;
+        #ifdef PIXEL_SHADER
+            tiAlpha = 1.0 - PdxTex2D(tiProximity, UV).a;
+        #else
+            tiAlpha = 1.0 - PdxTex2DLod0(tiProximity, UV).a;
+        #endif
 
-        float pandariaValue = WC_GetPandariaHiddenValue();
-
-        if (pandariaValue > 0.5)
+        bool tiEnabled = WC_GetTerraIncognitaEnabled(UV);
+        if (tiEnabled && tiAlpha > 0)
         {
-            //if ( tempp == 85 )
-            //{
-            #ifdef PIXEL_SHADER
-                return PdxTex2D(tiMask, MapUV).a;
-            #else
-                return PdxTex2DLod0(tiMask, MapUV).a;
-            #endif
-            //}
-        }
-        else if (pandariaValue > 0.1 && pandariaValue < 0.5)
-        {
-            if ( tempp != 85 || (tempp == 85 && tiAlpha != 1.0 ) )
-            {
-            #ifdef PIXEL_SHADER
-                return 1.0 - PdxTex2D(tiMask, MapUV).a;
-            #else
-                return 1.0 - PdxTex2DLod0(tiMask, MapUV).a;
-            #endif
-            }
+            return tiAlpha;
         }
 
         return 1.0;
     }
-
-	float WC_GetTIAdjacentRegionBlendAmount(float2 WorldSpacePosXZ, float ProximityRange)
-	{
-		float Proximity         = WC_GetTIProximityToAdjacentRegion(WorldSpacePosXZ);
-		float AdjustedProximity = saturate((Proximity - (1.0f - ProximityRange))/ProximityRange);
-
-		return 0.5f*AdjustedProximity;
-	}
 ]]

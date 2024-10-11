@@ -156,5 +156,8 @@ Effect mapname
 	PixelShader = "MapNamePixelShader"
 	DepthStencilState = DepthStencilStateFromStencil
 
-	Defines = { "PDX_NAMES_SHADOW_PROJ" }
+
+    # MOD(WC)
+	Defines = { "PDX_NAMES_SHADOW_PROJ" "GH_ENABLE_DYNAMIC_TERRAIN" }
+	# END MOD
 }

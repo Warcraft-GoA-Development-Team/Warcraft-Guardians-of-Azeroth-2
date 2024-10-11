@@ -232,16 +232,28 @@ Effect PdxBorder
 {
 	VertexShader = "VertexShader"
 	PixelShader = "PixelShader"
+
+    # MOD(WC)
+	Defines = { "GH_ENABLE_DYNAMIC_TERRAIN" }
+	# END MOD
 }
 
 Effect PdxBorderWar
 {
 	VertexShader = "VertexShader"
 	PixelShader = "PixelShaderWar"
+
+    # MOD(WC)
+	Defines = { "GH_ENABLE_DYNAMIC_TERRAIN" }
+	# END MOD
 }
 
 Effect PdxBorderStruggle
 {
 	VertexShader = "VertexShader"
 	PixelShader = "PixelShaderStruggle"
+
+    # MOD(WC)
+	Defines = { "GH_ENABLE_DYNAMIC_TERRAIN" }
+	# END MOD
 }
