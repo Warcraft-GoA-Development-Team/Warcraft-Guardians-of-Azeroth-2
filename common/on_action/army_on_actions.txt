@@ -89,27 +89,7 @@ on_county_occupied = {
 
 		# Warcraft
 		# Mongol Devastation
-	}
-}
-
-# called when a siege completes. Does *not* fire on reoccupation by province order
-# root is the occupant
-# scope:barony is the barony title that got occupied
-# scope:county is the county title for the barony
-# scope:previous_controller is the previous controller of the county
-# scope:war is the war causing the previous controller and the occupant to be hostile
-# occupied_baronies is a list of all baronies that the siege caused the occupier to control (I.E., can include baronies with no fort level)
-on_siege_completion = {
-	events = {
-		siege.0101 # Notify holders/lieges that the county was lost to siege
-		siege.0001 # Capture/kill prisoners
-		siege.0031 # Chance to steal an artifact
-		faction_demand.1010 #Reinforce populist rebels
-		faction_demand.1110 #Reinforce peasant rebels
-		siege.1001 #Someone I care about was immured here...
-		intrigue_scheming.1804 # I had genuine/fake info about the defenses. Follows up intrigue_scheming.1801 so this won't actually trigger after every siege
-	}
-	effect = {
+		
 		# Warcraft
 		# Drust Devastation
 		if = {
@@ -139,12 +119,137 @@ on_siege_completion = {
 	}
 }
 
+# called when a siege completes. Does *not* fire on reoccupation by province order
+# root is the occupant
+# scope:barony is the barony title that got occupied
+# scope:county is the county title for the barony
+# scope:previous_controller is the previous controller of the county
+# scope:war is the war causing the previous controller and the occupant to be hostile
+# occupied_baronies is a list of all baronies that the siege caused the occupier to control (I.E., can include baronies with no fort level)
+on_siege_completion = {
+	events = {
+		siege.0101 # Notify holders/lieges that the county was lost to siege
+		siege.0001 # Capture/kill prisoners
+		siege.0031 # Chance to steal an artifact
+		faction_demand.1010 #Reinforce populist rebels
+		faction_demand.1110 #Reinforce peasant rebels
+		siege.1001 #Someone I care about was immured here...
+		intrigue_scheming.1804 # I had genuine/fake info about the defenses. Follows up intrigue_scheming.1801 so this won't actually trigger after every siege
+	}
+	effect = {
+		save_scope_as = occupant
+		scope:barony.title_province = {
+			every_army_in_location = {
+				limit = {
+					OR = {
+						AND = {
+							root = { is_landless_adventurer = yes }
+							army_owner = root
+						}
+						army_owner = {
+							is_landless_adventurer = yes
+							is_at_war = yes
+							any_war_ally = { this = root }
+						}
+					}
+				}
+				every_army_maa_regiment = {
+					limit = {
+						maa_current_troops_count < maa_max_troops_count
+					}
+					change_maa_troops_count = adventurer_siege_replenish_amount
+				}
+			}
+			every_army_in_location = {
+				limit = {
+					OR = {
+						AND = {
+							root = {
+								is_landless_adventurer = yes
+								has_perk = strict_organization_perk
+							}
+							army_owner = root
+						}
+						army_owner = {
+							is_landless_adventurer = yes
+							has_perk = strict_organization_perk
+							is_at_war = yes
+							any_war_ally = { this = root }
+						}
+					}
+				}
+				army_owner = {
+					domicile ?= { change_provisions = adventurer_siege_provisions_amount }
+				}
+			}
+		} # Warcraft - Remove FP3 event
+		# scope:barony = {
+		# 	if = {
+		# 		limit = { title_province = holder.capital_province }
+		# 		holder = {
+		# 			random = {
+		# 				chance = 50
+		# 				trigger_event = fp3_decision.0002 #FP3 Event to possibly lose your royal fire
+		# 			}
+		# 		}
+		# 	}
+		# }
+		# We change your legend to reflect this siege
+		if = {
+			limit = {
+				has_legend_chapter_trigger = { CHAPTER = extra_deed }		
+				scope:barony.county.development_level >= good_development_level
+				NOT = {
+					promoted_legend ?= {
+						has_legend_chapter = {
+							name = extra_deed
+							localization_key = legend_chapter_extra_deed_recent_siege
+						}
+					}
+				}
+			}
+			random = {
+				chance = 25
+				send_interface_toast = {
+					title = legend_chapter_change_toast
+					left_icon = root
+					promoted_legend = {
+						set_legend_chapter = {
+							name = extra_deed
+							localization_key = legend_chapter_extra_deed_recent_siege
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 # Called when a siege loots a holding
 # root is sieging character
 # scope:barony is the barony title that got looted
 # scope:county is the county title for the barony
 # scope:previous_controller is the previous controller
 on_siege_looting = {
+	effect = {
+		scope:barony.title_province = {
+			add_province_modifier = {
+				modifier = recently_looted_modifier
+				years = 5
+			}
+		}
+		#Gain some gold on top of the siege loot from the Master of Spoils Camp Officer
+		if = {
+			limit = {
+				employs_court_position = master_of_spoils_camp_officer
+			}
+			add_gold = {
+				value = court_position:master_of_spoils_camp_officer.aptitude:master_of_spoils_camp_officer
+				add = 1
+				multiply = 5
+			}
+		}
+	}
 }
 
 # called for armies whenever they enter a province
@@ -153,7 +258,9 @@ on_siege_looting = {
 
 on_army_enter_province = {
 	events = {
-		great_holy_war.0060 #Give Crusaders their trait upon reaching the holy land.
+		great_holy_war.0060		# Give Crusaders their trait upon reaching the holy land.
+		#ep3_emperor_yearly.3010	# Byzantine emperor sends fireships to defend the strait of Marmara
+		#game_rule.1021			# Figure out whether we should fire a conclusion event during the Conquest.
 	}
 	random_events = {
 		chance_of_no_event = 97
@@ -227,9 +334,40 @@ on_raid_action_completion = {
 		raiding.0013 # Chance to kidnap prisoners
 		raiding.0014 # Chance to steal an artifact
 		bp2_yearly.8031 # Steal a doll
+		#raiding.0031 # Hereward adds XP
 	}
 	effect = {
 		scope:raider = {
+			send_interface_message = {
+				type = msg_raid_completed
+				left_icon = scope:county.holder
+				right_icon = scope:barony
+			}
+			if = {
+				limit = { 
+					scope:county = {
+						any_county_province = { has_special_building = yes }
+					}
+					NOT = { has_character_flag = raider_legend }
+					has_dlc_feature = legends
+					#NOT = { has_game_rule = historical_legends_only }
+				}
+				random = {
+					chance = legend_seed_chance_low
+					add_character_flag = raider_legend
+					create_legend_seed = {
+						type = heroic
+						quality = famed
+						chronicle = legendary_battle
+						properties = {
+							winner = scope:raider
+							loser = scope:county.holder
+							location = scope:barony.title_province
+						}
+					}
+				}
+			}
+			#Warcraft
 			if = {
 				limit = { government_has_flag = government_dark_frenzy_from_sieges_and_raids }
 				send_interface_message = {
@@ -267,6 +405,18 @@ on_raid_action_completion = {
 						}
 					}
 				}
+			}
+		}
+		scope:county.holder = { add_to_list = raid_targets }
+		scope:county.holder.liege ?= { add_to_list = raid_targets }
+		scope:county.holder.liege.liege ?= { add_to_list = raid_targets }
+		scope:county.holder.liege.liege.liege ?= { add_to_list = raid_targets }
+		every_in_list = {
+			list = raid_targets
+			send_interface_message = {
+				type = msg_raid_lost
+				left_icon = scope:raider
+				right_icon = scope:barony
 			}
 		}
 
