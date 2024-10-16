@@ -14,7 +14,7 @@
 			scope:recipient = scope:actor
 		}
 		scope:recipient = {
-			is_landed = yes
+			is_playable_character = yes
 		}
 		scope:actor = {
 			NOT = {
@@ -88,6 +88,47 @@
 				}
 			}
 		}
+		scope:actor = {
+			trigger_if = {
+				limit = {
+					NOT = { government_allows = administrative }
+					liege ?= {
+						has_realm_law_flag = vassal_all_wars_banned_permanent
+						NOT = { this = scope:actor }
+					}
+				}
+				custom_tooltip = {
+					text = admin_all_vassal_wars_banned
+					always = no
+				}
+			}
+			trigger_if = {
+				limit = {
+					government_allows = administrative
+					top_liege = scope:recipient.top_liege
+					scope:recipient = { government_allows = administrative }
+					NOT = { top_liege = scope:recipient }
+				}
+				custom_tooltip = {
+					text = admin_cannot_declare_internal_wars
+					always = no
+				}
+			}
+		}
+		scope:actor = {
+			trigger_if = {
+				limit = { is_landless_adventurer = yes }
+				custom_tooltip = {
+					text = camp_located_in_defender_realm.tt
+					domicile.domicile_location.county.holder = {
+						NOR = {
+							this = scope:recipient
+							any_liege_or_above = { this = scope:recipient }
+						}
+					}
+				}
+			}
+		}
 	}
 
 	has_valid_target_showing_failures_only = {
@@ -137,6 +178,7 @@
 			#Feedback!
 			hidden_effect = {
 				send_interface_toast = {
+					type = event_toast_effect_neutral
 					title = declare_war_interaction_notification
 
 					left_icon = scope:actor					
@@ -272,6 +314,7 @@
 							}
 						}
 						send_interface_toast = {
+							type = msg_war_declared_on_liege
 							title = declare_war_interaction_notification
 
 							left_icon = scope:actor					
@@ -401,7 +444,7 @@ end_war_attacker_victory_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_actor
-					scope:recipient = { is_landed = yes }
+					scope:recipient = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_actor
@@ -412,7 +455,7 @@ end_war_attacker_victory_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_recipient
-					scope:actor = { is_landed = yes }
+					scope:actor = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_recipient
@@ -434,9 +477,10 @@ end_war_attacker_victory_interaction = {
 					every_vassal = {
 						limit = { NOT = { this = scope:defender_loser } }
 						send_interface_toast = {
+							type = msg_liege_war_ended_attacker_win
 							title = war_event.notification_liege_win.t
 							left_icon = scope:attacker_winner
-							left_icon = scope:defender_loser
+							right_icon = scope:defender_loser
 							custom_tooltip = war_event.1901
 						}
 					}
@@ -452,6 +496,7 @@ end_war_attacker_victory_interaction = {
 							NOT = { this = scope:attacker_winner }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_attacker_win
 							title = war_event.notification_liege_loss.t
 							left_icon = scope:defender_loser
 							right_icon = scope:attacker_winner
@@ -487,6 +532,10 @@ end_war_attacker_victory_interaction = {
 						is_ai = yes
 					}
 				}
+				primary_defender = {
+					is_ai = yes
+					ai_has_conqueror_personality = yes
+				}
 			}
 		}
 	}
@@ -506,6 +555,17 @@ end_war_attacker_victory_interaction = {
 						}
 						primary_defender = {
 							is_ai = yes
+						}
+					}
+					AND = {
+						NOR = {
+							using_cb = undirected_great_holy_war
+							using_cb = mongol_invasion_war
+							using_cb = mongol_realm_invasion_war
+						}
+						primary_defender = {
+							is_ai = yes
+							ai_has_conqueror_personality = yes
 						}
 					}
 				}
@@ -557,19 +617,119 @@ end_war_attacker_victory_interaction = {
 			add = war_recipient_hostage_value
 			desc = WAR_OVERVIEW_HOSTAGE_DEMAND_VALUE
 		}
+				# The AI cannot accept the outcome, if they will lose all their land and you try to take a hostage from them
+		modifier = {
+			scope:war = {
+				OR = {
+					exists = scope:secondary_actor
+					exists = scope:secondary_recipient
+				}
+				casus_belli = {
+					any_target_title = {
+						count >= 1
+						add_to_temporary_list = target_titles
+					}
+				}
+				NOT = {
+					scope:recipient = {
+						any_held_title = {
+							tier = tier_county
+							NOT = {
+								any_this_title_or_de_jure_above = { is_in_list = target_titles }
+							}
+						}
+					}
+				}
+			}
+			add = -10000
+			desc = WAR_OVERVIEW_HOSTAGE_DEMAND_BLOCKED
+		}
+		# This is a bit of a hidden modifier, only used to make sure we get the right icon when you force it through at 100 war score, and the opponent has more realm left
+		modifier = {
+			scope:war = { 
+				attacker_war_score >= 100 
+				OR = {
+					exists = scope:secondary_actor
+					exists = scope:secondary_recipient
+				}
+				casus_belli = {
+					any_target_title = {
+						count >= 1
+						add_to_temporary_list = target_titles
+					}
+				}
+				scope:recipient = {
+					any_held_title = {
+						tier = tier_county
+						NOT = {
+							any_this_title_or_de_jure_above = { is_in_list = target_titles }
+						}
+					}
+				}
+			}
+			add = 1000
+			desc = "WARSCORE_MODIFIER"
+		}
 		
 		# Warcraft
 		religion_obey_crisis_modifier = { WINNER = primary_attacker LOSER = primary_defender }
 	}
 
 	auto_accept = {
-		OR = {
-			scope:war = {
-				attacker_war_score >= 100
+		trigger_if = {
+			limit = {
+				OR = {
+					scope:war = {
+						attacker_war_score >= 100
+					}
+					AND = {
+						scope:recipient = { is_ai = yes }
+						primary_attacker = scope:recipient
+					}
+					scope:war.casus_belli = { # Conquerors know when to fold
+						primary_attacker = {
+							is_ai = yes
+							current_military_strength >= scope:recipient.fifty_percent_more_of_current_military_strength
+						}
+						primary_defender = {
+							is_ai = yes
+							ai_has_conqueror_personality = yes
+							this = scope:recipient
+						}
+					}
+				}
 			}
-			AND = {
-				scope:recipient = { is_ai = yes }
-				primary_attacker = scope:recipient
+			always = yes
+		}
+		trigger_else = {
+			always = no
+		}
+		# The auto accept kind of messes up the hostage interaction a bit, so we block the auto accept if they try to grab a hostage and all the opponent's land at the same time
+		scope:war = {
+			trigger_if = {
+				limit = {
+					OR = {
+						exists = scope:secondary_actor
+						exists = scope:secondary_recipient
+					}
+					casus_belli = {
+						any_target_title = {
+							count >= 1
+							add_to_temporary_list = target_titles
+						}
+					}
+					NOT = {
+						scope:recipient = {
+							any_held_title = {
+								tier = tier_county
+								NOT = {
+									any_this_title_or_de_jure_above = { is_in_list = target_titles }
+								}
+							}
+						}
+					}
+				}
+				always = no
 			}
 		}
 	}
@@ -721,7 +881,7 @@ end_war_attacker_white_peace_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_actor
-					scope:recipient = { is_landed = yes }
+					scope:recipient = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_actor
@@ -732,7 +892,7 @@ end_war_attacker_white_peace_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_recipient
-					scope:actor = { is_landed = yes }
+					scope:actor = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_recipient
@@ -754,6 +914,7 @@ end_war_attacker_white_peace_interaction = {
 							NOT = { this = scope:defender_white_peace }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_white_peace
 							title = WAR_RESULTS_WHITE_PEACE
 							left_icon = scope:attacker_white_peace
 							right_icon = scope:defender_white_peace
@@ -772,6 +933,7 @@ end_war_attacker_white_peace_interaction = {
 							NOT = { this = scope:attacker_white_peace }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_white_peace
 							title = WAR_RESULTS_WHITE_PEACE
 							left_icon = scope:defender_white_peace
 							right_icon = scope:attacker_white_peace
@@ -1146,6 +1308,19 @@ end_war_attacker_white_peace_interaction = {
 					}
 				}
 			}
+		}
+
+		# I don't have time for this, I need to conquer
+		modifier = {
+			scope:war.casus_belli = {
+				primary_defender = {
+					this = scope:actor
+					ai_has_conqueror_personality = yes
+				}
+				primary_attacker = { is_ai = yes }
+			}
+
+			add = 100
 		}
 	}
 
@@ -1544,6 +1719,7 @@ end_war_attacker_defeat_interaction = {
 							NOT = { this = scope:defender_winner }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_defender_win
 							title = war_event.notification_liege_loss.t
 							left_icon = scope:attacker_loser
 							right_icon = scope:defender_winner
@@ -1562,6 +1738,7 @@ end_war_attacker_defeat_interaction = {
 							NOT = { this = scope:attacker_loser }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_defender_win
 							title = war_event.notification_liege_win.t
 							left_icon = scope:defender_winner
 							right_icon = scope:attacker_loser
