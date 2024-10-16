@@ -31,21 +31,60 @@ scripted_trigger siege_0001_can_be_captured = {
 	}
 }
 
+scripted_trigger siege_0001_valid_domicile_trigger = {
+	is_domicile_type = estate
+	owner = { save_temporary_scope_as = estate_owner_check }
+	scope:occupant = {
+		OR = {
+			any_war_enemy = { this = scope:estate_owner_check }
+			any_war_enemy = { any_vassal_or_below = { this = scope:estate_owner_check } }
+		}
+	}
+}
+
 # Prisoner capture/kill logic, by Mathilda Bjarnehed
 siege.0001 = {
 	hidden = yes
 	
 	trigger = {
-		scope:county.holder = scope:previous_controller
 		OR = {
-			any_war_enemy = { this = scope:previous_controller }
-			any_war_enemy = { any_vassal_or_below = { this = scope:previous_controller } }
+			AND = {
+				scope:county.holder = scope:previous_controller
+				OR = {
+					any_war_enemy = { this = scope:previous_controller }
+					any_war_enemy = { any_vassal_or_below = { this = scope:previous_controller } }
+				}
+			}
+			AND = {
+				scope:barony.title_province = {
+					any_province_domicile = {
+						is_domicile_type = estate
+						owner = {
+							save_temporary_scope_as = estate_owner_check
+						}
+					}
+				}
+				OR = {
+					any_war_enemy = { this = scope:estate_owner_check }
+					any_war_enemy = { any_vassal_or_below = { this = scope:estate_owner_check } }
+				}
+			}
 		}
 	}
 
 	immediate = {
 		save_scope_as = occupant
 		scope:barony.holder = { save_scope_as = holder }
+		scope:barony.title_province = {
+			random_province_domicile = {
+				limit = {
+					siege_0001_valid_domicile_trigger = yes
+				}
+				owner ?= {
+					save_scope_as = estate_owner
+				}
+			}
+		}
 
 		# Depending on if the occupier is an attacker or defender in this war, get the primary attacker/defender of the siege.
 		scope:war = {
@@ -92,16 +131,44 @@ siege.0001 = {
 				}
 			}
 		}
+		#Add capture targets from all hostile occupied Estates
+		every_in_list = {
+			list = occupied_baronies
+			limit = {
+				title_province = {
+					any_province_domicile = {
+						siege_0001_valid_domicile_trigger = yes
+					}
+				}
+			}
+			title_province = {
+				random_province_domicile = {
+					limit = {
+						siege_0001_valid_domicile_trigger = yes
+					}
+					owner ?= {
+						if = {
+							limit = { siege_0001_can_be_captured = yes }
+							add_to_list = capture_attempt_targets
+						}
+						every_courtier_or_guest = {
+							limit = { siege_0001_can_be_captured = yes }
+							add_to_list = capture_attempt_targets
+						}
+					}
+				}
+			}
+		}
 
 		###BUILD SUCCESSFUL CAPTURE LIST###
 		#Calculate capture success
 		every_in_list = {
 			list = capture_attempt_targets
 			random = {	
-				# Base chance handled in a modifier due to the chance parameter tending to quietly fail to parse scripted values.
+				# Base chance handled in a modifier due to the chance parameter tending to quietly fail to #parse scripted values.
 				chance = 0
 
-				# 35 becomes 20 for average intrigue and prowess, can go as low as 5 at very high intrigue and prowess
+				# 35 becomes 20 for average intrigue and prowess, can go as low as 5 at very high intrigue and #prowess
 				modifier = { add = siege_base_capture_chance }
 
 				# Capture Modifiers
@@ -116,6 +183,39 @@ siege.0001 = {
 					value = prowess
 					multiplier = -0.5
 					min = -15
+				}
+				# Less likely to capture the estate owner themselves
+				modifier = {
+					scope:estate_owner ?= this
+					add = -10
+				}
+				# If there is an estate, Watchtowers and Guardhouses make captures less likely
+				modifier = {
+					location = {
+						any_province_domicile = {
+							is_domicile_type = estate
+							has_domicile_parameter = raids_less_likely_to_make_prisoners_1
+						}
+					}
+					add = -10
+				}
+				modifier = {
+					location = {
+						any_province_domicile = {
+							is_domicile_type = estate
+							has_domicile_parameter = raids_less_likely_to_make_prisoners_2
+						}
+					}
+					add = -15
+				}
+				modifier = {
+					location = {
+						any_province_domicile = {
+							is_domicile_type = estate
+							has_domicile_parameter = raids_less_likely_to_make_prisoners_3
+						}
+					}
+					add = -20
 				}
 
 				# Capture Effects
@@ -161,6 +261,18 @@ siege.0001 = {
 					trigger_event = siege.0003
 				}
 			}
+			scope:estate_owner ?= {
+				if = {
+					limit = {
+						save_temporary_scope_as = notification_target
+						any_in_list = {
+							list = captured_targets_effects
+							NOT = { this = scope:notification_target}
+						}
+					}
+					trigger_event = siege.0003
+				}
+			}
 
 			# Send a message to all other players who may be concerned about the fate of the captured prisoners.
 			every_player = {
@@ -168,8 +280,8 @@ siege.0001 = {
 					NOR = {
 						this = root
 						this = scope:barony.holder
+						this = scope:estate_owner
 					}
-
 					save_temporary_scope_as = notification_target
 					any_in_list = {
 						list = captured_targets_effects
@@ -192,6 +304,9 @@ siege.0001 = {
 			scope:barony.holder = {
 				trigger_event = siege.0013
 			}
+			scope:estate_owner ?= {
+				trigger_event = siege.0013
+			}
 
 			# Send a message to all other players who may be concerned about the fate of the slain prisoners.
 			every_player = {
@@ -199,6 +314,7 @@ siege.0001 = {
 					NOR = {
 						this = root
 						this = scope:barony.holder
+						this = scope:estate_owner
 					}
 
 					save_temporary_scope_as = notification_target
@@ -271,7 +387,10 @@ siege.0001 = {
 		every_in_list = {
 			list = killed_targets
 
-			override_death_effect = { death_reason = death_siege }
+			override_death_killer_effect = { #Warcraft
+				death_reason = death_siege
+				killer = root
+			}
 		}
 	}
 }
@@ -1109,6 +1228,15 @@ siege.0031 = {
 				}
 				20 = {
 					# Nothing Happens
+					# Lower the chance of nothing if you have a Master of Spoils Officer
+					modifier = {
+						add = {
+							value = court_position:master_of_spoils_camp_officer.aptitude:master_of_spoils_camp_officer
+							add = 1
+							multiply = -2
+						}
+						holder = { employs_court_position = master_of_spoils_camp_officer }
+					}
 				}
 			}
 		}
@@ -1150,7 +1278,7 @@ siege.0102 = {
 
 	immediate = {
 		send_interface_message = {
-			type = event_siege_lost_bad
+			type = msg_siege_lost_with_text
 			left_icon = scope:occupant
 			right_icon = scope:barony
 			title = siege.0102.title
@@ -1175,7 +1303,7 @@ siege.0103 = {
 
 	immediate = {
 		send_interface_message = {
-			type = event_siege_lost_bad
+			type = msg_siege_lost_with_text
 			left_icon = scope:occupant
 			right_icon = scope:barony
 			title = siege.0103.title
