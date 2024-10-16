@@ -20,6 +20,7 @@
 # flag:lease_revoked
 # flag:faction_demand
 # flag:swear_fealty
+# flag:stepped_down
 
 # A title is destroyed
 # root = the holder before destruction
@@ -31,6 +32,66 @@ on_title_destroyed = {
 		# british_isles.1031	# Danelaw-England partition calc.
 		# End of Warcraft
 	}
+
+	effect = {
+		scope:landed_title = {
+			every_claimant = { remove_claim = prev } # remove existing claims
+		}
+		# Adjust the size of the laamps tally.
+		if = {
+			limit = {
+				# Pre-filter out anything higher or lower.
+				scope:landed_title = { tier = tier_duchy }
+			}
+			# We don't need to check the list twice, since if they're not in it then removing them from it won't do anything.
+			remove_list_global_variable = {
+				name = laamps_tally
+				target = scope:landed_title
+			}
+		}
+		#Notify folks the latin empire has fallen
+		# if = {
+		# 	limit = { scope:landed_title = title:e_latin_empire }
+		# 	frankokratia_latin_emp_end_msg_effect = yes
+		# }
+		#Create byz collapse variable that defines anarchy period
+		#if = { #Warcraft
+		#	limit = {
+		#		scope:landed_title = {
+		#			this = title:e_byzantium
+		#		}
+		#	}
+		#	if = {
+		#		limit = {
+		#			exists = global_var:byz_collapse_counter
+		#		}
+		#		remove_global_variable = byz_collapse_counter
+		#	}
+		#	set_global_variable = {
+		#		name = byz_collapse_counter
+		#		value = {
+		#			value = current_year
+		#			add = 100
+		#		}
+		#	}
+		#}
+		
+		# If the title of an independent admin ruler is destroyed, let's make sure we handle any stray admin vassals
+		if = {
+			limit = {
+				government_allows = administrative
+				is_independent_ruler = yes
+				NOT = {
+					any_held_title = {
+						tier > tier_duchy
+						NOT = { this = scope:landed_title }
+						is_noble_family_title = no
+					}
+				}
+			}
+			admin_change_government_effect = yes
+		}
+	}
 }
 
 # A title is transferred to a new character
@@ -39,6 +100,109 @@ on_title_destroyed = {
 # scope:previous_holder = previous holder. Might be dead
 on_title_gain = {
 	effect = {
+		# EP3 ADVENTURERS BECOMING LANDED
+		if = {
+			limit = {
+				scope:title = { is_titular = no }
+				any_held_title = { has_variable = adventurer_creation_reason }
+			}
+			save_scope_as = adventurer
+			if = {
+				limit = {
+					NOT = { has_trait = adventurer }
+				}
+				add_trait = adventurer
+			}
+			every_courtier = {
+				set_variable = {
+					name = former_camp_leader
+					value = scope:adventurer
+				}
+				add_trait = adventurer_follower
+			}
+			destroy_laamp_effect = { ADVENTURER = scope:adventurer }
+			# EP3 - Ensure NF holders are Admin
+			if = {
+				limit = {
+					scope:title = { is_noble_family_title = yes }
+					NOT = { government_has_flag = government_is_administrative }
+				}
+				change_government = administrative_government
+			}
+		}
+		# Note: anything that should be run after creation can go in on_noble_family_title_created
+		if = {
+			limit = {
+				highest_held_title_tier >= tier_duchy
+				government_allows = administrative
+				is_house_head = yes
+				top_liege = {
+					is_independent_ruler = yes
+					government_allows = administrative
+				}
+				NOR = {
+					any_held_title = { is_noble_family_title = yes }
+					house = {
+						any_house_member = {
+							any_held_title = { is_noble_family_title = yes }
+						}
+					}
+				}
+			}
+			create_noble_family_effect = yes
+			domicile ?= { set_up_domicile_estate_effect = yes }
+		}
+		# EP3 - Ensure Emperor keeps old realm capital in admin realms & apply unique domicile building bonus if appropriate
+		if = {
+			limit = {
+				government_allows = administrative
+				is_independent_ruler = yes
+				highest_held_title_tier >= tier_empire
+			}
+			if = { # Ensure we keep the old realm capital
+				limit = {
+					scope:title = {
+						tier = tier_empire
+						NOT = { title_capital_county = root.capital_county }
+						# Constantinople must have been inherited
+						title_capital_county.holder = root
+					}
+				}
+				set_realm_capital = scope:title.title_capital_county
+			}
+			if = { # Get legitimacy from Reception Hall House Bonus
+				limit = {
+					house = { has_variable = ep3_legacy_legitimacy_counter }
+				}
+				send_interface_message = {
+					type = event_toast_effect_good
+					title = ep3_dynasty_legacy_gain_legitimacy_effect_title
+					left_icon = root
+					right_icon = root.primary_title
+					add_legitimacy = house.var:ep3_legacy_legitimacy_counter
+				}
+			}
+		}
+		# EP3 - Fire a became governor event
+		else_if = {
+			limit = {
+				government_allows = administrative
+				is_independent_ruler = no
+				is_governor = yes
+				any_held_title = {
+					count < 1
+					NOT = { this = scope:title }
+					tier >= scope:title.tier
+					is_landless_type_title = no
+					is_noble_family_title = no
+				}
+			}
+			trigger_event = {
+				id = ep3_admin_events.0002
+				delayed = yes
+			}
+		}
+
 		scope:title = { update_dynamic_coa = yes }
 
 		if = {
@@ -48,6 +212,25 @@ on_title_gain = {
 				government_has_flag = government_is_holy_order
 			}
 			add_trait = order_member
+		}
+
+		# Did I receive a title from my sibling?
+		if = {
+			limit = {
+				exists = scope:previous_holder
+				scope:previous_holder = {
+					is_alive = yes
+					exists = var:sibling_waiting_for_land
+					any_sibling = {
+						this = root
+						this = scope:previous_holder.var:sibling_waiting_for_land
+					}
+				}
+			}
+			add_character_flag = {
+				flag = got_title_from_sibling
+				years = 4
+			}
 		}
 
 		# Warcraft
@@ -94,30 +277,12 @@ on_title_gain = {
 			}
 		}
 
-		#Did I receive a title from my sibling?
-		if = {
-			limit = {
-				exists = scope:previous_holder
-				scope:previous_holder = {
-					is_alive = yes
-					exists = var:sibling_waiting_for_land
-					any_sibling = {
-						this = root
-						this = scope:previous_holder.var:sibling_waiting_for_land
-					}
-				}
-			}
-			add_character_flag = {
-				flag = got_title_from_sibling
-				years = 4
-			}
-		}
-
 		# Grandeur in elective realms
 		if = {
 			limit = {
 				exists = var:previous_holder_grandeur_value
 				has_royal_court = yes
+				has_dlc_feature = royal_court
 			}
 			hidden_effect = {
 				change_current_court_grandeur = -100 # Reset to 0
@@ -227,32 +392,6 @@ on_title_gain = {
 				}
 			}
 		}
-
-		# Memories
-		# Ascended to the throne
-		if = {
-			limit = {
-				OR = {
-					is_ruler = no
-					highest_held_title_tier <= scope:title.tier
-				}
-			}
-
-			root = {
-				create_character_memory = {
-					type = ascended_throne_memory
-				}
-
-				scope:new_memory = {
-					save_scope_as = ascended_throne_memory
-					set_variable = childhood_memory
-					set_variable = {
-						name = landed_title
-						value = scope:title
-					}
-				}
-			}
-		}
 		
 		if = {
 			limit = {
@@ -282,7 +421,602 @@ on_title_gain = {
 				}
 			}
 		}
+		
+		# Special Legitimacy gain for being elected
+		if = {
+			limit = {
+				scope:title = {
+					has_order_of_succession = election
+				}
+				has_legitimacy = yes
+			}
+			save_scope_value_as = {
+				name = title_tier_minus_2
+				value = {
+					value = scope:title.tier
+					subtract = 2
+				}
+			}
+			send_interface_toast = {
+				type = msg_legitimacy_gain
+				title = legitimacy_gain_toast
+				left_icon = root
+				right_icon = scope:title
+				add_legitimacy = {
+					value = {
+						value = major_legitimacy_gain
+						multiply = scope:title_tier_minus_2
+					}
+				}
+			}
+		}
+
+		# Did I conquer a place with holy order leases not of my faith?
+		if = {
+			limit = {
+				scope:title = {
+					any_in_de_jure_hierarchy = {
+						tier = tier_barony
+						is_under_holy_order_lease = yes
+						county.holder = {
+							any_liege_or_above = { this = root }
+						}
+						lessee = {
+							NAND = { # Only for leases of people who are not of your faith or the holder's faith
+								faith = root.faith
+								faith = prev.county.holder.faith
+							}
+						}
+					}
+				}
+			}
+			scope:title = {
+				every_in_de_jure_hierarchy = {
+					limit = {
+						tier = tier_barony
+						is_under_holy_order_lease = yes
+						county.holder = {
+							any_liege_or_above = { this = root }
+						}
+						lessee = {
+							NAND = { # Only for leases of people who are not of your faith or the holder's faith
+								faith = root.faith
+								faith = prev.county.holder.faith
+							}
+						}
+					}
+					revoke_lease = yes
+				}
+			}
+		}
+
+		# EP3 ADVENTURERS TELEPORT TO THEIR CAMP
+		trigger_event = {
+			id = title_event.9911
+			days = 1
+		}
+
+		current_travel_plan ?= {
+			if = {
+				limit = { is_travel_with_domicile = yes }
+				abort_travel_plan = yes
+			}
+		}
+
+		# EP3 ADVENTURER BEING INHERITED BY LANDED
+		if = {
+			limit = {
+				scope:title = {
+					has_variable = adventurer_creation_reason
+				}
+				any_held_title = {
+					NOT = { has_variable = adventurer_creation_reason }
+				}
+			}
+			every_held_title = {
+				limit = { has_variable = adventurer_creation_reason }
+				save_scope_as = landless_adventurer_title
+				root = { destroy_title = scope:landless_adventurer_title }
+			}
+		}
+
+		# EP3 LAAMP SUPPORTER INVALIDATION
+		if = {
+			limit = {
+				exists = var:adventurer_invasion_supporter
+				NOT = { government_has_flag = government_is_landless_adventurer }
+			}
+			ep3_laamp_supporter_invalidated_effect = yes
+		}
+
+		### EP3 Admin Emperor Flavor ###
+		if = {
+			limit = {
+				has_ep3_dlc_trigger = yes
+				# You didn't just create the title
+				scope:title = {
+					tier >= tier_empire
+					any_past_holder = {
+						count >= 1
+					}
+					# Your predecessor wasn't from your same house - not much to celebrate if you got the title from dad!
+					previous_holder ?= {
+						NOT = { house = root.house }
+					}
+				}
+				# Admin only
+				government_allows = administrative
+			}
+			trigger_event = {
+				id = ep3_emperor_yearly.2050
+				days = 5
+			}
+		}
+
+		# Admin vassals get the Governor trait when they first become a governor
+		if = {
+			limit = {
+				is_governor = yes
+				NOT = { has_trait = governor }
+				scope:title = {
+					tier >= tier_duchy
+				}
+			}
+			add_trait = governor
+		}
+
+		# Additional Flavor Titles
+		root = { additional_flavor_check_effect = yes }
+
+		#Admin imperial succession notification event (it's a big deal)
+		if = {
+			limit = {
+				has_ep3_dlc_trigger = yes
+				government_allows = administrative
+				is_independent_ruler = yes
+				highest_held_title_tier >= tier_kingdom
+				scope:title = {
+					this = root.primary_title
+				}
+				#Checks so this event doesn't fire after character creation, although it's not really a problem if it does
+				trigger_if = {
+					limit = {
+						game_start_date = 867.1.1
+					}
+					current_date >= 867.1.4
+				}
+				trigger_if = {
+					limit = {
+						game_start_date = 1066.9.15
+					}
+					current_date >= 1066.9.18
+				}
+				trigger_if = {
+					limit = {
+						game_start_date = 1178.10.1
+					}
+					current_date >= 1178.10.4
+				}
+			}
+			save_scope_as = emperor
+			# Warcraft - remove trigger special event during fourth crusade!
+			# if = {
+			# 	limit = {
+			# 		exists = global_var:byz_claimant_champion
+			# 		global_var:byz_claimant_champion = {
+			# 			any_owned_story = {
+			# 				story_type = frankokratia_story
+			# 				exists = var:byz_claimant
+			# 				var:byz_claimant = {
+			# 					this = root
+			# 				}
+			# 			}
+			# 		}
+			# 	}
+			# 	every_vassal_or_below = {
+			# 		limit = {
+			# 			is_playable_character = yes
+			# 		}
+			# 		trigger_event = ep3_frankokratia_events.0110
+			# 	}
+			# }
+			#else = {
+				#normal triggering
+				every_vassal_or_below = {
+					limit = {
+						is_playable_character = yes
+						exists = scope:previous_holder
+						government_allows = administrative
+						OR = {
+							highest_held_title_tier >= tier_duchy
+							liege = scope:emperor
+						}
+					}
+					trigger_event = {
+						id = ep3_governor_yearly.3060
+						days = 1
+					}
+				}
+			#}
+		}
+		# Reset raid remit
+		if = {
+			limit = {
+				this = top_liege
+				any_noble_family = { count > 0 }
+			}
+			every_noble_family = {
+				holder = { remove_variable = raid_estate_permission }
+			}
+		}
+		#Admin event about rewarding person who helped you get title
+		if = {
+			limit = {
+				has_ep3_dlc_trigger = yes
+				government_allows = administrative
+				has_succession_appointment_investors = scope:title
+				scope:title = {
+					any_succession_appointment_investors = {
+						count >= 1
+						candidate = root
+						value >= 20
+						NOT = {
+							house ?= root.house
+						}
+						is_alive = yes
+						is_imprisoned = no
+						NOR = {
+							has_relation_rival = root
+							is_at_war_with = root
+						}
+					}
+				}
+			}
+			save_scope_as = new_landed_admin
+			trigger_event = {
+				id = ep3_interactions_events.0600
+				days = { 5 10 }
+			}
+		}
+
+		# Have we been given a fair shake as a laamp, but we're sucking?
+		if = {
+			limit = {
+				is_landless_adventurer = yes
+				is_ai = yes
+				scope:previous_holder = { is_ai = yes }
+				primary_title = {
+					any_past_holder = { count >= 4 }
+				}
+				NOR = {
+					# If the heir is sufficiently impressive, then we'll keep 'em around.
+					prestige_level >= 2
+					# Legitimists are always worthwhile.
+					has_realm_law = camp_purpose_legitimists
+					# Reserve successful mercenary outfits.
+					AND = {
+						max_military_strength >= 1500
+						# Allow absolute decimations to destroy mercs from time to time.
+						current_military_strength <= 150
+					}
+					# Or those currently fighting alongside/against players.
+					AND = {
+						is_at_war = yes
+						OR = {
+							any_war_ally = { is_ai = no }
+							any_war_enemy = { is_ai = no }
+						}
+					}
+					# Depending on camp purpose, we want various skills.
+					AND = {
+						has_realm_law = camp_purpose_wanderers
+						OR = {
+							highest_skill_value >= very_high_skill_rating
+							prowess >= very_high_skill_rating
+						}
+					}
+					AND = {
+						has_realm_law = camp_purpose_mercenaries
+						OR = {
+							martial >= high_skill_rating
+							prowess >= high_skill_rating
+						}
+					}
+					AND = {
+						has_realm_law = camp_purpose_scholars
+						OR = {
+							learning >= high_skill_rating
+							diplomacy >= high_skill_rating
+						}
+					}
+					AND = {
+						has_realm_law = camp_purpose_explorers
+						OR = {
+							diplomacy >= high_skill_rating
+							stewardship >= high_skill_rating
+						}
+					}
+					AND = {
+						has_realm_law = camp_purpose_brigands
+						OR = {
+							intrigue >= high_skill_rating
+							prowess >= high_skill_rating
+						}
+					}
+					# Finally, keep anyone who's important to the player.
+					any_player = {
+						OR = {
+							root.dynasty ?= dynasty
+							is_consort_of = root
+							has_important_relationship_with_character_trigger = { CHARACTER = root }
+							any_pinned_character = { this = root }
+							any_pinned_character = { this = scope:previous_holder }
+						}
+					}
+				}
+			}
+			destroy_laamp_effect = { ADVENTURER = root }
+		}
+		#Notification for house members of title holder
+		if = {
+			limit = {
+				scope:title.tier > tier_barony
+				primary_title.tier <= scope:title.tier
+				government_allows = administrative
+				NOT = { has_character_flag = admin_title_gain_notification_sent }
+				house ?= {
+					any_house_member = {
+						is_ai = no
+						top_liege = root.top_liege
+						government_allows = administrative
+						NOT = { this = root }
+					}
+				}
+			}
+			add_character_flag = {
+				flag = admin_title_gain_notification_sent
+				days = 10
+			}
+			save_scope_as = title_gainer
+			house = {
+				every_house_member = {
+					limit = {
+						is_ai = no
+						top_liege = root.top_liege
+						government_allows = administrative
+						NOT = { this = scope:title_gainer }
+					}
+					send_interface_message = {
+						type = msg_admin_title_gained
+						title = msg_admin_title_gained_house.tt
+						desc = msg_admin_title_gained.desc
+						left_icon = scope:title_gainer
+						right_icon = scope:title
+					}
+				}
+			}
+		}
+		#Notification for admin investors in new title holder
+		if = {
+			limit = {
+				NOT = { has_character_flag = admin_title_gain_notification_sent }
+				scope:title = {
+					tier > tier_barony
+					any_succession_appointment_investors = {
+						candidate = root
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.house }
+							NOT = { house ?= root.house }
+						}
+					}
+				}
+			}
+			add_character_flag = {
+				flag = admin_title_gain_notification_sent
+				days = 10
+			}
+			save_scope_as = title_gainer
+			scope:title = {
+				every_succession_appointment_investors = {
+					candidate = root
+					value > 0
+					limit = {
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.house }
+							NOT = { house ?= root.house }
+						}
+					}
+					send_interface_message = {
+						type = msg_admin_title_gained
+						title = msg_admin_title_gained_investor.tt
+						desc = msg_admin_title_gained.desc
+						left_icon = scope:title_gainer
+						right_icon = scope:title
+					}
+				}
+				every_succession_appointment_investors = {
+					candidate = root
+					value < 0
+					limit = {
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.house }
+							NOT = { house ?= root.house }
+						}
+					}
+					send_interface_message = {
+						type = msg_admin_title_gained_foe
+						title = msg_admin_title_gained_foe.tt
+						desc = msg_admin_title_gained.desc
+						left_icon = scope:title_gainer
+						right_icon = scope:title
+					}
+				}
+			}
+		}
+		#Byzantium is reborn!
+		#if = {
+		#	limit = {
+		#		scope:title = {
+		#			this = title:e_byzantium
+		#		}
+		#		exists = global_var:byz_collapse_counter
+		#	}
+		#	save_scope_as = byz_emperor
+		#	title:e_byzantium = {
+		#		every_in_de_jure_hierarchy = {
+		#			limit = {
+		#				tier <= tier_kingdom
+		#				tier >= tier_county	
+		#				is_title_created = yes
+		#				exists = holder
+		#			}
+		#			if = {
+		#				limit = {
+		#					exists = holder
+		#					holder = {
+		#						is_alive = yes
+		#						NOR = {
+		#							is_in_list = byz_return_notify
+		#							any_held_title = {
+		#								this = title:e_byzantium
+		#							}
+		#						}
+		#					}
+		#				}
+		#				holder = {
+		#					add_to_list = byz_return_notify
+		#				}
+		#			}
+		#		}
+		#	}
+		#	title:e_latin_empire = {
+		#		every_in_de_jure_hierarchy = {
+		#			limit = {
+		#				tier <= tier_kingdom
+		#				tier >= tier_county	
+		#				is_title_created = yes
+		#				exists = holder
+		#			}
+		#			if = {
+		#				limit = {
+		#					holder = {
+		#						is_alive = yes
+		#						NOR = {
+		#							is_in_list = byz_return_notify
+		#							any_held_title = {
+		#								this = title:e_byzantium
+		#							}
+		#						}
+		#					}
+		#				}
+		#				holder = {
+		#					add_to_list = byz_return_notify
+		#				}
+		#			}
+		#		}
+		#	}
+		#	every_in_list = {
+		#		list = byz_return_notify
+		#		trigger_event = ep3_frankokratia_events.0130
+		#	}
+		#	remove_global_variable = byz_collapse_counter
+		#}
+		
 		# Warcraft
+		scope:title = { 
+			if = { 
+				limit = { 
+					scope:title.tier = tier_county
+					scope:title.holder = {
+						NOR = {
+							is_liege_or_above_of = scope:previous_holder
+							is_vassal_or_below_of = scope:previous_holder
+						}
+					}
+				}
+
+				remove_genocide_modifiers = yes
+				remove_genocide_variables = { REMOVE = no }
+				refresh_corruption_modifiers = yes
+			}
+		}
+		
+		### MEMORIES - SHOULD STAY AT BOTTOM ###
+		# Ascended to the throne
+		if = {
+			limit = {
+				OR = {
+					is_ruler = no
+					highest_held_title_tier <= scope:title.tier
+					government_has_flag = government_is_landless_adventurer
+					government_allows = administrative
+				}
+			}
+			if = {
+				limit = { exists = scope:title.var:adventurer_flavor_char }
+				create_character_memory = {
+					type = became_landless_adventurer_memory
+					participants = {
+						flavor_character = scope:title.var:adventurer_flavor_char
+					}
+				}
+				#Only children should get childhood memories
+				if = {
+					limit = { is_adult = no }
+					scope:new_memory = { set_variable = childhood_memory }
+				}
+				scope:new_memory = {
+					save_scope_as = became_landless_adventurer_memory
+					set_variable = {
+						name = landless_title
+						value = scope:title
+					}
+					set_variable = {
+						name = reason
+						value = scope:transfer_type
+					}
+					set_variable = {
+						name = adventurer_creation_reason
+						value = scope:title.var:adventurer_creation_reason
+					}
+					if = {
+						limit = { exists = scope:lost_primary_title }
+						set_variable = {
+							name = old_primary_title
+							value = scope:lost_primary_title
+						}
+					}
+					if = { # Error suppression
+						limit = { exists = var:landless_title }
+					}
+				}
+			}
+			else = {
+				# Overwrite if there is a more specific Reason
+				if = {
+					limit = { exists = root.var:ascended_throne_reason }
+					root.var:ascended_throne_reason = { save_scope_as = real_transfer_type }
+					root = { remove_variable = ascended_throne_reason }
+				}
+				else = {
+					scope:transfer_type = { save_scope_as = real_transfer_type }
+				}
+				root = {
+					add_to_variable_list = {
+						name = new_titles
+						target = scope:title
+					}
+					trigger_event = {
+						id = title_event.9900
+						delayed = yes
+					}
+				}
+			}
+		}
+		### MEMORIES - SHOULD STAY AT BOTTOM ###
 	}
 	events = {
 		# Warcraft
@@ -300,6 +1034,9 @@ on_title_gain = {
 
 		# title_event.0001			# Rename West Francia to France
 		# title_event.0002			# Rename East Francia to Germany
+		# If we weren't already in a diarchy but should be, put us in one.
+		diarchy.0011
+		ep3_emperor_yearly.2020		# EP3: The Patriarch refuses to crown you as new emperor because you have a criminal trait
 	}
 }
 
@@ -361,7 +1098,7 @@ on_title_lost = {
 					has_viking_adventurers_era_trigger = yes
 				}
 				#Must have lost their last piece of land.
-				is_landed = no
+				is_playable_character = no
 				#If they've ventured far outside Europe, they're unlikely to come back, so we don't #want them.
 				scope:title = {
 					tier = tier_county
@@ -398,10 +1135,29 @@ on_title_lost = {
 		#To remove concubines if a character becomes unlanded
 		if = {
 			limit = {
-				is_landed = no
+				is_playable_character = no
 				any_concubine = { count >= 1 }
 			}
 			every_concubine = { root = { remove_concubine = prev } }
+		}
+
+		# Transfer co-monarchies.
+		if = {
+			limit = {
+				OR = {
+					scope:transfer_type = flag:inheritance
+					scope:transfer_type = flag:abdication
+					scope:transfer_type = flag:usurped
+					scope:transfer_type = flag:election
+					scope:transfer_type = flag:faction_demand
+					scope:transfer_type = flag:stepped_down
+				}
+			}
+			save_scope_as = old_holder
+			trigger_event = {
+				id = diarchy.0025
+				days = 1
+			}
 		}
 
 		#Apply loss of stress to the Rivals
@@ -433,7 +1189,7 @@ on_title_lost = {
 
 					custom_tooltip = msg_rival_dethroned_desc
 
-					stress_impact = { 
+					stress_impact = {
 						base = medium_stress_loss
 						vengeful = medium_stress_loss
 					}
@@ -449,29 +1205,34 @@ on_title_lost = {
 				scope:title.tier >= highest_held_title_tier
 				exists = scope:new_holder
 			}
-
+			if = {
+				limit = { exists = root.var:lost_title_reason }
+				root.var:lost_title_reason = { save_scope_as = real_transfer_type }
+				root = { remove_variable = lost_title_reason }
+			}
+			else = {
+				scope:transfer_type = { save_scope_as = real_transfer_type }
+			}
 			root = {
-				create_character_memory = {
-					type = lost_title_memory
-
-					participants = {
-						new_holder = scope:new_holder
-					}
+				add_to_variable_list = {
+					name = lost_titles
+					target = scope:title
 				}
-
-				scope:new_memory = {
-					save_scope_as = lost_title_memory
-					set_variable = {
-						name = landed_title
-						value = scope:title
-					}
+				trigger_event = {
+					id = title_event.9901
+					delayed = yes
 				}
 			}
 		}
 
 		# LEGITIMACY LOSS FROM USURPATION
 		if = {
-			limit = { scope:transfer_type ?= flag:usurped }
+			# Warcraft
+			limit = {
+				scope:transfer_type ?= flag:usurped
+				is_landed = yes # Shouldn't have legitimacy removed if they are unlanded, it will throw an error
+			}
+			# End Warcraft
 			# Minus 2, since we want Duchy to be 1, and it's normally 3
 			save_scope_value_as = {
 				name = title_tier_minus_2
@@ -481,7 +1242,7 @@ on_title_lost = {
 				}
 			}
 			send_interface_toast = {
-				type = event_toast_effect_bad
+				type = msg_legitimacy_loss
 				title = legitimacy_loss_toast
 				left_icon = root
 				right_icon = scope:title
@@ -493,6 +1254,303 @@ on_title_lost = {
 					}
 				}
 			}
+		}
+
+		# EP3 LAAMP SUPPORTER INVALIDATION
+		ep3_laamp_supporter_invalidated_effect = yes
+
+		# EP3 - Handle admin estates when they end up outside the realm
+		if = {
+			limit = {
+				scope:new_holder = {
+					any_sub_realm_barony = {
+						title_province = {
+							any_province_domicile = {
+								is_domicile_type = estate
+								owner = {
+									NOT  = { top_liege = scope:new_holder.top_liege }
+								}
+							}
+						}
+					}
+				}
+			}
+			scope:new_holder = {
+				every_sub_realm_barony = {
+					limit = {
+						title_province = {
+							any_province_domicile = {
+								is_domicile_type = estate
+								owner = {
+									NOT  = { top_liege = scope:new_holder.top_liege }
+								}
+							}
+						}
+					}
+					title_province = {
+						every_province_domicile = {
+							limit = {
+								is_domicile_type = estate
+								owner = {
+									NOT  = { top_liege = scope:new_holder.top_liege }
+								}
+							}
+							
+							# First, let's do some damage to the estate - We randomize the level of damage taken
+							random_list = {
+								35 = { # Damage 1
+									trigger = {
+										num_domicile_buildings <= 8
+									}
+									set_variable = {
+										name = domicile_damage_count
+										value = 1
+									}
+								}
+								30 = { # Damage 2
+									trigger = {
+										num_domicile_buildings > 2
+									}
+									set_variable = {
+										name = domicile_damage_count
+										value = 2
+									}
+								}
+								25 = { # Damage 3
+									trigger = {
+										num_domicile_buildings > 6
+									}
+									set_variable = {
+										name = domicile_damage_count
+										value = 3
+									}
+								}
+								20 = { # Damage 4
+									trigger = {
+										num_domicile_buildings > 10
+									}
+									set_variable = {
+										name = domicile_damage_count
+										value = 4
+									}
+								}
+							}
+							while = {
+								count = var:domicile_damage_count
+								destroy_random_estate_building_variable_effect = yes
+								destroy_random_estate_building_effect = yes
+							}
+							
+							# Clear the variable
+							if = {
+								limit = { has_variable = domicile_damage_count }
+								remove_variable = domicile_damage_count
+							}
+							
+							# Then we'll move the estate to keep it within the realm's borders
+							if = { # If you have a capital (i.e. you are a governor) let's move the estate there
+								limit = {
+									owner = {
+										is_landed = yes
+										exists = capital_province
+									}
+								}
+								move_domicile = owner.capital_province
+							}
+							else_if = { # If not, let's move it to a landed house member in the realm, if you have one
+								limit = {
+									owner = {
+										top_liege ?= { save_temporary_scope_as = owner_top_liege }
+										house ?= {
+											any_house_member = {
+												is_governor = yes
+												top_liege = scope:owner_top_liege
+											}
+										}
+									}
+								}
+								owner = {
+									house = {
+										random_house_member = {
+											limit = {
+												is_governor = yes
+												exists = capital_province
+												top_liege = scope:owner_top_liege
+											}
+											capital_province = { save_temporary_scope_as = house_member_location }
+										}
+									}
+								}
+								move_domicile = scope:house_member_location
+							}
+							else_if = { # Otherwise move it to the realm capital
+								limit = {
+									exists = owner.top_liege.capital_province
+								}
+								move_domicile = owner.top_liege.capital_province
+							}
+							
+							# Save the new estate location for msg
+							domicile_location.barony = {
+								save_scope_as = new_estate_location
+							}
+							
+							# Finally, let's make sure the owner moves to the new estate location
+							owner = {
+								if = {
+									limit = {
+										is_alive = yes
+										is_imprisoned = no
+										is_travelling = no
+										NOT = {
+											exists = involved_activity
+										}
+										is_commanding_army = no
+									}
+									set_location_to_default = yes
+								}
+								
+								# And notify the owner that all of this just happened
+								if = {
+									limit = { is_ai = no }
+									send_interface_message = {
+										type = msg_domicile_damaged
+										title = msg_estate_damaged.title
+										desc = msg_estate_damaged.desc
+										right_icon = scope:new_estate_location
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		# if = {
+		# 	limit = { scope:title = title:e_roman_empire }
+		# 	remove_variable = uses_custom_caesar_flavourization
+		# }
+		#Notification for house members of loser
+		if = {
+			limit = {
+				scope:title.tier > tier_barony
+				trigger_if = { # Prevent msg spam when rulers give away or lose lower tier titles
+					limit = {
+						is_landed = yes
+					}
+					primary_title.tier <= scope:title.tier
+				}
+				is_alive = yes
+				NOT = { has_character_flag = admin_title_loss_notification_sent }
+				government_allows = administrative
+				house ?= {
+					any_house_member = {
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.top_liege }
+							top_liege = root.top_liege
+						}
+						government_allows = administrative
+						NOT = { this = root }
+					}
+				}
+			}
+			add_character_flag = {
+				flag = admin_title_loss_notification_sent
+				days = 10
+			}
+			save_scope_as = title_loser
+			house = {
+				every_house_member = {
+					limit = {
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.top_liege }
+							top_liege = root.top_liege
+						}
+						government_allows = administrative
+						NOT = { this = scope:title_loser }
+					}
+					send_interface_message = {
+						type = msg_admin_title_lost
+						title = msg_admin_title_lost_house.tt
+						desc = msg_admin_title_lost.desc
+						left_icon = scope:title_loser
+						right_icon = scope:title
+					}
+				}
+			}
+		}
+		#Notification for admin investors in loser
+		if = {
+			limit = {
+				is_alive = yes
+				NOT = { has_character_flag = admin_title_loss_notification_sent }
+				scope:title = {
+					tier > tier_barony
+					any_succession_appointment_investors = {
+						candidate = root
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.house }
+							NOT = { house ?= root.house }
+						}
+					}
+				}
+			}
+			add_character_flag = {
+				flag = admin_title_loss_notification_sent
+				days = 10
+			}
+			save_scope_as = title_loser
+			scope:title = {
+				every_succession_appointment_investors = {
+					candidate = root
+					value > 0
+					limit = {
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.house }
+							NOT = { house ?= root.house }
+						}
+					}
+					send_interface_message = {
+						type = msg_admin_title_lost
+						title = msg_admin_title_lost_investor.tt
+						desc = msg_admin_title_lost.desc
+						left_icon = scope:title_loser
+						right_icon = scope:title
+					}
+				}
+				every_succession_appointment_investors = {
+					candidate = root
+					value < 0
+					limit = {
+						is_ai = no
+						trigger_if = {
+							limit = { exists = root.house }
+							NOT = { house ?= root.house }
+						}
+					}
+					send_interface_message = {
+						type = msg_admin_title_lost_foe
+						title = msg_admin_title_lost_foe.tt
+						desc = msg_admin_title_lost.desc
+						left_icon = scope:title_loser
+						right_icon = scope:title
+					}
+				}
+			}
+		}
+
+		# Lil Johnny Lackland changes his nickname.
+		if = {
+			limit = {
+				has_nickname = nick_lackland_ironic
+				scope:title.tier >= tier_duchy
+			}
+			give_nickname = nick_lackland_old
 		}
 	}
 }
@@ -525,14 +1583,16 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 		WCRAC.10
 	}
 	effect = {
-		# Warcraft
-		# Barons don't get it but here they can start
-		start_yearly_dark_frenzy_pulse_effect = yes
+		# Warcraft		
 
 		# add_achievement_flag_effect = { FLAG = achievement_moving_up_in_the_world_flag }
 		update_embassies_effect = yes
 		every_ally = {
 			update_embassies_effect = yes
+		}
+		if = {
+			limit = { is_independent_ruler = yes }
+			remove_variable = use_co_ruler_title
 		}
 		# Make a note of ranking up for stele purposes.
 		if = {
@@ -553,6 +1613,12 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 		# Remove any rank-inappropriate modifiers (e.g., baron buffs).
 		remove_character_modifier = mandate_baronial_troops_trained_modifier
 		remove_character_modifier = mandate_baronial_troops_half_trained_modifier
+
+		# Additional Flavor Title
+		additional_flavor_check_effect = yes
+		
+		# Warcraft
+		start_yearly_dark_frenzy_pulse_effect = yes
 	}
 }
 
@@ -598,6 +1664,9 @@ on_rank_down = { # Will not fire during history execution or for dying character
 				}
 			}
 		}
+
+		# Additional Flavor Title
+		additional_flavor_check_effect = yes
 	}
 }
 
@@ -606,7 +1675,45 @@ on_rank_down = { # Will not fire during history execution or for dying character
 # scope:vassal = vassal being gained
 # scope:old_liege = the previous liege of the vassal. Might be the null character (vassal used to be a non-ruler or independent), so make sure to use "exists" checks where relevant
 on_vassal_gained = {
+	events = {
+		realm_maintenance.1000 # Notify vassals of new liege
+	}
 	effect = {
+		# EP3 LANDLESS CANNOT HAVE VASSALS
+		if = {
+			limit = { has_any_landed_title_trigger = no }
+			save_scope_as = new_liege
+			if = {
+				limit = { is_independent_ruler = no }
+				create_title_and_vassal_change = {
+					type = swear_fealty
+					save_scope_as = change
+					add_claim_on_loss = no
+				}
+				change_liege = {
+					liege = scope:new_liege.liege
+					change = scope:change
+				}
+				resolve_title_and_vassal_change = scope:change
+			}
+			else = {
+				create_title_and_vassal_change = {
+					type = independency
+					save_scope_as = change
+					add_claim_on_loss = no
+				}
+				scope:vassal = {
+					becomes_independent = { change = scope:change }
+				}
+				resolve_title_and_vassal_change = scope:change
+			}
+		}
+
+		# Additional Flavor Title
+		scope:vassal = {
+			additional_flavor_check_effect = yes
+		}
+		
 		# Warcraft
 		scope:vassal = {
 			if = {
@@ -615,8 +1722,76 @@ on_vassal_gained = {
 			}
 		}
 	}
-	events = {
-		realm_maintenance.1000 # Notify vassals of new liege
+}
+
+# A vassal changes their liege
+# root = vassal changing their status
+# scope:old_liege = the previous liege of the vassal
+# It is also fired for rulers gaining independence, those can be identified by checking current liege
+on_vassal_change = {
+	effect = {
+		if = {
+			limit = {
+				OR = {
+					liege ?= {
+						NOT = { government_allows = administrative }
+					}
+					AND = {
+						is_independent_ruler = yes
+						primary_title.tier <= tier_duchy
+					}
+				}
+				any_held_title = { is_noble_family_title = yes }
+			}
+			every_held_title = {
+				limit = { is_noble_family_title = yes }
+				save_scope_as = title_to_destroy
+				root = { destroy_title = scope:title_to_destroy }
+			}
+		}
+		### GOVERNORS CHANGE GOVERNMENT IF NEW LIEGE IS NOT ADMINISTRATIVE
+		if = {
+			limit = {
+				exists = top_liege
+				government_has_flag = government_is_administrative
+				NOT = {
+					top_liege = { government_has_flag = government_is_administrative }
+				}
+			}
+			top_liege = { save_scope_as = new_liege }
+			send_interface_message = {
+				type = msg_government_changed
+				title = new_liege_government_changed_title
+				desc = new_liege_government_changed_desc
+				right_icon = scope:new_liege
+				admin_change_government_effect = yes
+			}
+			hidden_effect = {
+				# VASSALS AND BELOW
+				every_vassal_or_below = {
+					limit = { government_has_flag = government_is_administrative }
+					send_interface_message = {
+						type = msg_government_changed
+						title = new_liege_government_changed_title
+						desc = new_liege_government_changed_desc
+						right_icon = scope:new_liege
+						admin_change_government_effect = yes
+					}
+				}
+			}
+		}
+		### If an admin ruler becomes independent, who are not of a high enough rank, changes government
+		if = {
+			limit = {
+				liege = root # I.e. root is independent
+				government_has_flag = government_is_administrative
+				highest_held_title_tier < tier_kingdom
+			}
+			admin_change_government_effect = yes
+		}
+
+		# Additional Flavor Title
+		additional_flavor_check_effect = yes
 	}
 }
 

@@ -27,6 +27,35 @@ on_declared_war = {
 	##### Effects
 	###############################
 
+	#There is no fighting in the admin room!
+	if = {
+		limit = {
+			scope:attacker = {
+				OR = {
+					government_has_flag = government_is_feudal
+					government_has_flag = government_is_clan
+					government_has_flag = government_is_tribal
+				}			
+				liege ?= {
+					government_has_flag = government_is_administrative
+				}
+			}
+			scope:defender = {
+				government_has_flag = government_is_administrative
+				liege ?= scope:attacker.liege
+			}
+		}
+		custom_description_no_bullet = {
+			text = on_declared_war_in_admin
+		}
+		scope:attacker.liege = {
+			add_opinion = {
+				target = scope:attacker
+				modifier = declared_war_in_admin
+			}
+		}
+	}
+
 	# Breaking Truce
 	if = {
 		limit = {
@@ -242,6 +271,8 @@ on_declared_war = {
 	if = {
 		limit = {
 			NOT = { scope:attacker.culture = scope:defender.culture }
+			scope:attacker = { is_landed = yes }
+			scope:defender = { is_landed = yes }
 		}
 		scope:defender.culture = {
 			change_cultural_acceptance = {
@@ -314,6 +345,184 @@ conquest_cb_title_transfer = {
 		}
 		limit = {
 			tier = tier_county
+
+			# Current holder must be a (sub)vassal of the defender (no poaching titles from 3rd parties!)
+			exists = holder
+			holder = {
+				OR = {
+					this = scope:defender
+					target_is_liege_or_above = scope:defender
+				}
+			}
+		}
+		add_to_list = titles_taken
+	}
+
+	# If we can take the current holder of a title as a vassal instead of siezing their land directly, do so.
+	every_in_de_jure_hierarchy = {
+		limit = {
+			tier >= tier_county
+			trigger_if = {
+				limit = { $RELIGIOUS_WAR$ = yes }
+				religious_cb_holder_under_target_can_be_vassalized = yes
+			}
+			trigger_else = {
+				conquest_cb_holder_under_target_can_be_vassalized = yes
+			}
+		}
+
+		# Mark this vassal as being eligible to transfer from the defender to the attacker.
+		holder = {
+			if = {
+				limit = {
+					NOT = { is_in_list = potential_vassals}
+				}
+				add_to_list = potential_vassals
+			}
+		}
+	}
+	ordered_in_list = {
+		list = potential_vassals
+		order_by = highest_held_title_tier
+		max = 99
+		check_range_bounds = no
+
+		if = {
+			# If a liege has already been added to the vassalization list, skip us (we will remain our liege's vassal.)
+			limit = {
+				save_temporary_scope_as = this_vassal
+				any_in_list = {
+					list = vassals_taken
+					target_is_vassal_or_below = scope:this_vassal
+				}
+			}
+		}
+		else = {
+			# Flag this character to be vassalized instead of usurped.
+			add_to_list = vassals_taken
+
+			# Remove the counties this vassal holds from the siezed title list (the vassal gets to keep their land when switching allegiance!)
+			every_sub_realm_county = {
+				remove_from_list = titles_taken
+			}
+		}
+	}
+}
+
+expansion_cb_title_transfer = {
+	save_scope_as = target_title # For the vassalization trigger.
+
+	# Compile a list of all counties in the target title we will take from the defender.
+	every_in_de_jure_hierarchy = {
+		continue = {
+			tier > tier_county
+		}
+		limit = {
+			tier = tier_county
+
+			# Current holder must be a (sub)vassal of the defender (no poaching titles from 3rd parties!)
+			exists = holder
+			holder = {
+				OR = {
+					this = scope:defender
+					target_is_liege_or_above = scope:defender
+				}
+			}
+		}
+		add_to_list = titles_taken
+	}
+	
+	if = {
+		limit = {
+			save_temporary_scope_as = checked_title
+			
+			tier >= scope:attacker.highest_held_title_tier
+			OR = {
+				AND = {
+					is_title_created = yes
+					holder = {
+						NOT = {
+							any_sub_realm_county = {
+								NOT = { target_is_de_jure_liege_or_above = scope:checked_title }
+							}
+						}
+					}
+				}
+				AND = {
+					is_title_created = no
+					any_de_jure_county = {
+						percent > 0.5
+						holder ?= {
+							OR = {
+								this = scope:defender
+								any_liege_or_above = { this = scope:defender }
+							}
+						}
+					}
+				}
+			}
+		}
+		add_to_list = target_title_taken
+	}
+
+	# If we can take the current holder of a title as a vassal instead of siezing their land directly, do so.
+	every_in_de_jure_hierarchy = {
+		limit = {
+			tier >= tier_county
+			conquest_cb_holder_under_target_can_be_vassalized = yes
+		}
+
+		# Mark this vassal as being eligible to transfer from the defender to the attacker.
+		holder = {
+			if = {
+				limit = {
+					NOT = { is_in_list = potential_vassals}
+				}
+				add_to_list = potential_vassals
+			}
+		}
+	}
+	ordered_in_list = {
+		list = potential_vassals
+		order_by = highest_held_title_tier
+		max = 99
+		check_range_bounds = no
+
+		if = {
+			# If a liege has already been added to the vassalization list, skip us (we will remain our liege's vassal.)
+			limit = {
+				save_temporary_scope_as = this_vassal
+				any_in_list = {
+					list = vassals_taken
+					target_is_vassal_or_below = scope:this_vassal
+				}
+			}
+		}
+		else = {
+			# Flag this character to be vassalized instead of usurped.
+			add_to_list = vassals_taken
+
+			# Remove the counties this vassal holds from the siezed title list (the vassal gets to keep their land when switching allegiance!)
+			every_sub_realm_county = {
+				remove_from_list = titles_taken
+			}
+		}
+	}
+}
+
+expedition_cb_title_transfer = {
+	save_scope_as = target_title # For the vassalization trigger.
+
+	# Compile a list of all counties in the kingdom we will take from the defender.
+	every_in_de_jure_hierarchy = {
+		continue = {
+			tier > tier_county
+		}
+		limit = {
+			OR = {
+				tier = tier_county
+				tier = tier_duchy
+			}
 
 			# Current holder must be a (sub)vassal of the defender (no poaching titles from 3rd parties!)
 			exists = holder
@@ -610,12 +819,14 @@ on_lost_faction_revolt_war = {
 					modifier = vassal_lost_faction_revolt_war
 				}
 			}
-			#block them from joining factions if they aren't blocked yet
-			if = {
-				limit = {
-					NOT = { has_character_flag = joining_faction_block }
+			hidden_effect = {
+				#block them from joining factions if they aren't blocked yet, hidden because you should always see it through the effect applied to every_faction_member above
+				if = {
+					limit = {
+						NOT = { has_character_flag = joining_faction_block }
+					}
+					add_faction_cooldown_effect = { YEARS = faction_war_defeat_cooldown }
 				}
-				add_faction_cooldown_effect = { YEARS = faction_war_defeat_cooldown }
 			}
 		}
 	}
@@ -750,9 +961,12 @@ on_peasant_faction_war_win_common = {
 }
 
 on_claimant_faction_war_win_common = {
-
-	# If the claimant is the prisoner of the defender, free the claimant (it doesn't make much sense to leave the new king in the old king's dungeon)
 	$CLAIMANT$ = {
+		save_scope_as = the_claimant
+	}
+	
+	# If the claimant is the prisoner of the defender, free the claimant (it doesn't make much sense to leave the new king in the old king's dungeon)
+	scope:the_claimant = {
 		if = {
 			limit = {
 				is_imprisoned_by = $DEFENDER$
@@ -801,6 +1015,8 @@ on_claimant_faction_war_win_common = {
 			# 	}
 			# 	add_prestige = major_prestige_gain
 			# }
+			# Save the number of faction members for use further down
+			add_to_list = num_faction_members
 		}
 	}
 
@@ -816,6 +1032,22 @@ on_claimant_faction_war_win_common = {
 		add_to_list = faction_titles
 		holder = {
 			save_scope_as = target_holder
+		}
+	}
+	scope:target_holder ?= {
+		if = {
+			limit = {
+				is_independent_ruler = yes
+				government_allows = administrative
+				primary_title = { is_in_list = faction_titles }
+			}
+			every_held_title = {
+				limit = {
+					is_noble_family_title = no
+					tier > tier_barony
+				}
+				add_to_list = faction_titles
+			}
 		}
 	}
 	ordered_in_list = {
@@ -837,7 +1069,7 @@ on_claimant_faction_war_win_common = {
 		titles = faction_titles
 		attacker = $ATTACKER$
 		defender = $DEFENDER$
-		claimant = $CLAIMANT$
+		claimant = scope:the_claimant
 		change = scope:change
 		civil_war = yes
 	}
@@ -846,9 +1078,9 @@ on_claimant_faction_war_win_common = {
 	if = {
 		limit = {
 			scope:target_title.holder = { is_independent_ruler = no }
-			$CLAIMANT$.primary_title.tier < scope:target_title.tier
+			scope:the_claimant.primary_title.tier < scope:target_title.tier
 		}
-		$CLAIMANT$ = {
+		scope:the_claimant = {
 			change_liege = {
 				liege = scope:target_title.holder.liege
 				change = scope:change
@@ -861,27 +1093,61 @@ on_claimant_faction_war_win_common = {
 		limit = {
 			scope:target_title.holder = {
 				has_royal_court = yes
+				has_dlc_feature = royal_court
 			}
-			$CLAIMANT$ = {
+			scope:the_claimant = {
 				has_royal_court = no
 			}
 		}
-		$CLAIMANT$ = {
+		scope:the_claimant = {
 			set_variable = {
 				name = previous_holder_grandeur_value
 				value = scope:target_title.holder.court_grandeur_current
 			}
-			save_scope_as = claimant_scope # The CLAIMANT scope is lost after the next step, so have to save the scope here
+		}
+	}
+	
+	hidden_effect = {
+		if = {
+			limit = {
+				exists = scope:target_title.holder.dynasty
+				exists = scope:the_claimant.dynasty
+				scope:target_title.holder = {
+					ai_has_conqueror_personality = yes
+					scope:target_title.holder.dynasty = scope:the_claimant.dynasty
+				}
+				scope:the_claimant = {
+					OR = {
+						is_ai = no
+						ai_has_cautious_personality = no
+					}
+					ai_has_conqueror_personality = no
+				}
+			}
+			scope:the_claimant = {
+				if = {
+					limit = {
+						is_ai = no
+					}
+					trigger_event = {
+						id = conqueror.0001
+						days = 10
+					}
+				}
+				else = {
+					trigger_event = conqueror.0001
+				}
+			}
 		}
 	}
 
 	resolve_title_and_vassal_change = scope:change
-
+	
 	# We give you decent Legitimacy so you don't get immediately deposed - people _really_ want you in the throne
 	# Can you even get Legitimacy?
 	if = {
 		limit = {
-			$CLAIMANT$ = {
+			scope:the_claimant = {
 				is_valid_for_legitimacy_change = yes
 			}
 		}
@@ -890,7 +1156,7 @@ on_claimant_faction_war_win_common = {
 			limit = {
 				scope:target_title.tier = tier_empire
 			}
-			$CLAIMANT$ = {
+			scope:the_claimant = {
 				add_legitimacy = 1000
 			}
 		}
@@ -898,7 +1164,7 @@ on_claimant_faction_war_win_common = {
 			limit = {
 				scope:target_title.tier = tier_kingdom
 			}
-			$CLAIMANT$ = {
+			scope:the_claimant = {
 				add_legitimacy = 750
 			}
 		}
@@ -906,29 +1172,24 @@ on_claimant_faction_war_win_common = {
 			limit = {
 				scope:target_title.tier = tier_duchy
 			}
-			$CLAIMANT$ = {
+			scope:the_claimant = {
 				add_legitimacy = 500
 			}
 		}
 		else = {
-			$CLAIMANT$ = {
+			scope:the_claimant = {
 				add_legitimacy = 300
 			}
 		}
 		# Per number of faction members
-		$ATTACKER$.joined_faction = {
-			every_faction_member = {
-				add_to_list = num_faction_members
-			}
-		}
 		if = {
 			limit = {
 				list_size:num_faction_members > 0
-				$CLAIMANT$ = {
+				scope:the_claimant = {
 					is_valid_for_legitimacy_change = yes
 				}
 			}
-			$CLAIMANT$ = {
+			scope:the_claimant = {
 				add_legitimacy = {
 					value = list_size:num_faction_members
 					multiply = 50
@@ -938,20 +1199,35 @@ on_claimant_faction_war_win_common = {
 	}
 
 	# Add Appropriate Grandeur
+	scope:the_claimant = {
+		if = {
+			limit = {
+				exists = var:previous_holder_grandeur_value
+				has_royal_court = yes
+				has_dlc_feature = royal_court
+			}
+			hidden_effect = {
+				change_current_court_grandeur = -100 # Reset to 0
+				change_current_court_grandeur = var:previous_holder_grandeur_value
+				remove_variable = previous_holder_grandeur_value
+			}
+			change_current_court_grandeur = massive_court_grandeur_gain # Gain a bonus to Grandeur for winning a claim faction
+		}
+	}
+
+	# Warcraft
 	if = {
-		limit = { exists = scope:claimant_scope }
-		scope:claimant_scope = {
-			if = {
-				limit = {
-					exists = var:previous_holder_grandeur_value
-					has_royal_court = yes
-				}
-				hidden_effect = {
-					change_current_court_grandeur = -100 # Reset to 0
-					change_current_court_grandeur = var:previous_holder_grandeur_value
-					remove_variable = previous_holder_grandeur_value
-				}
-				change_current_court_grandeur = massive_court_grandeur_gain # Gain a bonus to Grandeur for winning a claim faction
+		limit = {
+			OR = {
+				scope:target_title = title:e_gorian_empire
+				scope:target_title = title:e_kaldorei
+			}
+			has_ep3_dlc_trigger = yes
+		}
+		scope:the_claimant = { 
+			trigger_event = {
+				id = ep3_emperor_yearly.2030
+				days = 15
 			}
 		}
 	}
@@ -977,7 +1253,14 @@ release_prisoners_of_war_effect = {
 					}
 				}
 			}
+			add_to_list = defender_valuable_prisoners_list
 			release_from_prison = yes
+		}
+		scope:war.primary_defender = {
+			set_variable = {
+				name = valuable_prisoners
+				value = list_size:defender_valuable_prisoners_list
+			}
 		}
 	}
 	#Prisoners of attackers
@@ -994,7 +1277,14 @@ release_prisoners_of_war_effect = {
 					}
 				}
 			}
+			add_to_list = attacker_valuable_prisoners_list
 			release_from_prison = yes
+		}
+		scope:war.primary_attacker = {
+			set_variable = {
+				name = valuable_prisoners
+				value = list_size:attacker_valuable_prisoners_list
+			}
 		}
 	}
 }
@@ -1028,6 +1318,7 @@ send_captured_combatant_message = {
 			$TOAST$ = yes
 		}
 		send_interface_toast = {
+			message_filter_type = combat_prisoners
 			title = $DESC$
 			left_icon = scope:left_character
 			right_icon = scope:right_character
@@ -1038,7 +1329,7 @@ send_captured_combatant_message = {
 			$IS_ENEMY_MESSAGE$ = no
 		}
 		send_interface_message = {
-			type = event_war_good
+			type = event_captured_combatants_good
 			title = $TITLE$
 			desc = $DESC$
 			left_icon = scope:left_character
@@ -1047,7 +1338,7 @@ send_captured_combatant_message = {
 	}
 	else = {
 		send_interface_message = {
-			type = event_war_bad
+			type = event_captured_combatants_bad
 			title = $TITLE$
 			desc = $DESC$
 			left_icon = scope:left_character
@@ -1084,6 +1375,7 @@ send_slain_combatant_message = {
 			$TOAST$ = yes
 		}
 		send_interface_toast = {
+			message_filter_type = combat_casualties
 			title =  $DESC$
 			left_icon = scope:left_character
 			right_icon = scope:right_character
@@ -1095,7 +1387,7 @@ send_slain_combatant_message = {
 			$IS_ENEMY_MESSAGE$ = no
 		}
 		send_interface_message = {
-			type = event_war_good
+			type = event_slain_combatants_good
 			title = $TITLE$
 			desc = $DESC$
 			left_icon = scope:left_character
@@ -1104,7 +1396,7 @@ send_slain_combatant_message = {
 	}
 	else = {
 		send_interface_message = {
-			type = event_war_bad
+			type = event_slain_combatants_bad
 			title = $TITLE$
 			desc = $DESC$
 			left_icon = scope:left_character
@@ -1127,8 +1419,8 @@ send_new_alliance_message = {
 					primary_defender = $THIS_CHARACTER$
 				}
 				# Don't send messages about alliances to landless courtiers (who can't actually join wars, alliance or no)
-				$THIS_CHARACTER$ = { is_landed = yes }
-				$OTHER_CHARACTER$ = { is_landed = yes }
+				$THIS_CHARACTER$ = { is_playable_character = yes }
+				$OTHER_CHARACTER$ = { is_playable_character = yes }
 			}
 			save_scope_as = this_war
 			$THIS_CHARACTER$ = { save_scope_as = this_character }
@@ -1140,6 +1432,7 @@ send_new_alliance_message = {
 					any_war_enemy = { this = scope:this_character}
 				}
 				send_interface_toast = {
+					type = msg_war_enemy_new_ally
 					title = enemy_gained_new_ally
 					left_icon = scope:this_character
 					right_icon = scope:other_character
@@ -1195,7 +1488,7 @@ add_truce_attacker_victory_effect = {
 			}
 		}
 	}
-	scope:defender = { # Vassal Stance opinion effect
+	scope:defender ?= { # Vassal Stance opinion effect
 		if = {
 			limit = {
 				any_vassal = {
@@ -1274,7 +1567,7 @@ add_truce_attacker_victory_effect = {
 			}
 		}
 	}
-	scope:defender = {
+	scope:defender ?= {
 		if = {
 			limit = {
 				existing_feud_against_target_trigger = { TARGET = scope:attacker }
@@ -1687,7 +1980,7 @@ notify_players_about_neighboring_war_resolution_effect = {
 				}
 				# Send combined message about both the winner and the loser.
 				send_interface_message = {
-					type = event_siege_lost_bad
+					type = msg_war_ended_neighbor
 					left_icon = scope:winner
 					right_icon = scope:loser
 					title = war_event.neighbor_war.both_neighbors.t
@@ -1697,7 +1990,7 @@ notify_players_about_neighboring_war_resolution_effect = {
 			else = {
 				# Send message only about the winner.
 				send_interface_message = {
-					type = event_siege_lost_bad
+					type = msg_war_ended_neighbor
 					left_icon = scope:winner
 					right_icon = scope:loser
 					title = war_event.neighbor_war.only_winner.t
@@ -1729,7 +2022,7 @@ notify_players_about_neighboring_war_resolution_effect = {
 
 			# Send message only about the loser.
 			send_interface_message = {
-				type = event_siege_lost_bad
+				type = msg_war_ended_neighbor
 				left_icon = scope:loser
 				right_icon = scope:winner
 				title = war_event.neighbor_war.only_loser.t
@@ -1776,22 +2069,85 @@ add_prestige_war_defender_effect = {
 }
 
 pay_short_term_gold_reparations_effect = {
-	pay_short_term_gold = {
-		gold = {
-			value = $GOLD_VALUE$
-			if = {
-				limit= {
-					scope:defender.culture = {
-						has_cultural_parameter = more_gold_for_successful_defensive_wars
+	if = {
+		limit = { is_landless_adventurer = yes }
+		pay_short_term_gold = {
+			gold = {
+				value = medium_gold_value
+				multiply = $GOLD_VALUE$
+				if = {
+					limit= {
+						scope:defender.culture = { has_cultural_parameter = more_gold_for_successful_defensive_wars }
 					}
+					multiply = 2
 				}
-				multiply = 2
 			}
+			target = scope:defender
 		}
-		target = scope:defender
-		yearly_income = yes
+	}
+	else = {
+		pay_short_term_gold = {
+			gold = {
+				value = $GOLD_VALUE$
+				if = {
+					limit= {
+						scope:defender.culture = { has_cultural_parameter = more_gold_for_successful_defensive_wars }
+					}
+					multiply = 2
+				}
+			}
+			target = scope:defender
+			yearly_income = yes # STANDARD
+		}
 	}
 }
 
+pay_short_term_gold_reparations_prefer_greater_income_effect = {
+	if = {
+		limit = { scope:defender.yearly_character_income >= scope:attacker.yearly_character_income }
+		pay_short_term_gold = {
+			gold = {
+				value = scope:defender.yearly_character_income
+				multiply = {
+					add = $FACTOR$
+					if = {
+						limit= {
+							scope:defender.culture = {
+								has_cultural_parameter = more_gold_for_successful_defensive_wars
+							}
+						}
+						multiply = 2
+					}
+				}
+			}
+			target = scope:defender
+		}
+	}
+	else = {
+		pay_short_term_gold = {
+			gold = {
+				value = yearly_character_income
+				multiply = {
+					add = $FACTOR$
+					if = {
+						limit= {
+							scope:defender.culture = {
+								has_cultural_parameter = more_gold_for_successful_defensive_wars
+							}
+						}
+						multiply = 2
+					}
+				}
+			}
+			target = scope:defender
+		}
+	}
+}
+
+
 # Warcraft
 #mongol_invasion_county_looting_chance_effect
+
+intrigue_duel_on_attack_effect = {
+	#Warcraft
+}
