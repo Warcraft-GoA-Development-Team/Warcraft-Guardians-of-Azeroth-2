@@ -82,6 +82,11 @@ Code
             tiAlpha = 1.0 - PdxTex2DLod0(tiProximity, UV).a;
         #endif
 
+        if (WC_GetPandariaHiddenValue() < 0.1)
+        {
+            return 1.0;
+        }
+
         bool tiEnabled = WC_GetTerraIncognitaEnabled(UV);
         if (tiEnabled && tiAlpha > 0)
         {

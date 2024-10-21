@@ -135,15 +135,11 @@ PixelShader =
 			float DistanceFieldValue = CalcDistanceFieldValue( NormalizedCoordinate );
 			float4 ProvinceOverlayColorWithAlpha = CalcPrimaryProvinceOverlay( NormalizedCoordinate, DistanceFieldValue );
 
+            ApplySecondaryProvinceOverlay( NormalizedCoordinate, DistanceFieldValue, ProvinceOverlayColorWithAlpha );
+            ApplyAlternateProvinceOverlay( NormalizedCoordinate, ProvinceOverlayColorWithAlpha );
+
 			// MOD(WC)
 			WC_TryDiscardOverlayColor(ProvinceOverlayColorWithAlpha, NormalizedCoordinate);
-			bool tiEnabled = WC_GetTerraIncognitaEnabled(float2( NormalizedCoordinate.x, 1.0 - NormalizedCoordinate.y ));
-
-			if(!tiEnabled) //TODO: Combine with above
-			{
-                ApplySecondaryProvinceOverlay( NormalizedCoordinate, DistanceFieldValue, ProvinceOverlayColorWithAlpha );
-                ApplyAlternateProvinceOverlay( NormalizedCoordinate, ProvinceOverlayColorWithAlpha );
-			}
 			// END MOD
 
 			GetGradiantBorderBlendValues( ProvinceOverlayColorWithAlpha, PreLightingBlend, PostLightingBlend );
