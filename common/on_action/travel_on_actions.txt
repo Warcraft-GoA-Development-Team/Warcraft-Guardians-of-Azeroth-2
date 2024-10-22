@@ -2,7 +2,7 @@
 on_travel_plan_movement = {
 	# It should be more likely to fire a danger event if it's valid for the given province
 	trigger = {
-		is_landed = yes
+		is_playable_character = yes
 		is_adult = yes 
 	}
 
@@ -10,6 +10,10 @@ on_travel_plan_movement = {
 		travel_event_tombola
 		delay = { days = 1 }
 		travel_danger_events_on_action
+		delay = { days = 2 }
+		adventurer_talent_scouting_on_action
+		delay = { days = 3 }
+		adventurer_encourage_realtionships_on_action
 	}
 
 	# Increment the count of how many provinces the character has passed through
@@ -87,7 +91,10 @@ on_travel_plan_movement = {
 					}
 				}
 			}
-		}		
+		}
+		# Visited Points of Interest tracker, currently only for Adventurers
+		points_of_interest_tracker_effect = yes
+
 		# If you have the cultural ambassador travel option, we create a list of all the cultures you visit along your travel path and give out a slight bump at the end of your travel to cultural acceptance between your culture and their cultures
 		current_travel_plan = {
 			# Create a list of all the cultures you visit so we can consistently check if we should add a new one. Never want to apply the cultural acceptance bonus twice
@@ -130,6 +137,7 @@ on_travel_plan_movement = {
 					var:cultural_ambassador_scope = { save_scope_as = cultural_ambassador }
 					root = {
 						send_interface_toast = {
+							type = event_toast_effect_good
 							title = cultural_ambassador_toast.t
 							left_icon = scope:cultural_ambassador
 							scope:current_culture = {
@@ -163,6 +171,313 @@ on_travel_plan_movement = {
 			trigger_event = {
 				id = bp2_yearly.6120
 				days = 2
+			}
+		}
+		#trigger contract completion event, if you have a contract with this location as contract destination
+		if = {
+			limit = {
+				is_landless_adventurer = yes
+				any_character_active_contract = {
+					var:task_contract_destination ?= root.current_travel_plan.current_location
+					trigger_if = {
+						limit = { exists = var:task_contract_object }
+						var:task_contract_object = {
+							current_travel_plan ?= {
+								travel_plan_owner = root
+							}
+						}
+					}
+				}
+			}
+			every_character_active_contract = {
+				limit = {
+					var:task_contract_destination ?= root.current_travel_plan.current_location
+					trigger_if = {
+						limit = { exists = var:task_contract_object }
+						var:task_contract_object = {
+							current_travel_plan ?= {
+								travel_plan_owner = root
+							}
+						}
+					}
+				}
+				save_scope_as = task_contract
+				if = {
+					limit = {
+						ep3_transport_contract_trigger = yes
+					}
+					task_contract_taker = {
+						trigger_event = ep3_contract_event.0011
+					}
+				}
+				else_if = {
+					limit = {
+						has_task_contract_type = laamp_help_increase_control_contract
+					}
+					task_contract_taker = {
+						trigger_event = ep3_contract_event.0093
+					}
+				}
+			}
+		}
+		# General laamp effects.
+		if = {
+			limit = {
+				current_travel_plan = { is_travel_with_domicile = yes }
+			}
+			# Trigger interface alert if provisions are critically low
+			root = {
+				if = {
+					limit = {
+						domicile.provisions < provisions_threshold_critical_low_value
+						NOT = { has_character_flag = notified_of_low_provisions }
+					}
+					send_interface_message = {
+						type = danger_landless_adventurer_bad_with_text
+						title = critically_low_provisions_alert
+						left_icon = root
+						# Add a small cooldown, or it will trigger for every province you enter!
+						add_character_flag = {
+							flag = notified_of_low_provisions
+							years = 1
+						}
+						desc = critically_low_provisions_alert_desc
+					}
+				}
+			}
+			# Trigger the low provisions events if appropriate.
+			trigger_event = { on_action = travel_laamps_provisions_on_action }
+			# Small chance of seeing contracts on the road as you go.
+			if = {
+				limit = {
+					is_ai = no
+					location = { is_sea_province = no }
+				}
+				random = {
+					chance = 5
+					save_scope_value_as = {
+						name = toggle_distance_ignore
+						value = yes
+					}
+					populate_location_with_special_contracts_effect = {
+						AREA_CHAR = location.county.holder
+						AMOUNT = 1
+					}
+				}
+			}
+			# Clean up old contracts after you.
+			if = {
+				limit = { is_ai = no }
+				save_scope_as = char_temp
+				every_character_task_contract = {
+					limit = {
+						NOR = {
+							has_variable = retain_despite_distance
+							#TODO_CD_EP3; we should get code support to just check if a contract has been actively taken, can't be a hard trigger.
+							save_temporary_scope_as = contract_temp
+							scope:char_temp = {
+								any_character_active_contract = { this = scope:contract_temp }
+							}
+						}
+						"task_contract_location.squared_distance(scope:char_temp.location)" > define:NTaskContract|ADVENTURER_DISTANCE_RESTRICTION
+					}
+					invalidate_contract = yes
+				}
+			}
+		}
+		if = {
+			limit = {
+				current_travel_plan ?= { has_travel_option = adventurers_make_local_deals_option }
+				NOT = {
+					is_target_in_variable_list = {
+						name = haggle_provinces
+						target = root.current_travel_plan.current_location
+					}
+				}
+				root.current_travel_plan.current_location.available_loot > 0
+			}
+			add_gold = adventurers_make_local_deals_option_value
+			add_to_variable_list = {
+				name = haggle_provinces
+				target = root.current_travel_plan.current_location 
+			}
+		}
+		if = {
+			limit = {
+				current_travel_plan ?= { has_travel_option = adventurers_search_for_secrets_option }
+				root.current_travel_plan.current_location = {
+					any_character_in_location = {
+						NOR = {
+							this = root
+							is_courtier_of = root
+						}
+						any_secret = {
+							NOT = { is_known_by = root }
+							is_blackmailable_secret_trigger = {
+								PARTICIPANT = prev
+								BLACKMAILER = root
+							}
+						}
+					}
+				}
+			}
+			random = {
+				chance = root.intrigue
+				root.current_travel_plan.current_location = {
+					random_character_in_location = {
+						limit = {
+							NOR = {
+								this = root
+								is_courtier_of = root
+							}
+							any_secret = {
+								NOT = { is_known_by = root }
+								is_blackmailable_secret_trigger = {
+									PARTICIPANT = prev
+									BLACKMAILER = root
+								}
+							}
+						}
+						random_secret = {
+							limit = {
+								NOT = { is_known_by = root }
+								is_blackmailable_secret_trigger = {
+									PARTICIPANT = prev
+									BLACKMAILER = root
+								}
+							}
+							save_scope_as = secret_target
+						}
+						save_scope_as = secret_target_holder
+					}
+				}
+				send_interface_message = {
+					type = secret_discovered_message
+					title = adventurers_search_for_secrets_option.title
+					left_icon = scope:secret_target_holder
+					scope:secret_target = {
+						reveal_to_without_events_effect = {
+							CHARACTER = root
+						}
+					}
+				}
+			}
+		}
+		if = {
+			limit = {
+				current_travel_plan ?= { has_travel_option = adventurers_proselytize_zealously_option }
+				any_pool_character = {
+					province = root.current_travel_plan.current_location
+					is_physically_able_adult = yes
+					NOR = {
+						faith = root.faith
+						has_relation_rival = root
+						has_character_flag = ai_will_not_convert
+						has_trait = zealous
+					}
+					OR = {
+						is_pool_character = yes
+						is_pool_guest = yes
+					}
+				}
+			}
+			random = {
+				chance = root.learning
+				random_pool_character = {
+					province = root.current_travel_plan.current_location
+					limit = {
+						is_physically_able_adult = yes
+						NOR = {
+							faith = root.faith
+							has_relation_rival = root
+							has_character_flag = ai_will_not_convert
+							has_trait = zealous
+						}
+						OR = {
+							is_pool_character = yes
+							is_pool_guest = yes
+						}
+					}
+					save_scope_as = wanderer_to_convert
+				}
+				send_interface_message = {
+					type = send_interface_message_good
+					title = adventurers_proselytize_zealously_option.title
+					left_icon = scope:wanderer_to_convert
+					add_piety = minor_piety_value
+					scope:wanderer_to_convert = {
+						set_character_faith = root.faith
+					}
+				}
+			}
+		}
+		if = {
+			limit = {
+				current_travel_plan ?= { has_travel_option = adventurers_gather_inspiration_option }
+				any_courtier = {
+					is_physically_able_ai_adult = yes
+					NOT = { exists = inspiration }
+				}
+			}
+			random = {
+				chance = {
+					value = root.stewardship
+					divide = 6
+					min = 1
+				}
+				random_courtier = {
+					limit = {
+						is_physically_able_ai_adult = yes
+						NOT = { exists = inspiration }
+					}
+					save_scope_as = inspired_follower
+					grant_inspiration_to_character_no_court_artifacts_effect = { CHARACTER = this }
+				}
+				send_interface_message = {
+					type = send_interface_message_good
+					title = adventurers_gather_inspiration_option.title
+					left_icon = scope:inspired_follower
+					scope:inspired_follower = {
+						custom_tooltip = {
+							text = adventurers_gather_inspiration_option.effect
+						}
+					}
+				}
+			}
+		}
+		if = {
+			limit = {
+				has_perk = church_and_state_perk
+				is_landless_adventurer = yes
+				location = { has_holding_type = church_holding }
+			}
+			add_piety = miniscule_piety_gain
+		}
+		# laamp_base_1041/Ambush Travellers task contract minigame.
+		current_travel_plan ?= {
+			if = {
+				limit = { has_variable = activate_laamp_base_1041_logic }
+				travel_plan_owner.var:laamp_base_1041_travel_plan_contract_storage = {
+					if = {
+						limit = { var:event_ratio_tracker >= 1 }
+						increment_variable_effect = {
+							VAR = event_ratio_tracker
+							VAL = -1
+						}
+					}
+					else_if = {
+						limit = { var:encounters_tally < var:encounters_max }
+						root = { trigger_event = laamp_base_contract_schemes.1782 }
+						set_variable = {
+							name = event_ratio_tracker
+							value = var:event_ratio
+						}
+						increment_variable_effect = {
+							VAR = encounters_tally
+							VAL = 1
+						}
+					}
+				}
 			}
 		}
 	}
@@ -224,11 +539,9 @@ travel_danger_events_on_action = {
 		100 = travel_events.3070 # Danger! Bandits on a bridge
 		100 = travel_events.3100 #Danger! Steppe - Feeble mounts
 		100 = travel_events.3120 #Danger! Taiga/Jungle/Forest - Woods catch fire
-		100 = travel_events.3130 #Danger! Rival - Rival sends professional assassin to get you
+		50 = travel_events.3130 #Danger! Rival - Rival sends professional assassin to get you
 		100 = travel_events.3140 #Danger! Army in province - Army in province tries to capture you
 		100 = travel_events.3160 #Danger! Forest/Taiga/Battle in province - Crows find you
-		100 = travel_events.4016 # You experience heatstroke
-		100 = travel_events.2016 #Visit a hill farm - Bull rush! (moved here because of extreme danger)
 		100 = travel_events.4007 # Danger! A storm at sea
 		100 = travel_events.4016 # Danger! You experience heatstroke
 		100 = travel_events.2016 # Danger! Visit a hill farm - Bull rush! (moved here because of extreme danger)
@@ -238,6 +551,18 @@ travel_danger_events_on_action = {
 		100 = travel_events.2106 # Danger! You get attacked while passing through a capital province; will the Province Owner help you?
 		100 = travel_events.4020 # Danger! Strong believers harass your caravan and demand payment
 		100 = travel_events.4003 # You encounter vikings at sea
+		250 = bp1_yearly.0100 # You are caught in a storm and a rival's property is the only shelter
+		
+		# Laamp Travel Danger Events
+		350 = ep3_laamp_flavour_ewan.4001	# Bandits! - Bandit raid.
+		350 = ep3_laamp_flavour_ewan.4021	# Parched - Difficulty finding water.
+		200 = ep3_laamp_flavour_ewan.4031	# Sickness in the Herd - Pack animals are sick or wounded.
+		100 = ep3_laamp_flavour_ewan.4041	# Worn Down - Bad weather destroys wagons or pack animals.
+		100 = ep3_laamp_flavour_ewan.4051	# Supplies Unaccounted For - Supplies go missing in large armies.
+		100 = ep3_laamp_flavour_ewan.4061	# Eyes in the Night - local predator picking off people each evening.
+		350 = ep3_laamp_flavour_ewan.4071	# Slavers - bastards try to kidnap people from the edges of your train.
+		350 = ep3_laamp_flavour_ewan.4081	# Born of Desperation - hungry locals swarm at you, searching for food.
+		350 = ep3_laamp_flavour_ewan.4091	# Night Attack - unknown group assaults your camp one evening.
 	}
 }
 
@@ -260,6 +585,13 @@ travel_events_on_action = {
 	random_events = {
 		chance_of_no_event = {
 			value = 80
+			if = {
+				limit = {
+					is_ai = yes
+					highest_held_title_tier < tier_duchy
+				}
+				add = 15 # AI counts aren't particularly important
+			}
 		}
 		100 = 0 
 		5 = travel_events.1000 #Peasant with no shoes
@@ -314,9 +646,9 @@ travel_events_on_action = {
 		100 = travel_events.4022 # You witness some tree worship in a Sanctity of Nature province
 		100 = travel_events.4023 # Prester John! You find a same-religion ruler in a faraway land
 		100 = travel_events.4028 # You come across a runestone!
-		25 = travel_events.4029 # You come across dimwit strung up on a post
-		25 = travel_events.4031 # You come across a knight stuck in his armour
-		25 = travel_events.4032 # You come across a noble being assaulted by a random animal
+		100 = travel_events.4029 # You come across dimwit strung up on a post
+		100 = travel_events.4031 # You come across a knight stuck in his armour
+		100 = travel_events.4032 # You come across a noble being assaulted by a random animal
 		100 = travel_events.4033 # A witch who strangely isn't being burned
 		100 = travel_events.4035 # You are a witch and you're being harassed by locals
 		100 = travel_events.4036 # Caravaneers want to sell you some cool stuff
@@ -353,7 +685,7 @@ travel_events_on_action = {
 		300 = hunt_mystical_animal.1002
 
 		#FP3 Travelling through foreign faith land:
-		300 = travel_events_fp3.0010 #Dying Embers
+		#300 = travel_events_fp3.0010 #Dying Embers
 		300 = travel_events_fp3.0030 #A Feast for Falcons
 		#200 = fp3_scholarship.1010 # The Last Magi
 		#FP3 Travel Events
@@ -364,6 +696,20 @@ travel_events_on_action = {
 		#CE1 Travel Events
 		100 = legend_spread_events.8010 #Someone challenges you to a duel
 		100 = travel_events.5001 #You come across a local legend
+
+		#EP3 Travel Events
+		#1000 = ep3_travel_events.3000 #Waters of the Jordan
+		#300 = ep3_travel_events.3002 #Where Armenians Govern
+		#200 = ep3_travel_events.3010 #Anatolian Silence
+		400 = ep3_emperor_yearly.2180 #Pilgrims come across an estate
+		200 = court_events.3071 #Hidden - trigger court event for local ruler
+
+		# LAAMP travel events
+		100 = ep3_laamp_flavor.0001 # Carrion Eaters
+		300 = ep3_laamp_flavor.0060 # Dead Weight
+		200 = ep3_travel_events.8000 #To Belong Somewhere
+		200 = ep3_travel_events.8010 #Won't Be Missed
+		#1000 = ep3_story_cycle_violet_poet.1000 #Nature's Bounty
 	}
 }
 
@@ -393,13 +739,60 @@ on_travel_plan_arrival = {
 		100 = 0
 		100 = travel_events.3020 #A warm welcome
 	}
-	#effect = {
-	#	 Achievements.
-	#	if = {
-	#		limit = { is_ai = no }
-	#		ep2_im_in_my_elements_terrain_grabber_effect = yes
-	#	}
-	#}
+	effect = {
+		# Achievements.
+		if = {
+			limit = { is_ai = no }
+			ep2_im_in_my_elements_terrain_grabber_effect = yes
+		}
+		#trigger contract completion event, if you have a contract with this location as contract destination
+		if = {
+			limit = {
+				is_landless_adventurer = yes
+				any_character_active_contract = {
+					var:task_contract_destination ?= root.current_travel_plan.current_location
+					trigger_if = {
+						limit = { exists = var:task_contract_object }
+						var:task_contract_object = {
+							current_travel_plan ?= {
+								travel_plan_owner = root
+							}
+						}
+					}
+				}
+			}
+			every_character_active_contract = {
+				limit = {
+					var:task_contract_destination ?= root.current_travel_plan.current_location
+					trigger_if = {
+						limit = { exists = var:task_contract_object }
+						var:task_contract_object = {
+							current_travel_plan ?= {
+								travel_plan_owner = root
+							}
+						}
+					}
+				}
+				save_scope_as = task_contract
+				if = {
+					limit = {
+						ep3_transport_contract_trigger = yes
+					}
+					task_contract_taker = {
+						trigger_event = ep3_contract_event.0011
+					}
+				}
+				else_if = {
+					limit = {
+						has_task_contract_type = laamp_help_increase_control_contract
+					}
+					task_contract_taker = {
+						trigger_event = ep3_contract_event.0093
+					}
+				}
+			}
+		}
+	}
 }
 
 # Starting a travel plan (starting to travel to the first destination)
@@ -408,11 +801,11 @@ on_travel_plan_start = {
 		OR = {
 			is_ruler = yes
 			AND = {
-				is_landed = no
+				is_playable_character = no
 				involved_activity ?= { has_activity_type = activity_playdate }
 			}
 		}
-		NOT = { has_character_flag = recently_invalidated_hostage }
+		NOT = { has_variable = recently_invalidated_hostage }
 	}
 	effect = {
 		if = {
@@ -461,10 +854,15 @@ on_travel_plan_start = {
 					any_court_position_holder = {
 						type = court_physician_court_position
 						is_available = yes
+						is_travel_entourage_character = no
 					}
 				}
 				random_court_position_holder = {
 					type = court_physician_court_position
+					limit = {
+						is_available = yes
+						is_travel_entourage_character = no
+					}
 					save_scope_as = court_phys
 				}
 				current_travel_plan = {
@@ -486,12 +884,37 @@ on_travel_plan_start = {
 				}
 				random_court_position_holder = {
 					type = bodyguard_court_position
+					limit = {
+						is_available = yes
+						is_travel_entourage_character = no
+					}
 					save_scope_as = bodyguard
 				}
 				current_travel_plan = {
 					add_companion = scope:bodyguard
 				}
 			}
+			# if = {
+			# 	limit = {
+			# 		employs_court_position = akolouthos_court_position
+			# 		current_travel_plan = {
+			# 			any_entourage_character = {
+			# 				NOT = { has_court_position = akolouthos_court_position }
+			# 			}
+			# 		}
+			# 		any_court_position_holder = {
+			# 			type = akolouthos_court_position
+			# 			is_available = yes
+			# 		}
+			# 	}
+			# 	random_court_position_holder = {
+			# 		type = akolouthos_court_position
+			# 		save_scope_as = bodyguard
+			# 	}
+			# 	current_travel_plan = {
+			# 		add_companion = scope:bodyguard
+			# 	}
+			# }
 			# Achievements.
 			## I'm in my Element(s)
 			#if = {
@@ -577,18 +1000,27 @@ on_travel_plan_start = {
 		travel_start_event.1060 #Going on a Pilgrimage
 		travel_start_event.1070 #Travelling to a Hunt
 		travel_start_event.1080 #Travelling to a Witch Ritual
+		ep3_contract_event.0002 #When doing a Contract as Landless Adventurer fill your entourage with relevant people
 		diarchy.0002 # Do we need to enter a regency or not?
+		ep3_laamp_flavour_ewan.1102 #Adventurer's child helps them pack
+		ep3_laamp_flavour_ewan.1103 #Follow-up events for adventurer's child helping with packing
 	}
 }
 
 # Completed a travel plan (arrived at final destination, or completed through script)
 # A travel plan ends either via 'on_travel_plan_complete' or 'on_travel_plan_abort'
 on_travel_plan_complete = {
-	trigger = { is_ruler = yes }
+	trigger = {
+		is_ruler = yes
+	}
 	first_valid = {
 		pilgrimage.9010 #Bury the old host after finishing the Pilgrimage
 		pilgrimage.9001 #Nice Spiritual Journey
+		ep3_laamps.8000 # You arrive at a place you have a claim on
 		travel_completion_event.1000
+	}
+	events = {
+		ep3_laamps.9971
 	}
 
 	effect = {
@@ -629,11 +1061,42 @@ on_travel_plan_complete = {
 				}
 			}
 		}
-		# Achievements.
-		#if = {
-		#	limit = { is_ai = no }
-		#	ep2_im_in_my_elements_terrain_grabber_effect = yes
-		#}
+		# # Achievements.
+		# if = {
+		# 	limit = { is_ai = no }
+		# 	ep2_im_in_my_elements_terrain_grabber_effect = yes
+		# }
+		# Give us fresh contracts if necessary.
+		if = {
+			limit = {
+				current_travel_plan = { is_travel_with_domicile = yes }
+			}
+			#inform about moving the domicile
+			send_interface_message = {
+				type = msg_domicile_moved
+				left_icon = root
+				right_icon = root.location.barony
+			}
+			# Set up additional firing contracts.
+			player_adventurer_contract_generation_on_wait_in_place_effect = yes
+			# Generate contracts if you are far away from your previous location.
+			player_adventurer_contract_generation_on_domicile_moved_effect = yes
+			# If necessary, remove them immediately.
+			remove_laamp_from_exiled_county_automatically_effect = {
+				PROVINCE = root.location
+				LAAMP = root
+			}
+		}
+
+		# Visited Points of Interest tracker, currently only for Adventurers
+		points_of_interest_tracker_effect = yes
+
+		zealous_missionary_conversion_effect = yes
+
+		if = {
+			limit = {has_character_modifier = laamp_provisions_forgiveness_travel_modifier }
+			remove_character_modifier = laamp_provisions_forgiveness_travel_modifier
+		}
 	}
 }
 
@@ -644,13 +1107,59 @@ on_travel_plan_abort = {
 	trigger = { is_ruler = yes }
 	events = {
 		travel_completion_event.1000
+		ep3_laamps.9971
 	}
 	effect = {
+		if = {
+			limit = { has_variable = ep3_laamp_decision_1000_is_excavating }
+			remove_variable = ep3_laamp_decision_1000_is_excavating
+		}
 		if = {
 			limit = {
 				exists = var:travel_plan_start_date
 			}
 			remove_variable = travel_plan_start_date
+		}
+		if = {
+			limit = {
+				current_travel_plan = { is_travel_with_domicile = yes }
+				# Check we're still an adventurer, as we may have inherited land whilst travelling.
+				is_landless_adventurer = yes
+			}
+			#inform about moving the domicile
+			send_interface_message = {
+				type = msg_domicile_moved
+				left_icon = root
+				right_icon = root.location.barony
+			}
+			# Set up additional firing contracts.
+			player_adventurer_contract_generation_on_wait_in_place_effect = yes
+			# Generate contracts if you are far away from your previous location.
+			player_adventurer_contract_generation_on_domicile_moved_effect = yes
+			# If necessary, remove them immediately.
+			remove_laamp_from_exiled_county_automatically_effect = {
+				PROVINCE = root.location
+				LAAMP = root
+			}
+		}
+		if = {
+			limit = {has_character_modifier = laamp_provisions_forgiveness_travel_modifier }
+			remove_character_modifier = laamp_provisions_forgiveness_travel_modifier
+		}
+		if = {
+			limit = {
+				has_character_flag = petition_liege_character_flag
+			}
+			send_interface_toast = {
+				type = event_toast_effect_neutral
+				title = petition_liege_costs_refunded
+				left_icon = root 
+				remove_decision_cooldown = petition_liege_decision
+				# refund prestige cost
+				add_prestige = standard_activity_cost
+			}
+			# remove variables and flags 
+			petition_liege_variable_cleanup_effect = yes
 		}
 	}
 }
@@ -661,10 +1170,15 @@ on_travel_plan_abort = {
 on_travel_plan_cancel = {
 	effect = {
 		if = {
+			limit = { has_variable = ep3_laamp_decision_1000_is_excavating }
+			remove_variable = ep3_laamp_decision_1000_is_excavating
+		}
+		if = {
 			limit = {
 				has_character_flag = petition_liege_character_flag
 			}
 			send_interface_toast = {
+				type = event_toast_effect_neutral
 				title = petition_liege_costs_refunded
 				left_icon = root 
 				remove_decision_cooldown = petition_liege_decision
@@ -672,40 +1186,14 @@ on_travel_plan_cancel = {
 				add_prestige = standard_activity_cost
 			}
 			# remove variables and flags 
-			if = {
-				limit = { has_variable = petition_liege_scope }
-				remove_variable = petition_liege_scope
-			}
-			if = {
-				limit = { has_variable = petition_type }
-				remove_variable = petition_type
-			}
-			if = {
-				limit = { has_variable = petition_liege_council_first }
-				remove_variable = petition_liege_council_first
-			}
-			if = {
-				limit = { has_variable = petition_liege_council_second }
-				remove_variable = petition_liege_council_second
-			}
-			if = {
-				limit = { has_character_flag = petition_liege_character_flag }
-				remove_character_flag = petition_liege_character_flag
-			}
-			if = {
-				limit = { has_variable_list = available_petitions }
-				clear_variable_list = available_petitions
-			}
-			if = {
-				limit = { has_variable_list = petitions_to_show }
-				clear_variable_list = petitions_to_show
-			}
+			petition_liege_variable_cleanup_effect = yes
 		}
 		if = {
 			limit = {
 				has_variable = homage_liege_scope
 			}
 			send_interface_toast = {
+				type = event_toast_effect_neutral
 				title = pay_homage_costs_refunded
 				left_icon = root 
 				# Remove variable preventing you from paying homage again
@@ -773,7 +1261,7 @@ on_travel_activity_complete = {
 # If the travel is due to an activity and the activity is invalidated (not completed), this will trigger.
 # After this on_action, the travel plan will be rerouted home.
 on_travel_activity_invalidated = {
-
+	
 }
 
 # If the travel is due to an activity and the activity has started while this travel plan is still underway, this
@@ -807,7 +1295,7 @@ on_travel_activity_estimated_arrival_too_late = {
 # scope:old_travel_leader - The now removed leader.
 on_travel_leader_removed = {
 	trigger = {
-		is_landed = yes
+		is_playable_character = yes
 	}
 	events = {
 		travel_events.1020 # Provides the option to employ a new travel leader from your entourage or your current location
@@ -817,7 +1305,94 @@ on_travel_leader_removed = {
 #On action triggered from the poi_grand_city point of interest:
 on_visited_grand_city = {
 	events = {
-		travel_events_cities.1010
-		travel_events_cities.1020
+		#Warcraft
+# 		delay = { days = 1 }
+# 		travel_events_cities.1010
+# 		travel_events_cities.1020
+# 		#travel_events_cities.1030
+	}
+}
+
+#On action triggered from ep3 points of interest
+on_visited_ep3_monument = {
+	events = {
+		#ep3_travel_events.3001
+	}
+}
+
+#Used in the debug interaction debug_move_domicile_interaction
+on_travel_relocation_start = {
+	effect = {
+		every_courtier_or_guest = { #take everyone you have with you
+			limit = {
+				NOT = { exists = current_travel_plan }
+			}
+			root.current_travel_plan = {
+				add_companion = prev
+			}
+		}
+	}
+}
+
+#Used in the debug interaction debug_move_domicile_interaction
+on_travel_relocation_end = {
+	effect = {
+	}
+}
+
+travel_laamps_provisions_on_action = {
+	trigger = {
+		exists = domicile
+		domicile.provisions <= provisions_privation_threshold_start
+	}
+
+	events = {
+		ep3_laamps_provisions.1080
+	}
+	
+	random_events = {
+		chance_of_no_event = {
+			value = 10
+		}
+		100 = ep3_laamps_provisions.1000
+		100 = ep3_laamps_provisions.1010
+		100 = ep3_laamps_provisions.1020
+		100 = ep3_laamps_provisions.1025
+		100 = ep3_laamps_provisions.1030
+		100 = ep3_laamps_provisions.1040
+		100 = ep3_laamps_provisions.1050
+		100 = ep3_laamps_provisions.1060
+		500 = ep3_laamps_provisions.1070
+	}
+}
+
+adventurer_talent_scouting_on_action = {
+	trigger = {
+		OR = {
+			current_travel_plan ?= { has_travel_option = adventurers_scout_for_talent_option }
+			has_perk = toe_the_line_perk
+		}
+	}
+	random_events = {
+		chance_of_no_event = {
+			value = 50
+		}
+		100 = 0
+		100 = ep3_travel_option_events.0001
+	}
+}
+
+adventurer_encourage_realtionships_on_action = {
+	trigger = {
+		current_travel_plan ?= { has_travel_option = adventurers_encourage_relationships_option }
+	}
+	random_events = {
+		chance_of_no_event = {
+			value = 50
+		}
+		100 = 0
+		100 = ep3_travel_option_events.0002
+		100 = ep3_travel_option_events.0003
+		100 = ep3_travel_option_events.0004
 	}
 }
