@@ -397,6 +397,10 @@ PixelShader =
 			CalculatePortraitLights( Input.WorldSpacePos, LightingProps._ShadowTerm, MaterialProps, DiffuseLight, SpecularLight );
 			
 			float3 Color = DiffuseIBL + SpecularIBL + DiffuseLight + SpecularLight;
+
+			#ifdef VARIATIONS_ENABLED
+				ApplyClothFresnel( Input, CameraPosition, Normal, Color );
+			#endif
 			
 			float3 SssColor = vec3(0.0f);
 			float SssMask = Properties.r;
@@ -602,7 +606,14 @@ PixelShader =
 				float2 UV0 = Input.UV0;
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );
 				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
+
+				#ifdef DOUBLE_SIDED_ENABLED
+					float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
+					float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw ) * ( PDX_IsFrontFace ? 1 : -1 );
+				#else
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );		
+				#endif
+
 				Properties.r = 1.0; // wipe this clean now, ready to be modified later
 				
 				#ifdef VARIATIONS_ENABLED
@@ -760,7 +771,10 @@ RasterizerState rasterizer_no_culling
 {
 	CullMode = "none"
 }
-
+RasterizerState rasterizer_back_culling
+{
+	CullMode = "back"
+}
 RasterizerState rasterizer_backfaces
 {
 	FrontCCW = yes
@@ -929,12 +943,28 @@ Effect portrait_attachment_with_coa
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
+Effect portrait_attachment_with_coaShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
+}
+
 Effect portrait_attachment_alpha_to_coverage_with_coa
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coaShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_attachment_with_coa_and_variations
@@ -944,12 +974,28 @@ Effect portrait_attachment_with_coa_and_variations
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
 }
 
+Effect portrait_attachment_with_coa_and_variationsShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDXMESH_DISABLE_DITHERED_OPACITY" "PDX_MESH_BLENDSHAPES" }
+}
+
 Effect portrait_attachment_alpha_to_coverage_with_coa_and_variations
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_attachment"
 	BlendState = "alpha_to_coverage"
 	Defines = { "EMISSIVE_NORMAL_BLUE" "COA_ENABLED" "VARIATIONS_ENABLED" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect portrait_attachment_alpha_to_coverage_with_coa_and_variationsShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = "ShadowRasterizerState"
+	Defines = { "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect portrait_hair

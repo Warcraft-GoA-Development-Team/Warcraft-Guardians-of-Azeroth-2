@@ -144,7 +144,7 @@ head_of_faith_selection_weight = {
 	add = {
 		value = diplomacy
 		multiply = 1
-	}
+	}	
 }
 ################
 # Demand Conversion chance calculation
@@ -246,7 +246,7 @@ demand_conversion_likelihood_calculation = {
 		}
 		add = 15
 	}
-
+	
 	if = {
 		limit = {
 			has_trait = zealous
@@ -278,9 +278,9 @@ demand_conversion_likelihood_calculation = {
 		}
 		add = 50
 	}
-
-
-
+	
+	
+		
 	if = {
 		limit = {
 			scope:recipient = {
@@ -378,40 +378,14 @@ claim_piety_value = {
 			value = scope:actor.sub_realm_size
 			multiply = 10
 		}
+		# Landless adventurers can't get cheap access to legitimists without putting in some leg-work.
+		if = {
+			limit = {
+				scope:actor = { is_landless_adventurer = yes }
+			}
+			multiply = 10
+		}
 	}
-}
-
-minor_claim_piety_value = {
-	value = minor_piety_value
-	multiply = 2
-}
-medium_claim_piety_value = {
-	value = minor_claim_piety_value
-	multiply = 2
-}
-major_claim_piety_value = {
-	value = medium_claim_piety_value
-	multiply = 2
-}
-massive_claim_piety_value = {
-	value = major_claim_piety_value
-	multiply = 2
-}
-minor_claim_piety_loss = {
-	value = 0
-	subtract = minor_claim_piety_value
-}
-medium_claim_piety_loss = {
-	value = 0
-	subtract = medium_claim_piety_value
-}
-major_claim_piety_loss = {
-	value = 0
-	subtract = major_claim_piety_value
-}
-massive_claim_piety_loss = {
-	value = 0
-	subtract = massive_claim_piety_value
 }
 
 #GHW Targeting Multipliers
@@ -475,10 +449,11 @@ great_holy_war_target_kingdom_weight = {
 				}
 			}
 		}
-		multiply = ghw_target_existing_same_faith_ruler
+		add = ghw_target_existing_same_faith_ruler
 	}
 
 	### 2 ###
+	### Abrahamics & Zoroastrians
 	# Documentation = {
 		# Avoid adding lots of reckless GHW stretch goals, as it'll mess up the targeting if every religion has a dozen apiece.
 	# }
@@ -785,8 +760,77 @@ ghw_war_start_handout_percentage = {
 holy_war_defensive_join_value = {
 	add = {
 		desc = "BASE_VALUE"
-		value = -1
+		value = -50
 		format = "BASE_VALUE_FORMAT"
+	}
+	add = {
+		desc = "zealous_personality"
+		value = ai_zeal
+	}
+	
+	add = {
+		desc = "bold_personality"
+		value = ai_boldness
+		divide = 2
+	}
+	
+	add = { # More fervent faiths are likelier to defend themselves en masse
+		desc = "high_fervor"
+		value = faith.fervor
+		divide = 5 # Max 20
+		if = {
+			limit = {
+				ai_zeal < 0
+			}
+			divide = 2 # Max 10 if not zealous
+		}
+	}
+	
+	if = {
+		limit = {
+			has_relation_rival = scope:attacker
+		}
+		add = {
+			desc = "you_are_rivals"
+			value = 200
+		}
+	}
+	
+	if = {
+		limit = {
+			OR = {
+				has_relation_friend = scope:defender
+				has_relation_lover = scope:defender
+			}
+		}
+		add = {
+			desc = "friends_with_defender"
+			value = 200
+		}
+	}
+	
+	# Less Likely if you dislike the target
+	if = {
+		limit = {
+			opinion = { target = scope:defender value <= -15 }
+			ai_zeal < 50
+		}
+		add = {
+			desc = "dislikes_defender"
+			value = -25
+		}
+	}
+	
+	# Much Less Likely if you really dislike the target
+	if = {
+		limit = {
+			opinion = { target = scope:defender value <= -50 }
+			ai_zeal < 50
+		}
+		add = {
+			desc = "strongly_dislikes_defender"
+			value = -50
+		}
 	}
 }
 
@@ -839,6 +883,9 @@ faith_conversion_cost_mult = {
 		}
 	}
 	if = {
+		limit = {
+			always = yes
+		}
 		multiply = {
 			value = 1
 			add = {
@@ -847,7 +894,7 @@ faith_conversion_cost_mult = {
 				desc = "faith_conversion_cost_fervor_difference"
 				format = "BREAKDOWN_FORMAT_PIETY_PERCENTAGE_POSITIVE_IS_BAD"
 			}
-		}
+		}	
 	}
 	# Try to always be cheaper than creating a new faith
 	if = {
@@ -1811,24 +1858,81 @@ ask_to_take_vows_piety_cost = {
 	value = {
 		add = medium_piety_value
 		if = {
-			limit = {
-				OR = {
-					is_child_of = liege
-					liege.primary_title = {
-						place_in_line_of_succession = {
-							target = prev
-							value <= 3
-						}
+			limit = { exists = scope:actor }
+			if = {
+				limit = {
+					OR = {
+						is_child_of = scope:actor
+						"scope:actor.primary_title.place_in_line_of_succession(scope:recipient)" <= 3
 					}
 				}
+				add = major_piety_value
 			}
-			add = major_piety_value
 		}
 		else_if = {
-			limit = {
-				is_close_family_of = liege
-			}
+			limit = { is_close_family_of = scope:actor }
 			add = medium_piety_value
 		}
 	}
+}
+
+# Simplified target kingdom weight for crusade specifically used to send help to Byzantium (ask_western_help_decision)
+
+great_holy_war_target_kingdom_weight_simplified = {
+	# Is the target kingdom a viable GHW target?
+	every_in_de_jure_hierarchy = {
+		# Check individual counties within the potential target de jure kingdom.
+		continue = { tier > tier_county }
+		# For every county with a GHWable liege...
+		limit = {
+			tier = tier_county
+			scope:the_faith = {
+				is_hostile_enough_for_holy_war_trigger = { FAITH = prev.holder.top_liege.faith }
+			}
+		}
+		add = 0.5
+	}
+	# Weight up the kingdom if it either has an existing same-faith holder, or at least a same-faith claimant.
+	if = {
+		limit = {
+			OR = {
+				AND = {
+					exists = holder
+					holder.faith = scope:the_faith
+				}
+				any_claimant = {
+					exists = this
+					faith = scope:the_faith
+					is_available_adult = yes
+				}
+			}
+		}
+		add = ghw_target_existing_same_faith_ruler
+	}
+	# # Christian heartlands
+	# if = {
+	# 	limit = {
+	# 		OR = {
+	# 			AND = {
+	# 				# Catholic sphere.
+	# 				scope:the_faith = { not_non_catholic_standard_christian_faith_trigger = yes }
+	# 				title_capital_county.title_province = {
+	# 					OR = {
+	# 						geographical_region = ghw_region_northern_italy
+	# 						geographical_region = ghw_region_france
+	# 						geographical_region = ghw_region_germany
+	# 						geographical_region = ghw_region_england
+	# 					}
+	# 				}
+	# 			}
+	# 		}
+	# 		add = major_piety_value
+	# 	}
+	# 	else_if = {
+	# 		limit = {
+	# 			is_close_family_of = liege
+	# 		}
+	# 		add = medium_piety_value
+	# 	}
+	# }
 }
