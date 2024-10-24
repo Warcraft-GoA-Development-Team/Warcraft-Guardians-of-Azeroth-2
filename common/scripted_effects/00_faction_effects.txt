@@ -39,12 +39,15 @@ join_faction_with_leave_blocker_effect = {
 }
 
 add_faction_cooldown_effect = {
-	custom_description = {
-		text = faction_cooldown_effect
-		value = $YEARS$
-		add_character_flag = {
-			flag = joining_faction_block
-			years = $YEARS$
+	if = {
+		limit = { is_landless_adventurer = no }
+		custom_description = {
+			text = faction_cooldown_effect
+			value = $YEARS$
+			add_character_flag = {
+				flag = joining_faction_block
+				years = $YEARS$
+			}
 		}
 	}
 }
@@ -350,6 +353,8 @@ split_noncontiguous_counties_from_revolt_effect = {
 # Parameters:
 #	$FACTION_LEADER$
 #	$TARGET_TITLE$
+#	$SOURCE_GOVERNMENT$
+#
 successful_popular_revolt_outcome_effect = {
 	# Save scopes for later usage.
 	$FACTION_LEADER$ = {
@@ -364,644 +369,704 @@ successful_popular_revolt_outcome_effect = {
 		}
 	}
 
-	# Compile a list of all counties belonging to the faction.
-	scope:popular_faction = {
-		every_faction_county_member = {
-			add_to_list = siezed_counties
+	if = { # Populists factions in an admin realm should aim to change state faith, if they are of the capital culture
+		limit = {
+			$SOURCE_GOVERNMENT$ = { government_allows = state_faith }
+			$FACTION_LEADER$.culture = scope:faction_target.capital_county.culture
+			$FACTION_LEADER$.faith != scope:faction_target.primary_title.state_faith
+		}
+
+		$SOURCE_GOVERNMENT$.primary_title = {
+			# Change the state faith
+			set_state_faith = $FACTION_LEADER$.faith
+			
+			# Try grabbing someone from the line of succession who practices the State Faith
+			if = {
+				limit = {
+					any_title_heir = {
+						faith = $FACTION_LEADER$.faith
+					}
+				}
+				ordered_title_heir = {
+					order_by = "appointment_candidate_score(prev)"
+					limit = {
+						faith = $FACTION_LEADER$.faith
+					}
+					save_scope_as = new_ruler
+				}
+			}
+			# Otherwise, make the peasant leader the new emperor
+			else = { $FACTION_LEADER$ = { save_scope_as = new_ruler } }
+
+			# Actually make the switch
+			create_title_and_vassal_change = {
+				type = conquest_populist
+				save_scope_as = change
+			}
+			# Transfer all titles to heir of primary title if only one governorship is held
+			hidden_effect = {
+				$SOURCE_GOVERNMENT$ = {
+					every_held_title = {
+						limit = {
+							tier >= tier_county
+							is_landless_type_title = no
+							is_noble_family_title = no
+						}
+						change_title_holder_include_vassals = {
+							holder = scope:new_ruler
+							change = scope:change
+							take_baronies = no
+						}
+					}
+				}
+			}
+			resolve_title_and_vassal_change = scope:change
 		}
 	}
-	# Additionally, if we're at war (and not just pressing demands)...
-	if = {
+	else_if = { # Populists factions of the state faith in an admin realm where the emperor is of a heretical faith simply take the empire
 		limit = {
-			$FACTION_LEADER$ = {
-				is_at_war_with = scope:faction_target
-			}
+			$SOURCE_GOVERNMENT$ = { government_allows = state_faith }
+			$FACTION_LEADER$.faith = scope:faction_target.primary_title.state_faith
+			$FACTION_LEADER$.faith != scope:faction_target.faith
 		}
-		scope:faction_target = {
-			every_sub_realm_county = {
-				limit = {
-					county_controller = $FACTION_LEADER$
-					faith = $FACTION_LEADER$.faith
+
+		$SOURCE_GOVERNMENT$.primary_title = {
+			
+			$FACTION_LEADER$ = { save_scope_as = new_ruler }
+
+			# Actually make the switch
+			create_title_and_vassal_change = {
+				type = conquest_populist
+				save_scope_as = change
+			}
+			# Transfer all titles to heir of primary title if only one governorship is held
+			hidden_effect = {
+				$SOURCE_GOVERNMENT$ = {
+					every_held_title = {
+						limit = {
+							tier >= tier_county
+							is_landless_type_title = no
+							is_noble_family_title = no
+						}
+						change_title_holder_include_vassals = {
+							holder = scope:new_ruler
+							change = scope:change
+							take_baronies = no
+						}
+					}
 				}
+			}
+			resolve_title_and_vassal_change = scope:change
+		}
+	}
+	else = { # Otherwise we run the normal script
+
+		# Compile a list of all counties belonging to the faction.
+		scope:popular_faction = {
+			every_faction_county_member = {
 				add_to_list = siezed_counties
 			}
 		}
-
-		# And add any war members that aren't already in the faction.
-		$FACTION_LEADER$ = {
-			every_character_war = {
-				limit = {
-					is_defender = scope:faction_target
+		# Additionally, if we're at war (and not just pressing demands)...
+		if = {
+			limit = {
+				$FACTION_LEADER$ = {
+					is_at_war_with = scope:faction_target
 				}
-				every_war_attacker = {
+			}
+			# Add all occupied counties of the correct culture/faith.
+			scope:faction_target = {
+				every_sub_realm_county = {
 					limit = {
-						NOT = { is_in_list = faction_members }
+						county_controller = $FACTION_LEADER$
+						faith = $FACTION_LEADER$.faith
 					}
-					add_to_list = faction_members
+					add_to_list = siezed_counties
+				}
+			}
+			
+			# And add any war members that aren't already in the faction.
+			$FACTION_LEADER$ = {
+				every_character_war = {
+					limit = {
+						is_defender = scope:faction_target
+					}
+					every_war_attacker = {
+						limit = {
+							NOT = { is_in_list = faction_members }
+						}
+						add_to_list = faction_members
+					}
 				}
 			}
 		}
-	}
 
-	# Select a 'capital' county for the faction leader, this will be removed from the siezed county list as we will handle it separately.
-	scope:popular_faction = {
-		ordered_faction_county_member = {
-			order_by = {
-				value = total_county_levies
+		# Select a 'capital' county for the faction leader.
+		scope:popular_faction = {
+			ordered_faction_county_member = {
+				order_by = {
+					value = total_county_levies
 
-				multiply = {
-					value = 1
+					multiply = {
+						value = 1
 
-					# Up to 50% bonus points for counties of the correct culture/faith.
-					if = {
-						limit = { culture = $FACTION_LEADER$.culture }
-						add = 0.25
-					}
-					if = {
-						limit = { faith = $FACTION_LEADER$.faith }
-						add = 0.25
-					}
-
-					# Additional 50% bonus points for counties located in the de jure area of the liege title we want to sieze.
-					if = {
-						limit = {
-							target_is_de_jure_liege_or_above = $TARGET_TITLE$
+						# Up to 50% bonus points for counties of the correct culture/faith.
+						if = {
+							limit = { culture = $FACTION_LEADER$.culture }
+							add = 0.25
 						}
-						add = 0.50
-					}
-
-					# Remove 75% for counties owned by a player.
-					if = {
-						limit = {
-							holder = { is_ai = no }
+						if = {
+							limit = { faith = $FACTION_LEADER$.faith }
+							add = 0.25
 						}
-						subtract = 0.75
+
+						# Additional 50% bonus points for counties located in the de jure area of the liege title we want to sieze.
+						if = {
+							limit = {
+								target_is_de_jure_liege_or_above = $TARGET_TITLE$
+							}
+							add = 0.50
+						}
+
+						# Remove 75% for counties owned by a player.
+						if = {
+							limit = {
+								holder = { is_ai = no }
+							}
+							subtract = 0.75
+						}
 					}
 				}
+
+				#remove_from_list = siezed_counties
+				save_scope_as = capital_county
 			}
-
-			#remove_from_list = siezed_counties
-			save_scope_as = capital_county
 		}
-	}
-
-	# CHANGE ZERO: Give the leader a county to stop landless characters from screwing up the hierarchy.
-	hidden_effect = {
+		
+		# CHANGE ZERO: Give the leader a county to stop landless characters from screwing up the hierarchy.
+		hidden_effect = {
+			create_title_and_vassal_change = {
+				type = conquest_populist
+				save_scope_as = change_zero
+				add_claim_on_loss = yes
+			}
+			scope:capital_county = {
+				change_title_holder = {
+					holder = $FACTION_LEADER$
+					change = scope:change_zero
+					take_baronies = no
+				}
+			}
+			resolve_title_and_vassal_change = scope:change_zero
+		}
+		
+		# Let's add in any additional counties belonging to other participants, which isn't part of the faction already, so that we can assign a kingdom/duchy tier title properly.
+		# (We'll remove these again further down.)
+		if = {
+			limit = {
+				any_in_list = {
+					list = faction_members
+					NOT = { this = $FACTION_LEADER$ }
+				}
+			}
+			every_in_list = {
+				list = faction_members
+				limit = {
+					NOT = { this = $FACTION_LEADER$ }
+				}
+				every_sub_realm_county = {
+					limit = {
+						NOT = { is_in_list = siezed_counties }
+					}
+					add_to_list = siezed_counties
+				}
+			}
+		}
+		# CHANGE ONE: Give the leader an appropriately-ranked title.
 		create_title_and_vassal_change = {
 			type = conquest_populist
-			save_scope_as = change_zero
+			save_scope_as = change_one
 			add_claim_on_loss = yes
 		}
-		scope:capital_county = {
+		if = {
+			# Check if we can give them a kingdom.
+			limit = {
+				OR = {
+					any_in_list = { # If the realm is large enough to make a duchy unfeasible.
+						list = siezed_counties
+						count >= 20
+					}
+					any_in_list = { # If there is a kingdom title available for creation/usurpation.
+						list = siezed_counties
+						kingdom = {
+							any_de_jure_county = {
+								percent >= 0.5
+								is_in_list = siezed_counties
+							}
+							OR = {
+								NOT = { exists = holder }
+								trigger_if = {
+									limit = { exists = holder }
+									holder.top_liege = scope:faction_target 
+
+									# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+									trigger_if = {
+										limit = {
+											this = holder.primary_title
+											holder = holder.top_liege
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_kingdom
+												count >= 2
+											}
+										}
+									}
+
+									# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
+									trigger_if = {
+										limit = {
+											holder = { is_ai = no }
+											NOT = { holder = holder.top_liege }
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_kingdom
+												count >= 2
+											}
+										}
+									}
+								}
+							}
+							# Special block to stop populist factions from creating Germany if the HRE is still alive and kicking.
+							# Warcraft
+							# NAND = {
+							# 	this = title:k_east_francia
+							# 	exists = title:e_hre.holder
+							# }
+						}
+					}
+				}
+			}
+
+			# Check if we can create or usurp a De Jure Kingdom from the map
+			every_in_list = {
+				list = siezed_counties
+				kingdom = {
+					if = {
+						limit = {
+							any_de_jure_county = {
+								percent >= 0.5
+								is_in_list = siezed_counties
+							}
+							OR = {
+								NOT = { exists = holder }
+								trigger_if = {
+									limit = { exists = holder }
+									holder.top_liege = scope:faction_target 
+
+									# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+									trigger_if = {
+										limit = {
+											this = holder.primary_title
+											holder = holder.top_liege
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_kingdom
+												count >= 2
+											}
+										}
+									}
+
+									# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
+									trigger_if = {
+										limit = {
+											holder = { is_ai = no }
+											NOT = { holder = holder.top_liege }
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_kingdom
+												count >= 2
+											}
+										}
+									}
+								}
+							}
+							# Special block to stop populist factions from creating Germany if the HRE is still alive and kicking.
+							# Warcraft
+							# NAND = {
+							# 	this = title:k_east_francia
+							# 	exists = title:e_hre.holder
+							# }
+						}
+						add_to_list = potential_kingdoms
+					}
+				}
+			}
+
+			# If we found one or more valid De Jure Kingdoms, pick the best one for us to take.
+			if = {
+				limit = {
+					any_in_list = {
+						list = potential_kingdoms
+						count >= 1
+						# Warcraft
+					}
+				}
+				ordered_in_list = {
+					list = potential_kingdoms
+					limit = {
+						# Warcraft
+					}
+
+					order_by = {
+						value = 1
+						every_in_list = {
+							list = siezed_counties
+							limit = { kingdom = prev }
+							add = 1
+						}
+					}
+
+					change_title_holder = {
+						holder = $FACTION_LEADER$
+						change = scope:change_one
+					}
+				}
+			}
+			# Otherwise, create a new titular Kingdom title.
+			else = {
+				create_popular_revolt_title_effect = {
+					FACTION = scope:popular_faction
+					FACTION_LEADER = $FACTION_LEADER$
+					TIER = kingdom
+				}
+				scope:new_title = {
+					change_title_holder = {
+						holder = $FACTION_LEADER$
+						change = scope:change_one
+					}
+				}
+			}
+		}
+		else_if = {
+			# Check if we can give them a duchy.
+			limit = {
+				OR = {
+					any_in_list = { # If the realm is large enough to make a county as the highest tier unfeasible.
+						list = siezed_counties
+						count >= 8
+					}
+					any_in_list = { # If there is a duchy title available for creation/usurpation.
+						list = siezed_counties
+						duchy = {
+							any_de_jure_county = {
+								percent >= 0.5
+								is_in_list = siezed_counties
+							}
+							OR = {
+								NOT = { exists = holder }
+								trigger_if = {
+									limit = { exists = holder }
+									holder.top_liege = scope:faction_target
+				
+									# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+									trigger_if = {
+										limit = {
+											this = holder.primary_title
+											holder = holder.top_liege
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_duchy
+												count >= 2
+											}
+										}
+									}
+				
+									# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
+									trigger_if = {
+										limit = {
+											holder = { is_ai = no }
+											NOT = { holder = holder.top_liege }
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_duchy
+												count >= 2
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			# Check if we can create or usurp a De Jure Duchy from the map
+			every_in_list = {
+				list = siezed_counties
+				duchy = {
+					if = {
+						limit = {
+							any_de_jure_county = {
+								percent >= 0.4
+								is_in_list = siezed_counties
+							}
+							OR = {
+								NOT = { exists = holder }
+								trigger_if = {
+									limit = { exists = holder }
+									holder.top_liege = scope:faction_target
+
+									# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
+									trigger_if = {
+										limit = {
+											this = holder.primary_title
+											holder = holder.top_liege
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_duchy
+												count >= 2
+											}
+										}
+									}
+
+									# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
+									trigger_if = {
+										limit = {
+											holder = { is_ai = no }
+											NOT = { holder = holder.top_liege }
+										}
+										holder = {
+											any_held_title = {
+												tier = tier_duchy
+												count >= 2
+											}
+										}
+									}
+								}
+							}
+						}
+						add_to_list = potential_duchies
+					}
+				}
+			}
+
+			# If we found one or more valid De Jure Duchies, pick the best one for us to take.
+			if = {
+				limit = {
+					any_in_list = {
+						list = potential_duchies
+						count >= 1
+					}
+				}
+				ordered_in_list = {
+					list = potential_duchies
+
+					order_by = {
+						value = 1
+						every_in_list = {
+							list = siezed_counties
+							limit = { duchy = prev }
+							add = 1
+						}
+					}
+
+					change_title_holder = {
+						holder = $FACTION_LEADER$
+						change = scope:change_one
+					}
+				}
+			}
+			# Otherwise, create a new titular Duchy title.
+			else = {
+				create_popular_revolt_title_effect = {
+					FACTION = scope:popular_faction
+					FACTION_LEADER = $FACTION_LEADER$
+					TIER = duchy
+				}
+				scope:new_title = {
+					change_title_holder = {
+						holder = $FACTION_LEADER$
+						change = scope:change_one
+					}
+				}
+			}
+		}
+
+		# If the new realm is too small, or is unable to take/create a higher tier title, the populist leader only gets the county titles themselves.
+		resolve_title_and_vassal_change = scope:change_one
+		
+		# If the title we gave our leader is a new dynamic title, generate a CoA for it.
+		if = {
+			limit = {
+				exists = scope:new_title
+			}
+			scope:new_title = {
+				set_capital_county = scope:capital_county
+				generate_coa = yes
+			}
+		}
+
+		# CHANGE TWO: Transfer the siezed counties to the leader.
+		create_title_and_vassal_change = {
+			type = conquest_populist
+			save_scope_as = change_two
+			add_claim_on_loss = yes
+		}
+		if = { # But remove counties from any faction/war member first.
+			limit = {
+				any_in_list = {
+					list = faction_members
+					NOT = { this = $FACTION_LEADER$ }
+				}
+			}
+			every_in_list = {
+				list = faction_members
+				limit = {
+					NOT = { this = $FACTION_LEADER$ }
+				}
+				every_sub_realm_county = {
+					remove_from_list = siezed_counties
+				}
+			}
+		}
+		every_in_list = {
+			list = siezed_counties
+			
 			change_title_holder = {
 				holder = $FACTION_LEADER$
-				change = scope:change_zero
+				change = scope:change_two
 				take_baronies = no
 			}
 		}
-		resolve_title_and_vassal_change = scope:change_zero
-	}
-	
-	# Let's add in any additional counties belonging to other participants, which isn't part of the faction already, so that we can assign a kingdom/duchy tier title properly.
-	# (We'll remove these again further down.)
-	if = {
-		limit = {
-			any_in_list = {
-				list = faction_members
-				NOT = { this = $FACTION_LEADER$ }
-			}
+		resolve_title_and_vassal_change = scope:change_two
+
+		# CHANGE THREE: Split the leader off into an independent realm. Then make all faction members vassals of the populist leader.
+		create_title_and_vassal_change = {
+			type = conquest_populist
+			save_scope_as = change_three
+			add_claim_on_loss = yes
 		}
 		every_in_list = {
 			list = faction_members
-			limit = {
-				NOT = { this = $FACTION_LEADER$ }
-			}
-			every_sub_realm_county = {
+
+			# Lower-ranked vassals switch lieges to the faction leader.
+			if = {
 				limit = {
-					NOT = { is_in_list = siezed_counties }
+					this.primary_title.tier < $FACTION_LEADER$.primary_title.tier
+					this.primary_title.tier >= tier_county
+					NOT = { this = $FACTION_LEADER$ }
 				}
-				add_to_list = siezed_counties
-			}
-		}
-	}
-
-	# CHANGE ONE: Give the leader an appropriately-ranked title.
-	create_title_and_vassal_change = {
-		type = conquest_populist
-		save_scope_as = change_one
-		add_claim_on_loss = yes
-	}
-	if = {
-		# If 11+ counties were taken, give them a Kingdom.
-		limit = {
-			OR = {
-				any_in_list = { # If the realm is large enough to make a duchy unfeasible.
-					list = siezed_counties
-					count >= 20
-				}
-				any_in_list = { # If there is a kingdom title available for creation/usurpation.
-					list = siezed_counties
-					kingdom = {
-						any_de_jure_county = {
-							percent >= 0.5
-							is_in_list = siezed_counties
-						}
-						OR = {
-							NOT = { exists = holder }
-							trigger_if = {
-								limit = { exists = holder }
-								holder.top_liege = scope:faction_target 
-
-								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
-								trigger_if = {
-									limit = {
-										this = holder.primary_title
-										holder = holder.top_liege
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_kingdom
-											count >= 2
-										}
-									}
-								}
-
-								# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
-								trigger_if = {
-									limit = {
-										holder = { is_ai = no }
-										NOT = { holder = holder.top_liege }
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_kingdom
-											count >= 2
-										}
-									}
-								}
-							}
-						}
-						# Special block to stop populist factions from creating Germany if the HRE is still alive and kicking.
-						#NAND = {
-						#	this = title:k_east_francia
-						#	exists = title:e_hre.holder
-						#}
-					}
-				}
-			}
-		}
-
-		# Check if we can create or usurp a De Jure Kingdom from the map
-		every_in_list = {
-			list = siezed_counties
-			kingdom = {
-				if = {
-					limit = {
-						any_de_jure_county = {
-							percent >= 0.5
-							is_in_list = siezed_counties
-						}
-						OR = {
-							NOT = { exists = holder }
-							trigger_if = {
-								limit = { exists = holder }
-								holder.top_liege = scope:faction_target 
-
-								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
-								trigger_if = {
-									limit = {
-										this = holder.primary_title
-										holder = holder.top_liege
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_kingdom
-											count >= 2
-										}
-									}
-								}
-
-								# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
-								trigger_if = {
-									limit = {
-										holder = { is_ai = no }
-										NOT = { holder = holder.top_liege }
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_kingdom
-											count >= 2
-										}
-									}
-								}
-							}
-						}
-						# Special block to stop populist factions from creating Germany if the HRE is still alive and kicking.
-						#NAND = {
-						#	this = title:k_east_francia
-						#	exists = title:e_hre.holder
-						#}
-					}
-					add_to_list = potential_kingdoms
-				}
-			}
-		}
-
-		# If we found one or more valid De Jure Kingdoms, pick the best one for us to take.
-		if = {
-			limit = {
-				any_in_list = {
-					list = potential_kingdoms
-					count >= 1
-					
-					# Warcraft
-				}
-			}
-			ordered_in_list = {
-				list = potential_kingdoms
-				limit = {
-					# Warcraft
-				}
-
-				order_by = {
-					value = 1
-					every_in_list = {
-						list = siezed_counties
-						limit = { kingdom = prev }
-						add = 1
-					}
-				}
-
-				change_title_holder = {
-					holder = $FACTION_LEADER$
-					change = scope:change_one
-				}
-			}
-		}
-		# Otherwise, create a new titular Kingdom title.
-		else = {
-			create_popular_revolt_title_effect = {
-				FACTION = scope:popular_faction
-				FACTION_LEADER = $FACTION_LEADER$
-				TIER = kingdom
-			}
-			scope:new_title = {
-				change_title_holder = {
-					holder = $FACTION_LEADER$
-					change = scope:change_one
-				}
-			}
-		}
-	}
-
-	else_if = {
-		# If 5+ counties were taken, give them a Duchy.
-		limit = {
-			OR = {
-				any_in_list = { # If the realm is large enough to make a county as the highest tier unfeasible.
-					list = siezed_counties
-					count >= 8
-				}
-				any_in_list = { # If there is a duchy title available for creation/usurpation.
-					list = siezed_counties
-					duchy = {
-						any_de_jure_county = {
-							percent >= 0.5
-							is_in_list = siezed_counties
-						}
-						OR = {
-							NOT = { exists = holder }
-							trigger_if = {
-								limit = { exists = holder }
-								holder.top_liege = scope:faction_target
-			
-								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
-								trigger_if = {
-									limit = {
-										this = holder.primary_title
-										holder = holder.top_liege
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_duchy
-											count >= 2
-										}
-									}
-								}
-			
-								# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
-								trigger_if = {
-									limit = {
-										holder = { is_ai = no }
-										NOT = { holder = holder.top_liege }
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_duchy
-											count >= 2
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-
-		# Check if we can create or usurp a De Jure Duchy from the map
-		every_in_list = {
-			list = siezed_counties
-			duchy = {
-				if = {
-					limit = {
-						any_de_jure_county = {
-							percent >= 0.4
-							is_in_list = siezed_counties
-						}
-						OR = {
-							NOT = { exists = holder }
-							trigger_if = {
-								limit = { exists = holder }
-								holder.top_liege = scope:faction_target
-
-								# Don't usurp the primary title from independent rulers if they don't have an equal-tier title to replace it with.
-								trigger_if = {
-									limit = {
-										this = holder.primary_title
-										holder = holder.top_liege
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_duchy
-											count >= 2
-										}
-									}
-								}
-
-								# Don't usurp the primary title from vassal players if they don't have an equal-tier title to replace it with
-								trigger_if = {
-									limit = {
-										holder = { is_ai = no }
-										NOT = { holder = holder.top_liege }
-									}
-									holder = {
-										any_held_title = {
-											tier = tier_duchy
-											count >= 2
-										}
-									}
-								}
-							}
-						}
-					}
-					add_to_list = potential_duchies
-				}
-			}
-		}
-
-		# If we found one or more valid De Jure Duchies, pick the best one for us to take.
-		if = {
-			limit = {
-				any_in_list = {
-					list = potential_duchies
-					count >= 1
-				}
-			}
-			ordered_in_list = {
-				list = potential_duchies
-
-				order_by = {
-					value = 1
-					every_in_list = {
-						list = siezed_counties
-						limit = { duchy = prev }
-						add = 1
-					}
-				}
-
-				change_title_holder = {
-					holder = $FACTION_LEADER$
-					change = scope:change_one
-				}
-			}
-		}
-		# Otherwise, create a new titular Duchy title.
-		else = {
-			create_popular_revolt_title_effect = {
-				FACTION = scope:popular_faction
-				FACTION_LEADER = $FACTION_LEADER$
-				TIER = duchy
-			}
-			scope:new_title = {
-				change_title_holder = {
-					holder = $FACTION_LEADER$
-					change = scope:change_one
-				}
-			}
-		}
-	}
-
-	# If 4 or fewer counties were taken, leader only gets the county titles themselves.
-	resolve_title_and_vassal_change = scope:change_one
-
-	# If the title we gave our leader is a new dynamic title, generate a CoA for it.
-	if = {
-		limit = {
-			exists = scope:new_title
-		}
-		scope:new_title = {
-			set_capital_county = scope:capital_county
-			generate_coa = yes
-		}
-	}
-
-	# CHANGE TWO: Transfer the siezed counties to the leader.
-	create_title_and_vassal_change = {
-		type = conquest_populist
-		save_scope_as = change_two
-		add_claim_on_loss = yes
-	}
-	if = { # But remove counties from any faction/war member first.
-		limit = {
-			any_in_list = {
-				list = faction_members
-				NOT = { this = $FACTION_LEADER$ }
-			}
-		}
-		every_in_list = {
-			list = faction_members
-			limit = {
-				NOT = { this = $FACTION_LEADER$ }
-			}
-			every_sub_realm_county = {
-				remove_from_list = siezed_counties
-			}
-		}
-	}
-	every_in_list = {
-		list = siezed_counties
-		
-		change_title_holder = {
-			holder = $FACTION_LEADER$
-			change = scope:change_two
-			take_baronies = no
-		}
-	}
-	resolve_title_and_vassal_change = scope:change_two
-
-	# CHANGE THREE: Split the leader off into an independent realm. Then convert all faction members to vassals of the populist leader.
-	create_title_and_vassal_change = {
-		type = conquest_populist
-		save_scope_as = change_three
-		add_claim_on_loss = yes
-	}
-	every_in_list = {
-		list = faction_members
-
-		# Lower-ranked vassals switch lieges to the faction leader.
-		if = {
-			limit = {
-				this.primary_title.tier < $FACTION_LEADER$.primary_title.tier
-				this.primary_title.tier >= tier_county
-				NOT = { this = $FACTION_LEADER$ }
-			}
-			change_liege = {
-				liege = $FACTION_LEADER$
-				change = scope:change_three
-			}
-		}
-		# Same or higher-ranked vassal get independence.
-		else_if = {
-			limit = {
-				NOT = { this = $FACTION_LEADER$ }
-			}
-			hidden_effect = {
-				becomes_independent = {
+				change_liege = {
+					liege = $FACTION_LEADER$
 					change = scope:change_three
 				}
-				send_interface_toast = {
-					title = POPULIST_FACTION_INDEPENDENCE_TITLE
-					custom_tooltip = POPULIST_FACTION_INDEPENDENCE_DESC
-					left_icon = $FACTION_LEADER$
-					right_icon = scope:faction_target
-				}
 			}
-		}
-	}
-
-	resolve_title_and_vassal_change = scope:change_three
-
-	# Sub-change: if any counties have been offended by HumSac'ing, since they're revolting, and tempers have hit fever pitch, remove their county opinion malus.
-	$FACTION_LEADER$ = { fp1_remove_humsac_offended_counties_effect = yes }
-
-	# CHANGE FOUR: If there are any disconnected counties, split them off via exclave independence rules.
-	# However. We don't do this if there is a player in the faction, since it can remove land from the player, or in worst case, make the player game over.
-	if = {
-		limit = {
-			NOT = {
-				any_in_list = {
-					list = faction_members
-					is_ai = no
-				}
-			}
-		}
-		scope:capital_county = {
-			split_noncontiguous_counties_from_revolt_effect = {
-				FACTION_LEADER = $FACTION_LEADER$
-			}
-		}
-	}
-
-	# If the faction still exists, dissolve it (it's no longer relevant).
-	hidden_effect = {
-		if = {
-			limit = {
-				exists = scope:popular_faction
-			}
-			scope:popular_faction = {
-				destroy_faction = yes
-			}
-		}
-	}
-
-	#Set up government type.
-	hidden_effect = {
-		$FACTION_LEADER$ = {
-			# Warcraft
-			if = {
-				limit = { can_get_necro_government_trigger = yes }
-				change_necro_government_effect = yes
-			}
-			else_if = {
-				limit = { can_get_demonic_government_trigger = yes }
-				change_demonic_government_effect = yes
-			}
-			else_if = {
-				limit = { can_get_eldritch_government_trigger = yes }
-				change_eldritch_government_effect = yes
-			}
-			else_if = {
-				limit = { can_get_criminal_government_trigger = yes }
-				change_criminal_government_effect = yes
-			}
-			
-			#If sourced from tribal, make tribal.
+			# Same or higher-ranked vassal get independence.
 			else_if = {
 				limit = {
-					$SOURCE_GOVERNMENT$ = { government_has_flag = government_is_tribal }
+					NOT = { this = $FACTION_LEADER$ }
 				}
-				change_government = tribal_government
-				add_realm_law = tribal_authority_0
-				
-				# Warcraft
-				remove_realm_crown_authority_effect = yes
-			}
-			#If sourced from clan, make clan.
-			else_if = {
-				limit = {
-					$SOURCE_GOVERNMENT$ = { has_government = clan_government }
-				}
-				change_government = clan_government
-			}
-			#If sourced from feudal, make feudal.
-			else_if = {
-				limit = {
-					$SOURCE_GOVERNMENT$ = { has_government = feudal_government }
-				}
-				change_government = feudal_government
-			}
-			#If sourced elsewhere, and not Islamic, make feudal.
-			else_if = {
-				limit = {
-					$SOURCE_GOVERNMENT$ = {
-						NOR = {
-							has_government = tribal_government
-							has_government = clan_government
-							has_government = feudal_government
-						}
+				hidden_effect = {
+					becomes_independent = {
+						change = scope:change_three
 					}
-					
-					# Warcraft
-					# NOT = { like_islam_religion_trigger = yes }
+					send_interface_toast = {
+						type = event_toast_effect_good
+						title = POPULIST_FACTION_INDEPENDENCE_TITLE
+						custom_tooltip = POPULIST_FACTION_INDEPENDENCE_DESC
+						left_icon = $FACTION_LEADER$
+						right_icon = scope:faction_target
+					}
 				}
-				change_government = feudal_government
 			}
 		}
-	}
-	
-	# Give the leader some gold if they don't have any - We do this at the very end to make sure the gold is applied correctly.
-	hidden_effect = {
+
+		resolve_title_and_vassal_change = scope:change_three
+
+		# Sub-change: if any counties have been offended by HumSac'ing, since they're revolting, and tempers have hit fever pitch, remove their county opinion malus.
+		$FACTION_LEADER$ = { fp1_remove_humsac_offended_counties_effect = yes }
+
+		# CHANGE FOUR: If there are any disconnected counties, split them off via exclave independence rules.
+		# However. We don't do this if there is a player in the faction, since it can remove land from the player, or in worst case, make the player game over.
 		if = {
 			limit = {
-				$FACTION_LEADER$ = {
-					gold < 10
+				NOT = {
+					any_in_list = {
+						list = faction_members
+						is_ai = no
+					}
 				}
 			}
-			every_in_list = { # Scale the amount on the number of counties taken.
-				list = siezed_counties
-				$FACTION_LEADER$ = {
-					add_gold = 50
+			scope:capital_county = {
+				split_noncontiguous_counties_from_revolt_effect = {
+					FACTION_LEADER = $FACTION_LEADER$
+				}
+			}
+		}
+		
+		# If the faction still exists, dissolve it (it's no longer relevant).
+		hidden_effect = {
+			if = {
+				limit = {
+					exists = scope:popular_faction
+				}
+				scope:popular_faction = {
+					destroy_faction = yes
+				}
+			}
+		}
+
+		# Set up government type correctly.
+		hidden_effect = {
+			$FACTION_LEADER$ = {
+				# Warcraft: TODO - Test government change from a necro/demon/eldritch faction
+				if = {
+					limit = { can_get_necro_government_trigger = yes }
+					change_necro_government_effect = yes
+				}
+				else_if = {
+					limit = { can_get_demonic_government_trigger = yes }
+					change_demonic_government_effect = yes
+				}
+				else_if = {
+					limit = { can_get_eldritch_government_trigger = yes }
+					change_eldritch_government_effect = yes
+				}
+				#If sourced from tribal, make tribal.
+				else_if = {
+					limit = {
+						$SOURCE_GOVERNMENT$ = { government_has_flag = government_is_tribal }
+					}
+					change_government = tribal_government
+					add_realm_law = tribal_authority_0
+					if = { limit = { has_realm_law = crown_authority_0 } remove_realm_law = crown_authority_0 }
+					if = { limit = { has_realm_law = crown_authority_1 } remove_realm_law = crown_authority_1 }
+					if = { limit = { has_realm_law = crown_authority_2 } remove_realm_law = crown_authority_2 }
+					if = { limit = { has_realm_law = crown_authority_3 } remove_realm_law = crown_authority_3 }
+				}
+			}
+		}
+		
+		# Give the leader some gold if they don't have any - We do this at the very end to make sure the gold is applied correctly.
+		hidden_effect = {
+			if = {
+				limit = {
+					$FACTION_LEADER$ = {
+						gold < 10
+					}
+				}
+				every_in_list = { # Scale the amount on the number of counties taken.
+					list = siezed_counties
+					$FACTION_LEADER$ = {
+						add_gold = 50
+					}
 				}
 			}
 		}
@@ -1023,6 +1088,7 @@ create_popular_revolt_title_effect = {
 
 			save_scope_as = base_county
 		}
+		$FACTION_LEADER$.culture = { save_scope_as = founder_culture }
 		create_dynamic_title = {
 			tier = $TIER$
 			name = FACTION_POPULIST_CREATED_TITLE_NAME
@@ -1032,6 +1098,7 @@ create_popular_revolt_title_effect = {
 				name = faction
 				value = $FACTION$
 			}
+			set_color_from_title = scope:base_county
 		}
 	}
 }
@@ -1210,6 +1277,24 @@ spawn_popular_revolt_troops = {
 			name = populist_faction_event_troops
 		}
 	}
+
+	if = {
+		limit = { has_variable = ep3_governor_yearly_8150_ignored }
+		root.faction_leader = {
+			spawn_army = {
+				name = ep3_governor_yearly_8150_troop_name
+				men_at_arms = {
+					type = light_footmen
+					stacks = 2
+				}
+				war = root.faction_war
+				location = scope:local_center_of_rebellion
+				origin = scope:local_center_of_rebellion
+				inheritable = no
+			}
+		}
+		remove_variable = ep3_governor_yearly_8150_ignored
+	}
 }
 
 peasant_faction_demands_enforced = {
@@ -1290,7 +1375,7 @@ setup_populist_leader_effect = {
 				# Must not already be a landed ruler, or set to inheirit a landed title.
 				AND = {
 					is_ruler = no
-					is_landed = no
+					is_playable_character = no
 					NOT = {
 						any_heir_title = {
 							exists = this
@@ -1301,10 +1386,11 @@ setup_populist_leader_effect = {
 
 			save_scope_as = peasant_leader
 			add_character_flag = peasant_faction_claimant_without_title
+			add_trait = populist_leader
 		}
 	}
 
-	# If we can't find any, then generate a new peasant character to be the populist leader of the revolt.
+	# If we can't find any, then generate a new character to be the populist leader of the revolt.
 	if = {
 		limit = {
 			NOT = { exists = scope:peasant_leader }
@@ -1327,6 +1413,7 @@ setup_populist_leader_effect = {
 					add = 50
 				}
 			}
+			trait = populist_leader
 			save_scope_as = peasant_leader
 		}
 		scope:peasant_leader = {

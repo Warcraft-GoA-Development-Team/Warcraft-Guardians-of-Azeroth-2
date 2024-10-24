@@ -5,10 +5,119 @@
 # scope:old_faith is the faith they used to have
 on_faith_created = {
 	effect = {
+		remove_character_modifier = religious_reformer_modifier
+		# If you have a legend maybe we change it?
+		if = {
+			limit = {
+				has_legend_chapter_trigger = { CHAPTER = opening }
+				promoted_legend ?= {
+					exists = legend_property:faith
+					exists = legend_property:religion
+				}
+				NOT = {
+					promoted_legend ?= {
+						has_legend_chapter = {
+							name = opening
+							localization_key = legend_chapter_opening_new_faith
+						}
+					}
+				}
+			}
+			send_interface_toast = {
+				title = legend_chapter_change_toast
+				left_icon = root
+				promoted_legend = {
+					set_legend_chapter = {
+						name = opening
+						localization_key = legend_chapter_opening_new_faith
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				has_legend_chapter_trigger = { CHAPTER = opening }
+			}
+			random = {
+				chance = 75
+				send_interface_toast = {
+					title = legend_chapter_change_toast
+					left_icon = root
+					promoted_legend = {
+						set_legend_chapter = {
+							name = opening
+							localization_key = legend_chapter_opening_new_faith_generic
+						}
+					}
+				}
+			}
+		}
 		scope:old_faith = {
 			if = {
 				limit = { has_doctrine_parameter = unreformed }
 				set_variable = { name = has_been_reformed }
+				root = {
+					if = {
+						limit = {
+							NOT = { has_character_flag = reformer_legend }
+							has_dlc_feature = legends
+						}
+						add_character_flag = reformer_legend
+						create_legend_seed = {
+							type = holy
+							quality = famed
+							chronicle = new_faith_legend
+							properties = {
+								reformer = root
+								faith = root.faith
+								religion = root.religion
+								reason = flag:pagan_reformation
+							}
+						}
+					}
+				}
+				every_faith_character = {
+					limit = {
+						has_character_flag = forced_conversion_on_reform
+					}
+					set_character_faith = root.faith
+					every_vassal_or_below = {
+						limit = { faith = scope:old_faith }
+						random = {
+							chance = 75
+							set_character_faith = root.faith
+						}
+					}
+					every_sub_realm_county = {
+						limit = { faith = scope:old_faith }
+						random = {
+							chance = 75
+							set_county_faith = root.faith
+						}
+					}
+				}
+			}
+			else = {
+				root = {
+					if = {
+						limit = {
+							NOT = { has_character_flag = reformer_legend }
+							has_dlc_feature = legends
+						}
+						add_character_flag = reformer_legend
+						create_legend_seed = {
+							type = holy
+							quality = famed
+							chronicle = new_faith_legend
+							properties = {
+								reformer = root
+								faith = root.faith
+								religion = root.religion
+								reason = flag:new_faith
+							}
+						}
+					}
+				}
 			}
 		
 			root = { play_music_cue = "mx_cue_faith_conversion" }
@@ -39,19 +148,19 @@ on_faith_created = {
 		# Set original faith this one was based on inside of the faith itself
 		if = {
 			limit = {
-				scope:old_faith = { has_variable = parental_faith }
+				scope:old_faith = { has_variable = parent_faith }
 			}
 			faith = {
 				set_variable = {
-					name = parental_faith
-					value = scope:old_faith.var:parental_faith
+					name = parent_faith
+					value = scope:old_faith.var:parent_faith
 				}
 			}
 		}
 		else = {
 			faith = {
 				set_variable = {
-					name = parental_faith
+					name = parent_faith
 					value = scope:old_faith
 				}
 			}
@@ -71,12 +180,84 @@ on_faith_created = {
 # Code on-action: character converts faith. Only fired when using the convert window, or the script effect that uses the same logic
 # Root is the converter
 # scope:old_faith is the faith they used to have
+# scope:actor is the character instigating the conversion
 on_faith_conversion = {
 	events = {
 		faith_conversion.0001	# Convert capital county
 		faith_conversion.0003	# Convert close family
 		faith_conversion.1002	# Player-only narrative-notification event
 		faith_conversion.1101   # Notify vassals of conversion
+	}
+
+	effect = {
+		# EP3 - State Faith
+		if = {
+			limit = {
+				OR = {
+					government_allows = state_faith
+					top_liege = { government_allows = state_faith }
+				}
+			}
+			# Character uses decision to Adopt State Faith
+			if = {
+				limit = { has_character_flag = adopted_state_faith }
+				top_liege = {
+					if = {
+						limit = {
+							has_opinion_modifier = {
+								target = root
+								modifier = converted_to_state_faith_opinion
+							}
+						}
+						remove_opinion = {
+							target = root
+							modifier = converted_to_state_faith_opinion
+						}
+					}
+					every_vassal = {
+						custom = every_governor_of_state_faith
+						limit = {
+							has_opinion_modifier = {
+								target = root
+								modifier = converted_to_state_faith_opinion
+							}
+						}
+						remove_opinion = {
+							target = root
+							modifier = converted_to_state_faith_opinion
+						}
+					}
+				}
+			}
+
+			# Character is converted to state faith and gains influence
+			if = {
+				limit = {
+					faith = top_liege.primary_title.state_faith
+					government_allows = administrative
+				}
+				change_influence = minor_influence_gain
+				hidden_effect = {
+					faith = { save_scope_as = old_faith }
+					top_liege.faith = { save_scope_as = new_faith }
+					create_character_memory = { type = adopted_state_faith_memory }
+					scope:new_memory = {
+						set_variable = {
+							name = old_faith
+							value = scope:old_faith
+						}
+						set_variable = {
+							name = new_faith
+							value = scope:new_faith
+						}
+						set_variable = {
+							name = title
+							value = root.top_liege.primary_title
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -108,6 +289,9 @@ on_character_faith_change = {
 				trigger_event = bp2_yearly.8050
 			}
 		}
+
+		# Warcraft
+		refresh_corruption_modifiers_all_counties = yes
 	}
 	events = {
 		# Warcraft
@@ -252,11 +436,30 @@ pagan_conversion_pulse = {
 		}
 		faith = { has_doctrine_parameter = unreformed }
 		prestige_level >= 1 #lower than the regular requirement to make sure some rulers can convert
-		
-		# Warcraft - Removing
-		# End of Warcraft
-
-		trigger_if = {
+		trigger_if = { # Lighten the dev requirements progressively
+			limit = {
+				OR = {
+					current_date <= 950.1.1
+					AND = {
+						exists = capital_province
+						capital_province = { geographical_region = world_steppe }
+						primary_title.tier >= tier_duchy
+					}
+				}
+			}
+			capital_province.county = {
+				development_level >= 7 #lower than the regular requirement to make sure some rulers can convert
+			}
+		}
+		trigger_else_if = {
+			limit = {
+				current_date <= 1000.1.1
+			}
+			capital_province.county = {
+				development_level >= 6 #lower than the regular requirement to make sure some rulers can convert
+			}
+		}
+		trigger_else = {
 			capital_province.county = {
 				development_level >= 5 #lower than the regular requirement to make sure some rulers can convert
 			}
