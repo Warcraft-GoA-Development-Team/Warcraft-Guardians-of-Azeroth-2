@@ -123,6 +123,8 @@ scripted_effect 1000_clean_up_effect = {
 	scope:1041_health_artifact ?= { remove_variable ?= 1065_accessory_value }
 	remove_variable ?= 1041_healer_aptitude
 	remove_variable ?= 1041_partner_healer_aptitude
+	#Church
+	remove_variable ?= 1043_collect_gold_difficulty
 	#Weaponsmith
 	scope:1061_first_weapon ?= { remove_variable ?= 1061_weapon_value } #If we didn't buy any of the items
 	scope:1061_second_weapon ?= { remove_variable ?= 1061_weapon_value }
@@ -13931,6 +13933,8 @@ ep3_laamp_decision_event.1043 = {
 		animation = personality_forgiving
 	}
 	immediate = {
+		#For the background
+		scope:visiting_location.county.holder = { save_scope_as = bg_override_char }
 		#Can we _not_ repeat the loc?
 		1025_set_and_check_scene_loc_tracker_scope_effect = { SCENE = church }
 		#Find our clergy
@@ -14002,6 +14006,105 @@ ep3_laamp_decision_event.1043 = {
 			}
 			#Remember the clerger
 			1010_remember_vendor_character_effect = { GUILD = clergy CHARACTER = scope:laamp_clergy_character }
+		}
+		#How much gold is in the collect; and how difficult is it?
+		if = {
+			limit = {
+				NOT = { exists = scope:1043_collect_gold_value }
+			}
+			#Randomize the initial value
+			set_variable = {
+				name = 1043_collect_gold_difficulty
+				value = {
+					integer_range = {
+						min = 0
+						max = 2
+					}
+				}
+			}
+			#Then add difficulty based on how much gold is in the collect
+			random_list = {
+				10 = {
+					save_scope_value_as = {
+						name = 1043_collect_gold_value
+						value = minor_gold_laamps_value
+					}
+					change_variable = {
+						name = 1043_collect_gold_difficulty
+						add = 1
+					}
+				}
+				10 = {
+					save_scope_value_as = {
+						name = 1043_collect_gold_value
+						value = medium_gold_laamps_value
+					}
+					change_variable = {
+						name = 1043_collect_gold_difficulty
+						add = 2
+					}
+				}
+				10 = {
+					save_scope_value_as = {
+						name = 1043_collect_gold_value
+						value = major_gold_laamps_value
+					}
+					change_variable = {
+						name = 1043_collect_gold_difficulty
+						add = 3
+					}
+				}
+			}
+			#Did we go robbing a bunch of churches previously?
+			if = {
+				limit = { 
+					has_variable = 1043_heightened_security
+					exists = var:1043_collect_gold_difficulty
+				}
+				change_variable = {
+					name = 1043_collect_gold_difficulty
+					add = var:1043_heightened_security
+				}
+
+			}
+			#Set the difficulty
+			if = {
+				limit = { exists = var:1043_collect_gold_difficulty }
+				if = {
+					limit = { var:1043_collect_gold_difficulty >= 5 }
+					save_scope_value_as = {
+						name = 1043_collect_gold_difficulty_rating
+						value = monumentally_high_skill_rating #Had to invent a new difficulty, just for you :hmmyes:
+					}
+				}
+				else_if = {
+					limit = { var:1043_collect_gold_difficulty = 4 }
+					save_scope_value_as = {
+						name = 1043_collect_gold_difficulty_rating
+						value = extremely_high_skill_rating
+					}
+				}
+				else_if = {
+					limit = { var:1043_collect_gold_difficulty = 3 }
+					save_scope_value_as = {
+						name = 1043_collect_gold_difficulty_rating
+						value = high_skill_rating
+					}
+				}
+				else_if = {
+					limit = { var:1043_collect_gold_difficulty = 2 }
+					save_scope_value_as = {
+						name = 1043_collect_gold_difficulty_rating
+						value = medium_skill_rating
+					}
+				}
+				else = {
+					save_scope_value_as = {
+						name = 1043_collect_gold_difficulty_rating
+						value = low_skill_rating
+					}
+				}
+			}
 		}
 	}
 	#Donate some gold for piety
@@ -14108,15 +14211,30 @@ ep3_laamp_decision_event.1043 = {
 						}
 						desc = ep3_laamp_decision_event.1043.c_master_thief
 					}
+					triggered_desc = {
+						trigger = { has_variable = 1043_heightened_security }
+						desc = ep3_laamp_decision_event.1043.c_guarded
+					}
 					desc = ep3_laamp_decision_event.1043.c
 				}
 			}
 		}
 		trigger = { is_ai = no }
-		flavor = ep3_laamp_decision_event.1043.c.flavor
+		flavor = {
+			first_valid = {
+				triggered_desc = {
+					trigger = { 
+						has_variable = 1043_heightened_security
+						var:1043_heightened_security != 0
+					}
+					desc = ep3_laamp_decision_event.1043.c.flavor_guarded
+				}
+				desc = ep3_laamp_decision_event.1043.c.flavor
+			}
+		}
 		duel = {
 			skill = intrigue
-			value = average_skill_rating
+			value = scope:1043_collect_gold_difficulty_rating
 			#Success: Coin!
 			50 = {
 				modifier = {
@@ -14128,11 +14246,51 @@ ep3_laamp_decision_event.1043 = {
 					multiplier = 3.5
 					min = -49
 				}
+				min = 10
 				desc = ep3_laamp_decision_event.1043.c.thievery_success.desc
 				send_interface_toast = {
 					title = ep3_laamp_decision_event.1043.c.thievery_success.t
 					left_icon = root
-					add_gold = major_gold_laamps_value
+					add_gold = scope:1043_collect_gold_value
+				}
+				hidden_effect = {
+					#... fool me twice; shame on you.
+					if = {
+						limit = { has_variable = 1043_heightened_security }
+						random_list = {
+							50 = {
+								#Nothing
+							}
+							50 = {
+								#Save old value as temp
+								set_variable = {
+									name = 1043_heightened_security_temp
+									value = var:1043_heightened_security
+								}
+								#Remove the variable we'll refresh
+								remove_variable ?= 1043_heightened_security
+								#Set the new proper variable and add the old value as well
+								set_variable = {
+									name = 1043_heightened_security
+									value = {
+										value = var:1043_heightened_security_temp
+										add = 1
+									}
+									years = visit_settlement_medium_cooldown_year
+								}
+								#Then remove the temp
+								remove_variable ?= 1043_heightened_security_temp
+							}
+						}
+					}
+					#Fool me once, shame on me...
+					else = {
+						set_variable = {
+							name = 1043_heightened_security
+							value = 0
+							years = visit_settlement_medium_cooldown_year
+						}
+					}
 				}
 			}
 			#Failure: Banished!
@@ -15803,6 +15961,21 @@ scripted_effect 1051_actual_training_effect = {
 				right_icon = scope:visiting_partner
 			}
 		}
+		#Too much joshing around
+		5 = {
+			trigger = { scope:visiting_partner ?= $TRAINER$ }
+			min = 5
+			desc = ep3_laamp_decision_event.1051.c_wounded.desc
+			send_interface_toast = {
+				type = event_toast_text_neutral
+				title = ep3_laamp_decision_event.1051.c_wounded.t
+				left_icon = root
+				right_icon = scope:visiting_partner
+				scope:visiting_partner = {
+					increase_wounds_effect = { REASON = training_accident }
+				}
+			}
+		}
 	}
 	#Set the variables and redirect us back to the Castle
 	1051_finished_training_effect = yes
@@ -16029,6 +16202,10 @@ ep3_laamp_decision_event.1051 = {
 						}
 					}
 				}
+			}
+			if = {
+				limit = { 1051_can_sparr_trigger = yes }
+				scope:visiting_partner ?= { save_scope_as = fighting_child }
 			}
 		}
 		#Save the xp trait as a static number
@@ -16490,7 +16667,7 @@ ep3_laamp_decision_event.1053 = {
 	option = {
 		name = ep3_laamp_decision_event.1053.c
 		random_list = {
-			10 = {
+			35 = {
 				desc = ep3_laamp_decision_event.1053.c.plain_wins
 				send_interface_toast = {
 					title = ep3_laamp_decision_event.1053.c.plain_wins
@@ -16502,7 +16679,7 @@ ep3_laamp_decision_event.1053 = {
 					}
 				}
 			}
-			15 = {
+			35 = {
 				desc = ep3_laamp_decision_event.1053.c.talented_wins
 				send_interface_toast = {
 					title = ep3_laamp_decision_event.1053.c.talented_wins
@@ -16514,7 +16691,7 @@ ep3_laamp_decision_event.1053 = {
 					}
 				}
 			}
-			20 = {
+			30 = {
 				desc = ep3_laamp_decision_event.1053.c.you_win
 				send_interface_toast = {
 					title = ep3_laamp_decision_event.1053.c.you_win
@@ -19701,7 +19878,7 @@ ep3_laamp_decision_event.1102 = {
 			}
 			animation = prayer
 		}
-		animation = zealous
+		animation = personality_zealous
 	}
 
 	immediate = {
@@ -19779,7 +19956,7 @@ ep3_laamp_decision_event.1103 = {
 			trigger = {
 				always = yes
 			}
-			animation = zealous
+			animation = personality_zealous
 		}
 	}
 
@@ -20033,25 +20210,6 @@ ep3_laamp_decision_event.1103 = {
 					add = 1
 				}
 			}
-			# Warcraft - remove Send Hasan to Egypt
-			# if = {
-			# 	limit = {
-			# 		any_owned_story = {
-			# 			story_type = story_hasan
-			# 			exists = var:radical_points
-			# 			var:radical_points >= 5
-			# 		}
-			# 		OR = {
-			# 			faith = faith:ismaili
-			# 			faith = faith:nizari
-			# 		}
-			# 		NOT = { has_character_flag = had_hasan_sabah_20 }
-			# 	}
-			# 	trigger_event = {
-			# 		id = hasan_sabbah.1020
-			# 		months = { 3 5 }
-			# 	}
-			# }
 		}
 	}
 }
@@ -20341,6 +20499,15 @@ ep3_laamp_decision_event.1130 = { #begin city construction
 			set_variable = laamp_city_construction
 		}
 
+		trigger_event = {
+			id = ep3_laamp_decision_event.1131
+			months = 1 # Checked monthly in trigger_fail for event
+		}
+		trigger_event = {
+			id = ep3_laamp_decision_event.1133
+			months = { 4 6 }
+		}
+
 		ai_chance = {
 			base = 10
 		}
@@ -20348,23 +20515,10 @@ ep3_laamp_decision_event.1130 = { #begin city construction
 
 	option = { #I'm a silly goose, nvm
 		name = ep3_laamp_decision_event.1130.b
-		custom_tooltip = ep3_laamp_decision_event.1130.b.desc
-		add_prestige = -200
-		add_gold = 200
+		add_gold = 400
 
 		ai_chance = {
 			base = 0
-		}
-	}
-
-	after = {
-		trigger_event = {
-			id = ep3_laamp_decision_event.1131
-			months = 62 # 2 months after 5 yearholding construction
-		}
-		trigger_event = {
-			id = ep3_laamp_decision_event.1133
-			months = { 4 6 }
 		}
 	}
 }
@@ -20390,89 +20544,34 @@ ep3_laamp_decision_event.1131 = { #city is finished, wat do
 	}
 
 	immediate = { #reward building spawn
-		if = {
-			limit = {
-				has_character_flag = laamp_city_builder_mill_upgrade
-			}
-			scope:city_location = {
-				add_building = watermills_03
-			}
-		}
-		else_if = {
-			limit = {
-				has_character_flag = laamp_city_builder_mill
-			}
-			scope:city_location = {
-				add_building = watermills_01
-			}
+		save_scope_value_as = {
+			name = year_of_construction
+			value = current_year
 		}
 
-		if = {
-			limit = {
-				has_character_flag = laamp_city_builder_city_upgrade
-			}
-			scope:city_location = {
-				add_building = city_03
-			}
-		}
-		else_if = {
-			limit = {
-				has_character_flag = laamp_city_builder_city
-			}
-			scope:city_location = {
-				add_building = city_02
-			}
+		laamp_city_builder_construction_effect = {
+			FLAG = mill
+			BUILDING = watermills
 		}
 
-		if = {
-			limit = {
-				has_character_flag = laamp_city_builder_manor_upgrade
-			}
-			scope:city_location = {
-				add_building = farm_estates_03
-			}
-		}
-		else_if = {
-			limit = {
-				has_character_flag = laamp_city_builder_manor
-			}
-			scope:city_location = {
-				add_building = farm_estates_01
-			}
+		laamp_city_builder_construction_effect = {
+			FLAG = castle
+			BUILDING = castle
 		}
 
-		if = {
-			limit = {
-				has_character_flag = laamp_city_builder_guilds_upgrade
-			}
-			scope:city_location = {
-				add_building = guild_halls_03
-			}
-		}
-		else_if = {
-			limit = {
-				has_character_flag = laamp_city_builder_guilds
-			}
-			scope:city_location = {
-				add_building = guild_halls_01
-			}
+		laamp_city_builder_construction_effect = {
+			FLAG = manor
+			BUILDING = farm_estates
 		}
 
-		if = {
-			limit = {
-				has_character_flag = laamp_city_builder_prayer_hall_upgrade
-			}
-			scope:city_location = {
-				add_building = monastic_schools_03
-			}
+		laamp_city_builder_construction_effect = {
+			FLAG = guilds
+			BUILDING = guild_halls
 		}
-		else_if = {
-			limit = {
-				has_character_flag = laamp_city_builder_prayer_hall
-			}
-			scope:city_location = {
-				add_building = monastic_schools_01
-			}
+
+		laamp_city_builder_construction_effect = {
+			FLAG = prayer_hall
+			BUILDING = monastic_schools
 		}
 	}
 
@@ -20488,7 +20587,7 @@ ep3_laamp_decision_event.1131 = { #city is finished, wat do
 			}
 			trigger_event = {
 				id = ep3_laamp_decision_event.1131
-				months = 4
+				months = 1
 			}
 		}
 	}
@@ -20518,7 +20617,7 @@ ep3_laamp_decision_event.1131 = { #city is finished, wat do
 		custom_tooltip = ep3_laamp_decision_event.1131.b.desc
 		trigger_event = {
 			id = ep3_laamp_decision_event.1140
-			months = { 11 13 }
+			months = { 1 1 }
 		}
 		remove_character_flag = laamp_city_builder
 
@@ -20528,11 +20627,10 @@ ep3_laamp_decision_event.1131 = { #city is finished, wat do
 	}
 
 	after = {
-		
 		remove_character_flag = laamp_city_builder_guilds
 		remove_character_flag = laamp_city_builder_guilds_upgrade
-		remove_character_flag = laamp_city_builder_city
-		remove_character_flag = laamp_city_builder_city_upgrade
+		remove_character_flag = laamp_city_builder_castle
+		remove_character_flag = laamp_city_builder_castle_upgrade
 		remove_character_flag = laamp_city_builder_manor
 		remove_character_flag = laamp_city_builder_manor_upgrade
 		remove_character_flag = laamp_city_builder_prayer_hall
@@ -20663,11 +20761,9 @@ ep3_laamp_decision_event.1134 = { #get more settlers, main building upgrade
 
 	option = { #cool
 		name = ep3_laamp_decision_event.1134.a
-		add_character_flag = laamp_city_builder_city
-		show_as_tooltip = {
 			scope:city_location = {
-				add_building = city_02
-			}
+			add_character_flag = laamp_city_builder_castle
+			show_as_tooltip = { add_building = castle_02 }
 		}
 		remove_short_term_gold = 20
 		if = {
@@ -20688,11 +20784,9 @@ ep3_laamp_decision_event.1134 = { #get more settlers, main building upgrade
 
 	option = { #go for it!
 		name = ep3_laamp_decision_event.1134.b
-		add_character_flag = laamp_city_builder_city_upgrade
-		show_as_tooltip = {
 			scope:city_location = {
-				add_building = city_03
-			}
+			add_character_flag = laamp_city_builder_castle_upgrade
+			show_as_tooltip = { add_building = castle_03 }
 		}
 		remove_short_term_gold = 40
 		if = {
@@ -20837,6 +20931,8 @@ ep3_laamp_decision_event.1136 = { #utilize connections, get guildhall
 	title = ep3_laamp_decision_event.1136.t
 	window = visit_settlement_window
 	desc = ep3_laamp_decision_event.1136.desc
+
+	orphan = yes
 
 	theme = stewardship
 
@@ -20985,6 +21081,11 @@ ep3_laamp_decision_event.1137 = { #utilize connections, get prayer hall
 ep3_laamp_decision_event.1140 = { #city pays dividend
 	hidden = yes
 
+	trigger = {
+		is_landless_adventurer = yes
+		current_year <= laamp_city_construction_year_value
+	}
+
 	immediate = {
 		send_interface_toast = {
 			type = event_toast_effect_good
@@ -20993,20 +21094,29 @@ ep3_laamp_decision_event.1140 = { #city pays dividend
 			add_gold = {
 				value = 0
 				add = {
-					value = 10
-					multiply = scope:city_location.barony.combined_building_level
+					value = 4
+					multiply = scope:city_location.combined_building_level
 				}
 				add = {
-					value = 8
+					value = 3
 					multiply = scope:city_location.county.development_level
 				}
-				min = 50
-				max = 400
+				multiply = { # Slowly decrease over time, by 1% every year
+					value = {
+						value = laamp_city_construction_year_value
+						subtract = current_year
+						divide = 100
+					}
+				}
+				min = 25
+				max = 200
 			}
 		}
+		primary_title.holder ?= {
 		trigger_event = {
 			id = ep3_laamp_decision_event.1140
-			months = { 11 13 }
+				months = { 1 1 }
+			}
 		}
 	}	
 }
