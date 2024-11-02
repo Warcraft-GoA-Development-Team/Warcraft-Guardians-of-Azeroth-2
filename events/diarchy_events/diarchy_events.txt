@@ -47,6 +47,10 @@
 # 2231 - 2240	A Better Use for You - Empty the gaols
 # 2241 - 2250	Make a WomanMan Out of You - Train baronial troops
 #
+# #Interactions
+# 8001 - 8010	Request Imperial Expedition - Letter notification events
+# 8011 - 8020	Request Imperial Expedition - Domain choice events
+#
 # #Decisions
 # 9001 - 9040	Attempt to Overthrow Ruler - throw-down to usurp your liege without a war.
 ##################################################
@@ -110,6 +114,7 @@ diarchy.0011 = {
 	hidden = yes
 
 	trigger = {
+		has_active_diarchy = no
 		regency_for_personal_reasons_trigger = yes
 		basic_eligible_for_diarchy_trigger = yes
 	}
@@ -351,8 +356,8 @@ diarchy.0021 = {
 		}
 
 		stress_impact = {
-			diligent = miniscule_stress_impact_loss
-			lazy = major_stress_impact_gain
+			ambitious = miniscule_stress_impact_loss
+			content = major_stress_impact_gain
 		}
 		ai_chance = {
 			base = 10
@@ -440,6 +445,122 @@ diarchy.0022 = {
 	immediate = { remove_character_flag = has_had_diarch_intro_event_flag }
 }
 
+#	Co-ruler maintenance.
+diarchy.0023 = {
+	hidden = yes
+
+	immediate = {
+		if = {
+			limit = {
+				has_diarchy_active_parameter = diarchy_is_co_rulership
+				diarch.liege ?= root
+			}
+			diarch = { set_variable = use_co_ruler_title }
+			# Plus, if we're a duumvirate of some kind, flag that too — we need to know for transfer logic..
+			if = {
+				limit = {
+					OR = {
+						has_diarchy_active_parameter = diarchy_type_is_junior_emperorship
+						has_diarchy_active_parameter = diarchy_type_is_co_emperorship
+					}
+				}
+				diarch = { set_variable = diarchy_transfer_type_duumvirate }
+			}
+		}
+	}
+}
+
+#	Co-ruler is transferred via death.
+diarchy.0024 = {
+	hidden = yes
+
+	immediate = {
+		save_scope_as = new_holder
+		# Toss our co-ruler to their new court if relevant.
+		scope:co_ruler = {
+			if = {
+				limit = {
+					is_courtier = yes
+					NOT = { is_courtier_of = scope:new_holder }
+				}
+				set_employer = scope:new_holder
+			}
+		}
+		switch = {
+			trigger = scope:diarchy_type
+			flag:junior_emperorship = {
+				start_diarchy = junior_emperorship
+				set_diarch = scope:co_ruler
+				set_diarchy_swing = scope:sop_swing
+			}
+			flag:co_emperorship = {
+				start_diarchy = co_emperorship
+				set_diarch = scope:co_ruler
+				set_diarchy_swing = scope:sop_swing
+			}
+			flag:co_monarchy = {
+				start_diarchy = co_monarchy
+				set_diarch = scope:co_ruler
+				set_diarchy_swing = scope:sop_swing
+			}
+		}
+	}
+}
+
+#	Co-ruler is transferred via anything except death.
+diarchy.0025 = {
+	hidden = yes
+
+	trigger = {
+		has_variable = co_ruler_to_transfer
+		NOT = { var:co_ruler_to_transfer = scope:new_holder }
+	}
+
+	immediate = {
+		# Toss our co-ruler to their new court if relevant.
+		var:co_ruler_to_transfer = {
+			if = {
+				limit = {
+					is_courtier = yes
+					NOT = { is_courtier_of = scope:new_holder }
+				}
+				set_employer = scope:new_holder
+			}
+		}
+		if = {
+			limit = {
+				var:co_ruler_to_transfer = {
+					OR = {
+						is_courtier_of = scope:new_holder
+						is_vassal_of = scope:new_holder
+					}
+				}
+			}
+			if = {
+				limit = {
+					has_variable = diarchy_transfer_type_duumvirate
+					var:co_ruler_to_transfer = { is_adult = no }
+				}
+				scope:new_holder = {
+					start_diarchy = junior_emperorship
+					set_diarch = root.var:co_ruler_to_transfer
+				}
+			}
+			else_if = {
+				limit = { has_variable = diarchy_transfer_type_duumvirate }
+				scope:new_holder = {
+					start_diarchy = co_emperorship
+					set_diarch = root.var:co_ruler_to_transfer
+				}
+			}
+			else = {
+				start_diarchy = co_monarchy
+				set_diarch = root.var:co_ruler_to_transfer
+			}
+		}
+	}
+}
+
 ##################################################
 # Various Maintenance
 # by Ewan Cowhig Croft
@@ -457,11 +578,15 @@ diarchy.0101 = {
 	}
 
 	immediate = {
-		# We don't have fine control of mandates yet, so we just randomly pick a pool and push from it.
+		# Decide what event pool to draw from.
 		if = {
 			limit = {
 				# Filtering out landless lieges, since they're too much to control for.
-				is_landed = yes
+				is_landed_or_landless_administrative = yes
+				# Aaaand we don't want to give child diarchs mandate events.
+				diarch = { is_adult = yes }
+				# Or diarchs currently fighting their liege.
+				NOT = { is_at_war_with = diarch }
 			}
 			diarch = {
 				random_list = {
@@ -498,7 +623,13 @@ diarchy.0101 = {
 			}
 		}
 		# Give out manipulation hooks to landless diarchs.
-		diarch = { trigger_event = diarchy.0121 }
+		diarch = {
+			if = {
+				# Assuming they're not children.
+				limit = { is_adult = yes }
+				trigger_event = diarchy.0121
+			}
+		}
 	}
 }
 
@@ -597,7 +728,7 @@ diarchy.0121 = {
 				}
 				# Is a landed ruler.
 				# Either a duke with at least two counties or a count - don't even consider trying it on with kings.
-				is_landed = yes
+				is_landed_or_landless_administrative = yes
 				OR = {
 					AND = {
 						highest_held_title_tier <= tier_duchy
@@ -655,7 +786,7 @@ diarchy.0121 = {
 						}
 						# Is a landed ruler.
 						# Either a duke with at least two counties or a count - don't even consider trying it on with kings.
-						is_landed = yes
+						is_landed_or_landless_administrative = yes
 						OR = {
 							AND = {
 								highest_held_title_tier <= tier_duchy
@@ -900,7 +1031,16 @@ diarchy.0131 = {
 				exists = global_var:di_track_vizmulct_accept
 				exists = global_var:di_track_vizmulct_accept_actor_list
 				exists = global_var:di_track_vizmulct_accept_recipient_list
-				#var:struggle_involvement_defender ?= flag:interloper # Warcraft
+				exists = global_var:di_track_appjunemp_accept
+				exists = global_var:di_track_appjunemp_accept_actor_list
+				exists = global_var:di_track_appjunemp_accept_recipient_list
+				exists = global_var:di_track_appcoemp_accept
+				exists = global_var:di_track_appcoemp_accept_actor_list
+				exists = global_var:di_track_appcoemp_accept_recipient_list
+				exists = global_var:di_track_appcomon_accept
+				exists = global_var:di_track_appcomon_accept_actor_list
+				exists = global_var:di_track_appcomon_accept_recipient_list
+				#var:struggle_involvement_defender ?= flag:interloper
 			}
 		}
 	}
@@ -956,7 +1096,7 @@ scripted_effect overthrow_regent_scheme_success_effect = {
 		}
 		## Landed characters take them directly.
 		if = {
-			limit = { is_landed = yes }
+			limit = { is_landed_or_landless_administrative = yes }
 			hard_imprison_character_effect = {
 				TARGET = scope:target
 				IMPRISONER = scope:owner
@@ -1467,7 +1607,7 @@ scripted_effect diarchy_1201_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1201.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_vassal
@@ -1625,7 +1765,7 @@ diarchy.1201 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1201.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_vassal
@@ -1887,7 +2027,7 @@ scripted_effect diarchy_1211_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1211.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_vassal
@@ -2036,7 +2176,7 @@ diarchy.1211 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1211.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_vassal
@@ -2286,7 +2426,7 @@ scripted_effect diarchy_1221_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1221.a.t
 			left_icon = scope:diarch
 			right_icon = scope:recipient_county
@@ -2448,7 +2588,7 @@ diarchy.1221 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1221.b.t
 							left_icon = scope:diarch
 							right_icon = scope:recipient_county
@@ -2663,7 +2803,7 @@ scripted_effect diarchy_1231_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1231.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_county
@@ -2794,7 +2934,7 @@ diarchy.1231 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1231.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_county
@@ -3014,7 +3154,7 @@ scripted_effect diarchy_1241_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1241.a.t
 			left_icon = scope:diarch
 			# The tax arrives.
@@ -3141,7 +3281,7 @@ diarchy.1241 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1241.b.t
 							left_icon = scope:diarch
 							# Process feed message tooltip.
@@ -3382,7 +3522,7 @@ scripted_effect diarchy_1701_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1701.a.t
 			left_icon = scope:councillor_1
 			right_icon = scope:councillor_2
@@ -3601,7 +3741,7 @@ diarchy.1701 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1701.b.t
 							left_icon = scope:councillor_1
 							right_icon = scope:councillor_2
@@ -3853,7 +3993,7 @@ scripted_effect diarchy_1711_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1711.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_vassal
@@ -4000,7 +4140,7 @@ diarchy.1711 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1711.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_vassal
@@ -4266,7 +4406,7 @@ scripted_effect diarchy_1721_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1721.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_vassal
@@ -4421,7 +4561,7 @@ diarchy.1721 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1721.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_vassal
@@ -4680,7 +4820,7 @@ scripted_effect diarchy_1731_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1731.a.t
 			left_icon = scope:diarch
 			right_icon = scope:county_1
@@ -4726,7 +4866,7 @@ diarchy.1731 = {
 	}
 	right_portrait = {
 		character = scope:misc_peasant
-		animation = one_handed_2_aggressive
+		animation = aggressive_sword
 		hide_info = yes
 	}
 	# All-Thing cultures meet at the stones.
@@ -4864,7 +5004,7 @@ diarchy.1731 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1731.b.t
 							left_icon = scope:diarch
 							right_icon = scope:county_1
@@ -5108,7 +5248,7 @@ scripted_effect diarchy_1741_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.1741.a.t
 			left_icon = scope:diarch
 			right_icon = scope:councillor_1
@@ -5317,7 +5457,7 @@ diarchy.1741 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.1741.b.t
 							left_icon = scope:diarch
 							right_icon = scope:councillor_1
@@ -5599,7 +5739,7 @@ scripted_effect diarchy_2201_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.2201.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_county
@@ -5774,7 +5914,7 @@ diarchy.2201 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.2201.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_county
@@ -6020,7 +6160,7 @@ scripted_effect diarchy_2211_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.2211.a.t
 			left_icon = scope:diarch
 			right_icon = scope:hedge_knight
@@ -6103,7 +6243,7 @@ diarchy.2211 = {
 		### First, we try to grab any possible candidates.
 		#### Landless diarchs use their liege's capital.
 		if = {
-			limit = { is_landed = no }
+			limit = { is_landed_or_landless_administrative = no }
 			scope:liege.capital_county = {
 				save_scope_as = appropriate_capital
 				duchy = { diarchy_2211_scan_for_potential_knights_effect = yes }
@@ -6238,10 +6378,9 @@ diarchy.2211 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.2211.b.t
 							left_icon = scope:diarch
-							right_icon = scope:hedge_knight
 							# Process feed message tooltip.
 							if = {
 								limit = {
@@ -6457,7 +6596,8 @@ diarchy.2211 = {
 			if = {
 				limit = {
 					exists = scope:hedge_knight_created
-					is_courtier = no
+					exists = scope:hedge_knight
+					scope:hedge_knight = { is_courtier = no }
 				}
 				scope:hedge_knight = {
 					override_death_effect = { death_reason = death_vanished }  # Warcraft
@@ -6481,7 +6621,7 @@ scripted_effect diarchy_2221_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.2221.a.t
 			left_icon = scope:diarch
 			# MaA are discounted for a bit.
@@ -6624,7 +6764,7 @@ diarchy.2221 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.2221.b.t
 							left_icon = scope:diarch
 							# Process feed message tooltip.
@@ -6835,7 +6975,7 @@ scripted_effect diarchy_2231_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.2231.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_county
@@ -6999,7 +7139,7 @@ diarchy.2231 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.2231.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_county
@@ -7229,7 +7369,7 @@ scripted_effect diarchy_2241_successful_swing_resolve_effect = {
 	# Stuff that'll go to the liege via feed message.
 	scope:liege = {
 		send_interface_message = {
-			type = msg_mandate_results_good_effect
+			type = msg_mandate_results_neutral_effect
 			title = diarchy.2241.a.t
 			left_icon = scope:diarch
 			right_icon = scope:exploitable_vassal
@@ -7375,7 +7515,7 @@ diarchy.2241 = {
 					remove_character_flag = blocked_diarch_feed_message_tooltip
 					scope:liege = {
 						send_interface_message = {
-							type = msg_mandate_results_good_effect
+							type = msg_mandate_results_neutral_effect
 							title = diarchy.2241.b.t
 							left_icon = scope:diarch
 							right_icon = scope:exploitable_vassal
@@ -7599,6 +7739,1848 @@ diarchy.2241 = {
 
 
 ##################################################
+# INTERACTIONS
+
+##################################################
+# Request Imperial Expedition - Letter notification events
+# by Ewan Cowhig Croft
+# 8001 - 8010
+##################################################
+
+scripted_effect send_expedition_information_to_player_governors_effect = {
+	save_scope_value_as = {
+		name = expedition_info
+		value = flag:$RESPONSE$
+	}
+	every_player = {
+		limit = {
+			any_liege_or_above = { this = scope:recipient }
+			NOR = {
+				this = scope:actor
+				this = scope:recipient
+			}
+		}
+		trigger_event = diarchy.8004
+	}
+	# Suppress error from us not using the accepted response.
+	if = {
+		limit = { scope:expedition_info = flag:accepted }
+	}
+}
+
+#	Your request to launch an expedition has been granted.
+diarchy.8001 = {
+	type = letter_event
+	opening = diarchy.8001.t
+	desc = diarchy.8001.desc
+	sender = scope:recipient
+
+	immediate = {
+		# Apply interaction effects.
+		diarch_request_imperial_expedition_accepted_effect = yes
+		# If it's the AI, force this right away.
+		if = {
+			limit = { is_ai = yes }
+			# And by right away, we mean launder it a day for technical reasons.
+			trigger_event = {
+				id = diarchy.8007
+				days = 1
+			}
+		}
+	}
+
+	# To war!
+	option = {
+		name = diarchy.8001.a
+
+		# No stress or AI chance needed for a notification event.
+	}
+
+	after = {
+		# Aaaaand the result for our player governors.
+		send_expedition_information_to_player_governors_effect = { RESPONSE = accepted }
+	}
+}
+
+#	Your request to launch an expedition has been refused.
+diarchy.8002 = {
+	type = letter_event
+	opening = diarchy.8002.t
+	desc = diarchy.8002.desc
+	sender = scope:recipient
+
+	immediate = {
+		# Apply interaction effects.
+		diarch_request_imperial_expedition_rejected_effect = yes
+	}
+
+	# Narrow-minded fool.
+	option = {
+		name = diarchy.8002.a
+
+		# No stress or AI chance needed for a notification event.
+	}
+
+	after = {
+		# Aaaaand the result for our player governors.
+		send_expedition_information_to_player_governors_effect = { RESPONSE = refused }
+	}
+}
+
+#	You've been forced to agree to an imperial expedition.
+diarchy.8003 = {
+	type = letter_event
+	opening = diarchy.8003.t
+	desc = diarchy.8003.desc
+	sender = scope:recipient
+
+	immediate = {
+		# Apply interaction effects.
+		diarch_request_imperial_expedition_accepted_effect = yes
+	}
+
+	# That presumptuous fool!
+	option = {
+		name = diarchy.8003.a
+
+		# No stress or AI chance needed for a notification event.
+	}
+
+	after = {
+		# Aaaaand the result for our player governors.
+		send_expedition_information_to_player_governors_effect = { RESPONSE = forced }
+	}
+}
+
+#	Inform the governors what's up.
+diarchy.8004 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:expedition_info = flag:refused }
+				desc = diarchy.8004.t.vetoed
+			}
+			desc = diarchy.8004.t.planned
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:expedition_info = flag:refused }
+				desc = diarchy.8004.desc.vetoed
+			}
+			desc = {
+				desc = diarchy.8004.desc.planned
+				first_valid = {
+					triggered_desc = {
+						trigger = {
+							scope:expedition_info = flag:forced
+						}
+						desc = diarchy.8004.desc.planned.forced
+					}
+					desc = diarchy.8004.desc.planned.allowed
+				}
+			}
+		}
+	}
+	theme = administrative
+	left_portrait = {
+		character = scope:actor
+		triggered_animation = {
+			trigger = { scope:expedition_info != flag:refused }
+			animation = marshal
+		}
+		triggered_animation = {
+			trigger = { scope:expedition_info = flag:refused }
+			animation = anger
+		}
+	}
+	right_portrait = {
+		character = scope:recipient
+		triggered_animation = {
+			trigger = { scope:expedition_info != flag:refused }
+			animation = admiration
+		}
+		triggered_animation = {
+			trigger = { scope:expedition_info = flag:refused }
+			animation = dismissal
+		}
+	}
+
+	immediate = {
+		show_as_tooltip = {
+			scope:actor = { diarch_request_imperial_expedition_accepted_effect = yes }
+		}
+	}
+
+	# Fresh lands for the taking...
+	option = {
+		name = {
+			text = {
+				first_valid = {
+					triggered_desc = {
+						trigger = { scope:expedition_info = flag:refused }
+						desc = diarchy.8004.a.vetoed
+					}
+					desc = diarchy.8004.a.allowed
+				}
+			}
+		}
+
+		# No stress or AI chance needed for a notification event.
+	}
+}
+
+#	An expedition is being launched on your border, obliging you to join.
+diarchy.8005 = {
+	type = letter_event
+	opening = diarchy.8005.t
+	desc = diarchy.8005.desc
+	sender = scope:attacker
+
+	trigger = {
+		NOT = { has_character_flag = pinged_to_join_expedition }
+	}
+
+	immediate = {
+		add_character_flag = {
+			flag = pinged_to_join_expedition
+			days = 5
+		}
+		show_as_tooltip = {
+			scope:attacker = {
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:defender
+				}
+			}
+		}
+	}
+
+	# Once more unto the breach!
+	option = {
+		name = diarchy.8005.a
+
+		scope:war = { add_attacker = prev }
+
+		stress_impact = {
+			brave = major_stress_impact_loss
+			just = minor_stress_impact_loss
+			arbitrary = minor_stress_impact_gain
+			craven = major_stress_impact_gain
+		}
+		# The AI should always do this.
+		ai_chance = { base = 100 }
+	}
+
+	# Nope, we ain't doin' that.
+	option = {
+		name = diarchy.8005.b
+
+		# You shirk your duties.
+		change_strife_opinion = 50
+
+		stress_impact = {
+			craven = major_stress_impact_loss
+			arbitrary = minor_stress_impact_loss
+			just = minor_stress_impact_gain
+			brave = major_stress_impact_gain
+		}
+		# The AI should never choose this.
+		ai_chance = { base = 0 }
+	}
+}
+
+#	You run a military governate and an expedition is being launched.
+diarchy.8006 = {
+	type = letter_event
+	opening = diarchy.8006.t
+	desc = diarchy.8006.desc
+	sender = scope:attacker
+
+	immediate = {
+		show_as_tooltip = {
+			scope:attacker = {
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:defender
+				}
+			}
+		}
+	}
+
+	# Once more unto the breach!
+	option = {
+		name = diarchy.8006.a
+
+		scope:war = { add_attacker = prev }
+		# Since it's optional for you to join, you gain influence.
+		change_influence = major_influence_gain
+
+		stress_impact = {
+			brave = major_stress_impact_loss
+			just = minor_stress_impact_loss
+			arbitrary = minor_stress_impact_gain
+			craven = major_stress_impact_gain
+		}
+		# AI choose based on how much they like the co-emperor.
+		ai_chance = {
+			opinion_modifier = { opinion_target = scope:attacker }
+			ai_value_modifier = { ai_boldness = 1 }
+		}
+	}
+
+	# Nope, we ain't doin' that.
+	option = {
+		name = diarchy.8006.b
+
+		# You shirk your duties.
+		reverse_add_opinion = {
+			target = scope:attacker
+			modifier = disappointed_opinion
+			opinion = -20
+		}
+
+		stress_impact = {
+			craven = major_stress_impact_loss
+			arbitrary = minor_stress_impact_loss
+			just = minor_stress_impact_gain
+			brave = major_stress_impact_gain
+		}
+		# AI choose based on how much they like the co-emperor.
+		ai_chance = {
+			opinion_modifier = {
+				opinion_target = scope:attacker
+				multiplier = -1
+			}
+			ai_value_modifier = { ai_boldness = -1 }
+		}
+	}
+}
+
+scripted_effect diarchy_8007_designate_targets_effect = {
+	if = {
+		limit = {
+			NOT = { exists = scope:target_1 }
+		}
+		save_scope_as = target_1
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_2 }
+		}
+		save_scope_as = target_2
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_3 }
+		}
+		save_scope_as = target_3
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_4 }
+		}
+		save_scope_as = target_4
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_5 }
+		}
+		save_scope_as = target_5
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_6 }
+		}
+		save_scope_as = target_6
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_7 }
+		}
+		save_scope_as = target_7
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_8 }
+		}
+		save_scope_as = target_8
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_9 }
+		}
+		save_scope_as = target_9
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:target_10 }
+		}
+		save_scope_as = target_10
+	}
+}
+
+#	Tell the AI to try to declare its best possible war.
+diarchy.8007 = {
+	hidden = yes
+
+	immediate = {
+		# If statement to allow this to be turned off/on easily.
+		if = {
+			limit = { always = yes }
+			save_scope_as = diarch
+			liege = { save_scope_as = liege }
+			every_neighboring_top_liege_realm_owner = {
+				limit = {
+					highest_held_title_tier >= tier_kingdom
+					realm_size >= 30
+					NOR = {
+						is_allied_to = scope:liege
+						is_allied_to = scope:diarch
+						is_allied_in_war = scope:liege
+						is_allied_in_war = scope:diarch
+						any_truce_holder = {
+							OR = {
+								this = scope:liege
+								this = scope:diarch
+							}
+						}
+					}
+				}
+				add_to_list = possible_targets_list
+			}
+			ordered_in_list = {
+				list = possible_targets_list
+				order_by = {
+					every_sub_realm_duchy = {
+						if = {
+							limit = {
+								any_title_to_title_neighboring_duchy = {
+									any_de_jure_county = { holder.top_liege = scope:liege }
+								}
+							}
+							add = 10
+						}
+						if = {
+							limit = {
+								any_this_title_or_de_jure_above = { holder ?= scope:liege }
+							}
+							add = 20
+						}
+					}
+					save_temporary_scope_as = target_temp
+					scope:liege = {
+						every_sub_realm_duchy = {
+							if = {
+								limit = {
+									any_de_jure_county = { holder.top_liege = scope:target_temp }
+								}
+								add = 30
+							}
+						}
+					}
+				}
+				save_scope_as = probable_target
+			}
+			# We do a set_variable here to work around a code limitation that's not fixed yet.
+			set_variable = {
+				name = probable_target
+				value = scope:probable_target
+			}
+			ai_start_best_war = {
+				recalculate_cb_targets = yes
+				is_valid = {
+					scope:target_character = var:probable_target
+					any_in_list = { list = target_titles }
+				}
+				cb = { imperial_expedition_cb }
+			}
+		}
+		# Cursed manual targeting VERY BAD THING THAT WE SHOULD NOT DO, per long-standing instruction from Code.
+		## Left it in here for future debugging purposes, as it's useful if the above effect breaks.
+		if = {
+			limit = { always = no }
+			save_scope_as = diarch
+			liege = { save_scope_as = liege }
+			every_neighboring_top_liege_realm_owner = {
+				limit = {
+					highest_held_title_tier >= tier_kingdom
+					realm_size >= 30
+					NOR = {
+						is_allied_to = scope:liege
+						is_allied_to = scope:diarch
+						is_allied_in_war = scope:liege
+						is_allied_in_war = scope:diarch
+					}
+				}
+				add_to_list = possible_targets_list
+			}
+			ordered_in_list = {
+				list = possible_targets_list
+				order_by = {
+					every_sub_realm_duchy = {
+						if = {
+							limit = {
+								any_title_to_title_neighboring_duchy = {
+									any_de_jure_county = { holder.top_liege = scope:liege }
+								}
+							}
+							add = 10
+						}
+						if = {
+							limit = {
+								any_this_title_or_de_jure_above = { holder ?= scope:liege }
+							}
+							add = 20
+						}
+					}
+					save_temporary_scope_as = target_temp
+					scope:liege = {
+						every_sub_realm_duchy = {
+							if = {
+								limit = {
+									any_de_jure_county = { holder.top_liege = scope:target_temp }
+								}
+								add = 30
+							}
+						}
+					}
+				}
+				save_scope_as = target
+				# Now add all their valid titles to a list.
+				every_sub_realm_duchy = {
+					if = {
+						limit = {
+							OR = {
+								any_this_title_or_de_jure_above = { holder ?= scope:liege }
+								# Be a bit more thorough with this check now, as we've less to iterate over.
+								save_temporary_scope_as = duchy_temp
+								any_title_to_title_neighboring_duchy = {
+									any_de_jure_county = {
+										holder.top_liege = scope:liege
+										any_title_to_title_neighboring_county = { duchy = scope:duchy_temp }
+									}
+								}
+							}
+						}
+						diarchy_8007_designate_targets_effect = yes
+					}
+				}
+				scope:liege = {
+					every_sub_realm_duchy = {
+						if = {
+							limit = {
+								any_de_jure_county = { holder.top_liege = scope:target }
+							}
+							diarchy_8007_designate_targets_effect = yes
+						}
+					}
+				}
+			}
+			# Ugly war targeting.
+			## 10 targets.
+			if = {
+				limit = { exists = scope:target_10 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+					target_title = scope:target_4
+					target_title = scope:target_5
+					target_title = scope:target_6
+					target_title = scope:target_7
+					target_title = scope:target_8
+					target_title = scope:target_9
+					target_title = scope:target_10
+				}
+			}
+			## 09 targets.
+			else_if = {
+				limit = { exists = scope:target_9 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+					target_title = scope:target_4
+					target_title = scope:target_5
+					target_title = scope:target_6
+					target_title = scope:target_7
+					target_title = scope:target_8
+					target_title = scope:target_9
+				}
+			}
+			## 08 targets.
+			else_if = {
+				limit = { exists = scope:target_8 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+					target_title = scope:target_4
+					target_title = scope:target_5
+					target_title = scope:target_6
+					target_title = scope:target_7
+					target_title = scope:target_8
+				}
+			}
+			## 07 targets.
+			else_if = {
+				limit = { exists = scope:target_7 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+					target_title = scope:target_4
+					target_title = scope:target_5
+					target_title = scope:target_6
+					target_title = scope:target_7
+				}
+			}
+			## 06 targets.
+			else_if = {
+				limit = { exists = scope:target_6 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+					target_title = scope:target_4
+					target_title = scope:target_5
+					target_title = scope:target_6
+				}
+			}
+			## 05 targets.
+			else_if = {
+				limit = { exists = scope:target_5 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+					target_title = scope:target_4
+					target_title = scope:target_5
+				}
+			}
+			## 04 targets.
+			else_if = {
+				limit = { exists = scope:target_4 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+					target_title = scope:target_4
+				}
+			}
+			## 03 targets.
+			else_if = {
+				limit = { exists = scope:target_3 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+					target_title = scope:target_3
+				}
+			}
+			## 02 targets.
+			else_if = {
+				limit = { exists = scope:target_2 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+					target_title = scope:target_2
+				}
+			}
+			## 01 targets.
+			else_if = {
+				limit = { exists = scope:target_1 }
+				start_war = {
+					casus_belli = imperial_expedition_cb
+					target = scope:target
+					target_title = scope:target_1
+				}
+			}
+		}
+	}
+}
+
+##################################################
+# Request Imperial Expedition - Domain choice events
+# by Ewan Cowhig Croft
+# 8011 - 8020
+##################################################
+
+scripted_trigger diarchy_8011_has_titles_to_transfer = {
+	OR = {
+		list_size = {
+			name = vassals_to_transfer_all
+			value >= 1
+		}
+		list_size = {
+			name = 	titles_to_transfer_all
+			value >= 1
+		}
+	}
+}
+
+scripted_effect diarchy_8011_turn_over_titles = {
+	# Sort our inf up here so that we can apply it correctly in the step after next.
+	hidden_effect = {
+		change_influence = scope:attacker.$INFLUENCE_TOOLTIP_TITLE$
+		change_influence = scope:attacker.$INFLUENCE_TOOLTIP_VASSAL$
+	}
+	# Process actual effects.
+	hidden_effect = {
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+			add_claim_on_loss = yes
+		}
+		# Transfer vassals.
+		every_in_list = {
+			list = $VASSAL_TRANSFER_LIST$
+			change_liege = {
+				liege = scope:attacker.liege
+				change = scope:change
+			}
+		}
+		# Transfer titles.
+		every_in_list = {
+			list = $TITLE_TRANSFER_LIST$
+			change_title_holder = {
+				holder = scope:attacker.liege
+				change = scope:change
+				take_baronies = yes
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+	}
+	# Gain influence per county.
+	custom_tooltip = diarchy_8011.turn_over_titles.tt.$TITLE_TRANSFER_LIST$
+	# Gain influence per vassal by their size.
+	if = {
+		limit = { var:$VASSAL_VAR$ >= 1 }
+		custom_tooltip = diarchy_8011.turn_over_titles.tt.$VASSAL_TRANSFER_LIST$
+	}
+}
+
+scripted_effect diarchy_8011_process_niche_titles = {
+	# Process actual effects.
+	hidden_effect = {
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+			add_claim_on_loss = yes
+		}
+		# No vassals: they should be covered by other effects.
+		# Transfer titles.
+		every_in_list = {
+			list = rightful_holder_is_other_vassal_list
+			duchy.holder = { save_scope_as = legal_holder }
+			change_title_holder = {
+				holder = scope:legal_holder
+				change = scope:change
+				take_baronies = yes
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+	}
+	# No influence: it's already been handled elsewhere.
+}
+
+#	War won! what do
+diarchy.8011 = {
+	type = character_event
+	title = diarchy.8011.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { diarchy_8011_has_titles_to_transfer = no }
+				desc = diarchy.8011.desc.all_titles_legally_yours
+			}
+			desc = diarchy.8011.desc.fallback
+		}
+	}
+	theme = emperor
+	left_portrait = {
+		character = scope:attacker
+		animation = sword_coup_degrace
+	}
+	right_portrait = {
+		character = scope:defender
+		animation = sword_yield_start
+	}
+	override_background = { reference = throne_room }
+
+	immediate = {
+		# Alright, let's figure out where our gains might go.
+		## First off, try to pick a prize county.
+		ordered_in_list = {
+			list = titles_taken
+			limit = { tier = tier_county }
+			order_by = development_level
+			save_scope_as = prize_county
+		}
+		## Now we work out what titles we'd give over if we transferred them.
+		### Create missing duchies.
+		hidden_effect = {
+			every_in_list = {
+				list = titles_taken
+				limit = {
+					duchy = { is_title_created = no }
+				}
+				create_title_and_vassal_change = {
+					type = created
+					save_scope_as = change
+					add_claim_on_loss = no
+				}
+				duchy = {
+					# Make the guy.
+					change_title_holder = {
+						holder = scope:attacker
+						change = scope:change
+					}
+					# Cheekily whack it in the OG list so the logic doesn't break.
+					add_to_list = titles_taken
+				}
+				resolve_title_and_vassal_change = scope:change
+			}
+		}
+		### Vassals.
+		every_in_list = {
+			list = vassals_taken
+			limit = {
+				NOT = {
+					any_held_title = {
+						any_this_title_or_de_jure_above = { is_in_list = attacker_pre_held_titles }
+					}
+				}
+			}
+			# Track the transfer of everyone.
+			add_to_list = vassals_to_transfer_all
+			scope:attacker = {
+				increment_variable_effect = {
+					VAR = vassal_tally_all
+					VAL = prev.sub_realm_size
+				}
+			}
+			# And the transfer of just those that wouldn't stay with your prize county.
+			if = {
+				limit = {
+					exists = scope:prize_county
+					NOT = {
+						any_held_title = {
+							any_this_title_or_de_jure_above = { this = scope:prize_county.duchy }
+						}
+					}
+				}
+				add_to_list = vassals_to_transfer_prize
+				scope:attacker = {
+					increment_variable_effect = {
+						VAR = vassal_tally_prize
+						VAL = prev.sub_realm_size
+					}
+				}
+			}
+		}
+		### Counties.
+		every_in_list = {
+			list = titles_taken
+			limit = {
+				NOT = {
+					any_this_title_or_de_jure_above = { is_in_list = attacker_pre_held_titles }
+				}
+			}
+			# Track the transfer of everything.
+			add_to_list = titles_to_transfer_all
+			scope:attacker = {
+				increment_variable_effect = {
+					VAR = title_tally_all
+					VAL = 1
+				}
+			}
+			# And the transfer of just those that wouldn't stay with your prize county.
+			if = {
+				limit = {
+					exists = scope:prize_county
+					NOR = {
+						this = scope:prize_county.duchy
+						duchy = scope:prize_county.duchy
+					}
+				}
+				add_to_list = titles_to_transfer_prize
+				scope:attacker = {
+					increment_variable_effect = {
+						VAR = title_tally_prize
+						VAL = 1
+					}
+				}
+			}
+		}
+		### Flag anything that has another rightful holder.
+		every_in_list = {
+			list = titles_taken
+			limit = {
+				tier = tier_county
+				duchy.holder ?= {
+					NOT = { this = scope:attacker }
+					any_liege_or_above = { this = scope:attacker.liege }
+					save_temporary_scope_as = legal_holder
+				}
+				# Don't give away our prize.
+				trigger_if = {
+					limit = { exists = scope:prize_county }
+					NOR = {
+						this = scope:prize_county.duchy
+						duchy = scope:prize_county.duchy
+					}
+				}
+			}
+			add_to_list = rightful_holder_is_other_vassal_list
+		}
+		## We may choose to appoint interrim governors, in which case we want to know who those are.
+		## First, let's assemble a rough candidates list.
+		every_in_list = {
+			list = target_titles
+			title_capital_county.title_province = {
+				save_scope_as = province_temp
+				every_pool_character = {
+					province = scope:province_temp
+					limit = {
+						# Some sensible restrictions.
+						is_adult = yes
+						has_any_bad_relationship_with_root_trigger = no
+						# We want competent governors, civil or military.
+						OR = {
+							stewardship >= very_high_skill_rating
+							martial >= very_high_skill_rating
+						}
+						# And make sure they're faith-valid.
+						faith = { save_temporary_scope_as = faith_temp }
+						"root.faith.faith_hostility_level(scope:faith_temp)" <= faith_astray_level
+					}
+					add_to_list = interim_governors_prefilter_list
+				}
+			}
+		}
+		## Set a control for how many times we'll want to iterate over the list.
+		save_scope_value_as = {
+			name = candidates_required
+			value = "list_size(target_titles)"
+		}
+		## Ok, now we try to process people _within_ that list according to preferance.
+		ordered_in_list = {
+			list = interim_governors_prefilter_list
+			order_by = {
+				value = 1
+			}
+			check_range_bounds = no
+			max = scope:candidates_required
+			add_to_list = interim_governors_actual_list
+		}
+		## Finally, we save the relative list sizes for use as a comparator in one of the option triggers.
+		### Transfer all title lists size.
+		save_scope_value_as = {
+			name = transfer_all_size
+			value = {
+				every_in_list = {
+					list = vassals_to_transfer_all
+					add = 1
+				}
+				every_in_list = {
+					list = titles_to_transfer_all
+					add = 1
+				}
+			}
+		}
+		### Reserve prize title lists size.
+		save_scope_value_as = {
+			name = transfer_prize_size
+			value = {
+				every_in_list = {
+					list = vassals_to_transfer_prize
+					add = 1
+				}
+				every_in_list = {
+					list = titles_to_transfer_prize
+					add = 1
+				}
+			}
+		}
+	}
+
+	# Keep them all.
+	option = {
+		name = diarchy.8011.a
+		trigger = { diarchy_8011_has_titles_to_transfer = yes }
+
+		# You keep _everything_.
+		custom_tooltip = diarchy.8011.tt.all_lands_remain_in_your_custody
+		# Lose opinion with the emps scaling according to how many titles you were fighting for.
+		reverse_add_opinion = {
+			target = liege
+			modifier = suspicion_opinion
+			opinion = {
+				value = -10
+				multiply = {
+					every_in_list = {
+						list = target_titles
+						add = 1
+					}
+				}
+			}
+		}
+		# Fire the event for the emperor.
+		save_scope_value_as = {
+			name = war_result
+			value = flag:keeping_all
+		}
+		scope:attacker.liege = { trigger_event = diarchy.8012 }
+
+		stress_impact = {
+			ambitious = major_stress_impact_loss
+			arrogant = medium_stress_impact_loss
+			greedy = minor_stress_impact_loss
+			generous = minor_stress_impact_gain
+			humble = medium_stress_impact_gain
+			content = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 1
+			ai_value_modifier = {
+				ai_boldness = 1
+				ai_honor = -1
+			}
+		}
+	}
+	
+	# Turn them over.
+	option = {
+		name = diarchy.8011.b
+		trigger = { diarchy_8011_has_titles_to_transfer = yes }
+
+		# Lose anything you shouldn't have legally owned.
+		custom_tooltip = diarchy.8011.tt.distribution.lands_given_to_emperor
+		# Turn them over to the emperor.
+		diarchy_8011_turn_over_titles = {
+			VASSAL_TRANSFER_LIST = vassals_to_transfer_all
+			TITLE_TRANSFER_LIST = titles_to_transfer_all
+			VASSAL_VAR = vassal_tally_all
+			INFLUENCE_TOOLTIP_TITLE = request_imperial_expedition_influence_from_counties_full_value
+			INFLUENCE_TOOLTIP_VASSAL = request_imperial_expedition_influence_from_vassals_full_value
+		}
+		# Who is, naturally, quite happy about this.
+		reverse_add_opinion = {
+			target = liege
+			modifier = suspicion_opinion
+			opinion = {
+				value = 10
+				multiply = {
+					every_in_list = {
+						list = target_titles
+						add = 1
+					}
+				}
+			}
+		}
+		# Handle the dregs.
+		diarchy_8011_process_niche_titles = yes
+		# Fire the event for the emperor.
+		save_scope_value_as = {
+			name = war_result
+			value = flag:turning_over_all
+		}
+		scope:attacker.liege = { trigger_event = diarchy.8012 }
+
+		stress_impact = {
+			content = major_stress_impact_loss
+			humble = medium_stress_impact_loss
+			generous = minor_stress_impact_loss
+			greedy = minor_stress_impact_gain
+			arrogant = medium_stress_impact_gain
+			ambitious = major_stress_impact_gain
+		}
+		ai_chance = {
+			base = 1
+			ai_value_modifier = {
+				ai_honor = 1
+				ai_boldness = -1
+			}
+		}
+	}
+	
+	# Keep the duchy with the highest development county.
+	option = {
+		name = diarchy.8011.c
+		trigger = {
+			exists = scope:prize_county
+			scope:transfer_all_size > scope:transfer_prize_size
+			diarchy_8011_has_titles_to_transfer = yes
+		}
+
+		# We'll keep scope:prize_county & its attached lands.
+		custom_tooltip = diarchy.8011.tt.distribution.reserve_prize
+		# Turn the rest over to the emperor.
+		diarchy_8011_turn_over_titles = {
+			VASSAL_TRANSFER_LIST = vassals_to_transfer_prize
+			TITLE_TRANSFER_LIST = titles_to_transfer_prize
+			VASSAL_VAR = vassal_tally_prize
+			INFLUENCE_TOOLTIP_TITLE = request_imperial_expedition_influence_from_counties_prize_value
+			INFLUENCE_TOOLTIP_VASSAL = request_imperial_expedition_influence_from_vassals_prize_value
+		}
+		# Still pretty happy — you can't be begrudged a bit of a share, after all.
+		reverse_add_opinion = {
+			target = liege
+			modifier = pleased_opinion
+			opinion = {
+				value = 10
+				multiply = {
+					every_in_list = {
+						list = target_titles
+						add = 1
+					}
+				}
+				# Subtract the target duchy we kept for ourselves.
+				add = -10
+				# And make sure we never try to add 0 opinion (i.e., because we had two target duchies).
+				min = 10
+			}
+		}
+		# Handle the dregs.
+		diarchy_8011_process_niche_titles = yes
+		# Fire the event for the emperor.
+		save_scope_value_as = {
+			name = war_result
+			value = flag:turning_over_most
+		}
+		scope:attacker.liege = { trigger_event = diarchy.8012 }
+
+		stress_impact = {
+			ambitious = medium_stress_impact_loss
+			arrogant = minor_stress_impact_loss
+			greedy = miniscule_stress_impact_loss
+			generous = miniscule_stress_impact_gain
+			humble = minor_stress_impact_gain
+			content = medium_stress_impact_gain
+		}
+		ai_chance = {
+			base = 1
+			ai_value_modifier = {
+				ai_boldness = 1
+				ai_rationality = 1
+			}
+		}
+	}
+	
+	# Appoint interim governors.
+	option = {
+		name = diarchy.8011.d
+		trigger = { diarchy_8011_has_titles_to_transfer = yes }
+
+		# Ok, let's parse out some titles!
+		## Your stuff is gonna get handed out to a whole bunch of dudes.
+		custom_tooltip = diarchy.8011.tt.distribution.interim_governors
+		custom_tooltip = diarchy.8011.tt.distribution.interim_governors.hook_and_opinion
+		## Begin handing out actual titles.
+		hidden_effect = {
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = change
+				add_claim_on_loss = yes
+			}
+			# Transfer vassals.
+			every_in_list = {
+				list = vassals_to_transfer_all
+				change_liege = {
+					liege = scope:attacker.liege
+					change = scope:change
+				}
+			}
+			# Transfer titles.
+			every_in_list = {
+				list = titles_to_transfer_all
+				limit = { tier >= tier_duchy }
+				# Try to find a suitable governor.
+				## First grabbing them from the list.
+				random_in_list = {
+					list = interim_governors_actual_list
+					limit = {
+						NOT = { is_in_list = governors_used_list }
+					}
+					save_scope_as = interim_gov_temp
+					add_to_list = governors_used_list
+				}
+				## But if we come back empty-handed, then we can just make someone from the duchy.
+				if = {
+					limit = {
+						NOT = { exists = scope:interim_gov_temp }
+					}
+					# If we like the local faith enough, take that.
+					if = {
+						limit = {
+							title_capital_county.faith = { save_temporary_scope_as = faith_temp }
+							"root.faith.faith_hostility_level(scope:faith_temp)" <= faith_astray_level
+						}
+						scope:faith_temp = { save_scope_as = new_gov_faith }
+					}
+					# Else take ours.
+					else = {
+						scope:attacker.faith = { save_scope_as = new_gov_faith }
+					}
+					create_character = {
+						template = ep3_magistrate_character
+						location = root.capital_province
+						culture = title_capital_county.culture
+						faith = scope:new_gov_faith
+						save_scope_as = interim_gov_temp
+					}
+				}
+				# Transfer all the relevant counties.
+				every_de_jure_county = {
+					limit = { is_in_list = titles_to_transfer_all }
+					change_title_holder = {
+						holder = scope:interim_gov_temp
+						change = scope:change
+						take_baronies = yes
+					}
+				}
+				# Then the duchy itself.
+				change_title_holder = {
+					holder = scope:interim_gov_temp
+					change = scope:change
+					take_baronies = yes
+				}
+				# Note whose governments we'll need to adjust — we do this here because we're clearing the scope in a sec + they aren't fully landed till have we resolve.
+				scope:interim_gov_temp = { add_to_list = char_govs_to_change_list }
+				# Remove the governor we just used so that we can see if we need to create someone.
+				clear_saved_scope = interim_gov_temp
+			}
+			resolve_title_and_vassal_change = scope:change
+			every_in_list = {
+				list = char_govs_to_change_list
+				# Force everyone to be governors.
+				change_government = administrative_government
+				# Also you get a hook + opinion with each new governor.
+				## This thing is truculent as all hell and will just error stubbornly simply because we have the temerity to apply effects to a hidden list before we've populated that list (and we do _this_ because we don't know who's in it).
+				### It works fine, it just hates me. Ignore its lies.
+				save_temporary_scope_as = char_temp
+				root = {
+					add_favour_hook_if_possible_simple_effect = { TARGET = scope:char_temp }
+				}
+				## This'll works zero errors though.
+				add_opinion = {
+					target = root
+					modifier = grateful_opinion
+					opinion = 100
+				}
+			}
+		}
+		## Including any dregs.
+		diarchy_8011_process_niche_titles = yes
+		# Gain influence per county.
+		custom_tooltip = {
+			text = diarchy_8011.turn_over_titles.tt.interim_governors.county
+			change_influence = scope:attacker.request_imperial_expedition_influence_from_counties_reduced_value
+		}
+		# Gain influence per vassal by their size.
+		if = {
+			limit = { var:vassal_tally_all >= 1 }
+			custom_tooltip = {
+				text = diarchy_8011.turn_over_titles.tt.interim_governors.vassal
+				change_influence = scope:attacker.request_imperial_expedition_influence_from_vassals_reduced_value
+			}
+		}
+		# Emps is still pretty happy — you're not building too much of a threat.
+		reverse_add_opinion = {
+			target = liege
+			modifier = reputation_opinion
+			opinion = {
+				value = 5
+				multiply = {
+					every_in_list = {
+						list = target_titles
+						add = 1
+					}
+				}
+			}
+		}
+		# Fire the event for the emperor.
+		save_scope_value_as = {
+			name = war_result
+			value = flag:interim_governors
+		}
+		scope:attacker.liege = { trigger_event = diarchy.8012 }
+
+		# No stress here, it's the compromise option.
+		ai_chance = {
+			base = 1
+			ai_value_modifier = {
+				ai_rationality = 1
+				ai_sociability = 1
+			}
+		}
+	}
+	
+	# It is perfectly legal.
+	option = {
+		name = diarchy.8011.e
+		trigger = { diarchy_8011_has_titles_to_transfer = no }
+
+		# You cheeky fucker.
+		custom_tooltip = diarchy.8011.e.tt.keep_everything_but_legally
+		# Fire the event for the emperor.
+		save_scope_value_as = {
+			name = war_result
+			value = flag:legal_shenanigans
+		}
+		scope:attacker.liege = { trigger_event = diarchy.8012 }
+
+		# No stress here, we're just covering an edge case.
+		# Nor do we need AI chance: if you get this option, you got literally no others.
+	}
+
+	after = {
+		# Clean up our variables.
+		remove_variable = vassal_tally_all
+		remove_variable = vassal_tally_prize
+		remove_variable = title_tally_all
+		remove_variable = title_tally_prize
+	}
+}
+
+#	War result.
+diarchy.8012 = {
+	type = letter_event
+	opening = diarchy.8012.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:war_result = flag:keeping_all }
+				desc = diarchy.8012.desc.keeping_all
+			}
+			triggered_desc = {
+				trigger = { scope:war_result = flag:turning_over_all }
+				desc = diarchy.8012.desc.turning_over_all
+			}
+			triggered_desc = {
+				trigger = { scope:war_result = flag:turning_over_most }
+				desc = diarchy.8012.desc.turning_over_most
+			}
+			triggered_desc = {
+				trigger = { scope:war_result = flag:interim_governors }
+				desc = diarchy.8012.desc.interim_governors
+			}
+			triggered_desc = {
+				trigger = { scope:war_result = flag:legal_shenanigans }
+				desc = diarchy.8012.desc.legal_shenanigans
+			}
+		}
+	}
+	sender = scope:attacker
+
+	immediate = {
+		switch = {
+			trigger = scope:war_result
+			flag:keeping_all = { custom_tooltip = diarchy.8012.tt.keeping_all }
+			flag:turning_over_all = { custom_tooltip = diarchy.8012.tt.turning_over_all }
+			flag:turning_over_most = { custom_tooltip = diarchy.8012.tt.turning_over_most }
+			flag:interim_governors = { custom_tooltip = diarchy.8012.tt.interim_governors }
+			flag:legal_shenanigans = { custom_tooltip = diarchy.8012.tt.legal_shenanigans }
+		}
+	}
+
+	# Acknowledged.
+	option = {
+		name = {
+			text = {
+				first_valid = {
+					triggered_desc = {
+						trigger = { scope:war_result = flag:keeping_all }
+						desc = diarchy.8012.desc.a.keeping_all
+					}
+					triggered_desc = {
+						trigger = { scope:war_result = flag:turning_over_all }
+						desc = diarchy.8012.desc.a.turning_over_all
+					}
+					triggered_desc = {
+						trigger = { scope:war_result = flag:turning_over_most }
+						desc = diarchy.8012.desc.a.turning_over_most
+					}
+					triggered_desc = {
+						trigger = { scope:war_result = flag:interim_governors }
+						desc = diarchy.8012.desc.a.interim_governors
+					}
+					triggered_desc = {
+						trigger = { scope:war_result = flag:legal_shenanigans }
+						desc = diarchy.8012.desc.a.legal_shenanigans
+					}
+				}
+			}
+		}
+
+		# No stress or AI chance needed for a notification event.
+	}
+}
+
+##################################################
+# Maiming Co-Emperors For Fun & Profit
+# by Ewan Cowhig Croft
+# 8021 - 8030
+##################################################
+
+scripted_trigger administrative_player_is_related_to_maiming_participant_trigger = {
+	OR = {
+		is_consort_of = $PARTICIPANT$
+		is_close_or_extended_family_of = $PARTICIPANT$
+		$PARTICIPANT$.house ?= house
+	}
+}
+
+scripted_effect determine_which_bit_was_chopped_off_recipient_effect = {
+	show_as_tooltip = {
+		switch = {
+			trigger = yes
+			scope:maim_castrate = {
+				scope:recipient = { add_trait_force_tooltip = eunuch_1 }
+			}
+			scope:maim_blind = {
+				scope:recipient = { add_trait_force_tooltip = blind }
+			}
+			scope:maim_face = {
+				scope:recipient = { add_trait_force_tooltip = disfigured }
+			}
+			scope:maim_arm = {
+				scope:recipient = { apply_maimed_trait_and_modifier_effect = yes }
+			}
+			scope:maim_leg = {
+				scope:recipient = { add_trait_force_tooltip = one_legged }
+			}
+		}
+	}
+}
+
+#	Teach the AI to be judicious with their political maimings.
+diarchy.8021 = {
+	hidden = yes
+
+	# Note that characters who don't fulfil the below may still run the interaction, just not commonly, whereas characters who _do_ will fulfil it near-instantly.
+	## We deliberately avoid positive relationship reasons: friends, lovers, and family alike were slaughtered for the throne.
+	trigger = {
+		scope:imprisoner = {
+			OR = {
+				AND = {
+					is_diarch_of_target = root
+					root = { has_diarchy_parameter = diarchy_is_co_rulership }
+				}
+				AND = {
+					diarch ?= root
+					has_diarchy_parameter = diarchy_is_co_rulership
+				}
+			}
+			ai_diarch_would_maim_execute_superior_if_got_chance_trigger = { LIEGE = root }
+		}
+	}
+
+	immediate = {
+		# Try to only maim if we can.
+		if = {
+			limit = {
+				scope:imprisoner = {
+					is_character_interaction_valid = {
+						interaction = systematically_maim_character_interaction
+						recipient = root
+					}
+				}
+			}
+			run_interaction = {
+				interaction = systematically_maim_character_interaction
+				actor = scope:imprisoner
+				recipient = root
+				execute_threshold = accept
+			}
+		}
+		# Otherwise, they're for the more permanent chop.
+		else_if = {
+			limit = {
+				scope:imprisoner = {
+					is_character_interaction_valid = {
+						interaction = execute_prisoner_interaction
+						recipient = root
+					}
+				}
+			}
+			run_interaction = {
+				interaction = execute_prisoner_interaction
+				actor = scope:imprisoner
+				recipient = root
+				execute_threshold = accept
+			}
+		}
+	}
+}
+
+#	Co-emperor maimed & cast aside.
+diarchy.8022 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = { is_alive = yes }
+				}
+				desc = diarchy.8022.t
+			}
+			desc = diarchy.8022.t.dead
+		}
+	}
+	desc = {
+		desc = diarchy.8022.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = { is_alive = no }
+				}
+				desc = diarchy.8022.desc.dead
+			}
+			desc = diarchy.8022.desc.maimed
+		}
+		desc = diarchy.8022.desc.outro
+	}
+	theme = emperor
+	left_portrait = {
+		character = scope:actor
+		animation = schadenfreude
+	}
+	right_portrait = {
+		character = scope:recipient
+		triggered_animation = {
+			trigger = {
+				scope:recipient = { is_alive = yes }
+			}
+			animation = fear
+		}
+		triggered_animation = {
+			trigger = {
+				scope:recipient = { is_alive = no }
+			}
+			animation = map_fear
+		}
+	}
+
+	immediate = {
+		if = {
+			limit = {
+				scope:recipient = { is_alive = yes }
+			}
+			custom_tooltip = diarchy.8022.tt.explanation
+			determine_which_bit_was_chopped_off_recipient_effect = yes
+		}
+	}
+
+	# An outrageous crime!
+	option = {
+		name = diarchy.8022.a
+		trigger = {
+			administrative_player_is_related_to_maiming_participant_trigger = { PARTICIPANT = scope:recipient }
+		}
+
+		# No stress or AI needed for a notification event.
+	}
+	
+	# This was the best possible outcome.
+	option = {
+		name = diarchy.8022.b
+		trigger = {
+			administrative_player_is_related_to_maiming_participant_trigger = { PARTICIPANT = scope:actor }
+		}
+
+		# No stress or AI needed for a notification event.
+	}
+	
+	# So it goes in GetCapitalLocation.
+	option = {
+		name = diarchy.8022.c
+		trigger = { always = yes }
+
+		# No stress or AI needed for a notification event.
+	}
+}
+
+#	Senior emperor maimed and usurped.
+diarchy.8023 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = { is_alive = yes }
+				}
+				desc = diarchy.8023.t
+			}
+			desc = diarchy.8022.t.dead
+		}
+	}
+	desc = {
+		desc = diarchy.8023.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:recipient = { is_alive = no }
+				}
+				desc = diarchy.8023.desc.dead
+			}
+			desc = diarchy.8023.desc.maimed
+		}
+		desc = diarchy.8023.desc.outro
+		triggered_desc = {
+			trigger = {
+				scope:recipient = { is_alive = yes }
+			}
+			desc = diarchy.8023.desc.outro.alive
+		}
+	}
+	theme = emperor
+	left_portrait = {
+		character = scope:actor
+		animation = schadenfreude
+	}
+	right_portrait = {
+		character = scope:recipient
+		triggered_animation = {
+			trigger = {
+				scope:recipient = { is_alive = yes }
+			}
+			animation = fear
+		}
+		triggered_animation = {
+			trigger = {
+				scope:recipient = { is_alive = no }
+			}
+			animation = map_fear
+		}
+	}
+
+	immediate = {
+		custom_tooltip = diarchy.8023.tt.explanation
+		if = {
+			limit = {
+				scope:recipient = { is_alive = yes }
+			}
+			determine_which_bit_was_chopped_off_recipient_effect = yes
+		}
+	}
+
+	# The GetHouseNames take their rightful place at last.
+	option = {
+		name = diarchy.8023.a
+		trigger = {
+			exists = scope:actor.house
+			exists = scope:recipient.house
+			scope:recipient.house != scope:actor.house
+			administrative_player_is_related_to_maiming_participant_trigger = { PARTICIPANT = scope:actor }
+		}
+
+		# No stress or AI needed for a notification event.
+	}
+	
+	# This is usurpation!
+	option = {
+		name = diarchy.8023.b
+		trigger = {
+			administrative_player_is_related_to_maiming_participant_trigger = { PARTICIPANT = scope:recipient }
+		}
+
+		# No stress or AI needed for a notification event.
+	}
+	
+	# So it goes in GetCapitalLocation.
+	option = {
+		name = diarchy.8023.c
+		trigger = { always = yes }
+
+		# No stress or AI needed for a notification event.
+	}
+}
+
+##################################################
+# Request Despotate
+# by Ewan Cowhig Croft
+# 8031 - 8040
+##################################################
+
+#	Your request for a despotate has been granted.
+diarchy.8031 = {
+	type = letter_event
+	opening = diarchy.8031.t
+	desc = diarchy.8031.desc
+	sender = scope:recipient
+
+	immediate = {
+		# Apply interaction effects.
+		diarch_demand_despotate_interaction_accepted_effect = yes
+	}
+
+	# Excellent.
+	option = {
+		name = diarchy.8031.a
+
+		# No stress or AI chance needed for a notification event.
+	}
+}
+
+#	Your request for a despotate has been refused.
+diarchy.8032 = {
+	type = letter_event
+	opening = diarchy.8032.t
+	desc = diarchy.8032.desc
+	sender = scope:recipient
+
+	immediate = {
+		# Apply interaction effects.
+		diarch_demand_despotate_interaction_rejected_effect = yes
+	}
+
+	# Bah, they're intimidated by me!
+	option = {
+		name = diarchy.8032.a
+
+		# No stress or AI chance needed for a notification event.
+	}
+}
+
+#	You've been forced to agree to your co-emperor a despotate.
+diarchy.8033 = {
+	type = letter_event
+	opening = diarchy.8033.t
+	desc = {
+		desc = diarchy.8033.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:hook = yes }
+				desc = diarchy.8033.desc.hook
+			}
+			desc = diarchy.8033.desc.insufficient_influence
+		}
+	}
+	sender = scope:recipient
+
+	immediate = {
+		# Apply interaction effects.
+		show_as_tooltip = { diarch_demand_despotate_interaction_accepted_effect = yes }
+		# Confirm what happened if it wouldn't have showed otherwise.
+		if = {
+			limit = { scope:hook = no }
+			custom_tooltip = diarchy.8033.tt.influence
+		}
+	}
+
+	# Sonuva
+	option = {
+		name = diarchy.8033.a
+
+		# No stress or AI chance needed for a notification event.
+	}
+}
+
+##################################################
+# Scapegoat Co-Emperor
+# by Ewan Cowhig Croft
+# 8041 - 8050
+##################################################
+
+#	Your Senior Emperor is slagging you off.
+diarchy.8041 = {
+	type = letter_event
+	opening = diarchy.8041.t
+	desc = diarchy.8041.desc
+	sender = scope:actor
+
+	immediate = {
+		# Actual effects applied after these events are sent out back in the interaction.
+		show_as_tooltip = {
+			scapegoat_counterpart_interaction_process_results_effect = {
+				REALM_OPINION_ACTOR = add_tyranny
+				REALM_OPINION_RECIPIENT = change_strife_opinion
+			}
+		}
+	}
+
+	# Confounded ingrate!
+	option = {
+		name = diarchy.8041.a
+		trigger = { this = scope:recipient }
+
+		# No stress or AI chance needed for a notification event.
+	}
+
+	# Mum and dad are fighting again.
+	option = {
+		name = diarchy.8041.b
+		trigger = { this != scope:recipient }
+
+		# No stress or AI chance needed for a notification event.
+	}
+}
+
+#	Your Co-Emperor is slagging you off.
+diarchy.8042 = {
+	type = letter_event
+	opening = diarchy.8042.t
+	desc = diarchy.8042.desc
+	sender = scope:actor
+
+	immediate = {
+		# Actual effects applied after these events are sent out back in the interaction.
+		show_as_tooltip = {
+			scapegoat_counterpart_interaction_process_results_effect = {
+				REALM_OPINION_ACTOR = change_strife_opinion
+				REALM_OPINION_RECIPIENT = add_tyranny
+			}
+		}
+	}
+
+	# Confounded ingrate!
+	option = {
+		name = diarchy.8042.a
+		trigger = { this = scope:recipient }
+
+		# No stress or AI chance needed for a notification event.
+	}
+
+	# Mum and dad are fighting again.
+	option = {
+		name = diarchy.8042.b
+		trigger = { this != scope:recipient }
+
+		# No stress or AI chance needed for a notification event.
+	}
+}
+
+
+
+
+
+
+
+
+
+
+##################################################
 # DECISIONS - GENERIC SCRIPTED TRIGGERS & EFFECTS
 
 # Do you have a proxy available who might be a separate actor in the event?
@@ -7759,8 +9741,8 @@ scripted_effect diarch_coup_attempt_take_de_jure_capital_and_duchy_effect = {
 					}
 				}
 				order_by = {
-					# Rough opinion.
-					add = calc_rough_liege_opinion_value
+					# Opinion.
+					add = "opinion(liege)"
 					# Plus weight up a bit more for higher tier vassals.
 					add = highest_held_title_tier
 				}
@@ -9343,7 +11325,25 @@ diarchy.9021 = {
 				order_by = prowess
 				diarch_9000_create_proxy_and_check_for_betrayal_effect = yes
 			}
-		}
+		}  # Warcraft - Remove
+		# else_if = {
+		# 	limit = {
+		# 		any_court_position_holder = {
+		# 			has_court_position = akolouthos_court_position
+		# 			diarch_9000_valid_yet_betrayable_proxy_trigger = yes
+		# 			is_ai = yes
+		# 		}
+		# 	}
+		# 	ordered_court_position_holder = {
+		# 		limit = {
+		# 			has_court_position = akolouthos_court_position
+		# 			diarch_9000_valid_yet_betrayable_proxy_trigger = yes
+		# 			is_ai = yes
+		# 		}
+		# 		order_by = prowess
+		# 		diarch_9000_create_proxy_and_check_for_betrayal_effect = yes
+		# 	}
+		# }
 		## Finally, try to grab a knight.
 		else_if = {
 			limit = {
