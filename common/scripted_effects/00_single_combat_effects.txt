@@ -20,7 +20,7 @@ configure_start_single_combat_effect = {
 		### no: losing is never fatal.
 		### always: losing always fatal.
 		### practice: no death, no wounds.
-	## scope:fixed = flag:no/scope:sc_attacker/scope:challenged
+	## scope:fixed = flag:no/flag:sc_attacker/scope:sc_defender
 		### No: the match uses normal rules.
 		### scope:sc_attacker: the attacker will always win.
 		### scope:challenged: the defender will always win.
@@ -44,13 +44,34 @@ configure_start_single_combat_effect = {
 	## output event ID
 		### Which event fires after the combat's completion?
 
-	#Sort parties.
+	# Sort parties.
 	$SC_INITIATOR$ = { save_scope_as = sc_initiator }
 	$SC_ATTACKER$ = { save_scope_as = sc_attacker }
 	$SC_DEFENDER$ = { save_scope_as = sc_defender }
-	#Make sure they're clean for setup.
+	# Arrange aftermath.
+	## We're doing this early so we can invalidate well in a sec.
+	if = {
+		limit = { exists = scope:sc_finished }
+		clear_saved_scope = sc_finished
+	}
+	save_scope_value_as = {
+		name = follow_up_event
+		value = event_id:$OUTPUT_EVENT$
+	}
+	save_scope_value_as = {
+		name = invalidation_event
+		value = event_id:$INVALIDATION_EVENT$
+	}
+	# Invalidation check: have we managed to set scope:sc_attacker and scope:sc_defender to the same person?
+	## If so, invalidate the duel, because this will cause crashes on Mac due to the duel's logic then looping in on itself later.
+	### Shocking to hear Mac has problems, I know.
+	if = { 
+		limit = {
+			NOT = { scope:sc_attacker = scope:sc_defender }
+		}
+		# Make sure they're clean for setup.
 	hidden_effect = { remove_single_combat_info_effect = yes }
-	#Set them both to busy for the single combat.
+	# Set them both to busy for the single combat.
 	scope:sc_attacker = {
 		set_variable = {
 			name = engaged_in_single_combat
@@ -68,7 +89,7 @@ configure_start_single_combat_effect = {
 		ATTACKER = scope:sc_attacker
 		DEFENDER = scope:sc_defender
 	}
-	#Set rules.
+	# Set rules.
 	save_scope_value_as = {
 		name = fatality
 		value = flag:$FATALITY$
@@ -81,25 +102,12 @@ configure_start_single_combat_effect = {
 		name = locale
 		value = flag:$LOCALE$
 	}
-	##Note where the fight is taking place, if we're using a specific location.
+	## Note where the fight is taking place, if we're using a specific location.
 	if = {
 		limit = { scope:locale = flag:terrain_scope }
 		scope:sc_defender.location = { save_scope_as = background_terrain_scope }
 	}
-	#Arrange aftermath.
-	if = {
-		limit = { exists = scope:sc_finished }
-		clear_saved_scope = sc_finished
-	}
-	save_scope_value_as = {
-		name = follow_up_event
-		value = event_id:$OUTPUT_EVENT$
-	}
-	save_scope_value_as = {
-		name = invalidation_event
-		value = event_id:$INVALIDATION_EVENT$
-	}
-	#Configure starting bonus/threshold variables.
+	# Configure starting bonus/threshold variables.
 	scope:sc_attacker = {
 		set_variable = {
 			name = sc_attacker_injury_bonus
@@ -116,7 +124,7 @@ configure_start_single_combat_effect = {
 			value = starting_success_threshold
 		}
 	}
-	#Configure starting round variables.
+	# Configure starting round variables.
 	scope:sc_attacker = {
 		set_variable = {
 			name = sc_attacker_injury_risk_score
@@ -164,8 +172,19 @@ configure_start_single_combat_effect = {
 		# If the character lacks a preferred weapon, pick one.
 		set_signature_weapon_effect = yes
 	}
-	#Finally, send the first event.
+	# Finally, send the first event.
 	scope:sc_defender = { trigger_event = single_combat.0001 }
+	}
+	# Otherwise, invalidate the duel immediately.
+	else = {
+		scope:sc_initiator = {
+			trigger_event = { saved_event_id = scope:invalidation_event }
+		}
+		# And fire an error to the debug log for us.
+		error_log = debug_log.single_combat_setup.attacker_and_defender_same_person
+		debug_log = debug_log.single_combat_setup.attacker_and_defender_same_person.notice
+		debug_log_scopes = yes
+	}
 }
 
 # Clean all duel edge buff character modifiers.
@@ -305,7 +324,7 @@ remove_single_combat_character_local_variables_effect = {
 	remove_local_variable = combat_move_hard_grit_flag
 	remove_local_variable = combat_move_feint_and_stab_flag
 	remove_local_variable = combat_move_butchery_flag
-	#remove_local_variable = combat_move_stoic_veteran_flag
+	#remove_local_variable = combat_move_stoic_veteran_flag # Warcraft - removed in 1.11 update
 	remove_local_variable = combat_move_blade_dance_flag
 	remove_local_variable = combat_move_wrath_of_highgod_flag
 	remove_local_variable = combat_move_hurt_me_better_flag

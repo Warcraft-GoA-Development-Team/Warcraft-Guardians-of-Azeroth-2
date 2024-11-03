@@ -1,0 +1,1881 @@
+﻿
+##################################################
+# AI Contract Story Effects
+
+ep3_adventurer_ai_contract_find_next_employer_effect = {
+	save_scope_as = story
+	# Save previous employer for easy reference
+	var:previous_employer ?= { save_scope_as = previous_employer }
+	# Save current employer for easy reference
+	var:active_employer ?= { save_scope_as = current_employer }
+	# Find next employer in active de jure kingdom
+	var:active_kingdom = {
+		random_de_jure_county_holder = {
+			limit = {
+				save_temporary_scope_as = new_employer_temp
+				NOR = {
+					scope:story = {
+						is_target_in_variable_list = {
+							name = recent_employers
+							target = scope:new_employer_temp
+						}
+					}
+					is_at_war_with = scope:story.story_owner
+					has_imprisonment_reason = scope:story.story_owner
+					has_execute_reason = scope:story.story_owner
+					has_banish_reason = scope:story.story_owner
+					any_liege_or_above = {
+						OR = {
+							has_imprisonment_reason = scope:story.story_owner
+							has_execute_reason = scope:story.story_owner
+							has_banish_reason = scope:story.story_owner
+							is_at_war_with = scope:story.story_owner
+						}
+					}
+				}
+			}
+			weight = {
+				base = 1
+				# Prefer higher ranked employers
+				modifier = { add = highest_held_title_tier }
+				# Prefer same culture employers
+				modifier = {
+					culture = { has_same_culture_heritage = scope:story.story_owner.culture }
+					factor = 1.5
+				}
+				# Prefer same faith employers
+				modifier = {
+					faith = scope:story.story_owner.faith
+					factor = 1.5
+				}
+				# Prefer same faith employers
+				modifier = {
+					religion = scope:story.story_owner.religion
+					factor = 1.5
+				}
+				# Prefer new employers
+				modifier = {
+					scope:previous_employer ?= scope:new_employer_temp
+					factor = 0.25
+				}
+				modifier = {
+					scope:current_employer ?= scope:new_employer_temp
+					factor = 0.25
+				}
+				# Mercenary
+				modifier = {
+					scope:story.story_owner = {
+						has_realm_law = camp_purpose_mercenaries
+						NOR = {
+							has_relation_rival = scope:new_employer_temp
+							scope:new_employer_temp = {
+								any_war_enemy = {
+									OR = {
+										is_consort_of = scope:story.story_owner
+										is_close_family_of = scope:story.story_owner
+										is_allied_to = scope:story.story_owner
+										has_relation_friend = scope:story.story_owner
+									}
+								}
+							}
+						}
+						can_create_task_contract = {
+							type_name = laamp_join_war_contract
+							employer = scope:new_employer_temp
+						}
+					}
+					factor = 2
+				}
+			}
+			# Save new employer
+			save_scope_as = new_employer
+		}
+	}
+	if = {
+		limit = { exists = scope:new_employer }
+		if = { # Save previous employer for checks and debugging
+			limit = { exists = scope:current_employer }
+			set_variable = {
+				name = previous_employer
+				value = scope:current_employer
+			}
+			add_to_variable_list = {
+				name = recent_employers
+				target = scope:current_employer
+				years = 2
+			}
+		}
+		set_variable = { # Save active employer
+			name = active_employer
+			value = scope:new_employer
+		}
+		set_variable = { # Reset remaining contracts counter
+			name = remaining_contract_counter
+			value = {
+				integer_range = {
+					min = ep3_adventurer_ai_contracts_per_employer_min_value
+					max = ep3_adventurer_ai_contracts_per_employer_max_value
+				}
+			}
+		}
+		change_variable = { # Change remaining employer counter
+			name = remaining_employer_counter
+			add = -1
+		}
+		story_owner = { # Travel to or create contract
+			if = { # Travel
+				limit = { location != scope:new_employer.capital_province }
+				save_scope_value_as = { # Approx provisions for journey
+					name = lammp_travel_provisions
+					value = {
+						value = "location.squared_distance(scope:new_employer.capital_province)"
+						divide = 300
+					}
+				}
+				domicile = { # the AI doesn't have to know how to use provisions efficiently, so just add a couple so that they don't suicide
+					if = {
+						limit = { provisions < scope:lammp_travel_provisions }
+						change_provisions = scope:lammp_travel_provisions
+					}
+				}
+				start_travel_plan = {
+					destination = scope:new_employer.capital_province
+					travel_with_domicile = yes
+					return_trip = no
+					on_arrival_on_action = on_adventurer_ai_new_employer_arrival
+					on_arrival_destinations = last
+				}
+			}
+			else = {
+				trigger_event = { on_action = on_adventurer_ai_new_employer_arrival }
+			}
+		}
+	}
+	else = { # Find a new kingdom if noone would hire you
+		set_variable = {
+			name = remaining_contract_counter
+			value = 0
+		}
+		set_variable = {
+			name = remaining_employer_counter
+			value = 0
+		}
+	}
+	story_owner = {
+		domicile = { # the AI doesn't have to know how to use provisions efficiently, so just add a couple so that they don't suicide
+			if = {
+				limit = { provisions < max_provisions }
+				change_provisions = max_provisions
+			}
+		}
+	}
+}
+
+ep3_adventurer_ai_contract_find_next_contract_effect = {
+	save_scope_as = story
+	story_owner = {
+		location.barony.de_jure_liege.holder ?= { save_scope_as = new_employer }
+		# Create new contract
+		if = {
+			limit = { exists = scope:new_employer }
+			if = { # Mercenaries
+				limit = {
+					has_realm_law = camp_purpose_mercenaries
+					NOR = {
+						has_relation_rival = scope:new_employer
+						scope:new_employer = {
+							any_war_enemy = {
+								OR = {
+									is_consort_of = scope:story.story_owner
+									is_close_family_of = scope:story.story_owner
+									is_allied_to = scope:story.story_owner
+									has_relation_friend = scope:story.story_owner
+								}
+							}
+						}
+					}
+					can_create_task_contract = {
+						type_name = laamp_join_war_contract
+						employer = scope:new_employer
+					}
+				}
+				create_task_contract = {
+					task_contract_type = laamp_join_war_contract
+					task_contract_tier = scope:new_employer.task_contract_tier_value
+					location = scope:new_employer.capital_province
+					task_contract_employer = scope:new_employer
+				}
+			}
+			else = {
+				random_list = {
+					### DIPLOMACY
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_0001
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							diplomacy != 0
+							factor = diplomacy
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_0001
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_0011
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							diplomacy != 0
+							factor = diplomacy
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_0011
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_0021
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							diplomacy != 0
+							factor = diplomacy
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_0021
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_0031
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							diplomacy != 0
+							factor = diplomacy
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_0031
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_0041
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							diplomacy != 0
+							factor = diplomacy
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_0041
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					### MARTIAL
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_1001
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							martial != 0
+							factor = martial
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_1001
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_1011
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							martial != 0
+							factor = martial
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_1011
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					#deprecated contract
+					0 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_1021
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							martial != 0
+							factor = martial
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_1021
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					#deprecated contract
+					0 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_1031
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							martial != 0
+							factor = martial
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_1031
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_1041
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							martial != 0
+							factor = martial
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_1041
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					### STEWARDSHIP
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_2001
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							stewardship != 0
+							factor = stewardship
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_2001
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_2011
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							stewardship != 0
+							factor = stewardship
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_2011
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_2021
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							stewardship != 0
+							factor = stewardship
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_2021
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_2031
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							stewardship != 0
+							factor = stewardship
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_2031
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_2041
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							stewardship != 0
+							factor = stewardship
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_2041
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					### INTRIGUE
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_3001
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							intrigue != 0
+							factor = intrigue
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_3001
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_3011
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							intrigue != 0
+							factor = intrigue
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_3011
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_3021
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							intrigue != 0
+							factor = intrigue
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_3021
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_3031
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							intrigue != 0
+							factor = intrigue
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_3031
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_3041
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							intrigue != 0
+							factor = intrigue
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_3041
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					### LEARNING
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_4001
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							learning != 0
+							factor = learning
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_4001
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_4011
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							learning != 0
+							factor = learning
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_4011
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_4021
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							learning != 0
+							factor = learning
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_4021
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_4031
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							learning != 0
+							factor = learning
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_4031
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_4041
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							learning != 0
+							factor = learning
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_4041
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					### PROWESS
+					#deprecated contract
+					0 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_5001
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_5001
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					#deprecated contract
+					0 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_5011
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_5011
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					#deprecated contract
+					0 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_5021
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_5021
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_5031
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_5031
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					#deprecated contract
+					0 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_5041
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_5041
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					# JUSTICAR
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_6001
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_6001
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_6011
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_6011
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_6021
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							diplomacy != 0
+							factor = diplomacy
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_6021
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_base_6031
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							prowess != 0
+							factor = prowess
+						}
+						create_task_contract = {
+							task_contract_type = laamp_base_6031
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					# EXTRA
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_boost_legitimacy_contract
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							diplomacy != 0
+							factor = diplomacy
+						}
+						create_task_contract = {
+							task_contract_type = laamp_boost_legitimacy_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_rid_councillor_contract
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							martial != 0
+							factor = martial
+						}
+						create_task_contract = {
+							task_contract_type = laamp_rid_councillor_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_gain_wanderer_contract
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							martial != 0
+							factor = martial
+						}
+						create_task_contract = {
+							task_contract_type = laamp_gain_wanderer_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_find_secret_contract
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							intrigue != 0
+							factor = intrigue
+						}
+						create_task_contract = {
+							task_contract_type = laamp_find_secret_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					10 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_eliminate_heir_contract
+								employer = scope:new_employer
+							} 
+						}
+						modifier = {
+							intrigue != 0
+							factor = intrigue
+						}
+						create_task_contract = {
+							task_contract_type = laamp_eliminate_heir_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_steal_artifact_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_steal_artifact_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_construction_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_construction_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_cultural_minority_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_cultural_minority_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_religious_minority_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_religious_minority_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_prison_break_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_prison_break_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_join_faction_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_join_faction_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_help_faith_conversion_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_help_faith_conversion_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_fight_faith_conversion_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_fight_faith_conversion_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_help_find_secrets_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_help_find_secrets_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_help_fabricate_claim_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_help_fabricate_claim_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					250 = {
+						trigger = {
+							can_create_task_contract = {
+								type_name = laamp_help_increase_control_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_help_increase_control_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					# MERCENARY
+					500 = {
+						trigger = {
+							has_realm_law = camp_purpose_mercenaries
+							can_create_task_contract = {
+								type_name = laamp_raid_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_raid_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					500 = {
+						trigger = {
+							has_realm_law = camp_purpose_mercenaries
+							can_create_task_contract = {
+								type_name = laamp_join_war_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_join_war_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					500 = {
+						trigger = {
+							has_realm_law = camp_purpose_mercenaries
+							can_create_task_contract = {
+								type_name = laamp_help_claimant_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_help_claimant_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+					500 = {
+						trigger = {
+							has_realm_law = camp_purpose_legitimists
+							can_create_task_contract = {
+								type_name = laamp_legitimist_support_contract
+								employer = scope:new_employer
+							} 
+						}
+						create_task_contract = {
+							task_contract_type = laamp_legitimist_support_contract
+							task_contract_tier = scope:new_employer.task_contract_tier_value
+							location = scope:new_employer.capital_province
+							task_contract_employer = scope:new_employer
+						}
+					}
+				}
+			}
+			# Save contract
+			random_available_task_contract = { save_scope_as = contract }
+		}
+	}
+	# Take contract
+	if = {
+		limit = { exists = scope:contract }
+		# Save active employer
+		if = {
+			limit = { NOT = { exists = scope:story.var:active_employer } }
+			set_variable = {
+				name = active_employer
+				value = scope:new_employer
+			}
+		}
+		story_owner = { accept_task_contract = scope:contract }
+		# Save contract for debugging for easy reference
+		set_variable = {
+			name = active_contract
+			value = scope:contract
+		}
+	}
+	# Change remaining contract counter
+	change_variable = {
+		name = remaining_contract_counter
+		add = -1
+	}
+}
+
+ep3_adventurer_ai_contract_find_next_kingdom_effect = {
+	save_scope_as = story
+	# Save previous kingdom for easy reference
+	var:previous_kingdom ?= { save_scope_as = previous_kingdom }
+	# Find de jure kingdom neighboring active kingdom
+	var:active_kingdom ?= {
+		#Warcraft
+		save_scope_as = current_kingdom
+		# If we've pre-scripted story content, stay in our current kingdom.
+		# if = {
+		# 	limit = {
+		# 		scope:story.story_owner = { has_character_flag = laamp_stay_same_kingdom }
+		# 	}
+		# 	save_scope_as = new_kingdom
+		# }
+		# If we're an explorer, go further afield.
+		if = {
+			limit = {
+				scope:story.story_owner = {
+					OR = {
+						has_realm_law = camp_purpose_explorers
+						#Normans gonna Norman
+						AND = {
+							culture = { has_cultural_parameter = much_more_likely_to_be_laamps }
+							#But not all of them...
+							ai_boldness >= high_positive_ai_value
+							ai_energy >= high_positive_ai_value
+						}
+						#Vikings gonna Viking
+						AND = {
+							culture = {
+								has_cultural_parameter = more_likely_to_be_laamps
+								has_cultural_parameter = unlock_maa_varangian_veterans
+							}
+							religion = { is_in_family = rf_pagan }
+							#But not all of them...
+							ai_greed >= 0
+						}
+					}
+				}
+			}
+			empire = {
+				random_title_to_title_neighboring_and_across_water_empire = {
+					weight = {
+						base = 1
+						ep3_adventurer_ai_contract_find_next_kingdom_modifier = { ADVENTURER = scope:story.story_owner }
+					}
+					random_in_de_jure_hierarchy = {
+						continue = { tier > tier_kingdom }
+						limit = { tier = tier_kingdom }
+						weight = {
+							base = 1
+							ep3_adventurer_ai_contract_find_next_kingdom_modifier = { ADVENTURER = scope:story.story_owner }
+						}
+						save_scope_as = new_kingdom
+					}
+				}
+			}
+		}
+		# Otherwise, we're not, so stay at home.
+		else = {
+			random_title_to_title_neighboring_and_across_water_kingdom = {
+				limit = {
+					save_temporary_scope_as = new_kingdom_temp
+					NOT = { # Prefer variety
+						scope:story = {
+							is_target_in_variable_list = {
+								name = recent_kingdoms
+								target = scope:new_kingdom_temp
+							}
+						}
+					}
+					any_title_to_title_neighboring_kingdom = { this = scope:current_kingdom } # Prefer to not sail
+				}
+				alternative_limit = {
+					any_title_to_title_neighboring_kingdom = { this = scope:current_kingdom } # Prefer to not sail
+				}
+				alternative_limit = { always = yes }
+				weight = {
+					base = 1
+					# Prefer to stay around the same general area
+					modifier = {
+						scope:previous_kingdom ?= this
+						factor = 2
+					}
+					modifier = {
+						scope:previous_kingdom.empire ?= this.empire
+						factor = 2
+					}
+					modifier = {
+						scope:current_kingdom.empire ?= this.empire
+						factor = 2
+					}
+					ep3_adventurer_ai_contract_find_next_kingdom_modifier = { ADVENTURER = scope:story.story_owner }
+				}
+				save_scope_as = new_kingdom
+			}
+		}
+	}
+	if = {
+		limit = {
+			NOT = { exists = scope:new_kingdom }
+		}
+		story_owner.location.empire ?= {
+			random_direct_de_jure_vassal_title = {
+				limit = {
+					NOT = { this = scope:current_kingdom }
+				}
+				alternative_limit = { always = yes }
+				weight = {
+					base = 1
+					# Prefer to stay around the same general area
+					modifier = {
+						scope:previous_kingdom ?= this
+						factor = 2
+					}
+					modifier = {
+						scope:previous_kingdom.empire ?= this.empire
+						factor = 2
+					}
+					modifier = {
+						scope:current_kingdom.empire ?= this.empire
+						factor = 2
+					}
+					ep3_adventurer_ai_contract_find_next_kingdom_modifier = { ADVENTURER = scope:story.story_owner }
+				}
+				save_scope_as = new_kingdom
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			NOT = { exists = scope:new_kingdom }
+		}
+		random_empire = {
+			limit = {
+				is_landless_type_title = no
+				any_direct_de_jure_vassal_title = { is_landless_type_title = no }
+			}
+			random_direct_de_jure_vassal_title = {
+				limit = {
+					NOT = { this = scope:current_kingdom }
+					is_landless_type_title = no
+				}
+				alternative_limit = { is_landless_type_title = no }
+				weight = {
+					base = 1
+					# Prefer to stay around the same general area
+					modifier = {
+						scope:previous_kingdom ?= this
+						factor = 2
+					}
+					modifier = {
+						scope:previous_kingdom.empire ?= this.empire
+						factor = 2
+					}
+					modifier = {
+						scope:current_kingdom.empire ?= this.empire
+						factor = 2
+					}
+					ep3_adventurer_ai_contract_find_next_kingdom_modifier = { ADVENTURER = scope:story.story_owner }
+				}
+				save_scope_as = new_kingdom
+			}
+		}
+	}
+	if = {
+		limit = { exists = scope:new_kingdom }
+		# Save previous kingdom for checks and debugging
+		set_variable = {
+			name = previous_kingdom
+			value = scope:current_kingdom
+		}
+		add_to_variable_list = {
+			name = recent_kingdoms
+			target = scope:current_kingdom
+			years = 2
+		}
+		# Save active kingdom
+		set_variable = {
+			name = active_kingdom
+			value = scope:new_kingdom
+		}
+		# Reset contract counter
+		set_variable = {
+			name = remaining_contract_counter
+			value = {
+				integer_range = {
+					min = ep3_adventurer_ai_contracts_per_employer_min_value
+					max = ep3_adventurer_ai_contracts_per_employer_max_value
+				}
+			}
+		}
+		# Reset employer counter
+		set_variable = {
+			name = remaining_employer_counter
+			value = {
+				integer_range = {
+					min = ep3_adventurer_ai_employers_per_kingdom_min_value
+					max = ep3_adventurer_ai_employers_per_kingdom_max_value
+				}
+			}
+		}
+		# Edge case logic for Hereward.
+		scope:new_kingdom = {
+			if = {
+				limit = {
+					character:90028 ?= scope:story.story_owner
+					this = scope:current_kingdom
+				}
+				random_list = {
+					1 = {
+						trigger = {
+							NOT = { province:1525 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1525 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1534 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1534 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1535 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1535 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1536 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1536 = { save_scope_as = destination_province }
+					}
+					1000 = {
+						trigger = {
+							NOT = { province:1537 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1537 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1541 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1541 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1542 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1542 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1584 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1584 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1585 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1585 = { save_scope_as = destination_province }
+					}
+					1 = {
+						trigger = {
+							NOT = { province:1601 = scope:story.story_owner.domicile.domicile_location }
+						}
+						province:1601 = { save_scope_as = destination_province }
+					}
+				}
+			}
+			else_if = {
+				limit = { this = scope:current_kingdom }
+				random_de_jure_county = {
+					limit = {
+						NOT = { title_province = scope:story.story_owner.domicile.domicile_location }
+					}
+					title_province = { save_scope_as = destination_province }
+				}
+			}
+			else = {
+				title_capital_county.title_province = { save_scope_as = destination_province }
+			}
+		}
+		# Travel
+		story_owner = {
+			domicile = { # the AI doesn't have to know how to use provisions efficiently, so just add a couple so that they don't suicide
+				if = {
+					limit = { provisions < max_provisions }
+					change_provisions = max_provisions
+				}
+			}
+			start_travel_plan = {
+				destination = scope:destination_province
+				travel_with_domicile = yes
+				return_trip = no
+				on_arrival_on_action = on_adventurer_ai_new_kingdom_arrival
+				on_arrival_destinations = last
+			}
+		}
+	}
+	story_owner = {
+		# Military Upgrades
+		if = {
+			limit = {
+				is_at_war = no
+				OR = {
+					has_realm_law = camp_purpose_mercenaries
+					has_realm_law = camp_purpose_brigands
+					has_realm_law = camp_purpose_legitimists
+				}
+			}
+			while = {
+				count = 5
+				random_maa_regiment = {
+					limit = { maa_current_troops_count < maa_max_troops_count }
+					change_maa_troops_count = replenishable_troops_value
+				}
+			}
+			random_maa_regiment = {
+				limit = { can_upgrade_maa = yes }
+				change_maa_regiment_size = {
+					size = 1
+					reinforce = yes
+				}
+			}
+			if = {
+				limit = {
+					OR = {
+					 	has_realm_law = camp_purpose_mercenaries
+						has_realm_law = camp_purpose_legitimists
+					}
+				}
+				random_maa_regiment = {
+					limit = { can_upgrade_maa = yes }
+					change_maa_regiment_size = {
+						size = 1
+						reinforce = yes
+					}
+				}
+			}
+			if = {
+				limit = { has_realm_law = camp_purpose_mercenaries }
+				random_maa_regiment = {
+					limit = { can_upgrade_maa = yes }
+					change_maa_regiment_size = {
+						size = 1
+						reinforce = yes
+					}
+				}
+			}
+		}
+	}
+}
+
+# Move adventurer to the war target, if necessary
+# ADVENTURER = character
+# WAR_TARGET = character
+ep3_adventurer_ai_war_travel_effect = {
+	$ADVENTURER$.domicile.domicile_location = { save_scope_as = current_location } # Since passed scopes can't be used in square_distance
+	$WAR_TARGET$ = { # Find closest neighboring realm, and its closest county, to you, and go there
+		ordered_neighboring_and_across_water_top_liege_realm_owner = {
+			limit = {
+				# Always prefer not across water, but allow it in edge cases
+				save_temporary_scope_as = war_neighbour_temp
+				$WAR_TARGET$ = {
+					any_neighboring_top_liege_realm_owner = { this = scope:war_neighbour_temp }
+				}
+			}
+			alternative_limit = { always = yes }
+			order_by = {
+				value = 0
+				subtract = "capital_county.squared_distance(scope:current_location)"
+			}
+			save_scope_as = war_neighbour
+			ordered_sub_realm_county = {
+				limit = {
+					any_neighboring_county = {
+						holder ?= {
+							OR = {
+								this = $WAR_TARGET$
+								target_is_liege_or_above = $WAR_TARGET$
+							}
+						}
+					}
+				}
+				order_by = {
+					value = 0
+					subtract = "title_province.squared_distance(scope:current_location)"
+				}
+				save_scope_as = war_stage
+			}
+		}
+	}
+	save_scope_value_as = { # Approx provisions for journey
+		name = lammp_travel_provisions
+		value = {
+			value = "scope:current_location.squared_distance(scope:war_stage.title_province)"
+			divide = 300
+		}
+	}
+	$ADVENTURER$ = {
+		domicile = { # the AI doesn't have to know how to use provisions efficiently, so just add a couple so that they don't suicide
+			if = {
+				limit = { provisions < scope:lammp_travel_provisions }
+				change_provisions = scope:lammp_travel_provisions
+			}
+		}
+		start_travel_plan = {
+			destination = scope:war_stage.title_province
+			travel_with_domicile = yes
+			players_use_planner = no
+			return_trip = no
+			on_arrival_destinations = all
+			on_arrival_on_action = on_adventurer_ai_war_target_arrival
+		}
+	}
+}
+
+# Adventurer declares war on target, if possible
+# ADVENTURER = character
+# WAR_TARGET = character
+ep3_adventurer_ai_war_declare_effect = {
+	$ADVENTURER$ = {
+		if = {
+			limit = { has_realm_law = camp_purpose_legitimists }
+			if = {
+				limit = {
+					$WAR_TARGET$ = {
+						ep3_adventurer_ai_valid_legitimist_target_trigger = { ADVENTURER = $ADVENTURER$ }
+					}
+				}
+				ordered_claim = {
+					limit = {
+						tier >= tier_kingdom
+						holder = $WAR_TARGET$
+					}
+					order_by = tier
+					save_scope_as = claim
+				}
+				start_war = {
+					target = $WAR_TARGET$
+					casus_belli = claim_cb
+					claimant = $ADVENTURER$
+					target_title = scope:claim
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				has_cb_on = {
+					target = $WAR_TARGET$
+					casus_belli = ep3_laamp_adventurer_empire_invasion
+				}
+			}
+			start_war = {
+				target = $WAR_TARGET$
+				casus_belli = ep3_laamp_adventurer_empire_invasion
+			}
+		}
+		else_if = {
+			limit = {
+				has_cb_on = {
+					target = $WAR_TARGET$
+					casus_belli = ep3_laamp_adventurer_kingdom_invasion
+				}
+			}
+			start_war = {
+				target = $WAR_TARGET$
+				casus_belli = ep3_laamp_adventurer_kingdom_invasion
+			}
+		}
+		else_if = {
+			limit = {
+				has_cb_on = {
+					target = $WAR_TARGET$
+					casus_belli = ep3_laamp_adventurer_duchy_invasion
+				}
+			}
+			$WAR_TARGET$ = { # Grab an appropriate Duchy
+				random_sub_realm_duchy = {
+					limit = {
+						any_in_de_jure_hierarchy = { # At least 2 counties
+							continue = { tier > tier_county }
+							count >= 2
+							tier = tier_county
+							holder ?= {
+								OR = {
+									this = $WAR_TARGET$
+									is_vassal_or_below_of = $WAR_TARGET$
+								}
+							}
+						}
+						any_in_de_jure_hierarchy = { # And either coastal or bordering another realm (otherwise it'll look u g l y)
+							continue = { tier > tier_county }
+							tier = tier_county
+							holder ?= {
+								OR = {
+									this = $WAR_TARGET$
+									is_vassal_or_below_of = $WAR_TARGET$
+								}
+							}
+							OR = {
+								is_coastal_county = yes
+								any_neighboring_county = {
+									NOT = {
+										holder.top_liege = $WAR_TARGET$.top_liege
+									}
+								}
+							}
+						}
+					}
+					save_scope_as = target_title
+				}
+			}
+			start_war = {
+				target = $WAR_TARGET$
+				casus_belli = ep3_laamp_adventurer_duchy_invasion
+				target_title = scope:target_title
+			}
+		}
+		else = {
+			$WAR_TARGET$ = { # Grab an appropriate Duchy
+				random_sub_realm_county = {
+					limit = {
+						OR = {
+							is_coastal_county = yes
+							any_neighboring_county = {
+								NOT = {
+									holder.top_liege = $WAR_TARGET$.top_liege
+								}
+							}
+						}
+					}
+					save_scope_as = target_title
+				}
+			}
+			start_war = {
+				target = $WAR_TARGET$
+				casus_belli = ep3_laamp_adventurer_county_invasion
+				target_title = scope:target_title
+			}
+		}
+	}
+}
+
+# Find a target for adventurer to attack
+ep3_adventurer_ai_war_find_target_effect = {
+	save_scope_as = story
+	set_variable = {
+		name = remaining_contract_counter
+		value = 0
+	}
+	set_variable = {
+		name = remaining_employer_counter
+		value = 0
+	}
+	story_owner.domicile.domicile_location = { save_scope_as = current_location }
+	if = {
+		limit = {
+			story_owner = {
+				has_realm_law = camp_purpose_legitimists
+				any_claim = {
+					holder = {
+						ep3_adventurer_ai_valid_legitimist_target_trigger = { ADVENTURER = scope:story.story_owner }
+					}
+				}
+			}
+		}
+		story_owner = {
+			ordered_claim = {
+				limit = {
+					holder = {
+						ep3_adventurer_ai_valid_legitimist_target_trigger = { ADVENTURER = scope:story.story_owner }
+					}
+				}
+				order_by = tier
+				holder = { save_scope_as = war_target }
+			}
+		}
+	}
+	else = {
+		every_independent_ruler = {
+			limit = {
+				ep3_adventurer_ai_valid_war_target_trigger = { ADVENTURER = scope:story.story_owner }
+			}
+			add_to_list = potential_war_targets
+		}
+		random_in_list = {
+			list = potential_war_targets
+			limit = {
+				save_temporary_scope_as = war_target_temp
+				scope:story.story_owner = {
+					any_claim = {
+						OR = { holder ?= scope:war_target_temp }
+						target_is_de_jure_liege_or_above = scope:war_target_temp.primary_title 
+					}
+				}
+			}
+			alternative_limit = {
+				primary_title = {
+					any_in_de_facto_hierarchy = {
+						tier = tier_empire
+						save_temporary_scope_as = war_target_title_temp
+					}
+				}
+				scope:story.story_owner = {
+					can_declare_war = {
+						defender = scope:war_target_temp
+						casus_belli = ep3_laamp_adventurer_empire_invasion
+						target_titles = { scope:war_target_title_temp }
+					}
+				}
+			}
+			alternative_limit = {
+				primary_title = {
+					any_in_de_facto_hierarchy = {
+						tier = tier_kingdom
+						save_temporary_scope_as = war_target_title_temp
+					}
+				}
+				scope:story.story_owner = {
+					can_declare_war = {
+						defender = scope:war_target_temp
+						casus_belli = ep3_laamp_adventurer_kingdom_invasion
+						target_titles = { scope:war_target_title_temp }
+					}
+				}
+			}
+			alternative_limit = {
+				primary_title = {
+					any_in_de_facto_hierarchy = {
+						tier = tier_duchy
+						save_temporary_scope_as = war_target_title_temp
+					}
+				}
+				scope:story.story_owner = {
+					can_declare_war = {
+						defender = scope:war_target_temp
+						casus_belli = ep3_laamp_adventurer_duchy_invasion
+						target_titles = { scope:war_target_title_temp }
+					}
+				}
+			}
+			alternative_limit = {
+				any_sub_realm_county = {
+					count >= 1
+					save_temporary_scope_as = war_target_title_temp
+				}
+			}
+			weight = {
+				base = 10000
+				modifier = {
+					add = {
+						value = current_strength_with_allies_value
+						multiply = -2
+					}
+				}
+				modifier = {
+					is_at_war = yes
+					add = 250
+				}
+				modifier = {
+					add = {
+						value = "capital_county.squared_distance(scope:story.story_owner.domicile.domicile_location)"
+						multiply = -1
+					}
+				}
+				modifier = {
+					add = {
+						value = "reverse_opinion(scope:story.story_owner)"
+						multiply = 2
+					}
+				}
+				modifier = {
+					scope:story.story_owner = {
+						any_claim = {
+							holder ?= {
+								OR = {
+									this = scope:war_target_temp
+									target_is_liege_or_above = scope:war_target_temp
+								}
+							}
+						}
+					}
+					add = 500
+				}
+			}
+			save_scope_as = war_target
+		}
+	}
+	if = {
+		limit = { exists = scope:war_target }
+		set_variable = { # Save war target
+			name = war_target_realm
+			value = scope:war_target.primary_title
+			months = 6
+		}
+		set_variable = { # Save travel/declare attempts count to safeguard against loops
+			name = war_target_attempts
+			value = 0
+		}
+		story_owner = {
+			trigger_event = { on_action = on_adventurer_ai_war_target_arrival }
+		}
+	}
+}

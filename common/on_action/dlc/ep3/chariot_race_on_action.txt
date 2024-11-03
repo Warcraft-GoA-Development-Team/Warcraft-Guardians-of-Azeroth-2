@@ -1,0 +1,607 @@
+﻿chariot_race_opening_on_action = {
+	effect = {
+		involved_activity = {
+			every_attending_character = {
+				limit = { location = involved_activity.activity_location }
+				trigger_event = chariot_race.0001
+			}
+		}
+	}
+}
+
+chariot_race_betting_events = {
+	random_events = {
+		200 = chariot_race.4000 # Run-in with a fellow Governor
+		100 = chariot_race.4010 # Crowd chanting for an official to be fired
+		100 = chariot_race.4020 # House Head is considering moving their estate
+		100 = chariot_race.4030 # You might do some sex during the race
+		100 = chariot_race.4040 # You hang with fans of the same team
+		100 = chariot_race.4050 # You try to get someone killed
+		200 = chariot_race_ongoing_jp.0100 # Befriend intent
+		100 = chariot_race_ongoing_jp.0200 # Mingling for non-kathisma
+		100 = chariot_race_ongoing_jp.0201 # Kathisma mingling
+		100 = chariot_race_ongoing_jp.0300 # Weasal way into kathisma
+		100 = chariot_race_ongoing_jp.0301 # Grant access to kathisma
+	}
+}
+
+# Race events
+### Root is scope:host
+chariot_race_on_action = {
+
+	effect = {
+		scope:activity = {
+			# Update time tracker
+			change_variable = {
+				name = chariot_race_phase_week
+				add = 1
+			}
+			# Ensure we've updated the standings _in case_ anything unforeseen has happened.
+			# Every Charioteer has a variable saved on them indicating which place they're in. This is an integer running from 1 to the total number of charioteers.
+			# The total number of charioteers is saved as var:num_charioteers on scope:activity
+			update_chariot_race_standings_effect = yes
+
+			# Decide what happens in the race on a global level
+			# We want something to happen to more or less every charioteer AND we want it all to _make sense_ so the logic gets a lil complicated here, forewarning
+			# Make a list of all the current charioteers so we can remove them as we use 'em
+			every_guest_subset = {
+				name = charioteers
+				add_to_list = temp_charioteers_list
+			}
+
+			# We also want to make sure people get a proper number of events, so we only send one event to a spectator per weekly pulse. To do this, we need to keep track of who we've sent an event to
+			every_guest_subset = {
+				name = spectators
+				add_to_list = temp_spectators_list
+			}
+
+			# Fire what happens on the track itself. Events are sent out to spectators who care.
+			random_list = {
+				100 = { # One charioteer pulls ahead of another
+					#involved_activity = { save_scope_as = activity }
+					trigger = {
+						trigger_if = { # First make sure there are at least 2 ppl in the list
+							limit = { list_size:temp_charioteers_list >= 2 }
+							any_in_list = {
+								list = temp_charioteers_list
+								NOT = {
+									var:current_place_in_race = scope:activity.var:num_charioteers
+								}
+								chariot_racer_valid_trigger = yes
+								save_temporary_scope_as = temp_leading_charioteer
+							}
+							save_temporary_scope_value_as = {
+								name = trailing_index_temp
+								value = {
+									value = scope:temp_leading_charioteer.var:current_place_in_race
+									add = 1
+								}
+							}
+							# Then make sure there is charioteer in the list directly behind him
+							any_in_list = {
+								list = temp_charioteers_list
+								chariot_racer_valid_trigger = yes
+								var:current_place_in_race = scope:trailing_index_temp
+							}
+						}
+					}
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = {
+							chariot_racer_valid_trigger = yes
+							# Make sure they are not in last place
+							NOT = {
+								var:current_place_in_race = scope:activity.var:num_charioteers
+							}
+						}
+						save_scope_as = leading_charioteer
+					}
+					save_scope_value_as = {
+						name = trailing_index
+						value = {
+							value = scope:leading_charioteer.var:current_place_in_race
+							add = 1
+						}
+					}
+					random_in_list = {
+						list = temp_charioteers_list 
+						limit = {
+							chariot_racer_valid_trigger = yes
+							var:current_place_in_race = scope:trailing_index
+						}
+						save_scope_as = trailing_charioteer
+					}
+					# Put the second character just _slightly_ ahead of the former first
+					scope:trailing_charioteer = {
+						advance_place_in_ranking_effect = {
+							NEW_LEADING_CHAR = scope:trailing_charioteer
+							NEW_TRAILING_CHAR = scope:leading_charioteer
+						}
+						distribute_charioteer_trait_xp_effect = { VALUE = 10 }
+					}
+					# Remove both of these charioteers from the list
+					scope:leading_charioteer = { remove_from_list = temp_charioteers_list }
+					scope:trailing_charioteer = { remove_from_list = temp_charioteers_list }
+
+					# Now we send out an event to any spector who cares about these charioteers
+					every_in_list = {
+						list = temp_spectators_list
+						trigger_event = chariot_race.3030
+						remove_from_list = temp_spectators_list
+					}
+				}
+				100 = { # Charioteer sacrifices himself for another of his team to pull ahead
+					trigger = {
+						# Check if there are two charioteers of the same team next to each other on the track 
+						any_in_list = {
+							list = temp_charioteers_list
+							chariot_racer_valid_trigger = yes
+							has_variable = current_place_in_race
+							var:current_place_in_race >= 3
+							save_temporary_scope_as = temp_charioteer
+							trigger_if = {
+								limit = { has_trait = charioteer_blue }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_blue
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_blue
+									}
+								}
+							}
+							trigger_else_if = {
+								limit = { has_trait = charioteer_green }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_green
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_green
+									}
+								}
+							}
+							trigger_else_if = {
+								limit = { has_trait = charioteer_white }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_white
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_white
+									}
+								}
+							}
+							trigger_else_if = {
+								limit = { has_trait = charioteer_red }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_red
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										chariot_racer_valid_trigger = yes
+										has_trait = charioteer_red
+									}
+								}
+							}
+							trigger_else = { always = no }
+						}
+					}
+					# Grab our first charioteer
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = {
+							var:current_place_in_race >= 3
+							chariot_racer_valid_trigger = yes
+							save_temporary_scope_as = temp_charioteer
+							trigger_if = {
+								limit = { has_trait = charioteer_blue }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										chariot_racer_valid_trigger = yes
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										has_trait = charioteer_blue
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										has_trait = charioteer_blue
+										chariot_racer_valid_trigger = yes
+									}
+								}
+							}
+							trigger_else_if = {
+								limit = { has_trait = charioteer_green }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										has_trait = charioteer_green
+										chariot_racer_valid_trigger = yes
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										has_trait = charioteer_green
+										chariot_racer_valid_trigger = yes
+									}
+								}
+							}
+							trigger_else_if = {
+								limit = { has_trait = charioteer_white }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										has_trait = charioteer_white
+										chariot_racer_valid_trigger = yes
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										has_trait = charioteer_white
+										chariot_racer_valid_trigger = yes
+									}
+								}
+							}
+							trigger_else_if = {
+								limit = { has_trait = charioteer_red }
+								OR = {
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.ahead_charioteer_index
+										has_trait = charioteer_red
+										chariot_racer_valid_trigger = yes
+									}
+									any_in_list = {
+										list = temp_charioteers_list
+										var:current_place_in_race ?= scope:temp_charioteer.following_charioteer_index
+										has_trait = charioteer_red
+										chariot_racer_valid_trigger = yes
+									}
+								}
+							}
+							trigger_else = {
+								always = no 
+							}
+						}
+						save_scope_as = charioteer_1
+					}
+					# Then grab number 2...
+					if = {
+						limit = {
+							any_in_list = {
+								list = temp_charioteers_list
+								var:current_place_in_race ?= scope:charioteer_1.following_charioteer_index
+								has_same_chariot_team_as = { TARGET = scope:charioteer_1 }
+								chariot_racer_valid_trigger = yes
+							}
+						}
+						random_in_list = {
+							list = temp_charioteers_list
+							limit = {
+								var:current_place_in_race ?= scope:charioteer_1.following_charioteer_index
+								has_same_chariot_team_as = { TARGET = scope:charioteer_1 }
+								chariot_racer_valid_trigger = yes
+							}
+							save_scope_as = charioteer_2
+						}
+					}
+					else = {
+						random_in_list = {
+							list = temp_charioteers_list
+							limit = {
+								var:current_place_in_race ?= scope:charioteer_1.ahead_charioteer_index
+								has_same_chariot_team_as = { TARGET = scope:charioteer_1 }
+								chariot_racer_valid_trigger = yes
+							}
+							save_scope_as = charioteer_2
+						}
+					}
+
+					# Now, we fiddle with the scores
+					if = { # If charioteer_1 is ahead of 2, then he becomes the sacrifice candidate
+						limit = { scope:charioteer_1.var:current_place_in_race < scope:charioteer_2.var:current_place_in_race }
+						scope:charioteer_1 = { save_scope_as = charioteer_leading }
+						scope:charioteer_2 = { save_scope_as = charioteer_sacrifice }
+					}
+					else = { # else do the opposite 
+						scope:charioteer_1 = { save_scope_as = charioteer_sacrifice }
+						scope:charioteer_2 = { save_scope_as = charioteer_leading }
+					}
+
+					# Then we increase the leading charioteer score to be above the next two charioteers
+					# First grab the victory score of the guy 2 spots ahead
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = { 
+							var:current_place_in_race ?= scope:charioteer_leading.2_ahead_charioteer_index
+						}
+						save_scope_as = charioteer_about_to_be_passed
+					}
+					# Then set the leading charioteer to 1 + the passed dude's victory score
+					scope:charioteer_leading = {
+						advance_place_in_ranking_effect = {
+							NEW_LEADING_CHAR = scope:charioteer_leading
+							NEW_TRAILING_CHAR = scope:charioteer_about_to_be_passed
+						}
+					}
+					# Remove these charioteers from the list
+					scope:charioteer_leading = { remove_from_list = temp_charioteers_list }
+					scope:charioteer_sacrifice = { remove_from_list = temp_charioteers_list }
+					scope:charioteer_about_to_be_passed = { remove_from_list = temp_charioteers_list }
+					# Send events to spectators who care
+					every_in_list = {
+						list = temp_spectators_list
+						trigger_event = chariot_race.3000
+						remove_from_list = temp_spectators_list
+					}
+				}
+				10 = { # Two chariots get tangled and they die
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = {
+							NOT = { var:current_place_in_race ?= list_size:temp_charioteers_list }
+						}
+						save_scope_as = charioteer_1
+					}
+					save_temporary_scope_value_as = {
+						name = next_chariot_index
+						value = {
+							value = scope:charioteer_1.var:current_place_in_race
+							add = 1
+						}
+					}
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = {
+							var:current_place_in_race ?= scope:next_chariot_index
+						}
+						save_scope_as = charioteer_2
+					}
+					scope:host = {
+						trigger_event = chariot_race.3040
+					}
+				}
+				# Random death, dude in the lead
+				10 = {
+					# Find first place boi
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = { var:current_place_in_race ?= 1 }
+						save_scope_as = first_place_charioteer
+					}
+					# Kill 'im
+					scope:first_place_charioteer = {
+						#Warcraft
+						override_death_effect = { death_reason = death_crushed_in_chariot_race }
+						remove_dead_charioteer_from_race = yes
+					}
+
+					# Nothing else should happen during this pulse, so we empty the charioteer list to stop the whole loop
+					every_in_list = {
+						list = temp_charioteers_list
+						remove_from_list = temp_charioteers_list
+					}
+
+					# We send this to every spectator, because they presumably care about such a rare occurence
+					every_in_list = {
+						list = temp_spectators_list
+						trigger_event = chariot_race.3010
+						remove_from_list = temp_spectators_list
+					}
+				}
+				# Random breakaway from the very back
+				20 = {
+					save_scope_value_as = {
+						name = last_list_index
+						value = list_size:temp_charioteers_list
+					}
+					# Find first place boi
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = { var:current_place_in_race ?= 1 }
+						save_scope_as = first_place_charioteer 
+					}
+					# Find last place boi
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = { var:current_place_in_race ?= scope:last_list_index }
+						save_scope_as = last_place_charioteer
+					}
+					advance_place_in_ranking_effect = {
+						NEW_LEADING_CHAR = scope:last_place_charioteer
+						NEW_TRAILING_CHAR = scope:first_place_charioteer
+					}
+
+					# We send this to every spectator, because they presumably care about such a rare occurence
+					every_in_list = {
+						list = temp_spectators_list
+						trigger_event = chariot_race.3050
+						remove_from_list = temp_spectators_list
+					}
+				}
+				15 = { # Showing off
+					trigger = {
+						any_in_list = {
+							list = temp_charioteers_list
+							chariot_racer_valid_trigger = yes
+							NOR = {
+								has_trait = shy
+								has_trait = humble
+							}
+						}
+					}
+					modifier = {
+						factor = 2
+						any_in_list = {
+							list = temp_charioteers_list
+							chariot_racer_valid_trigger = yes
+							NOR = {
+								has_trait = shy
+								has_trait = humble
+							}
+							experienced_charioteer_trigger = yes
+						}
+					}
+					# Save first and last for comparison
+					scope:activity = {
+						ordered_guest_subset = {
+							name = charioteers
+							limit = { chariot_racer_valid_trigger = yes }
+							order_by = {
+								value = 0
+								subtract = var:current_place_in_race
+							}
+							save_scope_as = first_place_charioteer
+						}
+						ordered_guest_subset = {
+							name = charioteers
+							limit = { chariot_racer_valid_trigger = yes }
+							order_by = { value = var:current_place_in_race }
+							save_scope_as = last_place_charioteer
+						}
+					}
+					# Find suitable evil knievel
+					random_in_list = {
+						list = temp_charioteers_list
+						limit = {
+							chariot_racer_valid_trigger = yes
+							NOR = {
+								has_trait = shy
+								has_trait = humble
+							}
+						}
+						weight = {
+							base = 1
+							modifier = { add = ai_boldness }
+							modifier = {
+								has_trait = arrogant
+								add = 100
+							}
+							modifier = {
+								middling_charioteer_trigger = yes
+								add = 25
+							}
+							modifier = {
+								experienced_charioteer_trigger = yes
+								add = 75
+							}
+							modifier = {
+								add = {
+									value = 12
+									subtract = var:current_place_in_race
+									multiply = 10
+								}
+								var:current_place_in_race >= 6
+							}
+						}
+						save_scope_as = evil_knievel
+						# Save place (before they die)
+						save_scope_value_as = {
+							name = evil_knievel_place
+							value = {
+								value = var:current_place_in_race
+								add = 1
+							}
+						}
+					}
+					# Dies?
+					scope:evil_knievel = {
+						random = {
+							chance = 10
+							modifier = {
+								novice_charioteer_trigger = yes
+								add = 20
+							}
+							modifier = {
+								experienced_charioteer_trigger = yes
+								add = -5
+							}
+							#warcraft
+							override_death_effect = { death_reason = death_chariot_race_trick }
+						}
+						# Lost them their place?
+						if = {
+							limit = { is_alive = yes }
+							ordered_in_list = {
+								list = temp_charioteers_list 
+								limit = { chariot_racer_valid_trigger = yes }
+								order_by = {
+									value = 0
+									subtract = var:current_place_in_race
+								}
+								save_scope_as = overtaking_charioteer
+								advance_place_in_ranking_effect = {
+									NEW_LEADING_CHAR = scope:overtaking_charioteer
+									NEW_TRAILING_CHAR = scope:evil_knievel
+								}
+							}
+						}
+					}
+					# Nothing else should happen during this pulse, so we empty the charioteer list to stop the while loop
+					every_in_list = {
+						list = temp_charioteers_list
+						remove_from_list = temp_charioteers_list
+					}
+					# We send this to every spectator, because they presumably care about such a rare occurence
+					every_in_list = {
+						list = temp_spectators_list
+						if = {
+							limit = {
+								scope:evil_knievel = { is_alive = yes }
+							}
+							trigger_event = chariot_race_ongoing_jp.0500
+						}
+						else = {
+							trigger_event = chariot_race_ongoing_jp.0501
+						}
+						remove_from_list = temp_spectators_list
+					}
+				}
+			}
+
+			update_chariot_race_standings_effect = yes
+
+			# Fire some events for any remaining spectators
+			if = {
+				limit = { list_size:temp_spectators_list > 0 }
+				every_in_list = {
+					list = temp_spectators_list
+					trigger_event = { on_action = chariot_spectator_on_action }
+				}
+			}
+		}
+	}
+}
+
+chariot_spectator_on_action = {
+	random_events = {
+		100 = chariot_race.3020 # Update on a charioteer you wagered on
+		100 = chariot_race_ongoing_jp.0400 # Hippodrome lap flavour
+	}
+}
