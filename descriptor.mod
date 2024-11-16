@@ -1,4 +1,4 @@
-﻿name="Warcraft: Guardians of Azeroth Reforged (Release Alpha)"
+name="Warcraft: Guardians of Azeroth Reforged (Release Alpha)"
 version="0.5.3"
 picture="thumbnail.png"
 tags={
@@ -28,5 +28,4 @@ replace_path="common/religion/holy_sites"
 replace_path="common/bookmark_portraits"
 replace_path="common/bookmarks"
 replace_path="gfx/interface/illustrations/loading_screens"
-
 supported_version="1.13.2"
