@@ -991,6 +991,7 @@ ep3_become_landed_transfer_effect = {
 		## Administrative.
 		if = {
 			limit = {
+				scope:new_primary_title = { tier > tier_duchy }
 				OR = {
 					scope:new_liege ?= { government_has_flag = government_is_administrative }
 					scope:old_government ?= flag:admin
@@ -1001,10 +1002,13 @@ ep3_become_landed_transfer_effect = {
 		## Clan.
 		else_if = {
 			limit = {
-				ep3_is_clan_inclined_trigger = yes
 				OR = {
 					scope:new_liege ?= { government_has_flag = government_is_clan }
 					scope:old_government ?= flag:clan
+					AND = {
+						ep3_is_clan_inclined_trigger = yes
+						is_independent_ruler = yes
+					}
 				}
 			}
 			change_government = clan_government
@@ -2083,178 +2087,197 @@ adventurer_realm_destabilisation_list_effect = {
 								}
 							}
 						}
-						OR = {
-							primary_title.duchy ?= scope:title
-							primary_title.kingdom ?= scope:title
-							primary_title.empire ?= scope:title
+						any_held_title = {
+							target_is_de_jure_liege_or_above = scope:title
+						}
+					}
+					trigger_if = {
+						limit = {
+							government_allows = administrative
+						}
+						scope:title = {
+							OR = {
+								AND = {
+									scope:ruler.primary_title.tier = tier_kingdom
+									tier < tier_kingdom
+								}
+								tier < tier_empire
+							}
 						}
 					}
 				}
-				# Non-de jure automatically become independent
-				if = {
-					limit = {
-						NOR = {
-							primary_title.duchy ?= scope:title
-							primary_title.kingdom ?= scope:title
-							primary_title.empire ?= scope:title
+				# Calculate how likely are they to not become your vassal
+				random = {
+					chance = 0
+					### FAITH/CULTURE
+					modifier = { # Cultural acceptance differences
+						add = {
+							value = "culture.cultural_acceptance(scope:adventurer.culture)"
+							subtract = 100
+							abs = yes
+							divide = 5
+						}
+						culture = {
+							this != scope:adventurer.culture
+							cultural_acceptance = {
+								target = scope:adventurer.culture
+								value < 50
+							}
+							OR = {
+								this = scope:ruler.culture
+								"cultural_acceptance(scope:ruler.culture)" > "cultural_acceptance(scope:adventurer.culture)"
+							}
 						}
 					}
-					add_to_list = independent_vassals
-				}
-				# De jure have a chance to become independent
-				else = {
-					random = {
-						chance = 0
-						### FAITH/CULTURE
-						modifier = { # Cultural acceptance differences
-							add = {
-								value = "culture.cultural_acceptance(scope:adventurer.culture)"
-								subtract = 100
-								abs = yes
-								divide = 5
-							}
-							culture = {
-								this != scope:adventurer.culture
-								cultural_acceptance = {
-									target = scope:adventurer.culture
-									value < 50
-								}
-								OR = {
-									this = scope:ruler.culture
-									"cultural_acceptance(scope:ruler.culture)" > "cultural_acceptance(scope:adventurer.culture)"
-								}
-							}
+					modifier = { # Zealous of other faiths more likely
+						add = {
+							value = ai_zeal
+							multiply = 0.15
+							multiply = "scope:vassal_temp.faith.faith_hostility_level(scope:adventurer.faith)"
+							max = 25
 						}
-						modifier = { # Zealous of other faiths more likely
-							add = {
-								value = ai_zeal
-								multiply = 0.15
-								multiply = "scope:vassal_temp.faith.faith_hostility_level(scope:adventurer.faith)"
-								max = 25
-							}
-							ai_zeal > low_positive_zeal
-							faith = {
-								this != scope:adventurer.faith
-								"faith_hostility_level(scope:adventurer.faith)" > 0
-							}
+						ai_zeal > low_positive_zeal
+						faith = {
+							this != scope:adventurer.faith
+							"faith_hostility_level(scope:adventurer.faith)" > 0
 						}
-						### DISTANCE
-						modifier = { # Distant vassals more likely
-							add = {
-								value = 0
+					}
+					modifier = { # Theocatic Vassals of different faith more likely
+						factor = 2
+						has_government = theocracy_government
+						faith != scope:adventurer.faith
+					}
+					### DISTANCE
+					modifier = { # Distant vassals more likely
+						add = {
+							value = 0
+							add = scope:distance
+							if = {
+								limit = { scope:distance >= squared_distance_medium }
 								add = scope:distance
-								if = {
-									limit = { scope:distance >= squared_distance_medium }
-									add = scope:distance
-									multiply = 0.0001
-								}
-								max = 25
+								multiply = 0.0001
 							}
-							"capital_county.squared_distance(scope:ruler.capital_county)" >= squared_distance_medium
-							capital_county = {
-								save_temporary_scope_value_as = {
-									name = distance
-									value = "squared_distance(scope:ruler.capital_county)"
-								}
+							max = 25
+						}
+						"capital_county.squared_distance(scope:ruler.capital_county)" >= squared_distance_medium
+						capital_county = {
+							save_temporary_scope_value_as = {
+								name = distance
+								value = "squared_distance(scope:ruler.capital_county)"
 							}
 						}
-						### PERSONALITY
-						ai_value_modifier = { 
-							ai_boldness = 0.15
-							ai_energy = 0.15
-							ai_greed = 0.15
-							ai_honor = -0.15
-						}
-						### OPINION
-						opinion_modifier = { # More likely if dislikes adventurer
-							opinion_target = scope:adventurer
-							multiplier = -0.25
-						}
-						opinion_modifier = { # More likely if liked old ruler
-							opinion_target = scope:ruler
-							multiplier = 0.1
-						}
-						### STRENGTH
-						modifier = { # Small vassals less likely
-							add = -15
-							tier_difference = {
-								target = scope:ruler
-								value <= -2
-							}
-						}
-						modifier = {
-							add = -25
-							realm_size < tiny_realm_size
-						}
-						modifier = { # Powerful vassals more likely
-							factor = 1.25
-							is_powerful_vassal = yes
-						}
-						modifier = { # Powerful vassals more likely
-							add = {
-								value = highest_held_title_tier
-								multiply = 5
-							}
-						}
-						### RELEVANCE
-						modifier = { # Fringe vassals more likely
-							factor = 1.25
-							any_sub_realm_county = {
-								any_neighboring_county = { holder.top_liege != scope:ruler }
-							}
-						}
-						modifier = { # Core vassals less likely
-							factor = 0.75
-							scope:ruler.capital_county.kingdom = {
-								any_de_jure_county = { this = scope:vassal_temp.capital_county }
-							}
-						}
-						### FAMILY
-						modifier = { # Relatives of deposed more likely
-							factor = 1.1
-							is_close_family_of = scope:ruler
-							NOT = { is_close_family_of = scope:adventurer }
-						}
-						modifier = { # Dynasts of deposed more likely
-							factor = 1.1
-							dynasty ?= {
-								this = scope:ruler.dynasty
-								NOT = { this = scope:adventurer.dynasty }
-							}
-						}
-						modifier = { # Relatives of adventurer less likely
-							factor = 0.75
-							is_close_family_of = scope:adventurer
-							NOT = { is_close_family_of = scope:ruler }
-						}
-						modifier = { # Dynasts of adventurer less likely
-							factor = 0.75
-							dynasty ?= {
-								this = scope:adventurer.dynasty
-								NOT = { this = scope:ruler.dynasty }
-							}
-						}
-						### HOOKS
-						modifier = {
-							factor = 0
-							scope:adventurer = { has_hook = scope:vassal_temp }
-						}
-						modifier = {
-							factor = 2
-							scope:ruler = { has_hook = scope:vassal_temp }
-						}
-						### TIER
-						modifier = {
-							factor = 1.5
-							scope:ruler.primary_title.tier = tier_empire
-						}
-						modifier = {
-							factor = 1.25
-							scope:ruler.primary_title.tier = tier_kingdom
-						}
-						max = 95
-						add_to_list = independent_vassals
 					}
+					modifier = { # Vassals with capitals outside the de jure more likely
+						factor = 1.25
+						capital_county = {
+							NOT = {
+								target_is_de_jure_liege_or_above = scope:title
+							}
+						}
+					}
+					### PERSONALITY
+					ai_value_modifier = { 
+						ai_boldness = 0.15
+						ai_energy = 0.15
+						ai_greed = 0.15
+						ai_honor = -0.15
+					}
+					### OPINION
+					opinion_modifier = { # More likely if dislikes adventurer
+						opinion_target = scope:adventurer
+						multiplier = -0.25
+					}
+					opinion_modifier = { # More likely if liked old ruler
+						opinion_target = scope:ruler
+						multiplier = 0.1
+					}
+					### STRENGTH
+					modifier = { # Small vassals less likely
+						add = -15
+						tier_difference = {
+							target = scope:ruler
+							value <= -2
+						}
+					}
+					modifier = {
+						add = -25
+						realm_size < tiny_realm_size
+					}
+					modifier = { # Powerful vassals more likely
+						factor = 1.25
+						is_powerful_vassal = yes
+					}
+					modifier = { # Powerful vassals more likely
+						add = {
+							value = highest_held_title_tier
+							multiply = 5
+						}
+					}
+					### RELEVANCE
+					modifier = { # Fringe vassals more likely
+						factor = 1.25
+						any_sub_realm_county = {
+							any_neighboring_county = { holder.top_liege != scope:ruler }
+						}
+					}
+					modifier = { # Core vassals less likely
+						factor = 0.75
+						scope:ruler.capital_county.kingdom = {
+							any_de_jure_county = { this = scope:vassal_temp.capital_county }
+						}
+					}
+					### FAMILY
+					modifier = { # Relatives of deposed more likely
+						factor = 1.1
+						is_close_family_of = scope:ruler
+						NOT = { is_close_family_of = scope:adventurer }
+					}
+					modifier = { # Dynasts of deposed more likely
+						factor = 1.1
+						dynasty ?= {
+							this = scope:ruler.dynasty
+							NOT = { this = scope:adventurer.dynasty }
+						}
+					}
+					modifier = { # Relatives of adventurer less likely
+						factor = 0.75
+						is_close_family_of = scope:adventurer
+						NOT = { is_close_family_of = scope:ruler }
+					}
+					modifier = { # Dynasts of adventurer less likely
+						factor = 0.75
+						dynasty ?= {
+							this = scope:adventurer.dynasty
+							NOT = { this = scope:ruler.dynasty }
+						}
+					}
+					### HOOKS
+					modifier = {
+						factor = 0
+						scope:adventurer = { has_hook = scope:vassal_temp }
+					}
+					modifier = {
+						factor = 2
+						scope:ruler = { has_hook = scope:vassal_temp }
+					}
+					### TIER
+					modifier = {
+						factor = 1.5
+						scope:ruler.primary_title.tier = tier_empire
+					}
+					modifier = {
+						factor = 1.25
+						scope:ruler.primary_title.tier = tier_kingdom
+					}
+					### ADMIN
+					modifier = { # Noble Families should never leave admin realms
+						factor = 0
+						any_held_title = {
+							is_noble_family_title = yes
+						}
+					}
+					max = 95
+					add_to_list = independent_vassals
 				}
 			}
 			# Save heirs for claimant wars
