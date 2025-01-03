@@ -1325,10 +1325,7 @@ add_spell_progression_effect = {
                     limit = {
                         spell_is_channeled_trigger = { SPELL = flag:$SPELL$ }
                     }
-                    add_to_variable_list = {
-                        name = current_spells_channeling
-                        target = flag:$SPELL$
-                    }
+                    save_spell_channel_variables = { SPELL = $SPELL$ }
                 }
                 if = { # Chance to double cast if you have Evocation
                     limit = {
@@ -1371,13 +1368,13 @@ add_spell_progression_effect = {
             clear_variable_list = $SPELL$_targets_list
             remove_variable = $SPELL$_recipient
             remove_variable = $SPELL$_target_type
+            remove_variable = $SPELL$_rank
         }
         
         clear_variable_list = casted_targets_list
         remove_variable = should_cast
         remove_variable = should_reflect
         remove_variable = $SPELL$_progress
-        remove_variable = $SPELL$_rank
         remove_variable = $SPELL$_progress_percent
         remove_variable = $SPELL$_progress_remaining
         remove_variable = $SPELL$_type
@@ -1687,6 +1684,7 @@ wc_spell_death_maintenence_effect = {
             }
         }
     }
+    stop_spell_channeling_effect = yes
 }
 
 
@@ -3041,9 +3039,33 @@ start_channeling_spell_effect_elemental = {
 
 cancel_channeling_spell_effect = {
     cancel_execute = { SPELL = $SPELL$ }
+    if = {
+        limit = {
+            exists = var:$SPELL$_recipient
+        }
+        var:$SPELL$_recipient = {
+            remove_list_variable = {
+                name = being_channelled_by
+                target = root
+            }
+        }
+    }
+    else_if = {
+        limit = {
+            has_variable_list = $SPELL$_targets_list
+        }
+        every_in_list = {
+            variable = $SPELL$_targets_list
+            remove_list_variable = {
+                name = being_channelled_by
+                target = root
+            }
+        }
+    }
     clear_variable_list = $SPELL$_targets_list
     remove_variable = $SPELL$_recipient
     remove_variable = $SPELL$_target_type
+    remove_variable = $SPELL$_rank
     custom_description = { # Tooltip for changing elemental favour
 		text = wc_add_mana_regen_effect
 		value = wc_spell_$SPELL$_cost_mana_value
@@ -3069,4 +3091,105 @@ cancel_channeling_spell_effect_elemental = {
 
 cancel_execute = {
     cancel_$SPELL$_effect = yes
+}
+
+save_spell_channel_variables = {
+    add_to_variable_list = {
+        name = current_spells_channeling
+        target = flag:$SPELL$
+    }
+    if = {
+        limit = {
+            exists = var:$SPELL$_recipient
+        }
+        var:$SPELL$_recipient = {
+            add_to_variable_list = {
+                name = being_channelled_by
+                target = root
+            }
+        }
+    }
+    else_if = {
+        limit = {
+            has_variable_list = $SPELL$_targets_list
+        }
+        every_in_list = {
+            variable = $SPELL$_targets_list
+            add_to_variable_list = {
+                name = being_channelled_by
+                target = root
+            }
+        }
+    }
+} 
+
+cancel_spell_with_recipient_effect = {
+    set_variable = {
+        name = channeled_cast
+        value = flag:$SPELL$
+    }
+    if = {
+        limit = {
+            var:$SPELL$_recipient ?= scope:dead_recipient
+        }
+        send_interface_message = {
+            title = wc_channeled_spell_invalid
+            custom_tooltip = wc_channeled_spell_invalid_tt
+            cancel_channeling_spell_effect = { SPELL = $SPELL$ RANK = $RANK$ TYPE = $TYPE$ }
+        }
+    }
+    else_if = {
+        limit = {
+            any_in_list = {
+                list = $SPELL$_targets_list
+                this = scope:dead_recipient
+            }
+        }
+        send_interface_message = {
+            title = wc_channeled_spell_invalid
+            custom_tooltip = wc_channeled_spell_invalid_tt
+            cancel_channeling_spell_effect = { SPELL = $SPELL$ RANK = $RANK$ TYPE = $TYPE$ }
+        }
+    }
+    remove_variable = channeled_cast
+    if = { limit = { $RANK$ = 2 } } # error suppression
+    if = { limit = { flag:$TYPE$ = flag:spoon } } # error suppression
+}
+
+cancel_spell_with_recipient_effect_elemental = {
+    cancel_spell_with_recipient_effect = { SPELL = $SPELL$ }
+}
+
+stop_spell_channeling_effect = {
+    ### Stop Spell Channeling
+    if = {
+        limit = {
+            any_in_list = {
+                variable = being_channelled_by
+                is_alive = yes
+                count >= 1 
+            }
+        }
+        save_scope_as = dead_recipient
+        every_in_list = {
+            variable = being_channelled_by
+            limit = {
+                is_alive = yes
+            }
+            save_scope_as = caster
+            every_in_list = {
+                variable = current_spells_channeling
+                save_scope_as = this_spell
+                scope:caster = {
+                    execute_scoped_spell_effect = {
+                        SPELL = scope:this_spell
+                        EFFECT = cancel_spell_with_recipient_effect
+                    }
+                }
+            }
+        }
+    }
+}
+wc_spell_title_destruction_effect = {
+    stop_spell_channeling_effect = yes
 }
