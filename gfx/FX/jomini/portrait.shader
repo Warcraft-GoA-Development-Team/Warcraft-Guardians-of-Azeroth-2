@@ -13,7 +13,8 @@ Includes = {
 	"jomini/portrait_user_data.fxh"
 	"constants.fxh"
 	# MOD(godherja)
-	"GH_portrait_effects.fxh"
+	"gh_portrait_effects.fxh"
+	"gh_portrait_constants.fxh"
 	# END MOD
 }
 
@@ -133,6 +134,10 @@ VertexStruct VS_OUTPUT_PDXMESHPORTRAIT
 	float4 	ShadowProj		: TEXCOORD7;
 	# This instance index is used to fetch custom user data from the Data[] array (see pdxmesh.fxh)
 	uint 	InstanceIndex	: TEXCOORD8;
+	# MOD(godherja)
+	# Cannot use bool because OpenGL doesn't support it, apparently.
+	uint GH_IsDynamicTerrainLoaded : TEXCOORD9;
+	# END MOD
 };
 
 VertexStruct VS_INPUT_PDXMESHSTANDARD_ID
@@ -159,36 +164,44 @@ VertexStruct VS_INPUT_PDXMESHSTANDARD_ID
 	uint VertexID			: PDX_VertexID;
 };
 
+# MOD(godherja)
+# This definition has been moved to gh_portrait_constants.fxh because
+# in Godherja it's also needed by terrain shaders.
+# Any changes to this definition should also be applied to that file.
+
 # Portrait constants (SPortraitConstants)
-ConstantBuffer( 5 )
-{
-	float4 		vPaletteColorSkin;
-	float4 		vPaletteColorEyes;
-	float4 		vPaletteColorHair;
-	float4		vSkinPropertyMult;
-	float4		vEyesPropertyMult;
-	float4		vHairPropertyMult;
-	
-	float4 		Light_Color_Falloff[3];
-	float4 		Light_Position_Radius[3]
-	float4 		Light_Direction_Type[3];
-	float4 		Light_InnerCone_OuterCone_AffectedByShadows[3];
-	
-	int			DecalCount;
-	int         PreSkinColorDecalCount
-	int			TotalDecalCount;
-	int 		_; // Alignment
+#ConstantBuffer( 5 )
+#{
+#	float4 		vPaletteColorSkin;
+#	float4 		vPaletteColorEyes;
+#	float4 		vPaletteColorHair;
+#	float4		vSkinPropertyMult;
+#	float4		vEyesPropertyMult;
+#	float4		vHairPropertyMult;
+#
+#	float4 		Light_Color_Falloff[3];
+#	float4 		Light_Position_Radius[3]
+#	float4 		Light_Direction_Type[3];
+#	float4 		Light_InnerCone_OuterCone_AffectedByShadows[3];
+#
+#	int			DecalCount;
+#	int         PreSkinColorDecalCount
+#	int			TotalDecalCount;
+#	int 		_; // Alignment
+#
+#	float4 		PatternColorOverrides[16];
+#	float4		CoaColor1;
+#	float4		CoaColor2;
+#	float4		CoaColor3;
+#	float4		CoaOffsetAndScale;
+#
+#	float		HasDiffuseMapOverride;
+#	float		HasNormalMapOverride;
+#	float		HasPropertiesMapOverride;
+#};
 
-	float4 		PatternColorOverrides[16];
-	float4		CoaColor1;
-	float4		CoaColor2;
-	float4		CoaColor3;
-	float4		CoaOffsetAndScale;
+# END MOD
 
-	float		HasDiffuseMapOverride;
-	float		HasNormalMapOverride;
-	float		HasPropertiesMapOverride;
-};
 Code
 [[
 	#define LIGHT_COUNT 3
@@ -229,6 +242,15 @@ VertexShader = {
 			{
 				VS_OUTPUT_PDXMESHPORTRAIT Out = ConvertOutput( PdxMeshVertexShaderStandard( Input ) );
 				Out.InstanceIndex = Input.InstanceIndices.y;
+
+				// MOD(godherja)
+				#ifdef GH_PORTRAIT_SKIN
+					Out.GH_IsDynamicTerrainLoaded = GH_AreTerrainMarkerDecalsLoaded() ? 1 : 0;
+				#else
+					Out.GH_IsDynamicTerrainLoaded = 1;
+				#endif // !GH_PORTRAIT_SKIN
+				// END MOD
+
 				return Out;
 			}
 		]]
@@ -377,10 +399,24 @@ PixelShader =
 			#endif
 		}
 
+		// MOD(godherja)
+		#ifndef GH_IGNORE_PORTRAIT_EFFECT
+			#define GH_PREPARE_COMMON_PS_OR_RETURN(ALPHA)\
+				float3 Emissive = float3(0.0f, 0.0f, 0.0f);\
+				\
+				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+		#else
+			#define GH_PREPARE_COMMON_PS_OR_RETURN(ALPHA)\
+				float3 Emissive = float3(0.0f, 0.0f, 0.0f);\
+				\
+				GH_SPortraitEffect PortraitEffect = GH_GetDefaultPortraitEffect();
+		#endif // !GH_IGNORE_PORTRAIT_EFFECT
+		// END MOD
+
 		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input, in GH_SPortraitEffect PortraitEffect )
 		{
 			// MOD(godherja)
-			GH_TryApplyStatueEffect(PortraitEffect, Diffuse, Properties);
+			GH_TryApplyStatueEffect(PortraitEffect, Input.UV0, Diffuse, NormalSample, Properties);
 			// END MOD
 			float3x3 TBN = Create3x3( normalize( Input.Tangent ), normalize( Input.Bitangent ), normalize( Input.Normal ) );
 			float3 Normal = normalize( mul( NormalSample, TBN ) );
@@ -514,11 +550,12 @@ PixelShader =
 				NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
 			#endif
 				// MOD(godherja)
-				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				GH_PREPARE_COMMON_PS_OR_RETURN(1.0f);
 				// END MOD
+
 				//Warcraft
 				#ifdef DECALS
-					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
+			    	AddDecals( Diffuse.rgb, NormalSample, Properties, Emissive, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount, Input.GH_IsDynamicTerrainLoaded != 0 );
 				#endif
 				
 				#ifdef ALPHA_TO_COVERAGE
@@ -531,7 +568,7 @@ PixelShader =
 				
 				//Warcraft
 				#ifdef DECALS
-					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
+			    	AddDecals( Diffuse.rgb, NormalSample, Properties, Emissive, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount, Input.GH_IsDynamicTerrainLoaded != 0 );
 				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
@@ -564,23 +601,13 @@ PixelShader =
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );								
 				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				float3 NormalSample = UnpackRRxGNormal( PdxTex2D( NormalMap, UV0 ) );
-
-				//Warcraft
-				#ifdef DECALS
-					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, 0, PreSkinColorDecalCount );
-				#endif
 				
 				float ColorMaskStrength = Diffuse.a;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorEyes.rgb, Input.InstanceIndex, ColorMaskStrength );
 
 				// MOD(godherja)
-				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				GH_PREPARE_COMMON_PS_OR_RETURN(1.0f);
 				// END MOD
-
-				//Warcraft
-				#ifdef DECALS
-					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
-				#endif
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 				Out.Color = float4( Color, 1.0f );
@@ -615,6 +642,10 @@ PixelShader =
 				#endif
 
 				Properties.r = 1.0; // wipe this clean now, ready to be modified later
+
+				// MOD(godherja)
+				GH_PREPARE_COMMON_PS_OR_RETURN(Diffuse.a);
+				// END MOD
 				
 				#ifdef VARIATIONS_ENABLED
 					ApplyVariationPatterns( Input, Diffuse, Properties, NormalSample );
@@ -622,10 +653,6 @@ PixelShader =
 				#ifdef COA_ENABLED
 					ApplyCoa( Input, Diffuse, CoaColor1, CoaColor2, CoaColor3, CoaOffsetAndScale.xy, CoaOffsetAndScale.zw, CoaTexture, Properties.r );
 				#endif
-
-				// MOD(godherja)
-				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
-				// END MOD
 
 				
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
@@ -668,9 +695,9 @@ PixelShader =
 
 				float ColorMaskStrength = NormalSampleRaw.b;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorHair.rgb, Input.InstanceIndex, ColorMaskStrength );
-				
+
 				// MOD(godherja)
-				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				GH_PREPARE_COMMON_PS_OR_RETURN(Diffuse.a);
 				// END MOD
 
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
@@ -724,10 +751,10 @@ PixelShader =
 				Properties *= vHairPropertyMult;
 				Diffuse.rgb *= vPaletteColorHair.rgb;
 
-
 				// MOD(godherja)
-				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				GH_PREPARE_COMMON_PS_OR_RETURN(Diffuse.a);
 				// END MOD
+
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 
 				Out.Color = float4( Color, Diffuse.a );
@@ -797,7 +824,7 @@ Effect portrait_skin
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "FAKE_SSS_EMISSIVE" "EMISSIVE_NORMAL_BLUE" "DECALS" "PDX_MESH_BLENDSHAPES" "GH_PORTRAIT_SKIN" }
 }
 
 Effect wc_portrait_skin_attachment_alpha_to_coverage
@@ -835,7 +862,7 @@ Effect portrait_skin_face
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" "DECALS" }
+	Defines = { "FAKE_SSS_EMISSIVE" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" "DECALS" "GH_PORTRAIT_SKIN" }
 }
 
 Effect portrait_skin_faceShadow
