@@ -107,7 +107,7 @@ joiner_not_already_in_another_war_with_any_target_war_participants_trigger = {
 			subject = $JOINER$
 			NOT = {
 				any_war_enemy = {
-					OR  = {
+					OR = {
 						AND = {
 							scope:target = { primary_defender = $WARRIOR$ }
 							is_defender_in_war = scope:target
@@ -170,8 +170,18 @@ can_potentially_call_ally_trigger = {
 		$JOINER$ = {
 			trigger_if = {
 				limit = {
-					# Diarchs can join against other vassals.
-					NOT = { this ?= $WARRIOR$.diarch }
+					NOT = { 
+						# Diarchs can join against other vassals.
+						this ?= $WARRIOR$.diarch 
+						# Confederation members can join the confederation leader's defensive wars
+						AND = {
+							is_confederation_member = yes
+							$WARRIOR$ = {
+								is_member_of_confederation = $JOINER$.confederation
+							}
+						}
+					}
+
 				}
 				NOT = {
 					target_is_liege_or_above = $WARRIOR$
@@ -180,12 +190,31 @@ can_potentially_call_ally_trigger = {
 		}
 	}
 
-	# Can never call your liege to your own wars (they protect you only from foreign invaders, by being the war target instead of you)
+	# Can never call your liege to your own wars (they protect you only from foreign invaders, by being the war target instead of you) -- Unless you have the Nomadic Contract Right
 	custom_description = {
 		text = cannot_call_liege_to_war
 		$JOINER$ = {
-			NOT = {
-				target_is_vassal_or_below = $WARRIOR$
+			trigger_if = {
+				limit = {
+					target_is_vassal_or_below = $WARRIOR$
+					$WARRIOR$ = {
+						vassal_contract_has_flag = vassal_contract_liege_forced_war_override
+					}
+				}
+				always = yes
+			}
+			trigger_else_if = {
+				limit = {
+					$JOINER$ = {
+						NOT = {
+							target_is_vassal_or_below = $WARRIOR$
+						}
+					}
+				}
+				always = yes
+			}
+			trigger_else = {
+				always = no
 			}
 		}
 	}
@@ -242,9 +271,10 @@ any_liege_or_above_is_participant_trigger = {
 
 can_use_conquest_cbs_trigger = {
 	OR = {
-		has_dark_government_trigger = yes
+		has_dark_government_trigger = yes # Warcraft
 		government_has_flag = government_is_tribal
 		government_has_flag = government_is_clan
+		government_has_flag = government_is_nomadic
 		faith = { has_doctrine_parameter = conquest_cb_enabled }
 		culture = { has_cultural_parameter = can_use_conquest_cbs }
 	}
@@ -473,6 +503,7 @@ using_conquest_cb_trigger = {
 		
 		# Warcraft
 		# using_cb = ireland_laudabiliter_conquest_cb
+		# using_cb = mpo_gok_onslaught_cb
 	}
 }
 
@@ -862,30 +893,82 @@ religious_war_vassals_constraints = {
 	}
 }
 
+herders_and_tributary_constraints = {
+	trigger_if = {
+		limit = { exists = scope:defender }
+		scope:defender = {
+			save_temporary_scope_as = recipient # done for is_a_herder_defender_tt
+			NOR = {
+				custom_tooltip = {
+					text = is_a_herder_defender_tt					# herders can't fight
+					government_has_flag = government_is_herder
+				}
+				is_tributary_of_suzerain_or_above = scope:attacker 	# can't fight your tributaries or your tributaries' tributaries
+			}
+		}
+		scope:attacker = {
+			NOR = {
+				is_tributary_of_suzerain_or_above = scope:defender 	# can't attack your own suzerain
+				trigger_if = {
+					limit = {
+						suzerain != this
+						scope:defender = { is_confederation_member = yes }
+						suzerain = { is_confederation_member = yes }
+					}
+					# if you have a suzerain who's part of a confederation, you may not attack any of its members
+					scope:defender.confederation = suzerain.confederation
+				}
+			}
+		}
+	}
+}
+
 feudal_clan_tribal_conquest_constraints = {
 	OR = {
 		AND = {
 			tier = tier_county
-			any_county_province = {
-				has_holding_type = tribal_holding
+			title_province = {
+				OR = {
+					has_holding_type = tribal_holding
+					has_holding_type = nomad_holding
+					has_holding_type = herder_holding
+				}
 			}
 		}
 		AND = {
 			tier > tier_county
 			any_in_de_jure_hierarchy = {
 				tier = tier_county
-				any_county_province = {
-					has_holding_type = tribal_holding
+				title_province = {
+					OR = {
+						has_holding_type = tribal_holding
+						has_holding_type = nomad_holding
+						has_holding_type = herder_holding
+					}
 				}
 			}
 		}
 	}
 	scope:attacker = {
-		NOT = { government_has_flag = government_is_tribal }
+		NOR = {
+			government_has_flag = government_is_tribal
+			government_has_flag = government_is_nomadic
+		}
 		gold < 200
-		any_sub_realm_county = {
-			any_county_province = {
-				has_holding_type = tribal_holding
+		OR = {
+			AND = {
+				government_has_flag = government_is_administrative
+				gold < 700
+				this != top_liege
+			}
+			any_sub_realm_county = {
+				title_province = {
+					OR = {
+						has_holding_type = tribal_holding
+						has_holding_type = nomad_holding
+						has_holding_type = herder_holding
+					}
+				}
 			}
 		}
 	}
