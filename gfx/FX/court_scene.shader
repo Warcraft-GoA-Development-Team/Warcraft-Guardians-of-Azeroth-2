@@ -804,7 +804,7 @@ PixelShader =
 			Color += HOVER_COLOR * HOVER_INTENSITY * FresnelFactor * HoverMult;
 		}
 
-		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input, float HoverMult )
+		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input, in GH_SPortraitEffect PortraitEffect, float HoverMult )
 		{
 			// MOD(godherja)
 			GH_TryApplyStatueEffect(PortraitEffect, Diffuse, Properties);
@@ -1187,7 +1187,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
 				Out.Color = float4( Color, 1.0f );
 
 				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
@@ -1229,7 +1229,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, 0.f );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, 0.f );
 
 				Out.Color = float4( Color, 1.0f );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
@@ -1298,7 +1298,7 @@ PixelShader =
 				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
 				// END MOD
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, AppliedHover );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, AppliedHover );
 
 				Out.Color = float4( Color, Diffuse.a );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
@@ -1345,7 +1345,7 @@ PixelShader =
 				// END MOD
 
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
 
 				#ifdef ALPHA_TO_COVERAGE
 					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, UV0, DiffuseMap );
@@ -1400,7 +1400,7 @@ PixelShader =
 				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
 				// END MOD
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
 
 				Out.Color = float4( Color, Diffuse.a );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
@@ -1780,7 +1780,7 @@ PixelShader =
 				PortraitEffect.Param = float4(0.0f, 0.0f, 0.0f, 0.0f);
 				// END MOD
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
 
 				#ifdef ALPHA_TO_COVERAGE
 					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, Input.UV0, DiffuseMap );
