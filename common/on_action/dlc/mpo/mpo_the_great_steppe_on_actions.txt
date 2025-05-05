@@ -1,0 +1,250 @@
+﻿# Warcraft - Remove Steppe Region specific code
+
+mpo_generic_nomadic_region_yearly_pulse = {
+	effect = {
+		# Spread this pulse out
+		every_participant_group = {
+			limit = {
+				participant_group_type = nomad_rulers_capital
+			}
+			every_situation_group_participant = {
+				trigger_event = {
+					on_action = mpo_the_great_steppe_yearly_pulse_random
+					days = { 1 250 }
+				}
+			}
+		}
+	}
+}
+
+mpo_the_great_steppe_yearly_pulse_random = {
+	effect = {
+		# Nomads should hunt a lot
+		if = {
+			limit = {
+				is_ai = yes
+				is_at_war = no
+				government_has_flag = government_is_nomadic
+			}
+			save_temporary_scope_as = nomad_capital_ruler
+			if = { # Count-tier nomads over their domain limit should abandon low-fertility counties to herders
+				limit = {
+					primary_title.tier = tier_county
+					domain_size > domain_limit
+					this = top_liege
+					any_held_title = {
+						tier = tier_county
+						is_landless_type_title = no
+						this != scope:nomad_capital_ruler.capital_county
+						OR = {
+							any_neighboring_county = {
+								holder.top_liege != scope:nomad_capital_ruler.top_liege
+							}
+							is_coastal_county = yes
+						}
+						NOT = {
+							any_neighboring_county = {
+								this = scope:nomad_capital_ruler.capital_county
+							}
+						}
+					}
+				}
+				alternative_limit = {
+					primary_title.tier = tier_county
+					domain_size > domain_limit
+					this = top_liege
+					any_held_title = {
+						tier = tier_county
+						is_landless_type_title = no
+						this != scope:nomad_capital_ruler.capital_county
+						OR = {
+							any_neighboring_county = {
+								holder.top_liege != scope:nomad_capital_ruler.top_liege
+							}
+							is_coastal_county = yes
+						}
+					}
+				}
+				random_held_title = {
+					limit = {
+						tier = tier_county
+						is_landless_type_title = no
+						this != scope:nomad_capital_ruler.capital_county
+						OR = {
+							any_neighboring_county = {
+								holder.top_liege != scope:nomad_capital_ruler.top_liege
+							}
+							is_coastal_county = yes
+						}
+					}
+					weight = {
+						base = 100
+						modifier = { #Less likely to pick someone you actively dislike
+							add = {
+								value = county_fertility
+								multiply = -1
+							}
+							uses_county_fertility = yes
+						}
+					}
+					save_scope_as = title_to_abandon
+				}
+				create_character = {
+					template = herder_character
+					dynasty = none
+					location = scope:nomad_capital_ruler.location
+					save_scope_as = new_herder
+				}
+				scope:title_to_abandon = {
+					if = {
+						limit = {
+							title_province = {
+								has_holding_type = nomad_holding
+							}
+						}
+						title_province = {
+							set_holding_type = herder_holding
+						}
+					}
+					create_title_and_vassal_change = {
+						type = granted
+						save_scope_as = change
+						add_claim_on_loss = no
+					}
+					change_title_holder_include_vassals = {
+						holder = scope:new_herder
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+				}
+				scope:new_herder = {
+					change_government = herder_government
+					every_held_title = {
+						limit = {
+							is_landless_type_title = yes
+						}
+						scope:new_herder = { destroy_title = prev }
+					}
+				}
+				start_tributary_interaction_effect = {
+					TRIBUTARY = scope:new_herder
+					SUZERAIN = scope:nomad_capital_ruler
+				}
+				scope:nomad_capital_ruler = {
+					add_prestige = minor_prestige_loss
+				}
+			}
+			random = {
+				chance = {
+					value = 5
+					if = {
+						limit = {
+							prestige <= 600
+						}
+						add = 30
+					}
+					if = {
+						limit = {
+							prestige <= 100
+						}
+						add = 70
+					}
+				}
+				ai_attempt_to_host_activity = activity_hunt
+			}
+			random = {
+				chance = {
+					value = 0
+					if = {
+						limit = {
+							has_character_modifier = mpo_si_slaughtered_animals
+						}
+						add = 30
+					}
+					if = {
+						limit = {
+							gold > prestige
+							gold > 200
+							prestige < 600
+						}
+						add = 30
+					}
+				}
+				ai_attempt_to_host_activity = activity_feast
+			}
+			# Start Overrun Kingdom Wars
+			if = {
+				limit = {
+					OR = {
+						# Havsaran zud? Leave the steppe!
+						capital_county ?= {
+							any_county_situation = {
+								any_situation_sub_region = {
+									sub_region_current_phase = situation_steppe_havsarsan_zud_season
+									situation_sub_region_has_county = root.capital_county
+								}
+							}
+						}
+						AND = {
+							is_landed = no
+							domicile.herd >= 10000
+						}
+					}
+				}
+				random = {
+					chance = 50
+					ai_start_best_war = {
+						cb = {
+							mpo_nomad_invasion_cb
+						}
+						is_valid = {
+							scope:target_character = {
+								current_military_strength < scope:nomad_capital_ruler.current_military_strength
+								OR = {
+									gold < scope:nomad_capital_ruler.gold
+									current_military_strength <= scope:nomad_capital_ruler.fifty_percent_of_current_military_strength
+								}
+							}
+						}
+					}
+				}
+			}
+			# Big nomads should expand a lot
+			if = {
+				limit = {
+					highest_held_title_tier >= tier_kingdom
+					war_chest_gold >= war_chest_gold_maximum
+					NOT = { # But maybe not the Samí
+						capital_county ?= {
+							any_county_situation = { this = situation:game_rule_extra_nomads_sami }
+						}
+					}
+				}
+				random = {
+					chance = 50
+					ai_start_best_war = {
+						cb = {
+							de_jure_cb_nomadic
+							retaliation_cb
+							humiliation_cb
+							make_tributary_cb
+							sovereignty_cb
+							nomadic_conquest_duchy_cb
+						}
+						is_valid = {
+							scope:target_character = {
+								current_military_strength < scope:nomad_capital_ruler.current_military_strength
+								OR = {
+									gold < scope:nomad_capital_ruler.gold
+									current_military_strength <= scope:nomad_capital_ruler.fifty_percent_of_current_military_strength
+								}
+							}
+						}
+					}
+				}
+			}
+			# Clean-up Landless AI Nomads who have lost
+			clean_up_ai_nomad_effect = yes
+		}
+	}
+}
