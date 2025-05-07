@@ -367,11 +367,7 @@ create_landless_adventurer_title_effect = {
 				}
 			}
 		}
-		create_title_and_vassal_change = {
-			type = created
-			save_scope_as = change
-			add_claim_on_loss = no
-		}
+
 		scope:new_title ?= {
 			create_landless_adventurer_title_history_effect = yes
 			set_variable = {
@@ -382,12 +378,8 @@ create_landless_adventurer_title_effect = {
 				name = adventurer_flavor_char
 				value = scope:adventurer_flavor_char
 			}
-			change_title_holder = {
-				holder = scope:new_landless_adventurer
-				change = scope:change
 			}
-		}
-		resolve_title_and_vassal_change = scope:change
+
 		scope:new_title = { save_scope_as = new_landless_adventurer_title }
 		scope:new_landless_adventurer = {
 			if = {
@@ -516,7 +508,9 @@ create_landless_adventurer_title_effect = {
 						}
 					}
 					#Warcraft
-					override_death_effect = { death_reason = death_vanished }
+					override_death_effect = {
+						death_reason = death_vanished 
+					}
 				}
 			}
 			every_courtier = {
@@ -678,7 +672,10 @@ destroy_laamp_effect = {
 		# Ironically, we only want to use this effect if you're _not_ admin — it'll reset you nicely to the best government for you, but if you're admin, you should stay admin.
 		if = {
 			limit = {
-				NOT = { government_has_flag = government_is_administrative }
+				NOR = {
+					government_has_flag = government_is_administrative
+					government_has_flag = government_is_nomadic
+				}
 			}
 			admin_government_reset_effect = yes
 		}
@@ -812,6 +809,9 @@ ep3_become_landed_transfer_no_ennobled_modifier_effect = {
 				government_is_tribal = {
 					save_scope_value_as = { name = old_government value = flag:tribal }
 				}
+				government_is_nomadic = {
+					save_scope_value_as = { name = old_government value = flag:nomad }
+				}
 			}
 		}
 	}
@@ -852,8 +852,25 @@ ep3_become_landed_transfer_no_ennobled_modifier_effect = {
 	resolve_title_and_vassal_change = scope:title_change2
 	$TITLE_RECEIVER$ = {
 		# Change our government according to the government of our liege.
-		## Administrative.
+		## Nomad.
 		if = {
+			limit = {
+				OR = {
+					government_has_flag = government_is_nomadic
+					scope:new_liege ?= { government_has_flag = government_is_nomadic }
+					scope:old_government ?= flag:nomad
+					scope:new_capital.capital_province = {
+						OR = {
+							has_holding_type = nomad_holding
+							has_holding_type = herder_holding
+						}
+					}
+				}
+			}
+			change_government = nomad_government
+		}
+		## Administrative.
+		else_if = {
 			limit = {
 				OR = {
 					scope:new_liege ?= { government_has_flag = government_is_administrative }
@@ -923,6 +940,9 @@ ep3_become_landed_transfer_effect = {
 			government_is_tribal = {
 				save_scope_value_as = { name = old_government value = flag:tribal }
 			}
+			government_is_nomadic = {
+				save_scope_value_as = { name = old_government value = flag:nomad }
+			}
 		}
 	}
 	every_in_list = {
@@ -989,8 +1009,25 @@ ep3_become_landed_transfer_effect = {
 	resolve_title_and_vassal_change = scope:title_change
 	$TITLE_RECEIVER$ = {
 		# Change our government according to the government of our liege.
-		## Administrative.
+		## Nomad.
 		if = {
+			limit = {
+				OR = {
+					government_has_flag = government_is_nomadic
+					scope:new_liege ?= { government_has_flag = government_is_nomadic }
+					scope:old_government ?= flag:nomad
+					scope:new_capital.title_province = {
+						OR = {
+							has_holding_type = nomad_holding
+							has_holding_type = herder_holding
+						}
+					}
+				}
+			}
+			change_government = nomad_government
+		}
+		## Administrative.
+		else_if = {
 			limit = {
 				scope:new_primary_title = { tier > tier_duchy }
 				OR = {
@@ -1636,8 +1673,7 @@ create_landed_ruler_message_effect = {
 					this = scope:landed
 					this = scope:landed_flavor_char
 				}
-				save_temporary_scope_as = informee
-				scope:landed = { in_diplomatic_range = scope:informee }
+				top_liege = scope:landed.top_liege
 			}
 			send_interface_message = {
 				type = msg_landless_adventurer_nearby
@@ -2168,14 +2204,6 @@ adventurer_realm_destabilisation_list_effect = {
 							}
 						}
 					}
-					modifier = { # Vassals with capitals outside the de jure more likely
-						factor = 1.25
-						capital_county = {
-							NOT = {
-								target_is_de_jure_liege_or_above = scope:title
-							}
-						}
-					}
 					### PERSONALITY
 					ai_value_modifier = { 
 						ai_boldness = 0.15
@@ -2269,13 +2297,6 @@ adventurer_realm_destabilisation_list_effect = {
 					modifier = {
 						factor = 1.25
 						scope:ruler.primary_title.tier = tier_kingdom
-					}
-					### ADMIN
-					modifier = { # Noble Families should never leave admin realms
-						factor = 0
-						any_held_title = {
-							is_noble_family_title = yes
-						}
 					}
 					max = 95
 					add_to_list = independent_vassals
@@ -2716,10 +2737,8 @@ zealous_missionary_conversion_effect = {
 			exists = location.barony.holder
 			government_has_flag = government_is_landless_adventurer 
 			has_character_flag = zealous_missionary_timer
-			NOT = {
-				location.faith ?= root.faith
-			}
-		}
+			#location.county ?= { hasan_evangelize_province_trigger = yes }
+		}   # Warcraft
 		trigger_event = ep3_laamp_decision_event.1103
 	}
 }
@@ -7644,7 +7663,6 @@ ep3_youth_castration_effect = {
 }
 
 ep3_greek_fire_success_effect = {
-	#TODO_CD_EP3_JC modifiers and MaA effects here will most likely be replaced/supplemented by deplete_army once we have code support
 	# scope:invading_commander = {
 	# 	add_character_modifier = {
 	# 		modifier = ravaged_by_greek_fire_modifier

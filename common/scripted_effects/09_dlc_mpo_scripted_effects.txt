@@ -1,0 +1,6553 @@
+﻿# Used in the Migration flow
+# Requires:
+# scope:actor - the character recieving the title
+# scope:target_title - the title in question
+creating_kingdom_empire_title_effect = {
+	save_scope_as = old_title
+
+	if = {
+		limit = {
+			scope:target_title.tier = tier_kingdom
+		}
+		create_dynamic_title = {
+			tier = kingdom
+			name = NEW_CREATED_TITLE_NAME
+		}
+	}
+	else_if = {
+		limit = {
+			scope:target_title.tier = tier_empire
+		}
+		create_dynamic_title = {
+			tier = empire
+			name = NEW_CREATED_TITLE_NAME
+		}
+	}
+
+	create_title_and_vassal_change = {
+		type = created
+		save_scope_as = change
+		add_claim_on_loss = no
+	}
+	
+	scope:new_title = {
+		add_to_list = creating_new_titles
+	}
+
+	every_in_list = {
+		list = creating_new_titles
+		change_title_holder = {
+			holder = scope:old_holder
+			change = scope:change
+		}
+	}
+	
+	resolve_title_and_vassal_change = scope:change
+
+	scope:new_title = {
+		set_coa = scope:old_title
+		set_color_from_title = scope:old_title
+		set_capital_county = scope:old_title.title_capital_county
+	}
+
+	scope:old_holder = { set_primary_title_to = scope:new_title }
+}
+
+migration_find_fitting_title_effect = {
+	save_scope_as = old_holder
+	if = { # If they are losing all their core lands, but it's not their main title, we'll just move them into one of their vassal lands
+		limit = {
+			scope:old_holder = {
+				NOT = {
+					any_held_county = {
+						exists = duchy
+						NOT = { target_is_de_jure_liege_or_above = scope:target_title }
+					}
+				}
+				any_vassal = {
+					any_held_county = {
+						exists = duchy
+						NOT = { target_is_de_jure_liege_or_above = scope:target_title }
+					}
+				}
+			}
+			NOT = { scope:target_title = scope:old_holder.primary_title }
+		}
+		create_title_and_vassal_change = {
+			type = revoked
+			save_scope_as = change
+		}
+		scope:old_holder = {
+			ordered_vassal = {
+				limit = {
+					any_held_county = {
+						exists = duchy
+						NOT = { target_is_de_jure_liege_or_above = scope:target_title }
+					}
+				}
+				order_by = {
+					value = 1
+					if = {
+						limit = {
+							government_has_flag = government_is_herder
+						}
+						add = 500
+					}
+					subtract = domicile.herd
+				}
+				ordered_held_county = {
+					limit = {
+						exists = duchy
+						NOT = { target_is_de_jure_liege_or_above = scope:target_title }
+					}
+					order_by = {
+						value = 1
+						add = county_fertility
+					}
+					change_title_holder = {
+						holder = scope:old_holder
+						change = scope:change
+					}
+				}
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+	}
+	if = { # If it is their primary title, we try to find a fitting replacement for them
+		limit = {
+			scope:target_title = scope:old_holder.primary_title
+		}
+		if = { # For kingdoms and empires, we simply make a dynamic title for one of their leftover titles
+			limit = {
+				scope:target_title.tier > tier_duchy
+				scope:old_holder = {
+					any_realm_county = {
+						holder = scope:old_holder
+						NOT = { target_is_de_jure_liege_or_above = scope:target_title }
+					}
+				}
+			}
+			scope:old_holder = {
+				random_realm_county = {
+					limit = {
+						holder = scope:old_holder
+						NOT = { target_is_de_jure_liege_or_above = scope:target_title }
+					}
+					creating_kingdom_empire_title_effect = yes
+				}
+			}
+		}
+		else_if = { # For duchies, we try to find a fitting title, first by checking if they have an uncreated title to one of their lands
+			limit = {
+				scope:target_title.holder = scope:old_holder
+				scope:target_title.tier = tier_duchy
+				scope:old_holder.capital_province.duchy = {
+					is_title_created = no
+				}
+			}
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = change2
+			}
+			scope:old_holder.capital_province.duchy ?= {
+				change_title_holder = {
+					holder = scope:old_holder
+					change = scope:change2
+				}
+			}
+			resolve_title_and_vassal_change = scope:change2
+		}
+		else_if = { # Or if one of their vassals do
+			limit = {
+				scope:target_title = {
+					tier = tier_duchy
+					any_direct_de_facto_vassal_title = {
+						duchy ?= { is_title_created = no }
+					}
+				}
+			}
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = change2
+			}
+			scope:target_title = {
+				random_direct_de_facto_vassal_title = {
+					limit = {
+						duchy ?= { is_title_created = no }
+					}
+					save_scope_as = old_holder_new_capital
+					duchy ?= {
+						add_to_list = title_change
+					}
+				}
+			}
+			scope:old_holder_new_capital.duchy ?= {
+				if = {
+					limit = {
+						any_de_jure_county = {
+							holder ?= { government_has_flag = government_is_herder }
+							holder.liege ?= scope:old_holder
+						}
+					}
+					random_de_jure_county = {
+						limit = {
+							holder ?= { government_has_flag = government_is_herder }
+							holder.liege ?= scope:old_holder
+						}
+						add_to_list = title_change
+					}
+				}
+				else_if = {
+					limit = {
+						any_de_jure_county = {
+							holder.liege ?= scope:old_holder
+						}
+					}
+					random_de_jure_county = {
+						limit = {
+							holder.liege ?= scope:old_holder
+						}
+						add_to_list = title_change
+					}
+				}
+			}
+			every_in_list = {
+				list = title_change
+				change_title_holder = {
+					holder = scope:old_holder
+					change = scope:change2
+				}
+			}
+			resolve_title_and_vassal_change = scope:change2
+		}
+	}
+}
+
+migration_settle_down_obedient_vassal_effect = {
+	scope:actor = {
+		ordered_in_list = {
+			variable = obedient_vassals
+			order_by = { 
+				value = 1 
+				domicile ?= {
+					add = herd
+				}
+			}
+			limit = {
+				is_landed = no
+			}
+			save_scope_as = current_vassal
+			add_to_list = settled_vassal
+		}
+		remove_list_variable = {
+			name = obedient_vassals
+			target = scope:current_vassal
+		}
+	}
+	change_title_holder = {
+		holder = scope:current_vassal
+		change = scope:change4
+	}
+	set_variable = {
+		name = migration_previous_culture
+		years = 5
+		value = culture
+	}
+	set_county_culture = scope:current_vassal.domicile.domicile_culture
+	set_county_faith = scope:current_vassal.domicile.domicile_faith
+	scope:current_vassal = {
+		change_liege = {
+			liege = scope:actor
+			change = scope:change4
+		}
+	}
+}
+
+migration_fitting_vassal_lands_effect = {
+	if = {
+		limit = {
+			scope:target_title.tier >= tier_$UPPER_TIER$
+			any_in_list = {
+				variable = obedient_vassals
+				count >= 1
+			}
+		}
+		while = {
+			limit = {
+				any_realm_county = {
+					NOR = {
+						$LOWER_TIER$ = scope:actor.capital_province.$LOWER_TIER$
+						holder = { is_in_list = settled_vassal }
+					}
+				}
+				any_in_list = {
+					variable = obedient_vassals
+					count >= 1
+				}
+			}
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = change4
+			}
+			ordered_realm_county = {
+				limit = {
+					NOR = {
+						$LOWER_TIER$ = scope:actor.capital_province.$LOWER_TIER$
+						holder = { is_in_list = settled_vassal }
+					}
+				}
+				order_by = {
+					value = 1
+					every_de_jure_county = { add = 50 }
+					$LOWER_TIER$.title_capital_county = { add = county_fertility }
+					if = {
+						limit = {
+							this = $LOWER_TIER$.title_capital_county
+						}
+						add = 500
+					}
+				}
+				migration_settle_down_obedient_vassal_effect = yes
+				$LOWER_TIER$ = {
+					if = {
+						limit = {
+							OR = {
+								is_title_created = no
+								holder ?= {
+									NOT = { is_in_list = settled_vassal }
+									OR = {
+										liege = scope:actor
+										top_liege = scope:actor
+									}
+								}
+							}
+						}
+						change_title_holder = {
+							holder = scope:current_vassal
+							change = scope:change4
+						}
+					}
+				}
+			}
+			resolve_title_and_vassal_change = scope:change4
+		}
+	}
+}
+
+migration_message_effect = {
+	save_scope_as = old_holder
+	every_neighboring_top_liege_realm_owner = { add_to_temporary_list = old_holder_neighbours }
+	# Messages for Self
+	send_interface_message = {
+		type = msg_migration_into_realm
+		title = msg_migration_into_realm_title
+		desc = msg_migration_into_realm_desc
+		left_icon = scope:actor
+		right_icon = scope:target_title
+	}
+	if = {
+		limit = { is_tributary = yes }
+		# Messages for Suzerains and fellow Tributaries
+		suzerain = {
+			save_temporary_scope_as = suzerain_temp
+			add_to_temporary_list = old_holder_suzerain # for debugging
+			send_interface_message = {
+				type = msg_migration_into_realm
+				title = msg_migration_into_realm_tributary_title
+				desc = msg_migration_into_realm_tributary_desc
+				left_icon = scope:actor
+				right_icon = scope:old_holder
+			}
+			every_player = {
+				limit = {
+					is_tributary_of = scope:suzerain_temp
+					NOT = { this = scope:old_holder } # Self
+				}
+				send_interface_message = {
+					type = msg_migration_into_realm
+					title = msg_migration_into_realm_fellow_tributary_title
+					desc = msg_migration_into_realm_fellow_tributary_desc
+					left_icon = scope:actor
+					right_icon = scope:old_holder
+				}
+			}
+			clear_saved_scope = suzerain_temp
+		}
+	}
+	else_if = {
+		limit = { is_independent_ruler = no }
+		# Messages for Lieges and fellow Vassals
+		top_liege = {
+			save_temporary_scope_as = top_liege_temp
+			add_to_temporary_list = old_holder_top_liege # for debugging
+			send_interface_message = {
+				type = msg_migration_into_realm
+				title = msg_migration_into_realm_vassal_title
+				desc = msg_migration_into_realm_vassal_desc
+				left_icon = scope:actor
+				right_icon = scope:old_holder
+			}
+			every_player = {
+				limit = {
+					is_vassal_of = scope:top_liege_temp
+					NOT = { this = scope:old_holder } # Self
+				}
+				send_interface_message = {
+					type = msg_migration_into_realm
+					title = msg_migration_into_realm_fellow_vassal_title
+					desc = msg_migration_into_realm_fellow_vassal_desc
+					left_icon = scope:actor
+					right_icon = scope:old_holder
+				}
+			}
+		}
+		clear_saved_scope = top_liege_temp
+	}
+	# Messages for Vassals
+	every_player = {
+		limit = { is_vassal_of = scope:old_holder }
+		send_interface_message = {
+			type = msg_migration_into_realm
+			title = msg_migration_into_realm_tributary_title
+			desc = msg_migration_into_realm_tributary_desc
+			left_icon = scope:actor
+			right_icon = scope:old_holder
+		}
+	}
+	# Messages for Tributaries
+	every_player = {
+		limit = { is_tributary_of = scope:old_holder }
+		send_interface_message = {
+			type = msg_migration_into_realm
+			title = msg_migration_into_suzerain_title
+			desc = msg_migration_into_suzerain_desc
+			left_icon = scope:actor
+			right_icon = scope:old_holder
+		}
+	}
+	# Messages for Neighbours
+	every_player = {
+		limit = {
+			is_in_list = old_holder_neighbours
+			NOR = { # Exclude all those who have already had a message
+				this = scope:actor
+				is_in_list = old_holder # Self
+				is_in_list = old_holder_suzerain # Suzerains
+				suzerain = { is_in_list = old_holder_suzerain } # Fellow Tributaries
+				is_in_list = old_holder_top_liege # Lieges
+				top_liege = { is_in_list = old_holder_top_liege } # Fellow Vassals
+				is_vassal_of = scope:old_holder # Vassals
+				is_tributary_of = scope:old_holder # Tributaries
+				var:migration_neighbour_cooldown ?= scope:actor # Avoid duplicates
+			}
+		}
+		set_variable = {
+			name = migration_neighbour_cooldown
+			value = scope:actor
+			days = 1
+		}
+		send_interface_message = {
+			type = msg_migration_into_neighbour
+			title = msg_migration_into_neighbour_title
+			desc = msg_migration_into_neighbour_desc
+			left_icon = scope:actor
+			right_icon = scope:old_holder.top_liege
+		}
+	}
+	clear_saved_scope = old_holder
+}
+
+migration_title_and_vassal_change_effect = {
+	scope:domain ?= {
+		if = {
+			limit = {
+				tier = tier_county
+			}
+			holder = {
+				add_to_list = old_holder
+			}
+		}
+		else = {
+			every_de_jure_county_holder = {
+				limit = {
+					is_independent_ruler = yes
+				}
+				add_to_list = old_holder
+			}
+		}
+	}
+	scope:target_title.holder ?= {
+		add_to_list = old_holder
+	}
+
+	# Change 1: The old holder will attempt to create a new title for their lands, if they are losing their primary title
+	every_in_list = {
+		list = old_holder
+		# Inform relevant people
+		migration_message_effect = yes
+		# Run effects
+		migration_find_fitting_title_effect = yes
+	}
+
+	# Change 2: Hand out titles to actor
+	create_title_and_vassal_change = {
+		type = migration
+		save_scope_as = change1
+		add_claim_on_loss = yes
+	}
+	scope:target_title ?= {
+		change_title_holder = {
+			holder = scope:actor
+			change = scope:change1
+		}
+	}
+	if = {
+		limit = {
+			NOT = { scope:domain = scope:target_title }
+		}
+		scope:domain = {
+			change_title_holder = {
+				holder = scope:actor
+				change = scope:change1
+			}
+		}
+	}
+	if = {
+		limit = {
+			scope:domain.tier = tier_duchy
+		}
+		scope:domain = {
+			every_de_jure_county = {
+				change_title_holder = {
+					holder = scope:actor
+					change = scope:change1
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			scope:target_title.tier >= tier_kingdom
+		}
+		scope:target_title ?= {
+			every_de_jure_county_holder = {
+				limit = {
+					OR = {
+						any_in_list = {
+							list = old_holder
+							this = prev
+						}
+						this = scope:recipient
+						AND = {
+							scope:recipient = this.liege
+							any_held_county = {
+								exists = duchy
+								NOT = { target_is_de_jure_liege_or_above = scope:target_title }
+							}
+						}
+					}
+				}
+				change_title_holder = {
+					holder = scope:actor
+					change = scope:change1
+				}
+			}
+		}
+		scope:target_title = {
+			every_de_jure_county_holder = {
+				limit = {
+					OR = {
+						any_in_list = {
+							list = old_holder
+							NOT = { this = prev }
+							this = prev.liege
+						}
+						AND = {
+							NOT = { this = scope:recipient }
+							scope:recipient = this.liege
+						}
+					}
+					NOT = { this = scope:actor }
+				}
+				add_to_list = new_vassals
+			}
+		}
+	}
+	every_in_list = {
+		list = new_vassals
+		change_liege = {
+			liege = scope:actor
+			change = scope:change1
+		}
+	}
+	resolve_title_and_vassal_change = scope:change1
+
+	# Change 3: Free vassals who don't belong in the new title
+	scope:actor = {
+		every_vassal = {
+			limit = {
+				NOT = {
+					any_held_county = {
+						target_is_de_jure_liege_or_above = scope:target_title
+					}
+				}
+			}
+			create_title_and_vassal_change = {
+				type = independency
+				save_scope_as = change
+			}
+			becomes_independent = {
+				change = scope:change
+			}
+			resolve_title_and_vassal_change = scope:change
+		}
+	}
+
+	# Change 4: Destroy top title of a nomad who doesn't have any land anymore
+	every_in_list = {
+		list = old_holder
+		if = {
+			limit = {
+				NOT = {
+					any_held_title = {
+						tier = tier_county
+						exists = duchy
+					}
+				}
+				any_held_title = {
+					tier >= tier_county
+					is_landless_type_title = no
+				}
+			}
+			every_held_title = {
+				limit = {
+					tier >= tier_county
+					is_landless_type_title = no
+				}
+				prev = { destroy_title = prev }
+			}
+		}
+	}
+
+	# Change 5: Settle down previously obedient vassals in new lands
+	scope:actor = {
+		if = {
+			limit = {
+				any_in_list = {
+					variable = obedient_vassals
+					count >= 1
+				}
+			}
+			# Empire solution
+			migration_fitting_vassal_lands_effect = {
+				UPPER_TIER = empire
+				LOWER_TIER = kingdom
+			}
+			# Kingdom solution
+			migration_fitting_vassal_lands_effect = {
+				UPPER_TIER = kingdom
+				LOWER_TIER = duchy
+			}
+			# Duchy solution
+			if = {
+				limit = {
+					scope:target_title.tier >= tier_duchy
+					domain_limit_available < 0
+					any_in_list = {
+						variable = obedient_vassals
+						count >= 1
+					}
+				}
+				while = {
+					limit = {
+						domain_limit_available < 0
+						any_in_list = {
+							variable = obedient_vassals
+							count >= 1
+						}
+						any_held_county = {
+							exists = duchy
+							NOT = { this = scope:actor.capital_province.county }
+						}
+					}
+					create_title_and_vassal_change = {
+						type = granted
+						save_scope_as = change4
+					}
+					ordered_held_county = {
+						limit = { 
+							exists = duchy
+							NOT = { this = scope:actor.capital_province.county }
+						}
+						order_by = {
+							value = 1
+							if = {
+								limit = {
+									NOT = {
+										any_neighboring_county = {
+											this = scope:actor.capital_province.county
+										}
+									}
+								}
+								add = 100
+							}
+						}
+						migration_settle_down_obedient_vassal_effect = yes
+					}
+					resolve_title_and_vassal_change = scope:change4
+				}
+			}
+			# Clean up liege setup
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = change4
+			}
+			every_vassal = {
+				limit = {
+					exists = primary_title.de_jure_liege.holder
+				}
+				change_liege = {
+					liege = primary_title.de_jure_liege.holder
+					change = scope:change4
+				}
+			}
+			resolve_title_and_vassal_change = scope:change4
+		}
+	}
+
+	# Change 6: If you cannot find land for your old obedient vassals, just destroy their camp and make them a part of your court
+	scope:actor = {
+		every_in_list = {
+			variable = obedient_vassals
+			limit = {
+				is_landed = no
+			}
+			save_scope_as = current_vassal
+			every_courtier_or_guest = {
+				set_employer = scope:actor
+			}
+			destroy_title = primary_title
+			root = {
+				remove_list_variable = {
+					name = obedient_vassals
+					target = scope:current_vassal
+				}
+			}
+			set_employer = scope:actor
+		}
+	}
+
+	# Change 7: Move domiciles so they are in the right provinces
+	every_in_list = {
+		list = old_holder
+		domicile ?= { move_domicile = prev.capital_province }
+		every_vassal = {
+			domicile ?= { move_domicile = prev.capital_province }
+		}
+	}
+	scope:actor = {
+		domicile ?= { move_domicile = prev.capital_province }
+		every_vassal = {
+			domicile ?= { move_domicile = prev.capital_province }
+		}
+	}
+
+	# Change 8: If for some reason you have any vassals who are still your subjects, but don't hold land, they will become independent
+	scope:actor = {
+		every_vassal = {
+			limit = { 
+				NOT = {
+					any_held_county = {
+						exists = duchy
+					}
+				}
+			}
+			create_title_and_vassal_change = {
+				type = independency
+				save_scope_as = change
+			}
+			becomes_independent = {
+				change = scope:change
+			}
+			resolve_title_and_vassal_change = scope:change
+		}
+	}
+
+	# Inform nearby peeps
+	every_player = {
+		limit = {
+			NOR = {
+				this = scope:actor
+				is_in_list = old_holder_suzerain
+				suzerain = { is_in_list = old_holder_suzerain }
+				is_in_list = old_holder_top_liege
+				top_liege = { is_in_list = old_holder_top_liege }
+			}
+			is_in_list = old_holder_neighbours
+		}
+	}
+
+	# Debugging
+	if = {
+		limit = { debug_only = yes }
+		debug_log = "Migration completed"
+		debug_log_scopes = yes
+	}
+}
+
+migration_set_obedient_vassal_effect = {
+	create_title_and_vassal_change = {
+		type = migration
+		save_scope_as = change
+	}
+	every_realm_county = {
+		limit = {
+			holder = scope:current_vassal
+			is_nomad_title = no
+			is_noble_family_title = no
+		}
+		create_character = {
+			template = herder_character
+			faith = scope:current_vassal.domicile.domicile_faith
+			culture = scope:current_vassal.domicile.domicile_culture
+			location = scope:current_vassal.primary_title.title_capital_county.title_province
+			save_scope_as = herder_character
+			after_creation = {
+				remove_character_flag = peasant_outfit
+				add_to_list = government_change
+			}
+		}
+		change_title_holder = {
+			holder = scope:herder_character
+			change = scope:change
+		}
+		title_province = {
+			if = {
+				limit = {
+					has_holding_type = nomad_holding
+				}
+				set_holding_type = herder_holding
+			}
+		}
+	}
+	resolve_title_and_vassal_change = scope:change
+	every_held_title = {
+		limit = {
+			tier >= tier_duchy
+		}
+		prev = { destroy_title = prev }
+	}
+
+	every_in_list = {
+		list = government_change
+		change_government = herder_government
+		remove_from_list = government_change
+	}
+
+	scope:actor = {
+		add_to_variable_list = {
+			name = obedient_vassals
+			target = scope:current_vassal
+		}
+	}
+}
+
+offer_confederation_accepter_effect = {
+	if = {
+		limit = {
+			scope:actor = {
+				is_confederation_member = no
+			}
+		}
+		custom_tooltip = create_confederation_recipient_tt
+	}
+	else = {
+		custom_tooltip = join_confederation_recipient_tt
+	}
+	custom_tooltip = confederation_defensive_wars_tt
+	custom_tooltip = unlock_leave_confederation_interaction_tt
+}
+
+confederation_realm_transfer_effect = {
+	save_scope_as = transfer_liege
+	every_vassal = {
+		limit = {
+			highest_held_title_tier >= tier_county
+			primary_title = {
+				NOT = {
+					any_this_title_or_de_jure_above = {
+						holder = scope:transfer_liege
+					}
+				}
+			}
+		}
+		add_to_list = vassals_to_transfer
+	}
+	add_to_list = vassals_to_transfer
+	create_title_and_vassal_change = {
+		type = granted
+		save_scope_as = change_3
+		add_claim_on_loss = no
+	}
+	primary_title = {
+		change_title_holder = {
+			holder = $CHARACTER$
+			change = scope:change_3
+		}
+	}
+	resolve_title_and_vassal_change = scope:change_3
+	
+	every_in_list = {
+		custom = custom.every_non_de_jure_vassal
+		list = vassals_to_transfer
+		create_title_and_vassal_change = {
+			type = swear_fealty
+			save_scope_as = change_4
+		}
+		change_liege = {
+			liege = $CHARACTER$
+			change = scope:change_4
+		}
+		resolve_title_and_vassal_change = scope:change_4
+	}
+}
+
+mpo_mongol_recovered_head_content_effect = {
+	if = {
+		limit = {
+			any_side_participant = {
+				has_variable = beheaded_warrior
+				is_ruler = yes
+			}
+		}
+		every_side_participant = {
+			limit = {
+				has_variable = beheaded_warrior
+				is_ruler = yes
+			}
+			save_scope_as = beheaded_liege
+			random_list = {
+				1 = {
+					trigger = {
+						is_alive = yes
+						is_imprisoned = no
+					}
+					modifier = {
+						OR = {
+							is_consort_of = var:beheaded_warrior
+							is_close_family_of = var:beheaded_warrior
+						}
+						add = 20
+					}
+					modifier = {
+						has_variable = beheaded_warrior_powerful_vassal
+						add = 1
+					}
+					trigger_event = {
+						id = mpo_nomad_events.1001
+						days = 1
+					}
+					add_character_flag = {
+						flag = beheaded_warrior_cooldown
+						years = 2
+					}
+				}
+				4 = {
+					modifier = {
+						OR = {
+							has_multiple_players = yes
+							is_ai = yes
+						}
+						factor = 2
+					}
+					remove_variable = beheaded_warrior
+					remove_variable = beheaded_warrior_foe
+					remove_variable = beheaded_warrior_councillor
+					remove_variable = beheaded_warrior_powerful_vassal
+					remove_variable = beheaded_warrior_accolade
+					remove_variable = beheaded_warrior_location
+				}
+			}
+		}
+	}
+}
+
+mpo_beheaded_warrior_artifact_creation_effect = {
+	#Important character to an emperor - high tier artifact
+	if = {
+		limit = {
+			highest_held_title_tier >= tier_empire
+			mpo_important_beheaded_warrior_trigger = yes
+		}
+		random_list = {
+			2 = {
+				trigger = {
+					scope:beheaded_warrior = {
+						is_close_family_of = root
+					}
+				}
+				create_artifact = {
+					name = warriors_head_artifact
+					description = kin_head_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = kin_head_modifier_tier_3
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+				scope:head_artifact = {
+					add_scaled_artifact_modifier_dynasty_prestige_effect = yes
+				}
+			}
+			1 = {
+				trigger = {
+					has_variable = beheaded_warrior_accolade
+				}
+				create_artifact = {
+					name = warriors_head_artifact
+					description = accolade_head_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = accolade_head_modifier_tier_3
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_3
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_3_alt
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_3_alt_2
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_3_alt_3
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+		}
+	}
+	#Mid-tier character
+	else_if = {
+		limit = {
+			OR = {
+				highest_held_title_tier >= tier_empire
+				AND = {
+					highest_held_title_tier >= tier_kingdom
+					mpo_important_beheaded_warrior_trigger = yes
+				}
+			}
+		}
+		random_list = {
+			2 = {
+				trigger = {
+					scope:beheaded_warrior = {
+						is_close_family_of = root
+					}
+				}
+				create_artifact = {
+					name = warriors_head_artifact
+					description = kin_head_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = kin_head_modifier_tier_2
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+				scope:head_artifact = {
+					add_scaled_artifact_modifier_dynasty_prestige_effect = yes
+				}
+			}
+			1 = {
+				trigger = {
+					has_variable = beheaded_warrior_accolade
+				}
+				create_artifact = {
+					name = warriors_head_artifact
+					description = accolade_head_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = accolade_head_modifier_tier_2
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_2
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_2_alt
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_2_alt_2
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_2_alt_3
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+		}
+	}
+	#Low tier character
+	else = {
+		random_list = {
+			2 = {
+				trigger = {
+					scope:beheaded_warrior = {
+						is_close_family_of = root
+					}
+				}
+				create_artifact = {
+					name = warriors_head_artifact
+					description = kin_head_artifact_desc
+					rarity = common
+					type = miscellaneous
+					modifier = kin_head_modifier_tier_1
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+				scope:head_artifact = {
+					add_scaled_artifact_modifier_dynasty_prestige_effect = yes
+				}
+			}
+			1 = {
+				trigger = {
+					has_variable = beheaded_warrior_accolade
+				}
+				create_artifact = {
+					name = warriors_head_artifact
+					description = accolade_head_artifact_desc
+					rarity = common
+					type = miscellaneous
+					modifier = accolade_head_modifier_tier_1
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = common
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_1
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = common
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_1_alt
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = common
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_1_alt_2
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+			1 = {
+				create_artifact = {
+					name = warriors_head_artifact
+					description = warriors_head_artifact_desc
+					rarity = common
+					type = miscellaneous
+					modifier = warriors_head_modifier_tier_1_alt_3
+					decaying = yes
+					template = mpo_severed_head_template
+					visuals = pocket_severed_head
+					creator = scope:beheaded_warrior
+					save_scope_as = head_artifact
+				}
+			}
+		}
+	}
+	save_scope_as = owner
+	hidden_effect = {
+		scope:head_artifact = {
+			add_scaled_artifact_modifier_combat_effect = yes
+			set_max_durability = 50
+		}
+	}
+}
+
+mpo_execution_head_artifact_creation_effect = {
+	save_scope_as = owner
+	#This is an emperor's head
+	if = {
+		limit = {
+			has_character_flag = execution_head_illustrious_flag
+		}
+		create_artifact = {
+			name = executed_head_artifact
+			description = executed_head_emperor_artifact_desc
+			rarity = illustrious
+			type = miscellaneous
+			modifier = artifact_monthly_prestige_gain_per_dread_add_4_modifier
+			decaying = yes
+			template = mpo_severed_head_template
+			visuals = pocket_severed_head
+			creator = scope:victim
+			save_scope_as = head_artifact
+		}
+	}
+	else = {
+		create_artifact = {
+			name = executed_head_artifact
+			description = executed_head_king_artifact_desc
+			rarity = famed
+			type = miscellaneous
+			modifier = artifact_monthly_prestige_gain_per_dread_add_3_modifier
+			decaying = yes
+			template = mpo_severed_head_template
+			visuals = pocket_severed_head
+			creator = scope:victim
+			save_scope_as = head_artifact
+		}
+	}
+	if = {
+		limit = {
+			scope:head_artifact = {
+				NOT = {
+					artifact_owner = {
+						this = root
+					}
+				}
+			}
+		}
+		scope:head_artifact = {
+			set_owner = root
+		}
+	}
+	
+	random_list = {
+		4 = {
+			trigger = {
+				OR = {
+					is_at_war_with = scope:headless_heir
+					is_causing_raid_hostility_towards = scope:headless_heir
+				}
+			}
+			scope:head_artifact = {
+				add_2_scaled_artifact_modifier_combat_effect = yes
+			}
+		}
+		1 = {
+			trigger = {
+				scope:headless_heir = {
+					government_has_flag = government_is_nomadic
+				}
+			}
+			scope:head_artifact = {
+				add_scaled_artifact_modifier_archer_cavalry_damage_add_effect = yes
+				add_scaled_artifact_modifier_minor_prestige_effect = yes
+			}
+		}
+		1 = {
+			trigger = {
+				OR = {
+					scope:victim.faith = {
+						NOT = {
+							this = root.faith
+						}
+					}
+					scope:victim = {
+						has_trait = zealous
+					}
+					scope:victim = {
+						has_trait = pilgrim
+					}
+					scope:headless_heir.primary_title = {
+						is_head_of_faith = yes
+					}
+				}
+			}
+			scope:head_artifact = {
+				add_scaled_artifact_modifier_piety_effect = yes
+			}
+			scope:head_artifact = {
+				add_scaled_artifact_modifier_devotion_effect = yes
+			}
+		}
+		1 = {
+			trigger = {
+				OR = {
+					scope:victim.faith = {
+						NOT = {
+							this = root.faith
+						}
+					}
+					scope:victim = {
+						has_trait = zealous
+					}
+					scope:victim = {
+						has_trait = pilgrim
+					}
+					scope:headless_heir.primary_title = {
+						is_head_of_faith = yes
+					}
+				}
+			}
+			scope:head_artifact = {
+				add_2_scaled_artifact_modifier_devotion_effect = yes
+			}
+		}
+		1 = {
+			scope:head_artifact = {
+				add_scaled_artifact_modifier_grandeur_big_effect = yes
+			}
+		}
+		1 = {
+			scope:head_artifact = {
+				add_2_scaled_artifact_modifier_majesty_effect = yes
+			}
+		}
+		1 = {
+			trigger = {
+				scope:victim = {
+					OR = {
+						has_trait = education_stewardship_4
+						has_trait = education_stewardship_5
+						has_trait = administrator
+						has_trait = avaricious
+						has_trait = architect
+						stewardship >= very_high_skill_rating
+					}
+				}
+			}
+			scope:head_artifact = {
+				add_2_scaled_artifact_modifier_rulership_effect = yes
+			}
+		}
+		1 = {
+			trigger = {
+				exists = root.dynasty
+				NOT = {
+					scope:victim.dynasty ?= {
+						this = root.dynasty
+					}
+				}
+			}
+			scope:head_artifact = {
+				add_scaled_artifact_modifier_dynasty_prestige_effect = yes
+				add_scaled_artifact_modifier_hire_mercenary_effect = yes
+			}
+		}
+	}
+	hidden_effect = {
+		scope:head_artifact = {
+			set_max_durability = 50
+		}
+	}
+}
+
+### PAIZA ###
+
+# ai_paiza_giveaway_effect = {
+# 	random_courtier = {
+# 		limit = {
+# 			NOT = {
+# 				any_character_artifact = {
+# 					scope:artifact.var:paiza_patron ?= root
+# 				}
+# 			}
+# 		}
+# 		mpo_create_paiza_artifact_effect = {
+# 			PATRON = root
+# 			GRANTEE = this
+# 		}
+# 	}
+# 	random_vassal = {
+# 		limit = {
+# 			NOT = {
+# 				any_character_artifact = {
+# 					scope:artifact.var:paiza_patron ?= root
+# 				}
+# 			}
+# 		}
+# 		mpo_create_paiza_artifact_effect = {
+# 			PATRON = root
+# 			GRANTEE = this
+# 		}
+# 	}
+# }
+
+# # mpo_find_suitable_merchant_effect = {
+# # 	random_list = {
+# # 		1 = { #Merv
+# # 			trigger = {
+# # 				title:c_bukhara = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_bukhara.development_level
+# # 			}
+# # 			title:b_bukhara = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Nishapur
+# # 			trigger = {
+# # 				title:c_nishapur = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_nishapur.development_level
+# # 			}
+# # 			title:b_nishapur = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Khotan
+# # 			trigger = {
+# # 				title:c_khotan = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_khotan.development_level
+# # 			}
+# # 			title:b_khotan = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Wroclaw
+# # 			trigger = {
+# # 				title:c_breslau = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_breslau.development_level
+# # 			}
+# # 			title:b_breslau = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Krakow
+# # 			trigger = {
+# # 				title:c_krakowska = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_krakowska.development_level
+# # 			}
+# # 			title:b_krakow = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Novgorod
+# # 			trigger = {
+# # 				title:c_novgorod = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_novgorod.development_level
+# # 			}
+# # 			title:b_novgorod  = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Kyiv
+# # 			trigger = {
+# # 				title:c_kiev = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_kiev.development_level
+# # 			}
+# # 			title:b_kiev = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Baghdad
+# # 			trigger = {
+# # 				title:c_baghdad = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_baghdad.development_level
+# # 			}
+# # 			title:b_baghdad = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Pisa
+# # 			trigger = {
+# # 				title:c_pisa = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_pisa.development_level
+# # 			}
+# # 			title:b_pisa = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Venice
+# # 			trigger = {
+# # 				title:c_baghdad = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_baghdad.development_level
+# # 			}
+# # 			title:b_baghdad = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Cairo
+# # 			trigger = {
+# # 				title:c_cairo = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_cairo.development_level
+# # 			}
+# # 			title:b_cairo = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Genua
+# # 			trigger = {
+# # 				title:c_genoa = {
+# # 					development_level >= 30
+# # 					NOT = {
+# # 						holder.top_liege = {
+# # 							government_has_flag = nomadic_government
+# # 						}
+# # 					}
+# # 				}
+# # 			}
+# # 			modifier = {
+# # 				add = title:c_genoa.development_level
+# # 			}
+# # 			title:b_genoa = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 		1 = { #Constantinople
+# # 			#something has to be in constantinople
+# # 			modifier = {
+# # 				add = title:c_byzantion.development_level
+# # 			}
+# # 			title:b_constantinople = {
+# # 				save_scope_as = merchant_origin
+# # 			}
+# # 		}
+# # 	}
+# # 	hidden_effect = {
+# # 		scope:merchant_origin.county = {
+# # 			save_scope_as = merchant_county
+# # 		}
+# # 		create_character = {
+# # 			location = scope:merchant_origin.county.title_province
+# # 			template = foreign_merchant_template
+# # 			save_scope_as = paiza_merchant
+# # 		}
+# # 		scope:paiza_merchant = {
+# # 			add_gold = {
+# # 				value = root.tiny_gold_value
+# # 				multiply = 21.37
+# # 			}
+# # 		}
+# # 	}	
+# # }
+
+# #scope:patron is the creator
+# #scope:receiver is who gets it
+# mpo_create_paiza_artifact_effect = {
+# 	$PATRON$ = {
+# 		save_scope_as = patron
+# 	}
+# 	$GRANTEE$ = {
+# 		save_scope_as = grantee
+# 	}
+# 	save_scope_value_as = {
+# 		name = wealth
+# 		value = {
+# 			value = 20
+# 			multiply = {
+# 				value = scope:patron.primary_title.tier 
+# 				add = scope:patron.dominance_value
+# 			}
+# 		}
+# 	}
+# 	save_scope_value_as = {
+# 		name = quality
+# 		value = {
+# 			value = 20
+# 			multiply = {
+# 				value = scope:patron.primary_title.tier 
+# 				add = scope:patron.dominance_value
+# 			}
+# 		}
+# 	}
+# 	scope:grantee = {
+# 		create_artifact = {
+# 			name = paiza_artifact_title
+# 			type = miscellaneous
+# 			template = paiza_artifact_template
+# 			creator = scope:patron
+# 			description = paiza_artifact_desc 
+# 			visuals = paiza
+# 			wealth = scope:wealth
+# 			quality = scope:quality
+# 			modifier = artifact_steppe_danger_travel_high_modifier
+# 			modifier = artifact_steppe_advantage_2_modifier
+# 			save_scope_as = created_paiza
+# 		}
+# 	}
+# 	scope:created_paiza = {
+# 		set_variable = {
+# 			name = paiza_patron
+# 			value = scope:patron
+# 		}
+# 	}
+# }
+
+
+# mpo_paiza_innovation_reward_effect = {
+# 	switch = {
+# 		trigger = has_domicile_parameter
+# 		nomad_yurt_increased_innovation_paiza_lvl_1 = {
+# 			root = {
+# 				add_character_modifier = {
+# 					modifier = mpo_fascination_leap_modifier
+# 					years = 4
+# 				}
+# 			}			
+# 		}
+# 		nomad_yurt_increased_innovation_paiza_lvl_2 = {
+# 			root = {
+# 				add_character_modifier = {
+# 					modifier = mpo_fascination_leap_modifier
+# 					years = 6
+# 				}
+# 				if = {
+# 					limit = {
+# 						culture = {
+# 							can_get_innovation_from = scope:merchant_origin.county.culture
+# 						}
+# 					}
+# 					culture = {
+# 						get_random_innovation_from = scope:merchant_origin.county.culture
+# 					}
+# 				}
+# 			}
+# 		}
+# 		nomad_yurt_increased_innovation_paiza_lvl_3 = {
+# 			root = {
+# 				add_character_modifier = {
+# 					modifier = mpo_fascination_leap_modifier
+# 					years = 8
+# 				}
+# 				if = {
+# 					limit = {
+# 						culture = {
+# 							can_get_innovation_from = scope:merchant_origin.county.culture
+# 						}
+# 					}
+# 					culture = {
+# 						get_random_innovation_from = scope:merchant_origin.county.culture
+# 					}
+# 				}
+# 				if = {
+# 					limit = {
+# 						culture = {
+# 							can_get_innovation_from = scope:merchant_origin.county.culture
+# 						}
+# 					}
+# 					culture = {
+# 						get_random_innovation_from = scope:merchant_origin.county.culture
+# 					}
+# 				}
+# 			}
+# 		}
+# 	}
+
+# 	root = {
+# 		if = {
+# 			limit = {
+# 				NOT = {
+# 					domicile ?= { has_domicile_building_or_higher = innovation_yurt_02 }
+# 				}
+# 			}
+# 			add_character_modifier = {
+# 				modifier = mpo_fascination_leap_modifier
+# 				years = 2
+# 			}
+# 		}
+# 	}
+	
+# }
+
+
+# mpo_paiza_deal_grade_effect = {
+# 	if = {
+# 		limit = {
+# 			has_character_flag = established_paiza_system
+# 		}
+# 		set_variable = {
+# 			name = trade_gold_value
+# 			value = {
+# 				value = scope:paiza_merchant.var:paiza_gold_invested
+# 				multiply = 0.4
+# 			}
+# 		}
+# 	}
+# 	else = {
+# 		set_variable = {
+# 			name = trade_gold_value
+# 			value = {
+# 				value = scope:paiza_merchant.var:paiza_gold_invested
+# 				multiply = 0.2
+# 			}
+# 		}
+# 	}
+	
+# 	set_variable = {
+# 		name = trade_gold_percent
+# 		value = 1	
+# 	}
+# 	change_variable = {
+# 		name = trade_gold_percent
+# 		add = {
+# 			add = scope:paiza_merchant.sum_of_all_skills_value
+# 			multiply = 0.01
+# 			max = 4
+# 			min = 0
+# 		}
+# 	}
+# 	#custom_tooltip = paiza_merchant_skill_gold_percent
+# 	domicile ?= {
+# 		switch = {
+# 			trigger = has_domicile_parameter
+# 			nomad_yurt_paiza_more_gold_lvl_1 = {
+# 				custom_tooltip = paiza_yurt_gold_percent_1
+# 				root = {
+# 					change_variable = {
+# 						name = trade_gold_percent
+# 						add = 0.05
+# 					}
+# 				}
+# 			}
+# 			nomad_yurt_paiza_more_gold_lvl_2 = {
+# 				custom_tooltip = paiza_yurt_gold_percent_2
+# 				root = {
+# 					change_variable = {
+# 						name = trade_gold_percent
+# 						add = 0.1
+# 					}
+# 				}
+# 			} 
+# 			nomad_yurt_paiza_more_gold_lvl_3 = {
+# 				custom_tooltip = paiza_yurt_gold_percent_3
+# 				root = {
+# 					change_variable = {
+# 						name = trade_gold_percent
+# 						add = 0.2
+# 					}
+# 				}
+# 			}
+# 		}
+# 	}
+# 	change_variable = {
+# 		name = trade_gold_value
+# 		multiply = root.var:trade_gold_percent
+# 	}
+# }
+
+
+# mpo_yurts_paiza_bonuses_tooltip_effect = {
+# 	if = {
+# 		limit = {
+# 			domicile ?= {
+# 				OR = {
+# 					has_domicile_building_or_higher = fertility_trade_yurt_01
+# 					has_domicile_building_or_higher = herd_trade_yurt_01
+# 					has_domicile_building_or_higher = knight_trade_yurt_01
+# 					has_domicile_building_or_higher = merchant_yurt_01
+# 					has_domicile_building_or_higher = char_trade_yurt_01
+# 				}
+# 			}
+# 		}
+# 		custom_tooltip = yurt_paiza_bonuses_generic
+# 	}
+	
+# 	domicile ?= {
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = fertility_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_fertility_gain_lvl_1 = { custom_tooltip = nomad_yurt_paiza_fertility_gain_lvl_1_tooltip }
+# 				nomad_yurt_paiza_fertility_gain_lvl_2 = { custom_tooltip = nomad_yurt_paiza_fertility_gain_lvl_2_tooltip }
+# 				nomad_yurt_paiza_fertility_gain_lvl_3 = { custom_tooltip = nomad_yurt_paiza_fertility_gain_lvl_3_tooltip }
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = herd_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_herd_gain_lvl_1 = { custom_tooltip = nomad_yurt_paiza_herd_gain_lvl_1_tooltip }
+# 				nomad_yurt_paiza_herd_gain_lvl_2 = { custom_tooltip = nomad_yurt_paiza_herd_gain_lvl_2_tooltip }
+# 				nomad_yurt_paiza_herd_gain_lvl_3 = { custom_tooltip = nomad_yurt_paiza_herd_gain_lvl_3_tooltip }
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = knight_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_maa_gain_lvl_1 = { custom_tooltip = nomad_yurt_paiza_maa_gain_lvl_1_tooltip }
+# 				nomad_yurt_paiza_maa_gain_lvl_2 = { custom_tooltip = nomad_yurt_paiza_maa_gain_lvl_2_tooltip }
+# 				nomad_yurt_paiza_maa_gain_lvl_3 = { custom_tooltip = nomad_yurt_paiza_maa_gain_lvl_3_tooltip }
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = merchant_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_more_gold_lvl_1 = { custom_tooltip = nomad_yurt_paiza_more_gold_lvl_1_tooltip }
+# 				nomad_yurt_paiza_more_gold_lvl_2 = { custom_tooltip = nomad_yurt_paiza_more_gold_lvl_2_tooltip }
+# 				nomad_yurt_paiza_more_gold_lvl_3 = { custom_tooltip = nomad_yurt_paiza_more_gold_lvl_3_tooltip }
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = char_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_char_gain_lvl_1 = { custom_tooltip = nomad_yurt_paiza_char_gain_lvl_1_tooltip }
+# 				nomad_yurt_paiza_char_gain_lvl_2 = { custom_tooltip = nomad_yurt_paiza_char_gain_lvl_2_tooltip }
+# 				nomad_yurt_paiza_char_gain_lvl_3 = { custom_tooltip = nomad_yurt_paiza_char_gain_lvl_3_tooltip }
+# 			}
+# 		}
+# 	}
+# }
+
+# mpo_yurts_paiza_bonuses_effect = {
+# 	if = {
+# 		limit = {
+# 			domicile ?= {
+# 				OR = {
+# 					has_domicile_building_or_higher = fertility_trade_yurt_01
+# 					has_domicile_building_or_higher = herd_trade_yurt_01
+# 					has_domicile_building_or_higher = knight_trade_yurt_01
+# 					has_domicile_building_or_higher = merchant_yurt_01
+# 					has_domicile_building_or_higher = char_trade_yurt_01
+# 				}
+# 			}
+# 		}
+# 		custom_tooltip = yurt_paiza_bonuses_generic
+# 	}
+# 	domicile ?= {
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = fertility_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_fertility_gain_lvl_1 = {
+# 					root = {
+# 						every_held_county = {
+# 							limit = {
+# 								uses_county_fertility = yes
+# 							}
+# 							add_county_modifier = {
+# 								modifier = paiza_fertility_modifier_1
+# 								years = 2
+# 							}
+# 						}
+# 					}
+# 				}
+# 				nomad_yurt_paiza_fertility_gain_lvl_2 = {
+# 					root = {
+# 						every_held_county = {
+# 							limit = {
+# 								uses_county_fertility = yes
+# 							}
+# 							add_county_modifier = {
+# 								modifier = paiza_fertility_modifier_2
+# 								years = 4
+# 							}
+# 						}
+# 					}
+# 				}
+# 				nomad_yurt_paiza_fertility_gain_lvl_3 = {
+# 					root = {
+# 						every_held_county = {
+# 							limit = {
+# 								uses_county_fertility = yes
+# 							}
+# 							add_county_modifier = {
+# 								modifier = paiza_fertility_modifier_3
+# 								years = 6
+# 							}
+# 						}
+# 					}
+# 				}
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = herd_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_herd_gain_lvl_1= {
+# 					change_herd = {
+# 						value = root.var:trade_gold_value
+# 						multiply = 0.05
+# 					}
+# 				}
+# 				nomad_yurt_paiza_herd_gain_lvl_2 = {
+# 					change_herd = {
+# 						value = root.var:trade_gold_value
+# 						multiply = 0.05
+# 					}
+# 				}
+# 				nomad_yurt_paiza_herd_gain_lvl_3 = {
+# 					change_herd = {
+# 						value = root.var:trade_gold_value
+# 						multiply = 0.2
+# 					}
+# 				}
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = knight_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_maa_gain_lvl_1 = {
+# 					root = {
+# 						spawn_army = {
+# 							name = paiza_troops
+# 							men_at_arms = {
+# 								type = accolade_maa_archers
+# 								stacks = 1
+# 							}
+# 							location = root.location
+# 							origin = scope:merchant_origin
+# 							inheritable = yes
+# 						}
+# 					}
+# 				}
+# 				nomad_yurt_paiza_maa_gain_lvl_2 = {
+# 					root = {
+# 						spawn_army = {
+# 							name = paiza_troops
+# 							men_at_arms = {
+# 								type = accolade_maa_archers
+# 								stacks = 4
+# 							}
+# 							location = root.location
+# 							origin = scope:merchant_origin
+# 							inheritable = yes
+# 						}
+# 					}
+# 				}
+# 				nomad_yurt_paiza_maa_gain_lvl_3 = {
+# 					root = {
+# 						spawn_army = {
+# 							name = paiza_troops
+# 							men_at_arms = {
+# 								type = accolade_maa_archers
+# 								stacks = 4
+# 							}
+# 							men_at_arms = {
+# 								type = accolade_maa_vanguards
+# 								stacks = 4
+# 							}
+# 							location = root.location
+# 							origin = scope:merchant_origin
+# 							inheritable = yes
+# 						}
+# 					}
+# 				}
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				has_domicile_building_or_higher = char_trade_yurt_01
+# 			}
+# 			switch = {
+# 				trigger = has_domicile_parameter
+# 				nomad_yurt_paiza_char_gain_lvl_1 = {
+# 					root = {
+# 						hidden_effect = {
+# 							create_character = {
+# 								location = root.location
+# 								culture = scope:merchant_origin.county.culture
+# 								faith = scope:merchant_origin.county.faith
+# 								gender_female_chance = 50
+# 								template = peasant_character
+# 								save_scope_as = yurt_merchant_char
+# 							}
+# 							scope:yurt_merchant_char = {
+# 								add_trait = lifestyle_traveler
+# 							}
+# 						}
+# 						add_courtier = scope:yurt_merchant_char
+# 					}
+# 				}
+# 				nomad_yurt_paiza_char_gain_lvl_2 = {
+# 					root = {
+# 						hidden_effect = {
+# 							create_character = {
+# 								location = root.location
+# 								culture = scope:merchant_origin.county.culture
+# 								faith = scope:merchant_origin.county.faith
+# 								gender_female_chance = 50
+# 								template = merchant_template
+# 								save_scope_as = yurt_merchant_char
+# 							}
+# 							scope:yurt_merchant_char = {
+# 								add_trait = lifestyle_traveler
+# 							}
+# 						}
+# 						add_courtier = scope:yurt_merchant_char
+# 					}
+# 				}
+# 				nomad_yurt_paiza_char_gain_lvl_3 = {
+# 					root = {
+# 						hidden_effect = {
+# 							create_character = {
+# 								location = root.location
+# 								culture = scope:merchant_origin.county.culture
+# 								faith = scope:merchant_origin.county.faith
+# 								gender_female_chance = 50
+# 								template = merchant_template
+# 								save_scope_as = yurt_merchant_char
+# 							}
+# 							scope:yurt_merchant_char = {
+# 								add_random_skill_point_effect = yes
+# 								add_random_skill_point_effect = yes
+# 								add_random_skill_point_effect = yes
+# 								add_random_skill_point_effect = yes
+# 								add_random_skill_point_effect = yes
+# 								add_random_skill_point_effect = yes
+# 								random_list = {
+# 									1 = { add_trait = avaricious }
+# 									1 = { add_trait = diplomat }
+# 									1 = { add_trait = overseer }
+# 								}
+# 								add_trait = lifestyle_traveler
+# 							}
+# 						}
+# 						add_courtier = scope:yurt_merchant_char
+# 					}
+# 				}
+# 			}
+# 		}
+# 	}
+# }
+
+# mpo_paiza_improve_maa_smol_effect = {
+# 	add_character_modifier = mpo_paiza_improve_maa_modifier
+# 	add_character_flag = paiza_metal_trade_yurt_flag
+# 	domicile ?= {
+# 		switch = {
+# 			trigger = has_domicile_building
+# 			paiza_metal_trade_yurt_01 = {
+# 				add_domicile_building = paiza_metal_trade_yurt_02
+# 			}
+# 			paiza_metal_trade_yurt_02 = {
+# 				add_domicile_building = paiza_metal_trade_yurt_02
+# 			}
+# 			paiza_metal_trade_yurt_03 = {
+# 				custom_tooltip = paiza_metal_yurt_smol_block
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				NOT = {
+# 					has_domicile_building_or_higher = paiza_metal_trade_yurt_01
+# 				}
+# 			}
+# 			add_domicile_building = paiza_metal_trade_yurt_01
+# 		}
+# 	}
+# 	remove_character_flag = paiza_metal_trade_yurt_flag	
+# }
+
+# mpo_paiza_improve_maa_effect = {
+# 	add_character_modifier = mpo_paiza_improve_maa_modifier
+# 	add_character_flag = paiza_metal_trade_yurt_flag
+# 	domicile ?= {
+# 		switch = {
+# 			trigger = has_domicile_building
+# 			paiza_metal_trade_yurt_01 = {
+# 				add_domicile_building = paiza_metal_trade_yurt_02
+# 			}
+# 			paiza_metal_trade_yurt_02 = {
+# 				add_domicile_building = paiza_metal_trade_yurt_02
+# 			}
+# 			paiza_metal_trade_yurt_03 = {
+# 				add_domicile_building = paiza_metal_trade_yurt_04
+# 			}
+# 			paiza_metal_trade_yurt_04 = {
+# 				add_domicile_building = paiza_metal_trade_yurt_05
+# 			}
+# 			paiza_metal_trade_yurt_05 = {
+# 				add_domicile_building = paiza_metal_trade_yurt_06
+# 			}
+# 		}
+# 		if = {
+# 			limit = {
+# 				NOT = {
+# 					has_domicile_building_or_higher = paiza_metal_trade_yurt_01
+# 				}
+# 			}
+# 			add_domicile_building = paiza_metal_trade_yurt_01
+# 		}
+# 	}
+# 	remove_character_flag = paiza_metal_trade_yurt_flag
+# }
+
+# mpo_paiza_abuse_counter_effect = {
+# 	$PAIZA_PATRON$ = { save_scope_as = paiza_patron }
+# 	$PAIZA_ABUSER$ = { save_scope_as = paiza_abuser }
+# 	if = {
+# 		limit = {
+# 			scope:paiza_patron = {
+# 				is_ai = no
+# 			}	
+# 		}
+# 		custom_tooltip = mpo_paiza_abuse_counter_effect.random
+# 		scope:paiza_patron = {
+# 			trigger_event = {
+# 				id = mpo_decisions_events.0112
+# 				days = { 1 4 }
+# 			}
+# 		}
+# 	}
+# 	else = {
+# 		if = {
+# 			limit = {
+# 				NOT = {
+# 					exists = var:paiza_abuse_stance
+# 				}
+# 			}
+# 			custom_tooltip = mpo_paiza_abuse_counter_effect.indifferent
+# 			set_variable = {
+# 				name = paiza_abuse_stance
+# 				value = flag:indifferent
+# 			}
+# 		}
+# 		else_if = {
+# 			limit = {
+# 				exists = var:paiza_abuse_stance
+# 			}
+# 			switch = {
+# 				trigger = var:paiza_abuse_stance
+# 				flag:angry = {
+# 					custom_tooltip = mpo_paiza_abuse_counter_effect.angry
+# 					random_list = {
+# 						90 = {
+# 							modifier = {
+# 								add = mpo_paiza_abuse_khan_reaction_value
+# 							}
+# 							custom_tooltip = mpo_paiza_abuse_counter_effect.khan_reaction_action
+# 							trigger_event = {
+# 								id = mpo_decisions_events.0111
+# 								days = { 21 37 }
+# 							}
+# 						}
+# 						10 = {
+# 							custom_tooltip = mpo_paiza_abuse_counter_effect.khan_reaction_angry
+# 						}
+# 					}
+# 				}
+# 				flag:annoyed = {
+# 					custom_tooltip = mpo_paiza_abuse_counter_effect.annoyed			
+# 					random_list = {
+# 						40 = {
+# 							modifier = {
+# 								add = mpo_paiza_abuse_khan_reaction_value
+# 							}
+# 							custom_tooltip = mpo_paiza_abuse_counter_effect.khan_reaction_action
+# 							trigger_event = {
+# 								id = mpo_decisions_events.0111
+# 								days = { 21 37 }
+# 							}
+# 						}
+# 						40 = {
+# 							custom_tooltip = mpo_paiza_abuse_counter_effect.khan_reaction_angry
+# 							modifier = {
+# 								add = {
+# 									value = mpo_paiza_abuse_khan_reaction_value
+# 									divide = 2
+# 								}
+# 							}
+# 							set_variable = {
+# 								name = paiza_abuse_stance
+# 								value = flag:angry
+# 							}
+# 						}
+# 						20 = {
+# 							custom_tooltip = mpo_paiza_abuse_counter_effect.khan_reaction_annoyed
+# 						}
+# 					}
+# 				}
+# 				flag:indifferent = {
+# 					custom_tooltip = mpo_paiza_abuse_counter_effect.indifferent
+# 					random_list = {
+# 						20 = {
+# 							custom_tooltip = mpo_paiza_abuse_counter_effect.annoyed
+# 							modifier = {
+# 								add = {
+# 									value = mpo_paiza_abuse_khan_reaction_value
+# 									divide = 2
+# 								}
+# 							}
+# 							set_variable = {
+# 								name = paiza_abuse_stance
+# 								value = flag:annoyed
+# 							}
+# 						}
+# 						80 = {
+# 							custom_tooltip = mpo_paiza_abuse_counter_effect.indifferent
+# 						}
+# 					}
+# 				}
+# 			}
+# 		}
+# 	}
+# 	trigger_event = {
+# 		id = mpo_decisions_events.0098
+# 		days = { 4 8 }
+# 	}
+# }
+
+mpo_decisions_events_friend_fail_effect = {
+	random_list = {
+		4 = {
+			trigger = {
+				scope:friendship_target = {
+					is_ai = yes
+				}
+				OR = {
+					any_child = {
+						NOR = {
+							this = scope:friendship_target
+							this = scope:heir
+							has_relation_friend = scope:friendship_target
+							has_relation_best_friend = scope:friendship_target
+							has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:friendship_target }
+							is_at_war_with = scope:friendship_target
+						}
+						is_imprisoned = no
+						is_incapable = no
+						is_courtier_of = root
+						age >= 6
+					}
+					any_sibling = {
+						NOR = {
+							this = scope:friendship_target
+							this = scope:heir
+							has_relation_friend = scope:friendship_target
+							has_relation_best_friend = scope:friendship_target
+							has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:friendship_target }
+							is_at_war_with = scope:friendship_target
+						}
+						is_imprisoned = no
+						is_incapable = no
+						is_courtier_of = root
+						age >= 6
+					}
+				}
+			}
+			random_child = {
+				limit = {
+					NOR = {
+						this = scope:friendship_target
+						this = scope:heir
+						has_relation_friend = scope:friendship_target
+						has_relation_best_friend = scope:friendship_target
+						has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:friendship_target }
+						is_at_war_with = scope:friendship_target
+					}
+					is_imprisoned = no
+					is_incapable = no
+					is_courtier_of = root
+					age >= 6
+				}
+				save_scope_as = accidental_friend
+			}
+			if = {
+				limit = {
+					NOT = {
+						exists = scope:accidental_friend
+					}
+				}
+				random_sibling = {
+					limit = {
+						NOR = {
+							this = scope:friendship_target
+							this = scope:heir
+							has_relation_friend = scope:friendship_target
+							has_relation_best_friend = scope:friendship_target
+							has_any_bad_relationship_with_character_trigger = { CHARACTER = scope:friendship_target }
+							is_at_war_with = scope:friendship_target
+						}
+						is_imprisoned = no
+						is_incapable = no
+						is_courtier_of = root
+						age >= 6
+					}
+					save_scope_as = accidental_friend
+				}
+			}
+			scope:friendship_target = {
+				set_relation_friend = {
+					target = root
+					reason = friend_accidental_introduction
+				}
+			}
+		}
+		2 = {
+			trigger = {
+				scope:friendship_target = {
+					is_ai = yes
+				}
+				scope:friendship_target = {
+					NOR = {
+						has_relation_friend = scope:friendship_target
+						has_relation_best_friend = scope:friendship_target
+						has_any_bad_relationship_with_character_trigger = { CHARACTER = root }
+					}
+				}
+			}
+			scope:friendship_target = {
+				set_relation_friend = {
+					target = root
+					reason = friend_accidental_introduction
+				}
+			}
+		}
+		1 = {
+			scope:friendship_target = {
+				add_opinion = {
+					modifier = charmed_opinion
+					target = root
+					opinion = 30
+				}
+			}
+		}
+		2 = {
+			trigger = {
+				culture = {
+					NOT = {
+						this = scope:friendship_target.culture
+					}
+					cultural_acceptance = {
+						target = scope:friendship_target.culture
+						value < 100
+					}
+				}
+			}
+			culture = {
+				change_cultural_acceptance = {
+					target = scope:friendship_target.culture
+					value = minor_cultural_acceptance_gain
+					desc = cultural_acceptance_friendly_visit
+				}
+			}
+			if = {
+				limit = {
+					scope:heir.culture = {
+						NOR = {
+							this = scope:friendship_target.culture
+							this = root.culture
+						}
+						cultural_acceptance = {
+							target = scope:friendship_target.culture
+							value < 100
+						}
+					}
+				}
+				scope:heir.culture = {
+					change_cultural_acceptance = {
+						target = scope:friendship_target.culture
+						value = minor_cultural_acceptance_gain
+						desc = cultural_acceptance_friendly_visit
+					}
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					is_ai = yes
+				}
+				scope:friendship_target = {
+					short_term_gold >= minor_gold_value
+					
+				}
+			}
+			scope:friendship_target = {
+				pay_short_term_gold = {
+					target = scope:heir
+					gold = minor_gold_value
+				}
+			}
+			scope:heir = {
+				add_opinion = {
+					target = scope:friendship_target
+					modifier = gift_opinion
+					opinion = 25
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					is_ai = yes
+					government_has_flag = government_is_nomadic
+					exists = domicile
+					domicile.herd >= minor_herd_value
+				}
+				government_has_flag = government_is_nomadic
+			}
+			pay_herd = {
+				target = root
+				value = domicile.minor_herd_value
+			}
+			add_opinion = {
+				target = scope:friendship_target
+				modifier = gift_opinion
+				opinion = 25
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_lifestyle = diplomacy_lifestyle
+				}
+			}
+			scope:heir = {
+				add_diplomacy_skill = 1
+				add_diplomacy_lifestyle_xp = minor_lifestyle_xp
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_lifestyle = martial_lifestyle
+				}
+			}
+			scope:heir = {
+				add_martial_skill = 1
+				add_martial_lifestyle_xp = minor_lifestyle_xp
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_lifestyle = stewardship_lifestyle
+				}
+			}
+			scope:heir = {
+				add_stewardship_skill = 1
+				add_stewardship_lifestyle_xp = minor_lifestyle_xp
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_lifestyle = intrigue_lifestyle
+				}
+			}
+			scope:heir = {
+				add_intrigue_skill = 1
+				add_intrigue_lifestyle_xp = minor_lifestyle_xp
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_lifestyle = learning_lifestyle
+				}
+			}
+			scope:heir = {
+				add_learning_skill = 1
+				add_learning_lifestyle_xp = minor_lifestyle_xp
+			}
+		}
+		1 = {
+			trigger = {
+				OR = {
+					stress > 0
+					scope:heir = {
+						stress > 0
+					}
+				}
+			}
+			add_stress = minor_stress_impact_loss
+			scope:heir = {
+				add_stress = medium_stress_impact_loss
+			}
+		}
+	}
+}
+
+mpo_heir_lifestyle_xp_gain_effect = {
+	if = {
+		limit = {
+			scope:lifestyle_trait = {
+				OR = {
+					this = trait:lifestyle_physician
+					this = trait:lifestyle_mystic
+					this = trait:lifestyle_blademaster
+					this = trait:lifestyle_reveler
+				}
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = scope:lifestyle_trait
+				value = 30
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_hunter
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = lifestyle_hunter
+				track = hunter
+				value = 15
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = lifestyle_hunter
+				track = falconer
+				value = 15
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_traveler
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = lifestyle_traveler
+				track = travel
+				value = 15
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = lifestyle_traveler
+				track = danger
+				value = 15
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_herbalist
+			}
+			scope:heir = {
+				NOT = {
+					has_trait = lifestyle_physician
+				}
+			}
+		}
+		scope:heir = {
+			add_trait = lifestyle_physician
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_herbalist
+			}
+			scope:heir = {
+				has_trait = lifestyle_physician
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = lifestyle_physician
+				value = 30
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:poet
+			}
+		}
+		scope:heir = {
+			add_diplomacy_skill = 1
+			add_diplomacy_lifestyle_xp = medium_lifestyle_xp
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_gardener
+			}
+			scope:heir = {
+				NOT = {
+					has_trait = lifestyle_herbalist
+				}
+			}
+		}
+		scope:heir = {
+			add_trait = lifestyle_herbalist
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_gardener
+			}
+			scope:heir = {
+				has_trait = lifestyle_herbalist
+			}
+		}
+		scope:heir = {
+			add_stewardship_skill = 1
+			add_diplomacy_lifestyle_xp = medium_lifestyle_xp
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:drunkard
+			}
+			scope:heir = {
+				has_trait = lifestyle_reveler
+			}
+		}
+		scope:heir = {
+			add_trait = lifestyle_reveler
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:drunkard
+			}
+			scope:heir = {
+				has_trait = lifestyle_reveler
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = lifestyle_reveler
+				value = 30
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:hashishiyah
+			}
+			scope:heir = {
+				NOT = {
+					has_trait = lifestyle_herbalist
+				}
+			}
+		}
+		scope:heir = {
+			add_trait = lifestyle_herbalist
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:hashishiyah
+			}
+			scope:heir = {
+				has_trait = lifestyle_reveler
+			}
+		}
+		scope:heir = {
+			add_trait = lifestyle_reveler
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:hashishiyah
+			}
+			scope:heir = {
+				has_trait = lifestyle_reveler
+			}
+		}
+		scope:heir = {
+			add_trait_xp = {
+				trait = lifestyle_reveler
+				value = 30
+			}
+		}
+	}
+}
+
+mpo_heir_hastiluder_xp_gain_effect = {
+	random_list = {
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = foot
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = foot
+						value >= 50
+					}
+				}
+			}
+			scope:heir = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = foot
+					value = 35
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = horse
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = horse
+						value >= 50
+					}
+				}
+			}
+			scope:heir = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = horse
+					value = 35
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = bow
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = bow
+						value >= 50
+					}
+				}
+			}
+			scope:heir = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = bow
+					value = 35
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = wit
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = wit
+						value >= 50
+					}
+				}
+			}
+			scope:heir = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = wit
+					value = 35
+				}
+			}
+		}
+	}
+}
+
+mpo_target_lifestyle_xp_gain_effect = {
+	if = {
+		limit = {
+			scope:lifestyle_trait = {
+				OR = {
+					this = trait:lifestyle_physician
+					this = trait:lifestyle_mystic
+					this = trait:lifestyle_blademaster
+					this = trait:lifestyle_reveler
+				}
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = scope:lifestyle_trait
+				value = 20
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_hunter
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = lifestyle_hunter
+				track = hunter
+				value = 10
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = lifestyle_hunter
+				track = falconer
+				value = 10
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_traveler
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = lifestyle_traveler
+				track = travel
+				value = 10
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = lifestyle_traveler
+				track = danger
+				value = 10
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_herbalist
+			}
+			scope:heir = {
+				has_trait = lifestyle_physician
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = lifestyle_physician
+				value = 20
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:poet
+			}
+		}
+		scope:friendship_target = {
+			add_diplomacy_lifestyle_xp = medium_lifestyle_xp
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:lifestyle_gardener
+			}
+			scope:heir = {
+				has_trait = lifestyle_herbalist
+			}
+		}
+		scope:friendship_target = {
+			add_diplomacy_lifestyle_xp = medium_lifestyle_xp
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:drunkard
+			}
+			scope:heir = {
+				has_trait = lifestyle_reveler
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = lifestyle_reveler
+				value = 20
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			scope:lifestyle_trait = {
+				this = trait:hashishiyah
+			}
+			scope:heir = {
+				has_trait = lifestyle_reveler
+			}
+		}
+		scope:friendship_target = {
+			add_trait_xp = {
+				trait = lifestyle_reveler
+				value = 20
+			}
+		}
+	}
+	else = {
+		scope:friendship_target = {
+			add_stress = medium_stress_loss
+		}
+	}
+}
+
+mpo_target_hastiluder_xp_gain_effect = {
+	random_list = {
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = foot
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = foot
+						value >= 50
+					}
+				}
+			}
+			scope:friendship_target = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = foot
+					value = 20
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = horse
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = horse
+						value >= 50
+					}
+				}
+			}
+			scope:friendship_target = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = horse
+					value = 20
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = bow
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = bow
+						value >= 50
+					}
+				}
+			}
+			scope:friendship_target = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = bow
+					value = 20
+				}
+			}
+		}
+		1 = {
+			trigger = {
+				scope:friendship_target = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = wit
+						value >= 50
+					}
+				}
+				scope:heir = {
+					has_trait_xp = {
+						trait = tourney_participant
+						track = wit
+						value >= 50
+					}
+				}
+			}
+			scope:friendship_target = {
+				add_trait_xp = {
+					trait = tourney_participant
+					track = wit
+					value = 20
+				}
+			}
+		}
+	}
+}
+
+nomad_domicile_refund_effect = {
+	#Domicile buildings give cash refund
+	if = {
+		limit = {
+			has_domicile = yes
+		}
+		save_scope_as = former_nomad
+		custom_tooltip = nomad_domicile_buildings_converted
+		hidden_effect = {
+			add_gold = {
+				value = {
+					value = medium_gold_value
+					switch = {
+						trigger = domicile.num_domicile_buildings
+						7 = { multiply = 7 }
+						6 = { multiply = 6 }
+						5 = { multiply = 5 }
+						4 = { multiply = 4 }
+						3 = { multiply = 3 }
+						2 = { multiply = 2 }
+					}
+				}
+			}
+		}
+	}
+}
+
+nomad_convert_people_to_tribe_effect = {
+	change_government = tribal_government
+	
+	#Winning a cool war to get this government should mean high authority
+	if = {
+		limit = {
+			exists = scope:overrunner
+			this = scope:overrunner
+		}
+		add_realm_law = tribal_authority_2
+	}
+}
+
+nomad_convert_people_to_clan_effect = {
+	change_government = clan_government
+
+	#Start off crown authorities.
+	if = {
+		limit = {
+			NOT = { has_realm_law = crown_authority_1 }
+		}
+		add_realm_law_skip_effects = crown_authority_1
+	}
+}
+
+nomad_convert_people_to_feudal_effect = {
+	change_government = feudal_government
+
+	#Start off crown authorities.
+	if = {
+		limit = {
+			NOT = { has_realm_law = crown_authority_1 }
+		}
+		add_realm_law_skip_effects = crown_authority_1
+	}
+}
+
+mpo_overrunning_vassal_title_distribution_effect = {
+	every_held_title = {
+		limit = {
+			tier = tier_county
+			any_this_title_or_de_jure_above = {
+				tier = tier_duchy
+				NOT = {
+					this = scope:new_capital_duchy
+				}
+			}
+		}
+		add_to_list = overrun_counties
+	}
+	scope:target = {
+		every_direct_de_jure_vassal_title = {
+			limit = {
+				tier = tier_duchy
+				NOT = {
+					this = scope:new_capital_duchy
+				}
+				any_de_jure_county = {
+					count >= 2
+					holder = scope:attacker
+				}
+				OR = {
+					NOT = { exists = holder }
+					holder.top_liege = scope:defender
+					holder.top_liege = scope:attacker
+				}
+			}
+			add_to_list = overrun_duchies
+		}
+	}
+	#Distribute all counties
+	while = {
+		limit = {
+			any_in_list = {
+				list = overrun_counties
+				holder = scope:attacker
+			}
+			any_in_list = {
+				list = potential_overrunning_vassals
+				NOT = {
+					has_character_flag = got_overrun_title
+				}
+			}
+		}
+		#Is a duchy available?
+		if = {
+			limit = {
+				any_in_list = {
+					list = overrun_duchies
+					any_de_jure_county = {
+						holder = scope:attacker
+					}
+				}
+			}
+			#Grant biggest duchy available
+			if = {
+				limit = {
+					any_in_list = {
+						list = overrun_duchies
+						#Forgive me for how stupid this is
+						any_de_jure_county = {
+							count >= 5
+							holder = scope:attacker
+						}
+					}
+				}
+				random_in_list = {
+					list = overrun_duchies
+					limit = {
+						any_de_jure_county = {
+							count >= 5
+							holder = scope:attacker
+						}
+					}
+					save_scope_as = duchy_to_grant
+				}
+			}
+			else_if = {
+				limit = {
+					any_in_list = {
+						list = overrun_duchies
+						#Forgive me for how stupid this is
+						any_de_jure_county = {
+							count >= 4
+							holder = scope:attacker
+						}
+					}
+				}
+				random_in_list = {
+					list = overrun_duchies
+					limit = {
+						any_de_jure_county = {
+							count >= 4
+							holder = scope:attacker
+						}
+					}
+					save_scope_as = duchy_to_grant
+				}
+			}
+			else_if = {
+				limit = {
+					any_in_list = {
+						list = overrun_duchies
+						#Forgive me for how stupid this is
+						any_de_jure_county = {
+							count >= 3
+							holder = scope:attacker
+						}
+					}
+				}
+				random_in_list = {
+					list = overrun_duchies
+					limit = {
+						any_de_jure_county = {
+							count >= 3
+							holder = scope:attacker
+						}
+					}
+					save_scope_as = duchy_to_grant
+				}
+			}
+			else = {
+				random_in_list = {
+					list = overrun_duchies
+					save_scope_as = duchy_to_grant
+				}
+			}
+			#Choose best county
+			scope:duchy_to_grant = {
+				if = {
+					limit = {
+						title_capital_county = {
+							holder = scope:attacker
+						}
+					}
+					title_capital_county = {
+						save_scope_as = title_to_grant
+					}
+				}
+				else = {
+					ordered_de_jure_county = {
+						order_by = development_level
+						limit = {
+							holder = scope:attacker
+						}
+						save_scope_as = title_to_grant
+					}
+				}
+			}
+		}
+		#Counts
+		else = {
+			ordered_in_list = {
+				order_by = development_level
+				list = overrun_counties
+				save_scope_as = title_to_grant
+			}
+		}
+		#Choose a vassal
+		ordered_in_list = {
+			list = potential_overrunning_vassals
+			limit = {
+				NOT = {
+					has_character_flag = got_overrun_title
+				}
+			}
+			order_by = max_military_strength
+			save_scope_as = title_gainer
+			#Add character flag - they should be done
+			add_character_flag = got_overrun_title
+
+			#tributaries go
+			hidden_effect = {
+				every_tributary = {
+					custom = custom.every_tributary
+					end_tributary = yes
+				}
+			}
+
+			#Give up nomadic titles
+			if = {
+				limit = {
+					NOT = {
+						scope:title_to_grant = {
+							any_county_province = {
+								OR = {
+									has_holding_type = nomad_holding
+									has_holding_type = herder_holding
+								}
+							}
+						}
+					}
+				}
+				mpo_overrunning_ending_nomadism_effect = yes
+			}
+			#Nomads should still move
+			else = {
+				hidden_effect = {
+					give_domain_to_herders = yes
+				}
+			}
+		}
+		scope:title_gainer = {
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = title_change
+			}
+			scope:title_to_grant = {
+				change_title_holder = {
+					holder = scope:title_gainer
+					change = scope:title_change
+				}
+			}
+			resolve_title_and_vassal_change = scope:title_change
+			#Add duchy if they're getting one
+			if = {
+				limit = {
+					exists = scope:duchy_to_grant
+				}
+				create_title_and_vassal_change = {
+					type = granted
+					save_scope_as = title_change
+				}
+				scope:duchy_to_grant = {
+					change_title_holder = {
+						holder = scope:title_gainer
+						change = scope:title_change
+					}
+				}
+				resolve_title_and_vassal_change = scope:title_change
+			}
+			#If they got a duchy, can bring over an existing vassal as a vassal
+			if = {
+				limit = {
+					exists = scope:duchy_to_grant
+					scope:duchy_to_grant = {
+						any_de_jure_county = {
+							holder = scope:attacker
+							is_in_list = overrun_counties
+						}
+					}
+					any_vassal = {
+						highest_held_title_tier >= tier_county
+						NOT = {
+							any_held_title = {
+								kingdom = scope:target
+							}
+						}
+						mpo_overrunning_willing_vassal_trigger = yes
+					}
+				}
+				scope:duchy_to_grant = {
+					random_de_jure_county = {
+						limit = {
+							holder = scope:attacker
+							is_in_list = overrun_counties
+						}
+						save_scope_as = undervassal_county
+					}
+				}
+				ordered_vassal = {
+					order_by = max_military_strength
+					limit = {
+						highest_held_title_tier >= tier_county
+						NOT = {
+							any_held_title = {
+								kingdom = scope:target
+							}
+						}
+						mpo_overrunning_willing_vassal_trigger = yes
+					}
+					save_scope_as = undervassal
+					
+					#Give up nomadic titles
+					if = {
+						limit = {
+							NOT = {
+								scope:undervassal_county = {
+									any_county_province = {
+										OR = {
+											has_holding_type = nomad_holding
+											has_holding_type = herder_holding
+										}
+									}
+								}
+							}
+						}
+						mpo_overrunning_ending_nomadism_effect = yes
+					}
+					#Nomads should still move
+					else = {
+						hidden_effect = {
+							give_domain_to_herders = yes
+						}
+					}
+					#Change government to match attacker
+					scope:undervassal = {
+						if = {
+							limit = {
+								scope:title_to_grant = {
+									any_county_province = {
+										OR = {
+											has_holding_type = nomad_holding
+											has_holding_type = herder_holding
+										}
+									}
+								}
+							}
+							#Do nothing, they're still nomadic
+						}
+						else_if = {
+							limit = {
+								scope:undervassal_county = {
+									any_county_province = {
+										has_holding_type = tribal_holding
+									}
+								}
+							}
+							nomad_convert_people_to_tribe_effect = yes
+						}
+						else_if = {
+							limit = {
+								scope:undervassal = {
+									OR = { # Warcraft
+										#Personal reasons to go clan
+										#faith.religion = religion:islam_religion
+										culture ?= {
+											clan_government_primary_heritage_trigger = yes
+										}
+										#county and liege are clan
+										AND = {
+											scope:title_to_grant = {
+												OR = {
+													faith.religion = religion:islam_religion
+													culture = {
+														clan_government_primary_heritage_trigger = yes
+													}
+												}
+											}
+											scope:attacker = {
+												government_has_flag = government_is_clan
+											}
+										}
+									}
+								}
+							}
+							nomad_convert_people_to_clan_effect = yes
+						}
+						else = {
+							nomad_convert_people_to_feudal_effect = yes
+						}
+					}
+					#Have to re-add them as a vassal probably
+					create_title_and_vassal_change = {
+						type = granted
+						save_scope_as = change
+						add_claim_on_loss = no
+					}
+					change_liege = {
+						liege = scope:undervassal_county.duchy.holder
+						change = scope:change
+					}
+					resolve_title_and_vassal_change = scope:change
+
+					#Give them their county
+					create_title_and_vassal_change = {
+						type = granted
+						save_scope_as = title_change_2
+					}
+					scope:title_to_grant = {
+						change_title_holder = {
+							holder = scope:undervassal
+							change = scope:title_change_2
+						}
+					}
+					resolve_title_and_vassal_change = scope:title_change_2
+				}
+			}
+		}
+		#Change government
+		scope:attacker = {
+			if = {
+				limit = {
+					scope:title_to_grant = {
+						any_county_province = {
+							OR = {
+								has_holding_type = nomad_holding
+								has_holding_type = herder_holding
+							}
+						}
+					}
+				}
+				#Do nothing, they're still nomadic
+			}
+			else_if = {
+				limit = {
+					scope:title_to_grant = {
+						any_county_province = {
+							has_holding_type = tribal_holding
+						}
+					}
+				}
+				scope:title_gainer = {
+					nomad_convert_people_to_tribe_effect = yes
+				}
+			}
+			else_if = {
+				limit = {
+					scope:title_gainer = {
+						OR = {
+							#Personal reasons to go clan
+							#faith.religion = religion:islam_religion
+							culture = {
+								clan_government_primary_heritage_trigger = yes
+							}
+							#county and liege are clan
+							AND = {
+								scope:title_to_grant = {
+									OR = {
+										#faith.religion = religion:islam_religion
+										culture = {
+											clan_government_primary_heritage_trigger = yes
+										}
+									}
+								}
+								scope:attacker = {
+									government_has_flag = government_is_clan
+								}
+							}
+						}
+					}
+				}
+				scope:title_gainer = {
+					nomad_convert_people_to_clan_effect = yes
+				}
+			}
+			else = {
+				scope:title_gainer = {
+					nomad_convert_people_to_feudal_effect = yes
+				}
+			}
+		}
+		
+		#Have to re-add them as a vassal probably
+		scope:title_gainer = {
+			if = {
+				limit = {
+					NOT = {
+						liege = scope:attacker
+					}
+				}
+				create_title_and_vassal_change = {
+					type = granted
+					save_scope_as = change
+					add_claim_on_loss = no
+				}
+				change_liege = {
+					liege = scope:attacker
+					change = scope:change
+				}
+				resolve_title_and_vassal_change = scope:change
+			}
+		}
+		
+		#Remove chosen titles from list
+		scope:duchy_to_grant ?= {
+			remove_from_list = overrun_duchies
+		}
+		scope:title_to_grant = {
+			remove_from_list = overrun_counties
+		}
+		scope:undervassal_county ?= {
+			remove_from_list = overrun_counties
+		}
+		if = {
+			limit = {
+				exists = scope:duchy_to_grant
+			}
+			clear_saved_scope = duchy_to_grant
+		}
+	}
+	#ASSIGN VASSALS TO DUKES
+	every_vassal = {
+		limit = {
+			highest_held_title_tier = tier_county
+			primary_title = {
+				kingdom = scope:target
+				any_this_title_or_de_jure_above = {
+					tier = tier_duchy
+					exists = holder
+					NOT = {
+						holder = scope:attacker
+					}
+					holder.top_liege = scope:attacker
+				}
+			}
+		}
+		#Have to re-add them as a vassal probably
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+			add_claim_on_loss = no
+		}
+		change_liege = {
+			liege = primary_title.duchy.holder
+			change = scope:change
+		}
+		resolve_title_and_vassal_change = scope:change
+	}
+	
+	#GIVE DUKES THE REST OF THEIR COUNTIES FROM ATTACKER
+	every_held_title = {
+		limit = {
+			tier = tier_county
+			kingdom = scope:target
+			any_this_title_or_de_jure_above = {
+				tier = tier_duchy
+				exists = holder
+				NOT = {
+					holder = scope:attacker
+				}
+				holder = {
+					is_vassal_or_below_of = scope:attacker
+				}
+			}
+		}
+		scope:attacker = {
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = title_change
+			}
+		}
+		change_title_holder = {
+			holder = duchy.holder
+			change = scope:title_change
+		}
+		scope:attacker = {
+			resolve_title_and_vassal_change = scope:title_change
+		}
+	}
+	#Get rid of this now-useless flag
+	every_vassal = {
+		limit = {
+			has_character_flag = got_overrun_title
+		}
+		remove_character_flag = got_overrun_title
+	}
+}
+
+mpo_overrunning_ending_nomadism_effect = {
+	#Wrap up being a nomad
+	nomad_domicile_refund_effect = yes
+	nomad_convert_herds_to_gold_special_troops_effect = yes
+	hidden_effect = {
+		give_domain_to_herders = yes
+	}
+}
+
+nomad_convert_herds_to_gold_special_troops_effect = {
+	save_scope_as = former_nomad
+	custom_tooltip = gold_army_for_herd_tt
+	hidden_effect = {
+		if = {
+			limit = {
+				domicile.herd >= 50
+			}
+			save_scope_as = army_getter
+			add_gold = {
+				value = domicile.herd
+				multiply = 0.3
+				min = 100
+				max = 10000
+			}
+			spawn_army = {
+				levies = 200
+				men_at_arms = {
+					type = horse_archers
+					men = { value = domicile.herd multiply = 0.02 min = 100 max = 10000 }
+				}
+				men_at_arms = {
+					type = steppe_raiders
+					men = { value = domicile.herd multiply = 0.01 min = 100 max = 10000 }
+				}
+				men_at_arms = {
+					type = nomad_lancers
+					men = { value = domicile.herd multiply = 0.01 min = 100 max = 10000 }
+				}
+				men_at_arms = {
+					type = nomadic_riders
+					men = { value = domicile.herd multiply = 0.1 min = 100 max = 10000 }
+				}
+				location = capital_province
+				inheritable = yes
+				uses_supply = yes
+				name = former_nomad_army_name
+			}
+		}
+	}
+}
+
+set_throatsinging_style_effect = {
+    random_list = {
+        10 = {
+            modifier = {
+                add = 10
+                is_female = yes
+            }
+            set_variable = {
+                name = throatsinging_style
+                value = flag:sygyt
+            }
+        }
+        10 = {
+            set_variable = {
+                name = throatsinging_style
+                value = flag:hoomei
+            }
+        }
+        10 = {
+            set_variable = {
+                name = throatsinging_style
+                value = flag:kargyraa
+            }
+        }
+    }
+	set_variable = {
+        name = throatsinging_practice
+        value = 1
+    }
+}
+
+mpo_dominance_scaled_minor_gold_gain = {
+	if = {
+		limit = {
+			OR = {
+				has_realm_law = nomadic_authority_4
+				has_realm_law = nomadic_authority_5
+			}
+		}
+		add_gold = massive_gold_value
+	}
+	if = {
+		limit = {
+			has_realm_law = nomadic_authority_3
+		}
+		add_gold = major_gold_value
+	}
+	if = {
+		limit = {
+			has_realm_law = nomadic_authority_2
+		}
+		add_gold = medium_gold_value
+	}
+	if = {
+		limit = {
+			has_realm_law = nomadic_authority_1
+		}
+		add_gold = minor_gold_value
+	}
+}
+
+mpo_decisions_events_0500_effect = {
+	custom_tooltip = {
+		text = mpo_decisions_events_0500_effect_vassal_tt
+		every_vassal = {
+			limit = {
+				NOT = {
+					is_obedient_to = root
+				}
+			}
+			add_opinion = {
+				target = root
+				modifier = obedience_opinion
+			}
+		}
+	}
+	custom_tooltip = {
+		text = mpo_decisions_events_0500_effect_courtier_tt
+		every_courtier = {
+			limit = {
+				NOR = {
+					is_obedient_to = root
+					has_obedience_reason = root
+				}
+			}
+			add_opinion = {
+				target = root
+				modifier = obedience_opinion
+			}
+		}
+	}
+	custom_tooltip = {
+		text = mpo_desperate_stance_invasion_cb_enable_var_tt
+		set_variable = mpo_desperate_stance_invasion_cb_enable_var
+	}
+}
+
+mpo_dominance_scaled_miniscule_gold_gain = {
+	if = {
+		limit = {
+			OR = {
+				has_realm_law = nomadic_authority_4
+				has_realm_law = nomadic_authority_5
+			}
+		}
+		add_gold = major_gold_value
+	}
+	if = {
+		limit = {
+			has_realm_law = nomadic_authority_3
+		}
+		add_gold = medium_gold_value
+	}
+	if = {
+		limit = {
+			has_realm_law = nomadic_authority_2
+		}
+		add_gold = minor_gold_value
+	}
+	if = {
+		limit = {
+			has_realm_law = nomadic_authority_1
+		}
+		add_gold = miniscule_gold_value
+	}
+}
+
+mpo_save_potential_blood_brother_war_allies_effect = {
+	scope:war = {
+		if = {
+			limit = {
+				any_war_attacker = {
+					count >= 2
+					mpo_valid_for_blood_brotherhood_trigger = yes
+				}
+			}
+			#Lord forgive me for this script
+			every_war_attacker = {
+				limit = {
+					mpo_valid_for_blood_brotherhood_trigger = yes
+				}
+				add_to_list = attacker_war_allies_list
+				
+			}
+			while = {
+				limit = {
+					any_war_attacker = {
+						is_in_list = attacker_war_allies_list
+					}
+				}
+				random_war_attacker = {
+					limit = {
+						is_in_list = attacker_war_allies_list
+					}
+					save_scope_as = current_ally
+				}
+				every_war_attacker = {
+					limit = {
+						mpo_valid_for_blood_brotherhood_trigger = yes
+						NOT = {
+							this = scope:current_ally
+						}
+					}
+					add_to_variable_list = {
+						name = former_war_allies
+						target = scope:current_ally
+						years = 10
+					}
+				}
+				scope:current_ally = {
+					remove_from_list = attacker_war_allies_list
+				}
+				clear_saved_scope = current_ally
+			}
+		}
+		if = {
+			limit = {
+				any_war_defender = {
+					count >= 2
+					mpo_valid_for_blood_brotherhood_trigger = yes
+				}
+			}
+			every_war_defender = {
+				limit = {
+					mpo_valid_for_blood_brotherhood_trigger = yes
+				}
+				add_to_list = defender_war_allies_list
+			}
+			while = {
+				limit = {
+					any_war_defender = {
+						is_in_list = defender_war_allies_list
+					}
+				}
+				random_war_defender = {
+					limit = {
+						is_in_list = defender_war_allies_list
+					}
+					save_scope_as = current_ally
+				}
+				every_war_defender = {
+					limit = {
+						mpo_valid_for_blood_brotherhood_trigger = yes
+						NOT = {
+							this = scope:current_ally
+						}
+					}
+					add_to_variable_list = {
+						name = former_war_allies
+						target = scope:current_ally
+						years = 10
+					}
+				}
+				scope:current_ally = {
+					remove_from_list = defender_war_allies_list
+				}
+				clear_saved_scope = current_ally
+			}
+		}
+	}
+}
+
+mpo_blood_brother_new_family_member_opinion_effect = {
+	hidden_effect = {
+		#Add blood brother close family opinion to actor's family
+		save_scope_as = new_kin
+		scope:other_blood_brother = {
+			add_to_list = other_blood_brother_family
+			add_character_flag = unhandled_family
+			every_child = {
+				add_to_list = other_blood_brother_family
+				add_character_flag = unhandled_family
+			}
+			primary_spouse ?= {
+				add_to_list = other_blood_brother_family
+				add_character_flag = unhandled_family
+			}
+		}
+		#Save other family on new kin
+		while = {
+			limit = {
+				any_in_list = {
+					list = other_blood_brother_family
+					has_character_flag = unhandled_family
+				}
+			}
+			random_in_list = {
+				list = other_blood_brother_family
+				limit = {
+					has_character_flag = unhandled_family
+				}
+				save_scope_as = other_blood_brother_picked_family
+				remove_character_flag = unhandled_family
+			}
+			scope:other_blood_brother_picked_family = {
+				add_opinion = {
+					target = scope:new_kin
+					modifier = blood_brother_close_family_opinion
+				}
+				reverse_add_opinion = {
+					target = scope:new_kin
+					modifier = blood_brother_close_family_opinion
+				}
+			}
+			clear_saved_scope = other_blood_brother_picked_family
+		}
+	}
+}
+
+mpo_blood_brother_remove_family_opinion_effect = {
+	hidden_effect = {
+		#Add blood brother close family opinion to actor's family
+		save_scope_as = former_kin
+		scope:other_blood_brother = {
+			add_to_list = other_blood_brother_family
+			add_character_flag = unhandled_family
+			every_child = {
+				add_to_list = other_blood_brother_family
+				add_character_flag = unhandled_family
+			}
+			primary_spouse ?= {
+				add_to_list = other_blood_brother_family
+				add_character_flag = unhandled_family
+			}
+		}
+		#Remove other family on former kin
+		while = {
+			limit = {
+				any_in_list = {
+					list = other_blood_brother_family
+					has_character_flag = unhandled_family
+				}
+			}
+			random_in_list = {
+				list = other_blood_brother_family
+				limit = {
+					has_character_flag = unhandled_family
+				}
+				save_scope_as = other_blood_brother_picked_family
+				remove_character_flag = unhandled_family
+			}
+			scope:other_blood_brother_picked_family = {
+				remove_opinion = {
+					target = scope:former_kin
+					modifier = blood_brother_close_family_opinion
+				}
+				scope:former_kin = {
+					remove_opinion = {
+						target = scope:other_blood_brother_picked_family
+						modifier = blood_brother_close_family_opinion
+					}
+				}
+			}
+			clear_saved_scope = other_blood_brother_picked_family
+		}
+	}
+}
+
+mpo_blood_brother_tooltip_actor_effect = {
+	show_as_tooltip = {
+		set_relation_blood_brother = scope:recipient
+	}
+	custom_tooltip = blood_brother_alliance_actor_alliance_past_tt
+	custom_tooltip = blood_brother_actor_gains_hook_past_tt
+	custom_tooltip = blood_brother_actor_recipient_hook_past_tt
+}
+mpo_blood_brother_tooltip_recipient_effect = {
+	show_as_tooltip = { set_relation_blood_brother = scope:actor }
+	custom_tooltip = blood_brother_alliance_recipient_alliance_past_tt
+	custom_tooltip = blood_brother_recipient_gains_hook_past_tt
+	custom_tooltip = blood_brother_recipient_actor_hook_past_tt
+}
+make_blood_brother_save_common_enemy_effect = {
+	save_temporary_scope_as = blood_brother_temp
+	#DUKES OR HIGHER
+	#Nemeses and rivals
+	if = {
+		limit = {
+			any_relation = {
+				type = nemesis
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+				mpo_ideal_common_foe_trigger = yes
+			}
+		}
+		ordered_relation = {
+			order_by = max_military_strength
+			type = nemesis
+			limit = {
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+				mpo_ideal_common_foe_trigger = yes
+			}
+			save_scope_as = shared_foe
+		}
+	}
+	else_if = {
+		limit = {
+			any_relation = {
+				type = rival
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+				mpo_ideal_common_foe_trigger = yes
+			}
+		}
+		ordered_relation = {
+			order_by = max_military_strength
+			type = rival
+			limit = {
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+				mpo_ideal_common_foe_trigger = yes
+			}
+			save_scope_as = shared_foe
+		}
+	}
+	#You have a house feud against someone recipient is also opposed to
+	else_if = {
+		limit = {
+			exists = house.house_head
+			exists = scope:recipient.house
+			NOT = {
+				house = scope:recipient.house
+			}
+			house.house_head = {
+				any_owned_story = {
+					story_type = story_cycle_house_feud
+					var:house_feud_house.house_head ?= {
+						mpo_blood_brother_common_enemy_sub_trigger = yes
+						mpo_ideal_common_foe_trigger = yes
+					}
+				}
+			}
+		}
+		house.house_head = {
+			random_owned_story = {
+				limit = {
+					story_type = story_cycle_house_feud
+					var:house_feud_house.house_head ?= {
+						mpo_blood_brother_common_enemy_sub_trigger = yes
+						mpo_ideal_common_foe_trigger = yes
+					}
+				}
+				var:house_feud_house.house_head = {
+						save_scope_as = shared_foe
+				}
+			}
+		}
+	}
+	#In faction against someone recipient is opposed to
+	else_if = {
+		limit = {
+			liege ?= {
+				any_targeting_faction = {
+					any_faction_member = {
+						this = scope:actor
+					}
+				}
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+				mpo_ideal_common_foe_trigger = yes
+			}
+		}
+		liege = {
+			save_scope_as = shared_foe
+		}
+	}
+	#You are at war with someone that recipient is also opposed to
+	else_if = {
+		limit = {
+			any_war_enemy = {
+				NOT = { has_variable = rebel_leader_peasants }
+				any_character_war = {
+					is_war_leader = prev
+					is_war_leader = scope:actor
+				}
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+				mpo_ideal_common_foe_trigger = yes
+			}
+		}
+		ordered_war_enemy = {
+			order_by = max_military_strength
+			limit = {
+				NOT = { has_variable = rebel_leader_peasants }
+				any_character_war = {
+					is_war_leader = prev
+					is_war_leader = scope:actor
+				}
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+				mpo_ideal_common_foe_trigger = yes
+			}
+			save_scope_as = shared_foe
+		}
+	}
+	#You have a faction member that recipient is also opposed to
+	else_if = {
+		limit = {
+			any_targeting_faction = {
+				any_faction_member = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+			}
+		}
+		random_targeting_faction = {
+			ordered_faction_member = {
+				order_by = max_military_strength
+				limit = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+				save_scope_as = shared_foe
+			}
+		}
+	}
+	#You are a title claimant against someone recipient don't like
+	else_if = {
+		limit = {
+			any_claim = {
+				exists = holder
+				NOT = {
+					scope:recipient = { has_claim_on = prev }
+				}
+				holder = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+			}
+		}
+		ordered_claim = {
+			order_by = tier
+			limit = {
+				exists = holder
+				NOT = {
+					scope:recipient = { has_claim_on = prev }
+				}
+				holder = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+			}
+			holder = {
+				save_scope_as = shared_foe
+			}
+		}
+	}
+	#You have a title claimant that recipient is also opposed to
+	else_if = {
+		limit = {
+			any_held_title = {
+				NOT = {
+					scope:recipient = {
+						has_claim_on = prev
+					}
+				}
+				any_claimant = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+			}
+		}
+		ordered_held_title = {
+			order_by = tier
+			limit = {
+				NOT = {
+					scope:recipient = {
+						has_claim_on = prev
+					}
+				}
+				any_claimant = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+			}
+			ordered_claimant = {
+				order_by = current_military_strength
+				limit = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+				save_scope_as = shared_foe
+			}
+		}
+	}
+
+	#ANYONE IS FINE
+
+	#Nemeses and rivals
+	else_if = {
+		limit = {
+			any_relation = {
+				type = nemesis
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+			}
+		}
+		ordered_relation = {
+			order_by = max_military_strength
+			type = nemesis
+			limit = { mpo_blood_brother_common_enemy_sub_trigger = yes }
+			save_scope_as = shared_foe
+		}
+	}
+	else_if = {
+		limit = {
+			any_relation = {
+				type = rival
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+			}
+		}
+		ordered_relation = {
+			order_by = max_military_strength
+			type = rival
+			limit = { mpo_blood_brother_common_enemy_sub_trigger = yes }
+			save_scope_as = shared_foe
+		}
+	}
+	#You have a house feud against someone recipient is also opposed to
+	else_if = {
+		limit = {
+			
+			exists = house.house_head
+			exists = scope:recipient.house
+			NOT = {
+				house = scope:recipient.house
+			}
+			house.house_head = {
+				any_owned_story = {
+					story_type = story_cycle_house_feud
+					var:house_feud_house.house_head ?= {
+						mpo_blood_brother_common_enemy_sub_trigger = yes
+					}
+				}
+			}
+		}
+		house.house_head = {
+			random_owned_story = {
+				limit = {
+					story_type = story_cycle_house_feud
+					var:house_feud_house.house_head ?= {
+						mpo_blood_brother_common_enemy_sub_trigger = yes
+					}
+				}
+				var:house_feud_house.house_head = {
+						save_scope_as = shared_foe
+				}
+			}
+		}
+	}
+	#In faction against someone recipient is opposed to
+	else_if = {
+		limit = {
+			liege ?= {
+				any_targeting_faction = {
+					any_faction_member = {
+						this = scope:actor
+					}
+				}
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+			}
+		}
+		liege = {
+			save_scope_as = shared_foe
+		}
+	}
+	#You are at war with someone that recipient is also opposed to
+	else_if = {
+		limit = {
+			any_war_enemy = {
+				NOT = { has_variable = rebel_leader_peasants }
+				any_character_war = {
+					is_war_leader = prev
+					is_war_leader = scope:actor
+				}
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+			}
+		}
+		ordered_war_enemy = {
+			order_by = max_military_strength
+			limit = {
+				NOT = { has_variable = rebel_leader_peasants }
+				any_character_war = {
+					is_war_leader = prev
+					is_war_leader = scope:actor
+				}
+				mpo_blood_brother_common_enemy_sub_trigger = yes
+			}
+			save_scope_as = shared_foe
+		}
+	}
+	#You have a faction member that recipient is also opposed to
+	else_if = {
+		limit = {
+			any_targeting_faction = {
+				any_faction_member = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+				}
+			}
+		}
+		random_targeting_faction = {
+			ordered_faction_member = {
+				order_by = max_military_strength
+				limit = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+				}
+				save_scope_as = shared_foe
+			}
+		}
+	}
+	#You are a title claimant against someone recipient don't like
+	else_if = {
+		limit = {
+			any_claim = {
+				exists = holder
+				NOT = {
+					scope:recipient = { has_claim_on = prev }
+				}
+				holder = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+				}
+			}
+		}
+		ordered_claim = {
+			order_by = tier
+			limit = {
+				exists = holder
+				NOT = {
+					scope:recipient = { has_claim_on = prev }
+				}
+				holder = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+				}
+			}
+			holder = {
+				save_scope_as = shared_foe
+			}
+		}
+	}
+	#You have a title claimant that recipient is also opposed to
+	else_if = {
+		limit = {
+			any_held_title = {
+				NOT = {
+					scope:recipient = {
+						has_claim_on = prev
+					}
+				}
+				any_claimant = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+				}
+			}
+		}
+		ordered_held_title = {
+			order_by = tier
+			limit = {
+				NOT = {
+					scope:recipient = {
+						has_claim_on = prev
+					}
+				}
+				any_claimant = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+				}
+			}
+			ordered_claimant = {
+				order_by = current_military_strength
+				limit = {
+					mpo_blood_brother_common_enemy_sub_trigger = yes
+					mpo_ideal_common_foe_trigger = yes
+				}
+				save_scope_as = shared_foe
+			}
+		}
+	}
+}
+
+mpo_remove_blood_brother_modifiers_effect = {
+	remove_character_modifier = blood_brother_foe_modifier
+	remove_character_modifier = blood_brother_august_modifier
+	remove_character_modifier = blood_brother_august_nomadic_modifier
+	remove_character_modifier = blood_brother_warrior_modifier
+	remove_character_modifier = blood_brother_clever_modifier
+	remove_character_modifier = blood_brother_clever_nomadic_modifier
+	remove_character_modifier = blood_brother_loving_modifier
+	if = {
+		limit = {
+			has_variable = blood_brother_foe
+		}
+		remove_variable = blood_brother_foe
+	}
+	if = {
+		limit = {
+			any_relation = {
+				type = blood_brother
+			}
+		}
+		every_relation = {
+			type = blood_brother
+
+			remove_character_modifier = blood_brother_foe_modifier
+			remove_character_modifier = blood_brother_august_modifier
+			remove_character_modifier = blood_brother_august_nomadic_modifier
+			remove_character_modifier = blood_brother_warrior_modifier
+			remove_character_modifier = blood_brother_clever_modifier
+			remove_character_modifier = blood_brother_clever_nomadic_modifier
+			remove_character_modifier = blood_brother_loving_modifier
+			if = {
+				limit = {
+					has_variable = blood_brother_foe
+				}
+				remove_variable = blood_brother_foe
+			}
+		}
+	}
+}
+
+refill_maa_with_herd_effect = {
+	save_scope_as = nomad_temp
+	while = {
+		limit = {
+			scope:actor.domicile.herd > 0
+			any_maa_regiment = {
+				maa_regiments_valid_to_refill_trigger = yes
+			}
+		}
+		random_maa_regiment = {
+			limit = {
+				maa_regiments_valid_to_refill_trigger = yes
+			}
+			save_scope_as = maa_scope
+			save_scope_value_as = {
+				name = current_herd_max_value_scope
+				value = scope:actor.domicile.herd
+			}
+			scope:actor.domicile ?= {
+				change_herd = {
+					value = {
+						add = scope:maa_scope.replenishable_troops_value
+						divide = herd_refill_value
+						max = scope:current_herd_max_value_scope
+						multiply = -1
+					}
+				}
+			}
+			change_maa_troops_count = replenishable_troops_with_herd_value
+		}
+	}
+}
+
+end_blood_brotherhood_effect = {
+	if = {
+		limit = {
+			has_relation_blood_brother = $TARGET$
+		}
+		remove_relation_blood_brother = $TARGET$
+	}
+}
+
+make_obedient_recipient_to_actor_effect = {
+	if = {
+		limit = {
+			scope:recipient = {
+				obedience_target = scope:actor
+				NOT = { is_obedient_to = scope:actor }
+			}
+		}
+		scope:recipient = {
+			add_opinion = {
+				target = scope:actor
+				modifier = obedience_opinion
+			}
+		}
+	}
+}
+
+lower_dominance_level_effect = {
+	switch = {
+		trigger = has_realm_law
+		nomadic_authority_1 = {
+			# Nothing happens
+		}
+		nomadic_authority_2 = {
+			remove_realm_law = nomadic_authority_2
+			add_realm_law = nomadic_authority_1
+		}
+		nomadic_authority_3 = {
+			remove_realm_law = nomadic_authority_3
+			add_realm_law = nomadic_authority_2
+		}
+		nomadic_authority_4 = {
+			remove_realm_law = nomadic_authority_4
+			add_realm_law = nomadic_authority_3
+		}
+	}
+	set_variable = {
+		name = nomadic_authority_cooldown
+		years = 5
+	}
+}
+
+adopt_nomadic_ways_decision_effect = {
+	if = {
+		limit = {
+			NOT = {
+				culture = { has_same_culture_heritage = root.location.culture }
+			}
+		}
+		custom_tooltip = {
+			text = adopt_nomadic_ways_decision_culture_tt
+		}
+	}
+	change_government = nomad_government
+	custom_tooltip = adopt_nomadic_ways_decision_title_tt
+	custom_tooltip = adopt_nomadic_ways_decision_herd_tt
+	if = {
+		limit = { NOT = { has_trait = nomadic_philosophy } }
+		add_trait_force_tooltip = nomadic_philosophy
+	}
+}
+
+# Different effect as we cannot access the Herder scope in the preview
+adopt_nomadic_ways_decision_event_effect = {
+	if = {
+		limit = {
+			NOT = {
+				culture = { has_same_culture_heritage = scope:herder.culture }
+			}
+		}
+		custom_tooltip = {
+			text = adopt_nomadic_ways_decision_culture_tt_past
+			create_hybrid_culture = scope:herder.culture
+		}
+	}
+	set_variable = {
+		name = previous_provisions
+		value = root.domicile.provisions
+	}
+	change_government = nomad_government
+	location.county = { save_scope_as = title }
+	create_title_and_vassal_change = {
+		type = granted
+		save_scope_as = change
+		add_claim_on_loss = no
+	}
+	scope:title = {
+		change_title_holder = {
+			holder = root
+			change = scope:change
+		}
+	}
+	resolve_title_and_vassal_change = scope:change
+	# We give you 25% of your provisions as Herd
+	custom_tooltip = adopt_nomadic_ways_decision_herd_tt
+	domicile = {
+		change_herd = {
+			value = root.var:previous_provisions
+			multiply = 0.25
+		}
+	}
+	if = {
+		limit = { NOT = { has_trait = nomadic_philosophy } }
+		add_trait = nomadic_philosophy
+	}
+}
+
+mpo_confederation_join_defensive_war_effect = {
+	scope:defender.confederation = {
+		every_confederation_member = {
+			limit = {
+				highest_held_title_tier >= tier_county
+				NOR = {
+					is_at_war_with = scope:defender
+					is_allied_to = scope:attacker
+					is_imprisoned_by = scope:defender
+					is_imprisoned_by = scope:attacker
+					is_defender_in_war = scope:war
+					is_attacker_in_war = scope:war
+				}
+			}
+			scope:war = {
+				add_defender = prev
+			}
+		}
+	}
+}
+
+confederation_migration_notification_effect = {
+	confederation ?= {
+		every_confederation_member = {
+			limit = {
+				NOT = {
+					this = scope:actor
+				}
+			}
+			send_interface_message = {
+				type = msg_broken_confederation
+				title = msg_broken_confederation_migration
+				desc = msg_broken_confederation_migration_desc
+				left_icon = scope:actor
+			}
+		}
+	}
+	send_interface_message = {
+		type = msg_broken_confederation
+		title = msg_broken_confederation_migration_root
+		desc = msg_broken_confederation_migration_root_desc
+		left_icon = confederation
+	}
+	add_character_flag = {
+		flag = migrating_from_confederation
+		months = 1
+	}
+}
+
+summon_three_fair_courtiers_effect = {
+	save_scope_as = root_scope
+	create_character = {
+		employer = scope:root_scope
+		template = $NOMAD_TEMPLATE_CHARACTER$
+		faith = root.location.faith
+		culture = root.location.culture
+		save_scope_as = new_commander
+	}
+	if = { # Error suppression
+		limit = {
+			exists = scope:new_commander
+		}
+		scope:new_commander = {
+			assign_random_nickname_effect = yes
+			add_character_flag = {
+				flag = blocked_from_leaving
+				years = 25
+			}
+		}
+		if = {
+			limit = {
+				scope:new_commander = {
+					NOT = {
+						is_courtier_of = scope:root_scope
+					}
+				}
+			}
+			add_courtier = scope:new_commander
+		}
+		send_interface_message = {
+			title = nomad_character_recruited.t
+			left_icon = scope:new_commander
+			custom_tooltip = commander_recruited.desc
+		}
+	}
+}
+
+mpo_war_vassal_tributary_effect = {
+	create_title_and_vassal_change = {
+		type = conquest
+		save_scope_as = change
+		add_claim_on_loss = yes
+	}
+
+	every_in_list = {
+		list = target_titles
+		if = {
+			limit = {
+				tier >= tier_county
+			}
+			every_de_jure_county = {
+				limit = {
+					holder = {
+						OR = {
+							this = scope:defender
+							top_liege = scope:defender
+							top_suzerain ?= scope:defender
+						}
+					}
+				}
+				holder ?= {
+					add_to_list = target_holder
+				}
+				add_to_list = target_titles
+			}
+		}
+
+		holder ?= { 
+			add_to_list = target_holder
+			save_scope_as = temp_de_jure_liege 
+		}
+		add_hook_from_temp_de_jure_liege_to_attacker = yes
+	}
+
+	every_in_list = {
+		list = target_titles
+		add_to_list = prestige_gain_list
+	}
+
+	ordered_in_list = {
+		list = target_titles
+		order_by = tier
+		max = 1
+		save_scope_as = war_goal_title
+	}
+
+	every_in_list = {
+		list = target_holder
+		save_scope_as = current_target_holder
+		if = {
+			limit = {
+				NOT = {
+					any_held_county = {
+						exists = duchy
+						NOT = { is_in_list = target_titles }
+					}
+				}
+				NOR = {
+					this = scope:attacker
+					top_liege = scope:attacker
+					top_suzerain ?= scope:attacker
+				}
+				highest_held_title_tier <= scope:war_goal_title.tier
+			}
+			if = {
+				limit = {
+					NOR = {
+						this = scope:attacker
+						top_liege = scope:attacker
+						top_suzerain ?= scope:attacker
+					}
+					scope:attacker = {
+						vassal_count >= vassal_limit
+					}
+				}
+				start_tributary_from_war_effect = {
+					TRIBUTARY = scope:defender
+					SUZERAIN = scope:attacker
+					WAR = $WAR$
+				}
+				#If you tributarize a confederate, they leave their confederation
+				if = {
+					limit = {
+						scope:defender = {
+							is_confederation_member = yes
+						}
+					}
+					scope:defender.confederation = {
+						remove_confederation_member = scope:defender
+					}
+				}
+			}
+			else_if = {
+				limit = {
+					NOR = {
+						this = scope:attacker
+						top_liege = scope:attacker
+						top_suzerain ?= scope:attacker
+					}
+				}
+				change_liege = {
+					liege = scope:attacker
+					change = scope:change
+				}
+			}
+			every_in_list = {
+				list = target_titles
+				limit = {
+					holder ?= { this = scope:current_target_holder }
+				}
+				remove_from_list = target_titles
+			}
+		}
+	}
+
+	every_in_list = {
+		list = target_titles
+		limit = {
+			OR = {
+				NOT = { exists = holder }
+				holder ?= {
+					NOR = {
+						this = scope:attacker
+						any_liege_or_above = { this = scope:attacker }
+						top_suzerain ?= scope:attacker
+					}
+				}
+			}
+		}
+		change_title_holder = {
+			holder = scope:attacker
+			change = scope:change
+		}
+		remove_from_list = target_titles
+	}
+	
+	save_scope_value_as = {
+		name = cb_prestige_factor
+		value = {
+			value = 0
+			every_in_list = {
+				list = prestige_gain_list
+				add = 50
+			}
+		}
+	}
+
+	scope:attacker = {
+		add_prestige = scope:cb_prestige_factor
+	}
+	resolve_title_and_vassal_change = scope:change
+
+	scope:target_title = {
+		every_de_jure_county = {
+			limit = {
+				holder = {
+					government_has_flag = government_is_herder
+					is_tributary = no
+				}
+			}
+			hidden_effect = {
+				start_tributary_from_war_effect = {
+					TRIBUTARY = holder
+					SUZERAIN = scope:attacker
+					WAR = $WAR$
+				}
+			}
+		}
+		if = {
+			limit = {
+				NOT = { target_is_de_jure_liege_or_above = scope:attacker.primary_title }
+				NOT = {
+					any_de_jure_county = {
+						holder = {
+							NOR = {
+								top_liege = scope:attacker
+								top_suzerain ?= scope:attacker
+							}
+						}
+					}
+				}
+			}
+			set_de_jure_liege_title = scope:attacker.primary_title
+		}
+	}
+
+	every_in_list = {
+		list = target_holder
+		if = {
+			limit = {
+				NOT = {
+					any_held_title = {
+						exists = duchy
+					}
+				}
+				highest_held_title_tier > tier_county
+			}
+			every_held_title = {
+				limit = {
+					tier >= tier_county
+				}
+				scope:defender = {
+					destroy_title = prev
+				}
+			}
+		}
+	}
+}
+
+#Called from game start on action
+#inside domicile scope
+add_random_yurt_external_building_effect = {
+	random_list = {
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = herd_welfare_yurt_01 }
+			}
+			add_domicile_building = herd_welfare_yurt_01
+		}
+		1 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = character_warfare_yurt_01 }
+			}
+			add_domicile_building = character_warfare_yurt_01
+		}
+		1 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = mass_warfare_yurt_01 }
+			}
+			add_domicile_building = mass_warfare_yurt_01
+		}
+		1 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = court_yurt_01 }
+			}
+			add_domicile_building = court_yurt_01
+		}
+		1 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = family_yurt_01 }
+			}
+			add_domicile_building = family_yurt_01
+		}
+		1 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = mystical_yurt_01 }
+			}
+			add_domicile_building = mystical_yurt_01
+		}
+	}
+}
+
+#Called from game start on action
+#Limited to lvl 3 to offer more variety and prevent startup errors
+#inside domicile scope
+upgrade_random_yurt_external_building_effect = {
+	random_list = {
+		10 = {
+			trigger = {
+				has_domicile_building_or_higher = herd_welfare_yurt_01
+				NOT = {
+					has_domicile_building_or_higher = herd_welfare_yurt_03
+				}
+			}
+			switch = {
+				trigger = has_domicile_building
+				herd_welfare_yurt_01 = { add_domicile_building = herd_welfare_yurt_02 }
+				herd_welfare_yurt_02 = { add_domicile_building = herd_welfare_yurt_03 }
+			}
+		}
+		1 = {
+			trigger = {
+				has_domicile_building_or_higher = character_warfare_yurt_01
+				NOT = {
+					has_domicile_building_or_higher = character_warfare_yurt_03
+				}
+			}
+			switch = {
+				trigger = has_domicile_building
+				character_warfare_yurt_01 = { add_domicile_building = character_warfare_yurt_02 }
+				character_warfare_yurt_02 = { add_domicile_building = character_warfare_yurt_03 }
+			}
+		}
+		1 = {
+			trigger = {
+				has_domicile_building_or_higher = mass_warfare_yurt_01
+				NOT = {
+					has_domicile_building_or_higher = mass_warfare_yurt_03
+				}
+			}
+			switch = {
+				trigger = has_domicile_building
+				mass_warfare_yurt_01 = { add_domicile_building = mass_warfare_yurt_02 }
+				mass_warfare_yurt_02 = { add_domicile_building = mass_warfare_yurt_03 }
+			}
+		}
+		1 = {
+			trigger = {
+				has_domicile_building_or_higher = court_yurt_01
+				NOT = {
+					has_domicile_building_or_higher = court_yurt_03
+				}
+			}
+			switch = {
+				trigger = has_domicile_building
+				court_yurt_01 = { add_domicile_building = court_yurt_02 }
+				court_yurt_02 = { add_domicile_building = court_yurt_03 }
+			}
+		}
+		1 = {
+			trigger = {
+				has_domicile_building_or_higher = family_yurt_01
+				NOT = {
+					has_domicile_building_or_higher = family_yurt_03
+				}
+			}
+			switch = {
+				trigger = has_domicile_building
+				family_yurt_01 = { add_domicile_building = family_yurt_02 }
+				family_yurt_02 = { add_domicile_building = family_yurt_03 }
+			}
+		}
+		1 = {
+			trigger = {
+				has_domicile_building_or_higher = mystical_yurt_01
+				NOT = {
+					has_domicile_building_or_higher = mystical_yurt_03
+				}
+			}
+			switch = {
+				trigger = has_domicile_building
+				mystical_yurt_01 = { add_domicile_building = mystical_yurt_02 }
+				mystical_yurt_02 = { add_domicile_building = mystical_yurt_03 }
+			}
+		}
+	}
+}
+
+#Used to distribute the Dynasty of Many Khans dynasty_court_yurt_06 reward
+#Called from yearly_on_action
+#root is character
+mpo_yearly_dynasty_of_many_khans_effect = {
+	if = {
+		limit = {
+			this = dynasty.dynast
+			dynasty = {
+				has_dynasty_modifier = dynasty_of_many_crowns_nomad
+			}
+			domicile ?= {
+				has_domicile_parameter = nomad_yurt_dynasty_many_khans
+			}
+		}
+		send_interface_toast = {
+			type = event_toast_effect_good
+			title = dynasty_many_khans_yearly_tt
+			set_variable = {
+				name = temp_dynn_prestige
+				value = 1
+			}
+			dynasty = {
+				every_dynasty_member = {
+					limit = {
+						primary_title.tier >= tier_kingdom
+					}
+					root = {
+						change_variable = {
+							name = temp_dynn_prestige
+							add = minor_dynasty_prestige_gain
+						}
+					}
+				}
+				add_dynasty_prestige = root.var:temp_dynn_prestige
+			}
+			remove_variable = temp_dynn_prestige 	
+		}	
+	}
+}
+
+#Used to distribute yurt domicile rewards
+#Called from yearly_on_action
+#inside domicile scope
+#root is the character
+mpo_yearly_yurt_rewards_effect = {
+	if = {
+		limit = {
+			has_domicile_building_or_higher = hostage_ward_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			nomad_yurt_hostage_bonus_lvl_1 = {
+				hostage_ward_yurt_effect = {
+					CHANCE = 2
+				}
+			}
+			nomad_yurt_hostage_bonus_lvl_2 = {
+				hostage_ward_yurt_effect = {
+					CHANCE = 3
+				}
+			}
+			nomad_yurt_hostage_bonus_lvl_3 = {
+				hostage_ward_yurt_effect = {
+					CHANCE = 5
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = language_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			nomad_yurt_yearly_bonus_per_language_lvl_1 = {
+				language_yurt_effect = {
+					CHANCE = 0.5
+				}
+			}
+			nomad_yurt_yearly_bonus_per_language_lvl_2 = {
+				language_yurt_effect = {
+					CHANCE = 1
+				}
+			}
+			nomad_yurt_yearly_bonus_per_language_lvl_3 = {
+				language_yurt_effect = {
+					CHANCE = 2
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = omen_yurt_01
+		}
+	}
+	switch = {
+		trigger = has_domicile_parameter
+		nomad_yurt_children_bonus_per_piety_lvl_1 = {
+			omen_yurt_effect = {
+				CHANCE = 0.5
+			}
+		}
+		nomad_yurt_children_bonus_per_piety_lvl_2 = {
+			omen_yurt_effect = {
+				CHANCE = 1
+			}
+		}
+		nomad_yurt_children_bonus_per_piety_lvl_3 = {
+			omen_yurt_effect = {
+				CHANCE = 2
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = friend_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			nomad_yurt_friend_bonus_lvl_1 = {
+				friend_yurt_effect = {
+					CHANCE = 1
+				}
+			}
+			nomad_yurt_friend_bonus_lvl_2= {
+				friend_yurt_effect = {
+					CHANCE = 2
+				}
+			}
+			nomad_yurt_friend_bonus_lvl_3 = {
+				friend_yurt_effect = {
+					CHANCE = 3
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = better_children_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			nomad_yurt_better_children_lvl_1 = {
+				better_children_yurt_effect = {
+					CHANCE = 5
+				}
+			}
+			nomad_yurt_better_children_lvl_2 = {
+				better_children_yurt_effect = {
+					CHANCE = 10
+				}
+			}
+			nomad_yurt_better_children_lvl_3 = {
+				better_children_yurt_effect = {
+					CHANCE = 15
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = dynasty_court_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			nomad_yurt_same_dynasty_bonus_lvl_1 = {
+				dynasty_court_yurt_effect = {
+					CHANCE = 1
+				}
+			}
+			nomad_yurt_same_dynasty_bonus_lvl_2 = {
+				dynasty_court_yurt_effect = {
+					CHANCE = 2
+				}
+			}
+			nomad_yurt_same_dynasty_bonus_lvl_3 = {
+				dynasty_court_yurt_effect = {
+					CHANCE = 3
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = culture_court_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			nomad_yurt_many_cultures_bonus_lvl_1 = {
+				culture_court_yurt_effect = {
+					CHANCE = 1
+					PERCENT = 5
+				}
+			}
+			nomad_yurt_many_cultures_bonus_lvl_2 = {
+				culture_court_yurt_effect = {
+					CHANCE = 2
+					PERCENT = 5
+				}
+			}
+			nomad_yurt_many_cultures_bonus_lvl_3 = {
+				culture_court_yurt_effect = {
+					CHANCE = 2
+					PERCENT = 10
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = fertility_mystical_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			nomad_yurt_herd_per_piety_fertility_mystical_lvl_1 = {
+				fertility_mystical_yurt_effect = {
+					CHANCE = 1
+					PERCENT = 5
+				}
+			}
+			nomad_yurt_herd_per_piety_fertility_mystical_lvl_2 = {
+				fertility_mystical_yurt_effect = {
+					CHANCE = 2
+					PERCENT = 5
+				}
+			}
+			nomad_yurt_herd_per_piety_fertility_mystical_lvl_3 = {
+				fertility_mystical_yurt_effect = {
+					CHANCE = 2
+					PERCENT = 10
+				}
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = knight_mystical_yurt_01
+		}
+		switch = {
+			trigger = has_domicile_parameter
+			knight_skill_increase_per_piety_lvl_1 = {
+				knight_mystical_yurt_effect = {
+					CHANCE = 1
+					PROWESS = 1
+				}
+			}
+			knight_skill_increase_per_piety_lvl_2 = {
+				knight_mystical_yurt_effect = {
+					CHANCE = 2
+					PROWESS = 1
+				}
+			}
+			knight_skill_increase_per_piety_lvl_3 = {
+				knight_mystical_yurt_effect = {
+					CHANCE = 2
+					PROWESS = 2
+				}
+			}
+		}
+	}
+}
+
+hostage_ward_yurt_effect = {
+	root = {
+		every_courtier = {
+			limit = {
+				is_hostage_of = root
+			}
+			add_to_list = temp_yurt_hostages
+		}
+	}
+	random = {
+		chance = {
+			value = "list_size(temp_yurt_hostages)"
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {
+			random_courtier = {
+				limit = {
+					is_hostage_of = root
+				}
+				save_scope_as = yurt_hostage
+			}
+			random_relation = {
+				type = ward
+				save_scope_as = yurt_ward
+			}
+			if = {
+				limit = {
+					exists = scope:yurt_ward
+				}
+				send_interface_message = {
+					title = hostage_ward_yurt_effect_tt
+					desc = hostage_ward_yurt_effect_desc
+					left_icon = scope:yurt_ward
+					right_icon = scope:yurt_hostage
+					scope:yurt_ward = {
+						random_list = {
+							1 = { add_diplomacy_skill = 1 }
+							1 = { add_stewardship_skill = 1 }
+							1 = { add_intrigue_skill = 1 }
+							1 = { add_learning_skill = 1 }
+							1 = { add_martial_skill = 1 }
+						}
+					}
+					scope:yurt_hostage = {
+						increase_wounds_no_death_effect = { REASON = beaten }
+					}
+					root = {
+						add_prestige = 200
+					}
+				}
+			}
+		}
+	}
+}
+language_yurt_effect = {
+	random = {
+		chance = {
+			value = root.num_of_known_languages
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {		
+			send_interface_message = {
+				title = language_yurt_effect_tt
+				desc = language_yurt_effect_desc
+				left_icon = root
+				random_list = {
+					1 = { add_diplomacy_skill = 1 }
+					1 = { add_stewardship_skill = 1 }
+					1 = { add_intrigue_skill = 1 }
+					1 = { add_learning_skill = 1 }
+					1 = { add_martial_skill = 1 }
+				}
+			}
+		}
+	}
+}
+de_jure_shifting_effect = {
+	while = {
+		count = 25
+		limit = {
+			OR = {
+				any_realm_de_jure_$LOWER_TIER$ = {
+					mpo_de_jure_shifting_triggers = { UPPER_TIER = $UPPER_TIER$ }
+				}
+				any_tributary = {
+					highest_held_title_tier < root.highest_held_title_tier
+					any_realm_de_jure_$LOWER_TIER$ = {
+						mpo_de_jure_shifting_triggers = { UPPER_TIER = $UPPER_TIER$ }
+					}
+				}
+			}
+		}
+		random_realm_de_jure_$LOWER_TIER$ = {
+			limit = {
+				mpo_de_jure_shifting_triggers = { UPPER_TIER = $UPPER_TIER$ }
+			}
+			set_de_jure_liege_title = root.primary_title
+			add_to_list = de_jure_shifted_title
+		}
+		random_tributary = {
+			limit = {
+				highest_held_title_tier < root.highest_held_title_tier
+				any_realm_de_jure_$LOWER_TIER$ = {
+					mpo_de_jure_shifting_triggers = { UPPER_TIER = $UPPER_TIER$ }
+				}
+			}
+			random_realm_de_jure_$LOWER_TIER$ = {
+				limit = {
+					mpo_de_jure_shifting_triggers = { UPPER_TIER = $UPPER_TIER$ }
+				}
+				set_de_jure_liege_title = root.primary_title
+				add_to_list = de_jure_shifted_title
+			}
+		}
+	}
+	while = {
+		count = 25
+		limit = {
+			list_size = {
+				name = de_jure_shifted_title
+				value >= 1
+			}
+		}
+		root = {
+			send_interface_message = {
+				type = msg_mpo_de_jure_shifting
+				title = msg_mpo_de_jure_shifting
+				left_icon = root
+				ordered_in_list = { 
+					order_by = {
+						value = 1
+					}
+					max = 3
+					list = de_jure_shifted_title
+					show_as_tooltip = {
+						set_de_jure_liege_title = root.primary_title 
+					}
+					remove_from_list = de_jure_shifted_title
+				}
+			}
+		}
+	}
+}
+
+omen_yurt_effect = {
+	random = {
+		chance = {
+			value = root.piety_level
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {
+			random_child = {
+				save_scope_as = improved_child
+			}
+			if = {
+				limit = {
+					exists = scope:improved_child
+				}			
+				send_interface_message = {
+					title = omen_yurt_effect_tt
+					desc = omen_yurt_effect_desc
+					left_icon = scope:improved_child
+					scope:improved_knight = {
+						random_list = {
+							1 = { add_diplomacy_skill = 1 }
+							1 = { add_stewardship_skill = 1 }
+							1 = { add_intrigue_skill = 1 }
+							1 = { add_learning_skill = 1 }
+							1 = { add_martial_skill = 1 }
+						}
+					}
+				}
+			}	
+		}
+	}
+}
+
+friend_yurt_effect = {
+	root = {
+		every_relation = {
+			type = friend
+			add_to_list = temp_yurt_friends
+		}
+	}
+	random = {
+		chance = {
+			value = "list_size(temp_yurt_friends)"
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {
+			random_relation = {
+				type = friend
+				save_scope_as = yurt_friend
+			}
+			send_interface_message = {
+				title = friend_yurt_effect_tt
+				desc = friend_yurt_effect_desc
+				left_icon = scope:yurt_friend
+				scope:yurt_friend = {
+					random_list = {
+						1 = { add_diplomacy_skill = 1 }
+						1 = { add_stewardship_skill = 1 }
+						1 = { add_intrigue_skill = 1 }
+						1 = { add_learning_skill = 1 }
+						1 = { add_martial_skill = 1 }
+					}
+				}
+				root = {
+					random_list = {
+						1 = { add_diplomacy_skill = 1 }
+						1 = { add_stewardship_skill = 1 }
+						1 = { add_intrigue_skill = 1 }
+						1 = { add_learning_skill = 1 }
+						1 = { add_martial_skill = 1 }
+					}
+				}
+			}
+		}
+	}
+}
+
+better_children_yurt_effect = {
+	random = {
+		chance = $CHANCE$
+		root = {
+			random_heir = {
+				limit = {
+					age < 17
+				}
+				save_scope_as = yurt_heir
+			}
+			if = {
+				limit = {
+					exists = scope:yurt_heir
+				}
+			}
+			send_interface_message = {
+				title = better_children_yurt_effect_tt
+				desc = better_children_yurt_effect_desc
+				left_icon = scope:yurt_heir
+				scope:yurt_heir = {
+					random_list = {
+						1 = { add_diplomacy_skill = 1 }
+						1 = { add_stewardship_skill = 1 }
+						1 = { add_intrigue_skill = 1 }
+						1 = { add_learning_skill = 1 }
+						1 = { add_martial_skill = 1 }
+					}
+				}
+			}
+		}
+	}
+}
+
+dynasty_court_yurt_effect = {
+	root = {
+		every_councillor = {
+			limit = {
+				is_kurultai_trigger = yes
+				dynasty = root.dynasty
+			}
+			add_to_temporary_list = yurt_kurultai_list
+		}
+	}
+	random = {
+		chance = {
+			value = "list_size(yurt_kurultai_list)"
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {
+			send_interface_message = {
+				title = dynasty_court_yurt_effect_tt
+				desc = dynasty_court_yurt_effect_desc
+				domicile ?= {
+					change_herd = {
+						value = max_herd
+						multiply = 0.1
+					}
+				}
+			}
+		}
+	}
+}
+
+culture_court_yurt_effect = {
+	root = {
+		every_tributary = {
+			culture = { add_to_temporary_list = yurt_culture_list }
+		}
+		every_vassal = {
+			culture = { add_to_temporary_list = yurt_culture_list }
+		}
+	}
+
+	random = {
+		chance = {
+			value = "list_size(culture_list)"
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {
+			send_interface_message = {
+				title = culture_court_yurt_effect_tt
+				desc = culture_court_yurt_effect_desc
+				domicile ?= {
+					change_herd = {
+						value = max_herd
+						multiply = 0.01
+						multiply = $PERCENT$
+					}
+				}
+			}
+		}
+	}
+}
+
+knight_mystical_yurt_effect = {
+	random = {
+		chance = {
+			value = root.piety_level
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {
+			random_knight = {
+				save_scope_as = improved_knight
+			}
+			if = {
+				limit = {
+					exists = scope:improved_knight
+				}			
+				send_interface_message = {
+					title = knight_mystical_yurt_effect_tt
+					desc = knight_mystical_yurt_effect_desc
+					left_icon = scope:improved_knight
+					scope:improved_knight = {
+						add_prowess_skill = $PROWESS$
+					}
+				}
+			}	
+		}
+	}
+}
+
+fertility_mystical_yurt_effect = {
+	random = {
+		chance = {
+			value = root.piety_level
+			multiply = $CHANCE$
+			min = 0
+		}
+		root = {
+			send_interface_message = {
+				title = fertility_mystical_yurt_effect_tt
+				desc = fertility_mystical_yurt_effect_desc
+				domicile ?= {
+					change_herd = {
+						value = max_herd
+						multiply = 0.01
+						multiply = $PERCENT$
+					}
+				}
+			}
+		}
+	}
+}
+
+clean_up_ai_nomad_effect = {
+	save_temporary_scope_as = nomad_capital_ruler
+	if = {
+		limit = {
+			is_ai = yes
+			is_at_war = no
+			domicile.herd < 500
+			is_landed = no
+			any_held_title = {
+				exists = title_domicile
+				NOT = { exists = var:player_domicile_title }
+			}
+			is_imprisoned = no
+			OR = {
+				is_independent_ruler = yes
+				liege ?= { is_ai = yes }
+			}
+			is_migrating = no
+			NOT = { exists = involved_activity }
+		}
+		domicile.domicile_location = { save_scope_as = place_to_stay }
+		if = {
+			limit = {
+				location = scope:place_to_stay
+			}
+			add_to_list = movers
+		}
+		every_courtier = {
+			limit = {
+				location = scope:place_to_stay
+			}
+			add_to_list = movers
+		}
+		every_held_title = {
+			limit = {
+				exists = title_domicile
+				NOT = { exists = var:player_domicile_title }
+			}
+			scope:nomad_capital_ruler = { destroy_title = prev }
+		}
+		every_in_list = {
+			list = movers
+			limit = {
+				is_imprisoned = no
+				NOR = {
+					this = scope:nomad_capital_ruler
+					is_in_pool_at = scope:place_to_stay
+				}
+			}
+			move_to_pool_at = scope:place_to_stay
+		}
+		
+		random = {
+			chance = {
+				value = 20
+				if = {
+					limit = {
+						any_player = {
+							OR = {
+								is_close_or_extended_family_of = scope:nomad_capital_ruler
+								is_consort_of = scope:nomad_capital_ruler
+								has_important_relationship_with_character_trigger = { CHARACTER = scope:nomad_capital_ruler }
+								is_allied_in_war = scope:nomad_capital_ruler
+								is_allied_to = scope:nomad_capital_ruler
+								is_at_war_with = scope:nomad_capital_ruler
+							}
+						}
+					}
+					add = 80
+				}
+			}
+			if = {
+				limit = {
+					has_dlc_feature = roads_to_power
+					is_physically_able_adult = yes
+					exists = location.county
+					ai_can_valid_to_create_laamp_trigger = yes
+				}
+				create_landless_adventurer_title_effect = {
+					REASON = flag:voluntary
+					FLAVOR_CHAR = root
+				}
+				every_in_list = {
+					list = movers
+					limit = {
+						NOR = {
+							this = scope:nomad_capital_ruler
+							is_courtier_of = scope:nomad_capital_ruler
+							is_in_pool_at = scope:place_to_stay
+						}
+					}
+					move_to_pool_at = scope:place_to_stay
+				}
+				if = {
+					limit = {
+						NOT = {
+							exists = global_var:nomad_adventurer_spawn
+						}
+					}
+					set_global_variable = {
+						name = nomad_adventurer_spawn
+						value = 1
+					}
+				}
+				else = {
+					change_global_variable = {
+						name = nomad_adventurer_spawn
+						add = 1
+					}
+				}
+			}
+		}
+		
+		if = {
+			limit = {
+				scope:nomad_capital_ruler = {
+					is_ruler = no
+				}
+			}
+			every_in_list = {
+				list = movers
+				limit = {
+					is_imprisoned = no
+					this = scope:nomad_capital_ruler
+					NOT = {
+						is_in_pool_at = scope:place_to_stay
+					}
+				}
+				move_to_pool_at = scope:place_to_stay
+			}
+		}
+	}
+}
+
+expanding_steppe_effect = {
+	switch = { # Warcraft
+		trigger = { always = no }
+		# West
+		# scope:ghw_region_anatolia = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = ghw_region_anatolia
+		# 	}
+		# }
+		# scope:custom_eastern_balkans = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = custom_eastern_balkans
+		# 	}
+		# }
+		# scope:ghw_region_northern_russia = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = ghw_region_northern_russia
+		# 	}
+		# }
+		# scope:ghw_region_southern_russia = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = ghw_region_southern_russia
+		# 	}
+		# }
+		# scope:custom_hungary = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = custom_hungary
+		# 	}
+		# }
+		# scope:ghw_region_poland = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = ghw_region_poland
+		# 	}
+		# }
+		# scope:ghw_region_baltic = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = ghw_region_baltic
+		# 	}
+		# }
+		# scope:dlc_mpo_steppe_caucasus_expansion = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = west
+		# 		REGION = dlc_mpo_steppe_caucasus_expansion
+		# 	}
+		# }
+		# # Central
+		# scope:world_transoxiana = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = central
+		# 		REGION = world_transoxiana
+		# 	}
+		# }
+		# scope:world_khorasan = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = central
+		# 		REGION = world_khorasan
+		# 	}
+		# }
+		# scope:dlc_mpo_steppe_persia_expansion = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = central
+		# 		REGION = dlc_mpo_steppe_persia_expansion
+		# 	}
+		# }
+		# scope:dlc_mpo_steppe_siberia_further_expansion = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = central
+		# 		REGION = dlc_mpo_steppe_siberia_further_expansion
+		# 	}
+		# }
+		# # East
+		# scope:world_steppe_tarim = {
+		# 	expanding_steppe_add_region_effect = {
+		# 		SUB_REGION = east
+		# 		REGION = world_steppe_tarim
+		# 	}
+		# }
+	}
+}
+
+# expanding_steppe_add_region_effect = {
+# 	situation:the_great_steppe = {
+#         situation_sub_region:steppe_$SUB_REGION$ = {
+#         	add_geographical_region = $REGION$
+#         }
+#     }
+# }
+
+nomadic_heir_cleanup_realm_effect = {
+	if = {
+		limit = {
+			is_landed = yes
+		}
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+		}
+		if = {
+			limit = {
+				exists = liege
+			}
+			liege = {
+				save_scope_as = old_liege
+			}
+		}
+		create_character = {
+			location = $CLEANUP_SCOPE_CHAR$.location
+			template = nomadic_chieftain_character
+			save_scope_as = inheritor_char
+		}
+		every_held_title = {
+			limit = {
+				is_landless_type_title = no
+			}
+			change_title_holder = {
+				holder = scope:inheritor_char
+				change = scope:change
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+		if = {
+			limit = {
+				exists = scope:old_liege
+			}
+			scope:inheritor_char = {
+				create_title_and_vassal_change = {
+					type = swear_fealty
+					save_scope_as = change
+				}
+				scope:recipient = {
+					change_liege = {
+						liege = scope:old_liege
+						change = scope:change
+					}
+				}
+				resolve_title_and_vassal_change = scope:change
+			}
+		}
+	}
+	if = {
+		limit = {
+			top_liege != $CLEANUP_SCOPE_CHAR$
+		}
+		create_title_and_vassal_change = {
+			type = independency
+			save_scope_as = going_independent
+			add_claim_on_loss = no
+		}
+		becomes_independent = {
+			change = scope:going_independent
+		}
+		resolve_title_and_vassal_change = scope:going_independent
+	}
+}
+
+nomadic_realm_split_effect = {
+	$ORIGINAL_REALM_HOLDER$ = {
+		save_scope_as = root_scope
+	}
+	$NEW_RULER$ = {
+		save_scope_as = new_ruler_scope
+	}
+	primary_title = {
+		every_in_de_jure_hierarchy = {
+			limit = {
+				tier = tier_county
+				holder.top_liege = scope:root_scope
+			}
+			add_to_list = de_jure_realm_counties_of_primary
+			add_to_list = combined_counties_of_primary
+		}
+		every_in_de_jure_hierarchy = {
+			limit = {
+				tier = tier_county
+				holder.top_liege != scope:root_scope
+			}
+			add_to_list = de_jure_realm_counties_of_primary_outside_realm
+		}
+		every_in_de_jure_hierarchy = {
+			limit = {
+				tier = tier_county
+			}
+			add_to_list = de_jure_realm_counties_of_primary_combined
+		}
+		every_in_de_facto_hierarchy = {
+			limit = {
+				tier = tier_county
+				holder.top_liege ?= scope:root_scope
+				NOT = { is_in_list = de_jure_realm_counties_of_primary }
+			}
+			add_to_list = de_facto_realm_counties_of_primary
+			add_to_list = combined_counties_of_primary
+		}
+	}
+	# Pick a suitable capital County, as far away from your capital as possible
+	ordered_in_list = {
+		list = de_jure_realm_counties_of_primary
+		limit = {
+			NOT = {
+				this = scope:root_scope.capital_county
+			}
+		}
+		order_by = {
+			value = "title_province.squared_distance(scope:root_scope.capital_province)"
+		}
+		save_scope_as = new_capital
+	}
+	
+	# Mark the capital duchy
+	scope:new_ruler_scope = { 
+		scope:new_capital = {
+			add_to_list = counties_given_to_sibling
+		}
+		scope:new_capital.duchy = {
+			save_scope_as = capital_duchy
+			add_to_list = duchies_given_to_sibling
+			add_to_list = duchies_to_de_jure_shift
+			if = {
+				limit = {
+					holder.top_liege = scope:root_scope
+					holder.primary_title.tier < tier_kingdom
+				}
+				holder = {
+					add_to_list = rulers_transferred
+				}
+			}
+			every_in_de_jure_hierarchy = {
+				limit = {
+					is_in_list = combined_counties_of_primary
+				}
+				add_to_list = capital_duchy_counties
+				if = {
+					limit = {
+						NOT = {
+							is_in_list = counties_given_to_sibling
+						}
+					}
+					add_to_list = counties_given_to_sibling
+				}
+				if = {
+					limit = {
+						holder.top_liege = scope:root_scope
+						holder.primary_title.tier < tier_kingdom
+					}
+					holder = {
+						add_to_list = rulers_transferred
+					}
+				}
+			}
+		}
+		# Expand in a 'ring' first
+		scope:new_capital.duchy = {
+			every_title_to_title_neighboring_duchy = {
+				limit = {
+					any_in_de_jure_hierarchy = {
+						OR = {
+							is_in_list = de_jure_realm_counties_of_primary
+							is_in_list = de_jure_realm_counties_of_primary_outside_realm
+						}
+					}
+				}
+				add_to_list = duchies_to_de_jure_shift
+				if = {
+					limit = {
+						any_in_de_jure_hierarchy = {
+							is_in_list = de_jure_realm_counties_of_primary
+						}
+					}
+					add_to_list = duchies_given_to_sibling
+					if = {
+						limit = {
+							holder = {
+								top_liege = scope:root_scope
+								primary_title.tier < tier_kingdom
+								NOT = { is_in_list = rulers_transferred }
+							}
+						}
+						holder = {
+							add_to_list = rulers_transferred
+						}
+					}
+					every_in_de_jure_hierarchy = {
+						limit = {
+							is_in_list = de_jure_realm_counties_of_primary
+						}
+						add_to_list = counties_given_to_sibling
+						if = {
+							limit = {
+								holder = {
+									top_liege = scope:root_scope
+									primary_title.tier < tier_kingdom
+									NOT = { is_in_list = rulers_transferred }
+								}
+							}
+							holder = {
+								add_to_list = rulers_transferred
+							}
+						}
+					}
+					every_in_de_jure_hierarchy = {
+						limit = {
+							NOT = { is_in_list = de_jure_realm_counties_of_primary }
+						}
+						add_to_list = counties_de_jure_shifted_to_sibling
+					}
+				}
+			}
+		}
+		while = {
+			count = 50
+			limit = {
+				"list_size(counties_given_to_sibling)" < {
+					value = "list_size(de_jure_realm_counties_of_primary)"
+					multiply = $SPLIT_VALUE$
+				}
+			}
+			ordered_in_list = {
+				list = de_jure_realm_counties_of_primary_combined
+				limit = {
+					NOR = {
+						duchy = scope:root_scope.capital_county.duchy
+						duchy = { is_in_list = duchies_to_de_jure_shift }
+						is_in_list = counties_given_to_sibling
+					}
+					any_neighboring_county = {
+						OR = {
+							is_in_list = counties_given_to_sibling
+							duchy = { is_in_list = duchies_to_de_jure_shift }
+						}
+					}
+				}
+				order_by = {
+					value = "title_province.squared_distance(scope:root_scope.capital_province)"
+				}
+				duchy = {
+					add_to_list = duchies_to_de_jure_shift
+					if = {
+						limit = {
+							any_in_de_jure_hierarchy = {
+								is_in_list = de_jure_realm_counties_of_primary
+							}
+						}
+						add_to_list = duchies_given_to_sibling
+						if = {
+							limit = {
+								holder = {
+									top_liege = scope:root_scope
+									primary_title.tier < tier_kingdom
+									NOT = { is_in_list = rulers_transferred }
+								}
+							}
+							holder = {
+								add_to_list = rulers_transferred
+							}
+						}
+						every_in_de_jure_hierarchy = {
+							limit = {
+								is_in_list = de_jure_realm_counties_of_primary
+							}
+							add_to_list = counties_given_to_sibling
+							if = {
+								limit = {
+									holder = {
+										top_liege = scope:root_scope
+										primary_title.tier < tier_kingdom
+										NOT = { is_in_list = rulers_transferred }
+									}
+								}
+								holder = {
+									add_to_list = rulers_transferred
+								}
+							}
+						}
+						every_in_de_jure_hierarchy = {
+							limit = {
+								NOT = { is_in_list = de_jure_realm_counties_of_primary }
+							}
+							add_to_list = counties_de_jure_shifted_to_sibling
+						}
+					}
+				}
+			}
+		}
+		
+		# Hand out the titles properly
+		create_title_and_vassal_change = {
+			type = swear_fealty
+			add_claim_on_loss = yes
+			save_scope_as = change
+		}
+		
+		# Give capital + capital duchy
+		scope:capital_duchy = {
+			change_title_holder = {
+				holder = scope:new_ruler_scope
+				change = scope:change
+			}
+		}
+		every_in_list = {
+			list = capital_duchy_counties
+			change_title_holder = {
+				holder = scope:new_ruler_scope
+				change = scope:change
+			}
+		}
+		
+		# Form a new kingdom
+		save_scope_as = founder
+		scope:capital_duchy = {
+			save_scope_as = old_title
+		}
+		create_dynamic_title = {
+			tier = kingdom
+			name = NEW_CREATED_TITLE_NAME
+		}
+		scope:new_title = {
+			save_scope_as = new_kingdom_title
+			change_title_holder = {
+				holder = scope:new_ruler_scope
+				change = scope:change
+			}
+			generate_coa = yes
+			set_de_jure_liege_title = scope:root_scope.primary_title.empire
+		}
+		
+		# Do everything else
+		every_in_list = {
+			list = counties_given_to_sibling
+			if = {
+				limit = {
+					holder = {
+						NOT = {
+							this = scope:new_ruler_scope
+						}
+						OR = {
+							this = scope:root_scope
+							primary_title.tier >= tier_kingdom
+						}
+					}
+				}
+				change_title_holder = {
+					holder = scope:new_ruler_scope
+					change = scope:change
+				}
+			}
+			if = {
+				limit = {
+					NOT = {
+						this = scope:new_ruler_scope
+					}
+					holder = {
+						liege = scope:root_scope
+						primary_title.tier < tier_kingdom
+					}
+				}
+				holder = {
+					change_liege = {
+						liege = scope:new_ruler_scope
+						change = scope:change
+					}
+				}
+			}
+		}
+		
+		resolve_title_and_vassal_change = scope:change
+			
+		every_in_list = {
+			list = duchies_to_de_jure_shift
+			set_de_jure_liege_title = scope:new_kingdom_title
+		}
+	}
+}
+
+mpo_abuse_authority_county_effect = {
+	location.duchy = {
+	    every_de_jure_county = {
+	        limit = {
+	            county_ready_for_abuse_trigger = yes
+	        }
+	        custom = custom.every_county_near_location
+	        change_county_fertility = -100
+	        change_county_control = -40
+	        add_county_modifier = {
+		    	modifier = mpo_paiza_abused_county_modifier
+		    	years = 4
+		    }
+			add_to_temporary_list = counties_to_abuse
+	    }
+		every_de_jure_county = {
+			limit = {
+	            county_ready_for_abuse_trigger = yes
+	        }
+			holder = {
+	            add_opinion = {
+	                modifier = angry_opinion
+	                target = root
+	                opinion = -30
+	            }
+	        }
+		}
+		every_de_jure_county = {
+			limit = {
+	            county_ready_for_abuse_trigger = yes
+	        }
+			custom = custom.every_county_near_location
+			root.domicile ?= {
+	            change_herd = medium_herd_value
+	        }
+	        root = {
+	            add_gold = medium_gold_value
+	            add_prestige = medium_prestige_value         
+	        }
+		}           
+	}
+}
