@@ -330,7 +330,7 @@ PixelShader =
 			
 			Color = ApplyDistanceFog( Color, Input.WorldSpacePos );
 			
-			DebugReturn( Color, MaterialProps, LightingProps, EnvironmentMap, SssColor, SssMask );			
+			DebugReturn( Color, MaterialProps, LightingProps, EnvironmentMap, ScatteringColor, ScatteringMask, DiffuseTranslucency );			
 			return Color;
 
 			Color = ApplyDistanceFog( Color, Input.WorldSpacePos );
@@ -434,7 +434,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 				#ifdef ALPHA_TO_COVERAGE
 					Out.Color = float4( Color, Diffuse.a );
 				#else
@@ -482,7 +482,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 				Out.Color = float4( Color, 1.0f );
 				
 				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
@@ -530,7 +530,7 @@ PixelShader =
 				// END MOD
 
 				
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect );
 
 				Out.Color = float4( Color, Diffuse.a );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
