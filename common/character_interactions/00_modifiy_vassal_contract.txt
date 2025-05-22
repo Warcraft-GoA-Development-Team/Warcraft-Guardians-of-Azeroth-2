@@ -213,11 +213,16 @@ vassal_modify_vassal_contract_interaction = {
 
 			scope:recipient = {
 				# Must be an even trade overall
-				custom_description = {
-					text = "vassal_modify_vassal_contract_cannot_increase_obligation_level"
-					object = scope:actor
-					value = count_obligation_improvements_for_vassal_include_hook
-					count_obligation_improvements_for_vassal_include_hook = 0
+				trigger_if = {
+					limit = {
+						count_obligation_improvements_for_vassal_include_hook >= 0
+					}
+					custom_description = {
+						text = "vassal_modify_vassal_contract_cannot_increase_obligation_level"
+						object = scope:actor
+						value = count_obligation_improvements_for_vassal_include_hook
+						count_obligation_improvements_for_vassal_include_hook = 0
+					}
 				}
 
 				# Cannot change more than three things at once
@@ -982,6 +987,740 @@ admin_vassal_modify_vassal_contract_interaction = {
 			}
 			add = 60
 			desc = AI_SAME_HOUSE
+		}
+	}
+}
+
+# Separate interactions are set up for Nomads - This is to help with localisation and some of the effects
+nomad_liege_modify_vassal_contract_interaction = {
+	special_interaction = liege_modify_vassal_contract
+	interface = modify_vassal_contract
+	category = interaction_category_vassal
+	common_interaction = yes
+	icon = icon_contract_modification_single
+
+	send_name = nomad_liege_modify_vassal_contract_interaction
+	desc = nomad_liege_modify_vassal_contract_interaction_desc
+
+	force_notification = yes
+	notification_text = MODIFY_VASSAL_CONTRACT_NOTIFICATION_TO_VASSAL
+
+	is_shown = {
+		scope:recipient = {
+			NOT = { this = scope:actor }
+			liege ?= scope:actor # this excludes tributary contracts by default
+			is_ruler = yes
+			vassal_contract_has_modifiable_obligations = yes
+			government_has_flag = government_is_nomadic
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		NOT = { scope:actor = { is_at_war_with = scope:recipient } }
+	}
+
+	can_send = {
+		trigger_if = { #If they're blocked we don't want to show anything else
+			limit = {
+				scope:recipient = {
+					subject_contract_is_blocked_from_modification = yes
+				}
+			}
+			scope:recipient = {
+				subject_contract_is_blocked_from_modification = no
+			}
+		}
+		trigger_else = {
+			scope:actor = {
+				has_changed_contract_obligation_trigger = yes
+
+				custom_description = {
+					text = "liege_modify_vassal_contract_cannot_exceed_tyranny_cap"
+					object = scope:actor
+					NOT = {
+						vassal_obligation_increase_tyranny_gain_multiplier > 1
+					}
+				}
+
+				# Cannot change more than three things at once
+				custom_description = {
+					text = "vassal_modify_vassal_contract_obligation_change_limit"
+					value = list_size:changed_obligations
+					list_size:changed_obligations <= max_contract_changes
+				}
+
+				# If the trade without the hook usage is already in the vassal's favour or fair then don't waste your hook
+				save_temporary_scope_value_as = {
+					name = obligations_favoring_vassal
+					value = scope:recipient.count_obligation_improvements_for_vassal
+				}
+				trigger_if = {
+					limit = { scope:obligations_favoring_vassal > 0 }
+					custom_description = {
+						text = "vassal_modify_vassal_contract_unnecessary_hook_usage_vassal_favor"
+						object = scope:recipient
+						value = scope:obligations_favoring_vassal
+						NOT = { always = scope:hook }
+					}
+				}
+				trigger_else_if = {
+					limit = { scope:obligations_favoring_vassal = 0 }
+					custom_description = {
+						text = "vassal_modify_vassal_contract_unnecessary_hook_usage_equal"
+						object = scope:recipient
+						NOT = { always = scope:hook }
+					}
+				}
+				trigger_else = {} # Otherwise we're fine!
+			}
+		}
+	}
+
+	auto_accept = yes
+	on_accept = {
+		# Warcraft -  Removing Struggle Catalyst
+
+		# Enact changes.
+		scope:actor = {
+			send_interface_message = {
+				type = msg_vassal_contract_change
+				title = modify_vassal_contract_interaction_notification
+				right_icon = scope:recipient
+				if = {
+					limit = { vassal_obligation_increase_tyranny_gain != 0 }
+					stress_impact = {
+						just = medium_stress_impact_gain
+						generous = medium_stress_impact_gain
+					}
+				}
+				if = {
+					limit = {
+						always = scope:hook
+					}
+					use_hook = scope:recipient
+					add_achievement_flag_effect = { FLAG = achievement_fine_print_flag }
+				}
+
+				scope:recipient = {
+					hidden_effect = {
+						set_subject_contract_modification_blocked = yes
+						set_variable = {
+							name = nomad_contract_cooldown
+							value = yes
+							years = nomad_contract_cooldown_value
+						}
+					}
+				}
+
+				every_in_list = {
+					list = changed_obligations
+
+					save_scope_as = obligation
+
+					scope:recipient = {
+						vassal_contract_set_obligation_level = {
+							type = scope:obligation.vassal_contract_type
+							level = scope:obligation
+						}
+					}
+
+				}
+			}
+		}
+
+		# Additional Flavor Titles
+		scope:recipient = { additional_flavor_check_effect = yes }
+	}
+	
+	send_option = {
+		is_valid = {
+			scope:actor = {
+				has_usable_hook = scope:recipient
+			}
+		}
+		flag = hook
+		localization = SCHEME_HOOK
+	}
+	should_use_extra_icon = {
+		scope:actor = { has_usable_hook = scope:recipient }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+	send_options_exclusive = no
+}
+
+nomad_vassal_modify_vassal_contract_interaction = {
+	special_interaction = vassal_modify_vassal_contract
+	interface = modify_vassal_contract
+	category = interaction_category_vassal
+	interface_priority = 65
+	common_interaction = yes
+	icon = icon_contract_modification_single
+
+	send_name = "nomad_vassal_modify_vassal_contract_interaction_send"
+	desc = nomad_vassal_modify_vassal_contract_interaction_desc
+	
+	redirect = {
+		# need to reverse the role for the UI to work properly
+		scope:recipient = {
+			save_scope_as = secondary_recipient
+		}
+		scope:actor = {
+			save_scope_as = recipient
+		}
+
+		scope:secondary_recipient = {
+			save_scope_as = actor
+		}
+	}
+
+	is_shown = {
+		scope:recipient = {
+			is_independent_ruler = no
+			NOT = { this = scope:actor }
+			liege ?= scope:actor # this excludes tributary contracts by default
+			vassal_contract_has_modifiable_obligations = yes
+			government_has_flag = government_is_nomadic
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		NOT = { scope:recipient = { is_at_war_with = scope:actor } }
+	}
+
+	can_send = {
+		trigger_if = { #If you're blocked we don't want to show anything else
+			limit = {
+				scope:recipient = {
+					subject_contract_is_blocked_from_modification = yes
+				}
+			}
+			scope:recipient = {
+				subject_contract_is_blocked_from_modification = no
+			}
+		}
+		trigger_else = {
+			scope:actor = {
+				has_changed_contract_obligation_trigger = yes
+			}
+
+			scope:recipient = {
+				# Must be an even trade overall
+				custom_description = {
+					text = "vassal_modify_vassal_contract_cannot_increase_obligation_level"
+					object = scope:actor
+					value = count_obligation_improvements_for_vassal_include_hook
+					count_obligation_improvements_for_vassal_include_hook = 0
+				}
+
+				# Cannot change more than three things at once
+				custom_description = {
+					text = "vassal_modify_vassal_contract_obligation_change_limit"
+					value = list_size:changed_obligations
+					list_size:changed_obligations <= max_contract_changes
+				}
+			}
+		}
+	}
+
+	auto_accept = yes
+
+	on_accept = {
+		# Enact changes
+		scope:recipient = {
+			send_interface_message = {
+				type = msg_vassal_contract_change
+				title = modify_vassal_contract_interaction_notification
+				right_icon = scope:actor
+				if = {
+					limit = { always = scope:hook }
+					use_hook = scope:actor
+					add_achievement_flag_effect = { FLAG = achievement_fine_print_flag }
+				}
+
+				# Activate cooldown - To prevent liege from changing it too soon
+				hidden_effect = {
+					set_variable = {
+						name = nomad_contract_cooldown
+						value = yes
+						years = nomad_contract_cooldown_value
+					}
+				}
+
+				hidden_effect = { set_subject_contract_modification_blocked = yes }
+
+				every_in_list = {
+					list = changed_obligations
+
+					save_scope_as = obligation
+
+					scope:recipient = {
+						vassal_contract_set_obligation_level = {
+							type = scope:obligation.vassal_contract_type
+							level = scope:obligation
+						}
+					}
+				}
+			}
+		}
+		# If there's a diarch involved, and they called in their change, that gets flagged.
+		diarch_changed_own_contract_effect = yes
+		# Additional Flavor Titles
+		scope:recipient = { additional_flavor_check_effect = yes }
+	}
+
+	on_decline = {
+		# Activate cooldown - You may only ask for it to be changed every so often (this mostly exists for MP, since you cannot send it to the AI unless they accept)
+		hidden_effect = {
+			scope:recipient = {
+				set_variable = {
+					name = nomad_contract_request_cooldown
+					value = yes
+					years = nomad_contract_cooldown_value
+				}
+			}
+		}
+	}
+
+	# Send Options
+	# Hook
+	send_option = {
+		is_valid = {
+			scope:recipient = {
+				has_usable_hook = scope:actor
+			}
+		}
+		flag = hook
+		localization = SCHEME_HOOK
+	}
+	send_option = {
+		is_shown = {
+			scope:recipient = { is_diarch_of_target = scope:actor }
+		}
+		is_valid = {
+			scope:recipient = {
+				trigger_if = {
+					limit = { has_variable_list = diarch_contract_rights_used_list }
+					NOT = {
+						is_target_in_variable_list = {
+							name = diarch_contract_rights_used_list
+							target = scope:actor
+						}
+					}
+				}
+			}
+		}
+		flag = diarch
+		localization = CALL_IN_DIARCH_RIGHTS
+	}
+	should_use_extra_icon = {
+		scope:recipient = { has_usable_hook = scope:actor }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+	send_options_exclusive = no
+}
+
+suzerain_modify_tributary_contract_interaction = {
+	special_interaction = liege_modify_vassal_contract
+	interface = modify_vassal_contract
+	category = interaction_category_vassal
+	common_interaction = yes
+	icon = icon_contract_modification_single
+
+	send_name = "suzerain_modify_tributary_contract_interaction_send"
+	desc = suzerain_modify_tributary_contract_interaction_desc
+
+	force_notification = yes
+	notification_text = MODIFY_VASSAL_CONTRACT_NOTIFICATION_TO_VASSAL
+
+	is_shown = {
+		scope:recipient = {
+			is_tributary_of = scope:actor # excludes vassals by default
+			subject_contract_has_modifiable_obligations = yes
+			NOT = { government_has_flag = government_is_herder }
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		NOT = { scope:recipient = { is_at_war_with = scope:actor } }
+	}
+
+	can_send = {
+		any_in_list = {
+			list = changed_obligations
+		}
+		trigger_if = { #If they're blocked we don't want to show anything else
+			limit = {
+				scope:recipient = {
+					subject_contract_is_blocked_from_modification = yes
+				}
+			}
+			scope:recipient = {
+				subject_contract_is_blocked_from_modification = no
+			}
+		}
+		trigger_else = {
+			scope:actor = {
+				has_changed_contract_obligation_trigger = yes
+
+				# Cannot change more than three things at once
+				custom_description = {
+					text = "vassal_modify_vassal_contract_obligation_change_limit"
+					value = list_size:changed_obligations
+					list_size:changed_obligations <= max_contract_changes
+				}
+
+				# If the trade without the hook usage is already in the vassal's favour or fair then don't waste your hook
+				save_temporary_scope_value_as = {
+					name = obligations_favoring_tributary
+					value = scope:recipient.count_obligation_improvements_for_vassal
+				}
+				trigger_if = {
+					limit = { scope:obligations_favoring_tributary > 0 }
+					custom_description = {
+						text = "tributary_modify_vassal_contract_unnecessary_hook_usage_vassal_favor"
+						object = scope:recipient
+						value = scope:obligations_favoring_tributary
+						NOT = { always = scope:hook }
+					}
+				}
+				trigger_else_if = {
+					limit = { scope:obligations_favoring_tributary = 0 }
+					custom_description = {
+						text = "tributary_modify_vassal_contract_unnecessary_hook_usage_equal"
+						object = scope:recipient
+						NOT = { always = scope:hook }
+					}
+				}
+
+				# You can afford the prestige cost of an unequal contract
+				trigger_else_if = {
+					limit = {
+						scope:obligations_favoring_tributary < 0
+						NOT = { always = scope:hook }
+					}
+					scope:actor = {
+						prestige >= medium_prestige_value
+					}
+				}
+				trigger_else = {} # Otherwise we're fine!
+			}
+		}
+	}
+
+	auto_accept = yes
+
+	on_accept = {
+		scope:actor = {
+			send_interface_message = {
+				type = msg_vassal_contract_change
+				title = modify_vassal_contract_interaction_notification
+				right_icon = scope:recipient
+				if = {
+					limit = {
+						always = scope:hook
+					}
+					use_hook = scope:recipient
+					add_achievement_flag_effect = { FLAG = achievement_fine_print_flag }
+				}
+
+				# Prestige and opinion cost of making an unequal contract without a hook
+				if = {
+					limit = {
+						scope:recipient.count_obligation_improvements_for_vassal < 0
+						NOT = { always = scope:hook }
+					}
+
+					add_prestige = medium_prestige_loss
+
+					scope:recipient = {
+						add_opinion = {
+							modifier = outraged_opinion
+							opinion = -30
+							target = scope:actor
+						}
+					}
+
+					every_tributary = {
+						limit = {
+							NOT = { this = scope:recipient }
+						}
+						add_opinion = {
+							modifier = outraged_opinion
+							opinion = -10
+							target = scope:actor
+						}
+					}
+				}
+
+				scope:recipient = {
+					hidden_effect = {
+						set_subject_contract_modification_blocked = yes
+					}
+				}
+
+				every_in_list = {
+					list = changed_obligations
+
+					save_scope_as = obligation
+
+					scope:recipient = {
+						tributary_contract_set_obligation_level = {
+							type = scope:obligation.vassal_contract_type
+							level = scope:obligation
+						}
+					}
+				}
+			}
+
+		}
+
+		# Additional Flavor Titles
+		scope:recipient = { additional_flavor_check_effect = yes }
+	}
+
+	send_option = {
+		is_valid = {
+			scope:actor = {
+				has_usable_hook = scope:recipient
+			}
+		}
+		flag = hook
+		localization = SCHEME_HOOK
+	}
+	should_use_extra_icon = {
+		scope:actor = { has_usable_hook = scope:recipient }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+
+	send_options_exclusive = no
+}
+
+subject_modify_tributary_contract_interaction = {
+	special_interaction = vassal_modify_vassal_contract
+	interface = modify_vassal_contract
+	category = interaction_category_vassal
+	interface_priority = 65
+	common_interaction = yes
+	icon = icon_contract_modification_single
+
+	send_name = "subject_modify_tributary_contract_interaction_send"
+	desc = subject_modify_tributary_contract_interaction_desc
+
+	is_shown = {
+		scope:actor = {
+			is_tributary_of = scope:recipient # excludes vassals by default
+			subject_contract_has_modifiable_obligations = yes
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		NOT = { scope:recipient = { is_at_war_with = scope:actor } }
+	}
+
+	can_send = {
+		any_in_list = {
+			list = changed_obligations
+		}
+		trigger_if = { #If you're blocked we don't want to show anything else (we don't really use this for admin, but we'll keep the logic, just in case)
+			limit = {
+				scope:actor = {
+					subject_contract_is_blocked_from_modification = yes
+				}
+			}
+			scope:actor = {
+				subject_contract_is_blocked_from_modification = no
+			}
+		}
+		trigger_else = {
+			# There is no cooldown present - To make sure we somehow don't show both cooldowns at the same time, we split them into separate triggers
+			trigger_if = {
+				limit = {
+					scope:actor = {
+						has_variable = nomad_contract_cooldown
+					}
+				}
+				custom_tooltip = {
+					text = nomad_tributary_contract_cooldown_desc
+					scope:actor = {
+						NOT = { has_variable = nomad_contract_cooldown }
+					}
+				}
+			}
+			trigger_else = {
+				custom_tooltip = {
+					text = nomad_contract_request_cooldown_desc
+					scope:actor = {
+						NOT = { has_variable = nomad_contract_request_cooldown }
+					}
+				}
+			}
+
+			# You can afford the Gold cost
+			trigger_if = {
+				limit = {
+					NOT = {
+						scope:hook = yes
+					}
+				}
+				scope:actor = {
+					trigger_if = {
+						limit = { 
+							government_has_flag = government_is_nomadic
+							scope:recipient = { government_has_flag = government_is_nomadic }
+						}
+						domicile.herd >= domicile.major_herd_value
+					}
+					trigger_else = {
+						gold >= major_gold_value
+					}
+				}
+			}
+		}
+	}
+
+	auto_accept = {
+		custom_tooltip = {
+			text = nomad_vassal_force_obligation_change_desc
+			scope:hook = yes
+		}
+	}
+
+	on_accept = {
+		# Enact changes
+		scope:actor = {
+			send_interface_message = {
+				type = msg_vassal_contract_change
+				title = modify_vassal_contract_interaction_notification
+				right_icon = scope:recipient
+
+				# If you use a hook - Spend it
+				if = {
+					limit = { always = scope:hook }
+					use_hook = scope:recipient
+				}
+
+				# If you didn't use a hook, pay Gold
+				if = {
+					limit = {
+						NOT = {
+							scope:hook = yes
+						}
+					}
+					scope:actor = {
+						if = {
+							limit = { 
+								government_has_flag = government_is_nomadic
+								scope:recipient = { government_has_flag = government_is_nomadic }
+							}
+							pay_herd = {
+								target = scope:recipient
+								value = domicile.major_herd_value
+							}
+						}
+						else = {
+							pay_short_term_gold = {
+								target = scope:recipient
+								gold = major_gold_value
+							}
+						}
+					}
+				}
+
+				# Activate cooldown - To prevent liege from changing it too soon
+				hidden_effect = {
+					set_variable = {
+						name = nomad_contract_cooldown
+						value = yes
+						years = nomad_contract_cooldown_value
+					}
+				}
+
+				every_in_list = {
+					list = changed_obligations
+
+					save_scope_as = obligation
+
+					scope:actor = {
+						tributary_contract_set_obligation_level = {
+							type = scope:obligation.subject_contract_type
+							level = scope:obligation
+						}
+					}
+				}
+			}
+		}
+
+		# If there's a diarch involved, and they called in their change, that gets flagged.
+		diarch_changed_own_contract_effect = yes
+	}
+
+	on_decline = {
+		# Activate cooldown - You may only ask for it to be changed every so often (this mostly exists for MP, since you cannot send it to the AI unless they accept)
+		hidden_effect = {
+			scope:actor = {
+				set_variable = {
+					name = nomad_contract_request_cooldown
+					value = yes
+					years = nomad_contract_cooldown_value
+				}
+			}
+		}
+	}
+
+	# Send Options
+	# Hook
+	send_option = {
+		is_valid = {
+			scope:actor = {
+				has_usable_hook = scope:recipient
+			}
+		}
+		flag = hook
+		localization = SCHEME_HOOK
+	}
+	send_option = {
+		is_shown = {
+			scope:actor = { is_diarch_of_target = scope:recipient }
+		}
+		is_valid = {
+			scope:actor = {
+				trigger_if = {
+					limit = { has_variable_list = diarch_contract_rights_used_list }
+					NOT = {
+						is_target_in_variable_list = {
+							name = diarch_contract_rights_used_list
+							target = scope:recipient
+						}
+					}
+				}
+			}
+		}
+		flag = diarch
+		localization = CALL_IN_DIARCH_RIGHTS
+	}
+	should_use_extra_icon = {
+		scope:actor = { has_usable_hook = scope:recipient }
+	}
+	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
+	send_options_exclusive = no
+
+	ai_accept = {
+		base = -25
+
+		# Opinion Factor
+		opinion_modifier = {
+			who = scope:recipient
+			opinion_target = scope:actor
+			multiplier = 1
+			desc = AI_OPINION_REASON
+		}
+
+		modifier = {
+			add = {
+				add = scope:new_value
+				multiply = -25
+			}
+			desc = AI_CONTRACT_BALANCE
 		}
 	}
 }
