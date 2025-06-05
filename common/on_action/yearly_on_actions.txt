@@ -57,17 +57,14 @@ yearly_global_pulse = {
 				}
 				modifier = {
 					add = 3
-					#current_date > 1200.1.1
 					current_date > 660.1.1
 				}
 				modifier = {
 					add = 5
-					#current_date > 1220.1.1
 					current_date > 690.1.1
 				}
 				modifier = {
 					add = 5
-					#current_date > 1235.1.1
 					current_date > 715.1.1
 				}
 				#add_to_global_variable_list = {
@@ -100,19 +97,14 @@ yearly_global_pulse = {
 					chance = 1
 					modifier = {
 						add = 9
-						#current_date > 1200.1.1
 						current_date > 660.1.1
 					}
 					modifier = {
-						#add = 10
 						add = 5
-						#current_date > 1220.1.1
 						current_date > 690.1.1
 					}
 					modifier = {
-						#add = 20
 						add = 10
-						#current_date > 1235.1.1
 						current_date > 715.1.1
 					}
 					modifier = {
@@ -170,6 +162,29 @@ yearly_playable_pulse = {
 				has_dlc_feature = royal_court
 			}
 			assign_court_type_traits_to_courtiers_effect = yes
+		}
+		# Yurt domicile bonuses distribution
+		if = {
+			limit = {
+				government_has_flag = government_is_nomadic
+				exists = domicile
+			}
+			#Dynasty of Many Khans
+			mpo_yearly_dynasty_of_many_khans_effect = yes
+			
+			#Yearly yurt rewards
+			domicile ?= {
+				if = {
+					limit = {				
+						OR = {
+							has_domicile_building_or_higher = family_yurt_01
+							has_domicile_building_or_higher = mystical_yurt_01
+							has_domicile_building_or_higher = court_yurt_01
+						}
+					}
+					mpo_yearly_yurt_rewards_effect = yes
+				}
+			}
 		}
 
 		# Yearly house head opinion update: to change into only one log maybe?
@@ -476,7 +491,243 @@ yearly_playable_pulse = {
 			}
 			set_location_to_default = yes
 		}
-
+		if = {	
+			limit = {
+				NOT = {
+					top_liege ?= {
+						is_confederation_member = yes
+					}
+				}
+				has_character_modifier = mpo_confederation_member_modifier
+			}
+			remove_character_modifier = mpo_confederation_member_modifier
+		}
+		# Stray player Herders get turned into Nomads
+		if = {
+			limit = {
+				is_ai = no
+				government_has_flag = government_is_herder
+			}
+			every_held_title = {
+				limit = {
+					tier = tier_county
+					title_province = {
+						has_holding_type = herder_holding
+					}
+				}
+				title_province = {
+					set_holding_type = nomad_holding
+				}
+			}
+			change_government = nomad_government
+		}
+		
+		######################
+		# Various safeguarding against realm setups with landless participants
+		######################
+		if = {
+			limit = {
+				is_landed = no
+			}
+			
+			save_scope_as = scoped_ruler
+			
+			######################
+			# Repair realms with Landless participants having vassals
+			######################
+			
+			if = {
+				limit = {
+					any_sub_realm_county = {
+						is_landless_type_title = no
+					}
+				}
+				
+				######################
+				# Landless Lieges with Landed Vassals should take a County from a Vassal
+				######################
+				
+				if = {
+					limit = { # Make sure we repair realms in the right order
+						OR = {
+							this = top_liege
+							liege ?= {
+								is_landed = yes
+							}
+						}
+					}
+					create_title_and_vassal_change = {
+						type = revoked
+						save_scope_as = change
+					}
+					random_sub_realm_county = {
+						limit = {
+							is_landless_type_title = no
+						}
+						weight = {
+							modifier = {
+								add = 100
+								this = scope:scoped_ruler.primary_title.title_capital_county
+							}
+							modifier = {
+								add = -100
+								holder = {
+									is_ai = no
+								}
+							}
+						}
+						change_title_holder = {
+							holder = scope:scoped_ruler
+							change = scope:change
+						}
+					}
+					resolve_title_and_vassal_change = scope:change
+					
+					######################
+					# Landless vassals with Landed vassals should take something and become landed
+					######################
+					
+					every_vassal = {
+						limit = {
+							is_landed = no
+							any_sub_realm_county = {
+								is_landless_type_title = no
+							}
+						}
+						save_scope_as = vassal_ruler
+						create_title_and_vassal_change = {
+							type = revoked
+							save_scope_as = change
+						}
+						random_sub_realm_county = {
+							limit = {
+								is_landless_type_title = no
+							}
+							weight = {
+								modifier = {
+									add = 100
+									this = scope:vassal_ruler.primary_title.title_capital_county
+								}
+								modifier = {
+									add = -100
+									holder = {
+										is_ai = no
+									}
+								}
+							}
+							change_title_holder = {
+								holder = scope:vassal_ruler
+								change = scope:change
+							}
+						}
+						resolve_title_and_vassal_change = scope:change
+					}
+				}
+			}
+			
+			######################
+			# Destroy the AI's landless nomad vassals, as they'll just bloat the game for no gain
+			######################
+			
+			else_if = {
+				limit = {
+					is_ai = yes
+					top_liege != this
+					government_has_flag = government_is_nomadic
+					is_landed = no
+					liege = { is_ai = yes }
+				}
+				every_held_title = {
+					limit = {
+						is_nomad_title = yes
+					}
+					scope:scoped_ruler = {
+						destroy_title = prev
+					}
+				}
+			}
+			# Players become independent so they can migrate
+			else_if = {
+				limit = {
+					is_ai = no
+					top_liege != this
+					government_has_flag = government_is_nomadic
+					is_landed = no
+					liege = { is_ai = yes }
+				}
+				create_title_and_vassal_change = {
+					type = independency
+					save_scope_as = change
+					add_claim_on_loss = no
+				}
+				becomes_independent = { change = scope:change }
+				resolve_title_and_vassal_change = scope:change
+			}
+			
+			######################
+			# AI's with a Nomadic Camp title that somehow end up with the wrong government and landless should be purged
+			######################
+			
+			if = {
+				limit = {
+					NOT = { government_has_flag = government_is_nomadic }
+					any_held_title = {
+						is_nomad_title = yes
+					}
+				}
+				save_scope_as = scoped_ruler
+				if = {
+					limit = {
+						is_ai = yes
+					}
+					every_held_title = {
+						limit = {
+							is_nomad_title = yes
+						}
+						scope:scoped_ruler = {
+							destroy_title = prev
+						}
+					}
+				}
+				# Players are saved
+				else_if = {
+					limit = {
+						is_ai = no
+					}
+					change_government = nomad_government
+				}
+			}
+			
+			######################
+			# Landless nomads outside any migration area? Cleanup.
+			######################
+			
+			if = {
+				limit = {
+					is_ai = yes
+					top_liege = this
+					NOT = {
+						any_character_situation = {
+							any_participant_group = {
+								participant_group_type = nomad_rulers_capital
+								participant_group_has_character = scope:scoped_ruler
+							}
+						}
+					}
+					any_held_title = {
+						is_nomad_title = yes
+					}
+				}
+				every_held_title = {
+					limit = {
+						is_nomad_title = yes
+					}
+					scope:scoped_ruler = {
+						destroy_title = prev
+					}
+				}
+			}
+		}
 		# Warcraft
 		every_in_global_list = {
 			variable = union_blocked_characters
@@ -512,12 +763,6 @@ three_year_playable_pulse = {
 	events = {
 		adultery.0001 #Suspected spouse/soulmate of cheating (increased chance when there is a lover, but can also trigger otherwise)
 	}
-	effect = {
-		if = {
-			limit = { perk_points > 0 }
-			set_long_lived_lifestyle_xp_slowdown_event_effect = yes
-		}
-	}
 	random_events = {
 		800 = 0
 		
@@ -527,6 +772,188 @@ three_year_playable_pulse = {
 		# Warcraft
 		# 200 = global_culture.3011
 		# 600 = global_culture.3012
+	}
+	effect = {
+		if = { # Warcraft
+			limit = { perk_points > 0 }
+			set_long_lived_lifestyle_xp_slowdown_event_effect = yes
+		}
+		if = { # Nomadic herd starves if you're landless
+			limit = {
+				is_landed = no
+				government_has_flag = government_is_nomadic
+				exists = domicile
+				is_migrating = no
+				is_at_war = no
+			}
+			if = {
+				limit = {
+					domicile.herd > 500
+				}
+				change_current_weight = -25
+				every_courtier = {
+					change_current_weight = -25
+				}
+				send_interface_toast = {
+					type = event_toast_effect_bad
+					title = herd_starvation_title
+					left_icon = root
+					custom_tooltip = herd_starvation_custom_tooltip
+					domicile ?= {
+						change_herd = {
+							value = root.domicile.herd
+							divide = 3
+							min = 500
+							if = {
+								limit = {
+									root = { is_ai = yes }
+								}
+								min = 1000
+							}
+							multiply = -1
+						}
+					}
+				}
+			}
+			clean_up_ai_nomad_effect = yes
+		}
+		if = { # Various nomadic safeguards
+			limit = {
+				is_landed = yes
+				NOR = {
+					government_has_flag = government_is_nomadic
+					government_has_flag = government_is_herder
+				}
+			}
+			
+			save_scope_as = scoped_ruler
+			
+			######################
+			# Nomadic titles that end up with non-nomadic holders are destroyed
+			######################
+			if = {
+				limit = {
+					any_held_title = {
+						is_nomad_title = yes
+					}
+				}
+				every_held_title = {
+					limit = {
+						is_nomad_title = yes
+					}
+					scope:scoped_ruler = {
+						destroy_title = prev
+					}
+				}
+			}
+			
+			######################
+			# Anyone who *only* holds Nomadic lands should become Nomadic
+			######################
+			
+			if = {
+				limit = {
+					highest_held_title_tier >= tier_county
+					capital_province = {
+						OR = {
+							has_holding_type = nomad_holding
+							has_holding_type = herder_holding
+						}
+					}
+					NOT = {
+						any_held_title = {
+							tier = tier_county
+							is_landless_type_title = no
+							title_province = {
+								NOR = {
+									has_holding_type = nomad_holding
+									has_holding_type = herder_holding
+								}
+							}
+						}
+					}
+				}
+				every_held_title = {
+					limit = {
+						tier = tier_county
+						title_province = {
+							has_holding_type = herder_holding
+						}
+					}
+					title_province = {
+						set_holding_type = nomad_holding
+					}
+				}
+				change_government = nomad_government
+				
+				# We don't want overly-funky nomad camps to spring up, so set an appropriate culture/faith
+				if = {
+					limit = {
+						domicile.domicile_culture != capital_county.culture
+					}
+					domicile = {
+						set_domicile_culture = scope:scoped_ruler.capital_county.culture
+					}
+				}
+				if = {
+					limit = {
+						domicile.domicile_faith != capital_county.faith
+					}
+					domicile = {
+						set_domicile_faith = scope:scoped_ruler.capital_county.faith
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				government_has_flag = government_is_nomadic
+				is_ruler = yes
+			}
+			
+			save_scope_as = scoped_ruler
+			
+			######################
+			# If you end up losing your Nomadic Capital, get a new one
+			######################
+			
+			if = {
+				limit = {
+					NOT = {
+						any_held_title = {
+							is_nomad_title = yes
+						}
+					}
+				}
+				create_nomad_title = {
+					name = nomad_title_name
+					holder = scope:scoped_ruler
+					government = nomad_government
+					save_scope_as = new_nomad_title
+				}
+				domicile ?= {
+					add_domicile_building = yurt_main_02
+					add_domicile_building = yurt_main_03
+					add_random_yurt_external_building_effect = yes
+					add_random_yurt_external_building_effect = yes
+					upgrade_random_yurt_external_building_effect = yes
+					upgrade_random_yurt_external_building_effect = yes
+				}
+			}
+			
+			######################
+			# If your nomadic capital domicile somehow gets lost, move it to your capital province
+			######################
+			
+			if = {
+				limit = {
+					is_at_war = no
+					exists = domicile
+					domicile.domicile_location != capital_province
+				}
+				domicile = { move_domicile = scope:scoped_ruler.capital_province }
+			}
+		}
 	}
 }
 
@@ -759,6 +1186,10 @@ quarterly_playable_pulse = {
 		# EP1 maintenance pulses
 		inspiration_maintenance_quarterly_pulse
 
+		# MPO
+		mpo_season_events_quarterly_playable_pulse
+		mpo_tributary_check_pulse
+
 		# Warcraft
 		# magic_lifestyles_progress_pulse - TODO
 
@@ -790,20 +1221,21 @@ random_yearly_playable_pulse = {
 		6 = on_yearly_events
 		5 = fp1_yearly_events
 		#4 = fp2_yearly_events
-		2 = fp3_yearly_events
+		4 = fp3_yearly_events
 		2 = bp1_yearly_events
 		#6 = ep3_yearly_events_byzantium
 		6 = ep3_yearly_events_admin
+		10 = mpo_yearly_events_nomads
 	}
 	effect = {
 		# Special Holy Seeds drops
 		if = {
 			limit = {
 				has_dlc_feature = legends
-				OR = {
+				#OR = {
 					has_trait = theologian
 					#has_trait = sayyid
-				}
+				#}
 				#NOT = { has_game_rule = historical_legends_only }
 			}
 			random = {
@@ -869,6 +1301,12 @@ random_yearly_playable_pulse = {
 		clan_events_on_action
 		#ep3_akolouthos_on_action
 		#delay = { days = { 25 44 } }
+		mpo_migration_contract
+		delay = { days = { 1 180 } }
+		mpo_migration_contract
+		delay = { days = { 181 360 } }
+		mpo_de_jure_shift
+		delay = { days = { 1 60 } }
 	}
 }
 
@@ -900,6 +1338,21 @@ random_yearly_everyone_pulse = {
 # Root is the character
 five_year_everyone_pulse = {
 	effect = {
+		# Herders may become Seasoned Pastoralists
+		root = {
+			if = {
+				limit = {
+					government_has_flag = government_is_herder
+					NOT = { has_trait = lifestyle_seasoned_pastor }
+					age >= age_30_value
+				}
+				random = {
+					chance = 20
+					add_trait = lifestyle_seasoned_pastor
+				}
+			}
+		}
+				
 		root = {
 			if = { # Non-lowborn Barons should marry and produce a family
 				limit = {
@@ -1153,7 +1606,6 @@ on_yearly_events = {
 		
 		# Warcraft
 		# 50 = yearly.3061	#Cagots
-		
 		5 = yearly.3071		#A terrible nightmare
 		5 = party_baron.0001 # Start the Party Baron story cycle
 
@@ -1485,12 +1937,12 @@ on_yearly_events = {
 		100 = trait_specific.8501 # Someone mocks your lisp
 		
 		# Warcraft
-		# FP2 - Fate of Iberia Events
+		## FP2 - Fate of Iberia Events
 		#180 = fp2_yearly.2020	# Horchata colonialism event
 		#160 = fp2_yearly.8000	# Burning the Vineyards
 		#180 = fp2_yearly.8001	# Assembling the Cortes
-		#180 = fp2_yearly.8002	# A Dietary Dilemma
-		#180 = fp2_yearly.8003	# Flight of Fancy				
+		#180 = fp2_yearly.8002	# A Dietary Dilemma 
+		#180 = fp2_yearly.8003	# Flight of Fancy
 		#180 = fp2_yearly.8004	# Translation School 
 		#180 = fp2_yearly.8005	# Under the Stone Pine 
 		#180 = fp2_yearly.8006	# Saqaliba Settlers 
@@ -1509,15 +1961,10 @@ on_yearly_events = {
 		#300 = fp2_yearly.4009 	# Visiting the Malato Tree
 		#150 = fp2_yearly.4010 	# Finding a Verraco
 		#300 = fp2_yearly.3000 	# Neighboring Muslims are growing rice, adopt the practice yourself?
-		#150 = fp2_yearly.4007 	# Finding a shell on the road to Santiago
-		#150 = fp2_yearly.4008 	# Folk stories around the fireside
-		#300 = fp2_yearly.4009 	# Visiting the Malato Tree
-		#150 = fp2_yearly.4010 	# Finding a Verraco
+		#150 = fp2_yearly.3001 	# Choosing your epitaph
 		#150 = fp2_yearly.3002 	# And They Were Roommates
-		#150 = fp2_yearly.3003 	# A Flavorful Evening 
-		#150 = fp2_yearly.3001	# Choosing your epitaph
-		#180 = fp2_struggle.2003 #Band of Lost Birds
-		# End of Warcraft
+		#150 = fp2_yearly.3003 	# A Flavorful Evening
+		#180 = fp2_struggle.2003 # Band of Lost Birds
 
 		#BP1 - Bontent Pack One Events
 		100 = bp1_yearly.1000 # Best friend introduces you to a new hobby
@@ -1840,13 +2287,77 @@ on_yearly_events = {
 		250 = ep3_landless_admin.1030 # You get offered a hook on your liege
 		250 = ep3_landless_admin.1040 # Lie about a rival candidate
 		250 = ep3_landless_admin.1050 # There's something in your basement
-		
+
 		# EP3 - Eparch events
 		500 = ep3_eparch_event.0001
 		500 = ep3_eparch_event.0005
 		500 = ep3_eparch_event.0010
 		500 = ep3_eparch_event.0015
 		500 = ep3_eparch_event.0020
+
+		# MPO - Nomadic Rulers Events
+		#100 = nomad_events.0001 # Starts the Achmach Fanakiti event chain
+		250 = mpo_nomad_events.1030 # You choose a sport for your son to tryhard
+		200 = mpo_nomad_events.1020 # Your kin wants to break off from your tribe
+		250 = court_astrologer_events.0002 # Your Astrologer suggest a better place to migrate to
+		250 = nomad_events.0100 # Two vassals have a herd dispute
+		250 = nomad_events.0120 # You take an evening ride with someone
+		250 = nomad_events.0130 # A merchant offers you some herd
+		#150 = nomad_events.0140 # A foreign merchant passes by your capital and asks to stay
+		250 = nomad_events.0150 # You share a drink with a courtier
+		300 = nomad_events.0160 # Your spouse tells you they admire you
+		300 = nomad_events.0170 # Your spouse is scared of your high dread
+		250 = nomad_events.0180 # Random courtier laughs at your child low prowess
+		250 = nomad_events.0190 # Reminisce of a past memory
+		250 = nomad_events.0200 # Someone tells you of a dream they had
+		250 = nomad_events.0220 # Spouse scolds you for your low Prowess
+		250 = nomad_events.0230 # Spouse is feeling homesick
+		250 = nomad_events.0240 # Neighbouring Nomad's herd shows up in your capital
+		200 = nomad_events.0250 # Enthusiastic priest asks you to convert
+		150 = nomad_events.0260 # Distant priest arrives at your court
+		150 = mpo_nomad_events.1050 # A neighboring herder is salty at you
+		300 = mpo_nomad_events.1060 # You trade with non-nomad neighbors
+		100 = mpo_nomad_events.1070 #You wake up after having ridden off alone
+		200 = mpo_nomad_events.1080 #Neighbor is intruding on your land hunting a criminal
+		200 = mpo_nomad_events.1100 #You adapt your herds to the local terrain
+		200 = mpo_nomad_events.1110 #Your capital is by a place you can fish
+		#250 = mpo_events_tova.0025 # You are invited to a knucklebone shooting game
+		250 = mpo_events_tova.0030 # No astrologer? Someone comes to you with a vision
+		250 = mpo_events_tova.0035 # Anda comes to you with marital concerns
+		250 = mpo_events_tova.0045 # A Treasured Friend
+		250 = nomad_events_oltner.0001 # Hunt sighting in your lands
+		250 = nomad_events_oltner.0002 # Bird sighting in your lands
+		250 = nomad_events_oltner.0003 # Dangerous Hunt sighting in your lands
+		#150 = nomad_events_oltner.0004 # Zud - Dangerous animals eat your herd
+		#250 = nomad_events_oltner.0005 # Good season! Animals aplenty.
+		250 = nomad_events_oltner.0006 # You are offered a skilled Master of the Chase from a tributary
+		250 = nomad_events_oltner.0007 # You are offered a falcon from a tributary
+		50 = mpo_bb_events.0001 # blood brother comes by for a wrestling match
+		100 = mpo_events_anna.0001 #Train Them Young - teach a child how to ride a horse
+		250 = mpo_events_anna.0005 #Stories from the Past - choose a story to be told
+		250 = mpo_events_anna.0010 #Whistle Like an Arrow - being taught how to whistle as a child
+		250 = mpo_events_ariana.0001 # Nest Sighting
+		50 = mpo_events_ariana.0010 # Your Heir wants to convert to a different faith
+		250 = mpo_events_ariana.0020 # A spouse is suspicious of a councillor
+		250 = mpo_events_ariana.0050 # A family member risks being branded
+		150 = mpo_events_ariana.0060 # A child in your family spots an eagles nest with treasure
+		#250 = mpo_events_ariana.0080 # Someone tells you about a magical tree
+	  	150 = pet_animal.3050 # Your rival has an eagle
+		250 = mpo_events_ariana.0090 # Your child wants to be a herder
+		250 = mpo_events_ariana.0100 # A non-martial gender family member is very skilled
+		150 = mpo_events_ariana.0110 # Your court astrologer wants you to move your capital
+		
+		# MPO - Season Specific Events
+		#500 = mpo_nomads_season_events.0001 # Herders robbed during drought
+		#500 = mpo_nomads_season_events.0005 # A hungry neighbour asks for herd
+		#500 = mpo_nomads_season_events.0010 # A well-to-do neighbor offers herd
+		#500 = mpo_nomads_season_events.0015 # Two Kurultai members fight over food
+		#200 = nomad_events.0110 # A snow wolf attacks a child (weighted up during white zud/cold zud)
+		500 = nomad_events.0210 # Spouse/Child is worried about low herd
+		200 = mpo_nomad_events.1120 #It's winter. wolves are hungry for your herd (weighted up during white zud/cold zud)
+		
+		# MPO - Settled Rulers Events
+		#500 = mpo_flavor_events_settled.0010 # Horse Lord at your door
 		
 		### Warcraft
 		500 = cen_kal.1000

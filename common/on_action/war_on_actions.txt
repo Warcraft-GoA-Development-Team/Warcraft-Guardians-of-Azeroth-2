@@ -584,6 +584,47 @@ on_war_started = {
 			# 		# }
 			# 	}
 			# }
+
+			#Notify defender's tributaries and suzerains
+			every_tributary = {
+				send_interface_toast = {
+					type = msg_war_declared_on_suzerain
+					title = declare_war_interaction_notification
+
+					left_icon = scope:defender
+					right_icon = scope:attacker
+
+					custom_tooltip = declare_war_interaction_notification_tooltip
+				}
+			}
+			if = {
+				limit = { suzerain != this } # is a tributary of someone else, notify them
+				suzerain = {
+					send_interface_toast = {
+						type = msg_war_declared_on_tributary
+						title = declare_war_interaction_notification
+
+						left_icon = scope:defender
+						right_icon = scope:attacker
+
+						custom_tooltip = declare_war_interaction_notification_tooltip
+					}
+				}
+				if = {
+					limit = { suzerain != top_suzerain } # suzerain is a tributary to a top_suzerain, notify them too
+					top_suzerain = {
+						send_interface_toast = {
+							type = msg_war_declared_on_tributary
+							title = declare_war_interaction_notification
+
+							left_icon = scope:defender
+							right_icon = scope:attacker
+
+							custom_tooltip = declare_war_interaction_notification_tooltip
+						}
+					}
+				}
+			}
 		}
 		#Admin governors notice war has been dragging on event
 		fire_governor_long_war_response_events = yes
@@ -628,6 +669,15 @@ on_war_started = {
 					ATTACKER = scope:attacker
 					DEFENDER = scope:defender
 				}
+			}
+		}
+		#Confederation members automatically join defensive wars
+		scope:defender = {
+			if = {
+				limit = {
+					is_confederation_member = yes
+				}
+				mpo_confederation_join_defensive_war_effect = yes
 			}
 		}
 	}
@@ -1033,54 +1083,31 @@ on_war_won_attacker = { # As in, won BY attacker. Only one of the two on_actions
 		}
 
 		# EP3 - Become Adventurer - Conquest/Deposition
-		scope:defender = {
-			if = { # Only fire for characters who will game over otherwise
-				limit = {
-					# Do I or any vassal hold a county or barony outside of the lost titles
-					NOR = {
-						any_held_title = {
-							NOT = { is_in_list = target_titles }
-							tier <= tier_county
-						}
-						any_vassal = {
-							any_held_title = {
-								NOT = { is_in_list = target_titles }
-								tier <= tier_county
-							}
-						}
-					}
-				}
-				trigger_event = ep3_laamps.0002
-			}
-		}
-		#if a holder of contested titles wasn't the defender, but lost all titles through this war, make them laamp 
-		every_in_list = {
-			list = target_titles
-			ordered_past_holder_reversed = {
-				position = 1
-				save_scope_as = last_holder
-			}
-			scope:last_holder ?= {
-				if = {
+		# Previous holders of any contested title, which lost all titles through this war, can become landless adventurers 
+		scope:war.casus_belli = {
+			every_in_list = {
+				list = target_titles
+				every_in_de_jure_hierarchy = {
 					limit = {
-						has_ep3_dlc_trigger = yes
-						is_ai = no
-						is_ruler = no
-					 	is_valid_for_laampdom = yes
+						tier >= tier_county
+						recent_history = { days <= 1 } #make sure that the titles changed hands
 					}
-					# Plus for our memory variable.
-					prev = { save_scope_as = lost_primary_title }
-					custom_tooltip = {
-						text = laamp_may_become_adventurer_tt
-						trigger_event = {
-							id = ep3_laamps.0002
-							delayed = yes
+					save_scope_as = lost_primary_title
+					previous_holder ?= {
+						if = {
+							limit = {
+								is_landed = no #make sure that they actually lost all the land
+							}
+							save_scope_as = title_loser
+							prev.holder = {
+								save_scope_as = new_holder #save the new title holder here, so that it is passed down to the setup event to trigger the correct follow up event
+							}
+							trigger_event = ep3_laamps.0002
 						}
 					}
 				}
 			}
 		}
-		
 		# EP3 - Is it valid for a Byzantine triumph?
 		# if = {
 		# 	limit = {
@@ -1143,6 +1170,36 @@ on_war_won_attacker = { # As in, won BY attacker. Only one of the two on_actions
 		# 		}
 		# 	}
 		# }
+
+		#Destroy weakened confederation
+		if = {
+			limit = {
+				scope:defender = {
+					is_confederation_member = yes
+					any_vassal = {
+						count < 1
+						highest_held_title_tier >= tier_county
+					}
+				}
+			}
+			scope:defender = {
+				confederation = {
+					disband_confederation = yes
+				}
+				if = {
+					limit = {
+						has_character_modifier = mpo_confederation_member_modifier
+					}
+					remove_character_modifier = mpo_confederation_member_modifier
+				}
+			}
+		}
+
+		#allies befriending the war leader if they contributed, moved from join_war_interaction on_accept
+		allies_progress_towards_friendship_effect = yes
+
+		#Save variables for blood brothers
+		mpo_save_potential_blood_brother_war_allies_effect = yes
 	}
 }
 
@@ -1153,7 +1210,41 @@ on_war_won_defender = {
 		scope:defender = { save_scope_as = winner }
 		# Warcraft
 		ascension_checker_effect = { SOURCE = war }
-# Warcraft - leaving this commented so it can be reused for if you beat the Horde, Scourge etc.
+
+		# Give a humiliating memory to nomadic attackers for losing a war they started
+		if = {
+			limit = {
+				scope:loser = {
+					government_has_flag = government_is_nomadic
+					root.war.attacker_war_score < 50
+				}
+			}
+			scope:loser = {
+				create_character_memory = {
+					type = nomad_showed_weakness_in_war
+					participants = {
+						victor = scope:winner
+					}
+				}
+			}
+		}
+		# Give a memory to defending tributaries whose suzerain came to their aid when they were attacked
+		if = {
+			limit = {
+				scope:winner.suzerain != scope:winner # winner is a tributary
+				root.war = { is_defender = scope:winner.suzerain } # the suzerain was a defender in the war
+			}
+			scope:winner = {
+				create_character_memory = {
+					type = suzerain_defended_me_in_war
+					participants = {
+						suzerain = scope:winner.suzerain
+						loser = scope:loser
+					}
+				}
+			}
+		}
+		# Warcraft - leaving this commented so it can be reused for if you beat the Horde, Scourge etc.
 		# Give out a legend seed for beating ya boi G Khan
 		#if = {
 		#	limit = {
@@ -1289,6 +1380,7 @@ on_war_won_defender = {
 				}
 			}
 		}
+		# Warcraft - Removing Struggle Catalysts
 		
 		scope:attacker = {
 			create_character_memory = {
@@ -1376,8 +1468,7 @@ on_war_won_defender = {
 			}
 		}
 
-		#Ep3 - Is it valid for a Byzantine triumph?
-		
+		#Warcraft - No Byzantines here
 		# EP3 - War Group Contracts
 		war_task_contracts_completion_effect = yes
 		# EP3 - LAAMPS hired as mercenaries
@@ -1437,6 +1528,8 @@ on_war_white_peace = {
 				}
 			}
 			fp2_contract_assistance_war_pay_effect = yes # Pay out Contract Assistance money
+
+			# Warcraft - Removing Struggles
 		}
 		scope:attacker = {
 			create_character_memory = {
@@ -1499,6 +1592,9 @@ on_war_white_peace = {
 		ep3_admin_war_aftermath_effect = yes
 		#allies befriending the war leader if they contributed, moved from join_war_interaction on_accept
 		allies_progress_towards_friendship_effect = yes
+
+		#Save variables for blood brothers
+		mpo_save_potential_blood_brother_war_allies_effect = yes
 	}
 }
 
@@ -1557,5 +1653,8 @@ on_war_invalidated = {
 		war_task_contracts_completion_effect = yes
 		# EP3 - LAAMPS hired as mercenaries
 		laamp_as_mercenary_payout_effect = yes
+
+		#Save variables for blood brothers
+		mpo_save_potential_blood_brother_war_allies_effect = yes
 	}
 }
