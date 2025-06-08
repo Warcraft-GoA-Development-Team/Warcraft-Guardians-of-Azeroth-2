@@ -962,6 +962,7 @@ successful_popular_revolt_outcome_effect = {
 					this.primary_title.tier < $FACTION_LEADER$.primary_title.tier
 					this.primary_title.tier >= tier_county
 					NOT = { this = $FACTION_LEADER$ }
+					is_landless_adventurer = no
 				}
 				change_liege = {
 					liege = $FACTION_LEADER$
@@ -972,6 +973,7 @@ successful_popular_revolt_outcome_effect = {
 			else_if = {
 				limit = {
 					NOT = { this = $FACTION_LEADER$ }
+					is_landless_adventurer = no
 				}
 				hidden_effect = {
 					becomes_independent = {
@@ -1100,6 +1102,365 @@ create_popular_revolt_title_effect = {
 			}
 			set_color_from_title = scope:base_county
 		}
+	}
+}
+
+successful_nomadic_revolt_outcome_effect = {
+	hidden_effect = {
+		# Save scopes for later usage.
+		$FACTION_LEADER$ = {
+			add_character_flag = successful_nomad_revolt_leader
+			joined_faction = {
+				save_scope_as = nomadic_faction
+				every_faction_member = {
+					add_to_list = faction_members
+				}
+				faction_target = {
+					save_scope_as = faction_target
+				}
+			}	
+			if = {
+				limit = {
+					has_variable = peasant_title
+					exists = this.var:peasant_title.holder
+				}
+				destroy_title = this.var:peasant_title
+			}
+		}
+		# Compile a list of all duchies and counties belonging to the faction.
+		scope:nomadic_faction = {
+			every_faction_county_member = {
+				add_to_list = siezed_counties
+				duchy = {
+					every_de_jure_county = { # Seize entire duchies
+						limit = {
+							holder.top_liege = scope:faction_target
+							NOT = { is_in_list = siezed_counties }
+						}
+						add_to_list = siezed_counties
+					}
+					if = {
+						limit = {
+							NOT = { is_in_list = siezed_duchies }
+						}
+						add_to_list = siezed_duchies
+					}
+				}
+			}
+		}
+
+		# Select a 'capital' county for the faction leader.
+		scope:nomadic_faction = {
+			ordered_in_list = {
+				list = siezed_counties
+				order_by = {
+					value = county_fertility
+
+					multiply = {
+						value = 1
+						if = {
+							limit = { culture = $FACTION_LEADER$.culture }
+							add = 200
+						}
+						if = {
+							limit = { faith = $FACTION_LEADER$.faith }
+							add = 50
+						}
+					}
+				}
+				save_scope_as = capital_county
+			}
+		}
+		
+		# Give the leader the counties they should have and make them a nomad.
+		$FACTION_LEADER$ = {
+			add_to_list = independent_nomads
+			change_government = nomad_government
+		}
+		create_title_and_vassal_change = {
+			type = conquest_populist
+			save_scope_as = change
+			add_claim_on_loss = yes
+		}
+		scope:capital_county = {
+			change_title_holder = {
+				holder = $FACTION_LEADER$
+				change = scope:change
+				take_baronies = no
+			}
+			add_to_list = divided_titles
+			duchy = {
+				every_de_jure_county = { # Seize entire duchies
+					limit = {
+						is_in_list = siezed_counties
+						NOT = { is_in_list = divided_titles }
+					}
+					change_title_holder = {
+						holder = $FACTION_LEADER$
+						change = scope:change
+						take_baronies = no
+					}
+					add_to_list = divided_titles
+				}
+				if = {
+					limit = {
+						OR = {
+							NOT = { exists = holder }
+							trigger_if = {
+								limit = { exists = holder }
+								holder.top_liege = scope:faction_target
+							}
+						}
+						NOT = { is_in_list = divided_titles }
+					}
+					change_title_holder = {
+						holder = $FACTION_LEADER$
+						change = scope:change
+					}
+					add_to_list = divided_titles
+				}
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+		
+		while = {
+			limit = {
+				any_in_list = {
+					list = siezed_counties
+					NOT = {
+						is_in_list = divided_titles
+					}
+				}
+			}
+			random_in_list = {
+				list = siezed_counties
+				limit = {
+					NOT = {
+						is_in_list = divided_titles
+					}
+				}
+				save_scope_as = handout_county
+				hidden_effect = {
+					create_character = {
+						location = scope:handout_county.title_province
+						template = nomadic_faction_leader_template
+						faith = scope:handout_county.faith
+						culture = scope:handout_county.culture
+						dynasty = generate
+						gender_female_chance = {
+							if = {
+								limit = { scope:handout_county.faith = { has_doctrine = doctrine_gender_male_dominated } }
+								add = 0
+							}
+							else_if = {
+								limit = { scope:handout_county.faith = { has_doctrine = doctrine_gender_female_dominated } }
+								add = 100
+							}
+							else = {
+								add = 50
+							}
+						}
+						save_scope_as = new_nomad
+					}
+					scope:new_nomad = {
+						add_to_list = independent_nomads
+					}
+				}
+				create_title_and_vassal_change = {
+					type = conquest_populist
+					save_scope_as = change
+					add_claim_on_loss = yes
+				}
+				scope:handout_county = {
+					change_title_holder = {
+						holder = scope:new_nomad
+						change = scope:change
+						take_baronies = no
+					}
+					add_to_list = divided_titles
+					duchy = {
+						every_de_jure_county = { # Seize entire duchies
+							limit = {
+								is_in_list = siezed_counties
+								NOT = { is_in_list = divided_titles }
+							}
+							change_title_holder = {
+								holder = scope:new_nomad
+								change = scope:change
+								take_baronies = no
+							}
+							add_to_list = divided_titles
+						}
+						if = {
+							limit = {
+								OR = {
+									NOT = { exists = holder }
+									trigger_if = {
+										limit = { exists = holder }
+										holder.top_liege = scope:faction_target
+									}
+								}
+								NOT = { is_in_list = divided_titles }
+							}
+							change_title_holder = {
+								holder = scope:new_nomad
+								change = scope:change
+							}
+							add_to_list = divided_titles
+						}
+					}
+				}
+				resolve_title_and_vassal_change = scope:change
+			}
+		}
+
+		# Make sure everyone is independent
+		create_title_and_vassal_change = {
+			type = conquest_populist
+			save_scope_as = change
+			add_claim_on_loss = yes
+		}
+		every_in_list = {
+			list = independent_nomads
+			limit = {
+				is_independent_ruler = no
+			}
+			hidden_effect = {
+				becomes_independent = {
+					change = scope:change
+				}
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+		
+		# Set them up for success
+		every_in_list = {
+			list = independent_nomads
+			
+			hidden_effect = {
+				save_temporary_scope_as = nomad_becoming_independent
+				every_held_title = {
+					limit = {
+						tier = tier_county
+					}
+					if = {
+						limit = {
+							title_province = {
+								has_holding_type = herder_holding
+							}
+						}
+						title_province = {
+							set_holding_type = nomad_holding
+						}
+					}
+					add_county_modifier = {
+						modifier = county_increased_opinion_modifier
+						years = 25
+					}
+				}
+				if = {
+					limit = {
+						gold < 50
+					}
+					add_gold = 150
+				}
+				if = {
+					limit = {
+						is_ruler = yes
+						NOT = {
+							government_has_flag = government_is_nomadic
+						}
+					}
+					change_government = nomad_government
+				}
+				if = {
+					limit = {
+						NOT = {
+							any_held_title = {
+								is_nomad_title = yes
+							}
+						}
+					}
+					save_scope_as = holder
+					create_nomad_title = {
+						name = nomad_title_name
+						holder = scope:holder
+						government = nomad_government
+						save_scope_as = new_nomad_title
+					}
+				}
+				if = {
+					limit = {
+						NOT = { has_realm_law = nomadic_authority_1 }
+					}
+					add_realm_law_skip_effects = nomadic_authority_1
+				}
+				if = {
+					limit = {
+						highest_held_title_tier >= tier_duchy
+						NOT = { has_realm_law = nomadic_authority_2 }
+					}
+					if = {
+						limit = {
+							has_realm_law = nomadic_authority_1
+						}
+						remove_realm_law = nomadic_authority_1
+						add_realm_law_skip_effects = nomadic_authority_2
+					}
+				}
+				if = { limit = { has_realm_law = crown_authority_0 } remove_realm_law = crown_authority_0 }
+				if = { limit = { has_realm_law = crown_authority_1 } remove_realm_law = crown_authority_1 }
+				if = { limit = { has_realm_law = crown_authority_2 } remove_realm_law = crown_authority_2 }
+				if = { limit = { has_realm_law = crown_authority_3 } remove_realm_law = crown_authority_3 }
+				domicile ?= {
+					change_herd = {
+						value = scope:nomad_becoming_independent.capital_county.county_fertility
+						min = 20
+						multiply = 150
+					}
+				}
+			}
+		}
+		
+		# If the faction still exists, dissolve it (it's no longer relevant).
+		hidden_effect = {
+			if = {
+				limit = {
+					exists = scope:nomadic_faction
+				}
+				scope:nomadic_faction = {
+					destroy_faction = yes
+				}
+			}
+		}
+	}
+	show_as_tooltip = {
+		$FACTION_LEADER$ = {
+			save_scope_as = tooltip_leader
+			custom_tooltip = nomads_take_everything_tt
+		}
+		create_title_and_vassal_change = {
+			type = conquest_populist
+			save_scope_as = change
+			add_claim_on_loss = yes
+		}
+		every_in_list = {
+			list = siezed_duchies
+			change_title_holder = {
+				holder = $FACTION_LEADER$
+				change = scope:change
+				take_baronies = no
+			}
+		}
+		every_in_list = {
+			list = siezed_counties
+			change_title_holder = {
+				holder = $FACTION_LEADER$
+				change = scope:change
+				take_baronies = no
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
 	}
 }
 
@@ -1297,6 +1658,86 @@ spawn_popular_revolt_troops = {
 	}
 }
 
+spawn_nomadic_revolt_troops = {
+	# Spawn Horde Riders
+	spawn_army = {
+		men_at_arms = {
+			type = nomadic_riders
+			men = {
+				value = 0
+				joined_faction = {
+					every_faction_county_member = {
+						limit = {
+							duchy = scope:local_center_of_rebellion.duchy
+						}
+						add = county_horde_riders_to_raise
+					}
+				}
+			}
+		}
+		location = scope:local_center_of_rebellion
+		war = root.faction_war
+		name = nomadic_faction_event_troops
+	}
+	
+	spawn_army = {
+		men_at_arms = {
+			type = steppe_raiders
+			men = {
+				value = 0
+				joined_faction = {
+					every_faction_county_member = {
+						limit = {
+							duchy = scope:local_center_of_rebellion.duchy
+						}
+						add = {
+							value = county_horde_riders_to_raise
+							divide = 2
+						}
+					}
+				}
+			}
+		}
+		location = scope:local_center_of_rebellion
+		war = root.faction_war
+		name = nomadic_faction_event_troops
+	}
+	
+	#spawn_army = {
+	#	men_at_arms = {
+	#		type = horse_archers
+	#		men = {
+	#			value = 0
+	#			joined_faction = {
+	#				every_faction_county_member = {
+	#					limit = {
+	#						duchy = scope:local_center_of_rebellion.duchy
+	#					}
+	#					add = {
+	#						value = county_horde_riders_to_raise
+	#						divide = 2
+	#					}
+	#				}
+	#			}
+	#		}
+	#	}
+	#	location = scope:local_center_of_rebellion
+	#	war = root.faction_war
+	#	name = nomadic_faction_event_troops
+	#}
+	
+	# Spawn Siege Weapons
+	spawn_army = {
+		men_at_arms = {
+			type = torch_bearers
+			stacks = 5
+		}
+		location = scope:local_center_of_rebellion
+		war = root.faction_war
+		name = nomadic_faction_event_troops
+	}
+}
+
 peasant_faction_demands_enforced = {
 	$FACTION$ = {
 		every_faction_county_member = {
@@ -1330,6 +1771,94 @@ invalidate_claimant_factions_on_death_effect = {
 		destroy_faction = yes
 	}
 	clear_variable_list = claimant_factions
+}
+
+setup_nomadic_leader_effect = {
+	save_scope_as = faction
+
+	random_faction_county_member = {
+		save_scope_as = peasant_county
+	}
+
+	# Create a leader for the nomadic faction.
+	create_character = {
+		location = scope:peasant_county.title_province
+		template = nomadic_faction_leader_template
+		faith = scope:peasant_county.faith
+		culture = scope:peasant_county.culture
+		gender_female_chance = {
+			if = {
+				limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_male_dominated } }
+				add = 0
+			}
+			else_if = {
+				limit = { scope:peasant_county.faith = { has_doctrine = doctrine_gender_female_dominated } }
+				add = 100
+			}
+			else = {
+				add = 50
+			}
+		}
+		save_scope_as = peasant_leader
+	}
+	scope:peasant_leader = {
+		add_character_flag = peasant_faction_random_peasant
+	}
+
+	# Create a new title for the peasant.
+	create_dynamic_title = {
+		tier = duchy
+		name = FACTION_NOMADIC_REVOLT_TITLE_NAME
+	}
+	create_title_and_vassal_change = {
+		type = created
+		save_scope_as = change
+		add_claim_on_loss = no
+	}
+	scope:new_title = {
+		set_capital_county = scope:peasant_county
+		set_landless_title = yes
+		set_destroy_on_succession = yes
+		set_delete_on_destroy = yes
+		set_no_automatic_claims = yes
+		set_definitive_form = yes
+		set_can_be_named_after_dynasty = no
+		change_title_holder = {
+			holder = scope:peasant_leader
+			change = scope:change
+		}
+		set_variable = {
+			name = faction
+			value = scope:faction
+		}
+	}
+	resolve_title_and_vassal_change = scope:change
+	scope:peasant_leader = {
+		set_variable = {
+			name = peasant_title
+			value = scope:new_title
+		}
+		if = {
+			limit = {
+				is_ruler = yes
+				NOT = {
+					government_has_flag = government_is_nomadic
+				}
+			}
+			change_government = nomad_government
+		}
+	}
+	scope:new_title = { generate_coa = factions }
+
+	# Set the peasant leader as the head of the faction.
+	scope:peasant_leader = {
+		set_variable = {
+			name = rebel_leader_peasants
+			value = scope:faction
+		}
+		join_faction_skip_check = scope:faction
+	}
+	set_special_character = scope:peasant_leader
 }
 
 setup_populist_leader_effect = {
@@ -1439,6 +1968,7 @@ setup_populist_leader_effect = {
 		set_no_automatic_claims = yes
 		set_definitive_form = yes
 		set_can_be_named_after_dynasty = no
+		set_can_use_nomadic_naming = no
 		change_title_holder = {
 			holder = scope:peasant_leader
 			change = scope:change
@@ -1510,7 +2040,17 @@ setup_peasant_leader_effect = {
 
 	create_dynamic_title = {
 		tier = duchy
-		name = FACTION_PEASANT_TITLE_NAME
+		# Warcraft
+		name = {
+			first_valid = {
+				triggered_desc = {
+					trigger = { scope:peasant_leader.culture = { has_cultural_pillar = heritage_orcish } }
+					desc = FACTION_PEON_TITLE_NAME
+				}
+				desc = FACTION_PEASANT_TITLE_NAME
+			}
+		}
+		# End of Warcraft
 	}
 	create_title_and_vassal_change = {
 		type = created
@@ -1526,6 +2066,7 @@ setup_peasant_leader_effect = {
 		set_no_automatic_claims = yes
 		set_definitive_form = yes
 		set_can_be_named_after_dynasty = no
+		set_can_use_nomadic_naming = no
 		change_title_holder = {
 			holder = scope:peasant_leader
 			change = scope:change

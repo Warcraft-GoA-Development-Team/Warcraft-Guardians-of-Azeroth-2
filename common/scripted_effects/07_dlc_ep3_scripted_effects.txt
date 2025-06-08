@@ -367,11 +367,7 @@ create_landless_adventurer_title_effect = {
 				}
 			}
 		}
-		create_title_and_vassal_change = {
-			type = created
-			save_scope_as = change
-			add_claim_on_loss = no
-		}
+
 		scope:new_title ?= {
 			create_landless_adventurer_title_history_effect = yes
 			set_variable = {
@@ -382,12 +378,8 @@ create_landless_adventurer_title_effect = {
 				name = adventurer_flavor_char
 				value = scope:adventurer_flavor_char
 			}
-			change_title_holder = {
-				holder = scope:new_landless_adventurer
-				change = scope:change
-			}
 		}
-		resolve_title_and_vassal_change = scope:change
+
 		scope:new_title = { save_scope_as = new_landless_adventurer_title }
 		scope:new_landless_adventurer = {
 			if = {
@@ -459,6 +451,7 @@ create_landless_adventurer_title_effect = {
 				scope:adventurer_creation_reason = flag:deposition
 				scope:adventurer_creation_reason = flag:conquest
 				scope:adventurer_creation_reason = flag:exile
+				NOT = { this = $FLAVOR_CHAR$ }
 			}
 		}
 		add_opinion = {
@@ -515,7 +508,9 @@ create_landless_adventurer_title_effect = {
 						}
 					}
 					#Warcraft
-					override_death_effect = { death_reason = death_vanished }
+					override_death_effect = {
+						death_reason = death_vanished
+					}
 				}
 			}
 			every_courtier = {
@@ -594,7 +589,6 @@ laamp_game_over_option_effect = {
 		limit = { exists = scope:new_landless_adventurer_title }
 		hidden_effect = { destroy_title = scope:new_landless_adventurer_title }
 	}
-	add_character_flag = declined_become_laamp
 }
 
 destroy_laamp_effect = {
@@ -677,12 +671,15 @@ destroy_laamp_effect = {
 		# Ironically, we only want to use this effect if you're _not_ admin — it'll reset you nicely to the best government for you, but if you're admin, you should stay admin.
 		if = {
 			limit = {
-				NOT = { government_has_flag = government_is_administrative }
+				NOR = {
+					government_has_flag = government_is_administrative
+					government_has_flag = government_is_nomadic
+				}
 			}
 			admin_government_reset_effect = yes
 		}
 		# Clean up story no-movement flags.
-		#remove_character_flag = laamp_stay_same_kingdom
+		#remove_character_flag = laamp_stay_same_kingdom #Warcraft
 	}
 }
 
@@ -811,6 +808,9 @@ ep3_become_landed_transfer_no_ennobled_modifier_effect = {
 				government_is_tribal = {
 					save_scope_value_as = { name = old_government value = flag:tribal }
 				}
+				government_is_nomadic = {
+					save_scope_value_as = { name = old_government value = flag:nomad }
+				}
 			}
 		}
 	}
@@ -851,8 +851,25 @@ ep3_become_landed_transfer_no_ennobled_modifier_effect = {
 	resolve_title_and_vassal_change = scope:title_change2
 	$TITLE_RECEIVER$ = {
 		# Change our government according to the government of our liege.
-		## Administrative.
+		## Nomad.
 		if = {
+			limit = {
+				OR = {
+					government_has_flag = government_is_nomadic
+					scope:new_liege ?= { government_has_flag = government_is_nomadic }
+					scope:old_government ?= flag:nomad
+					scope:new_capital.capital_province = {
+						OR = {
+							has_holding_type = nomad_holding
+							has_holding_type = herder_holding
+						}
+					}
+				}
+			}
+			change_government = nomad_government
+		}
+		## Administrative.
+		else_if = {
 			limit = {
 				OR = {
 					scope:new_liege ?= { government_has_flag = government_is_administrative }
@@ -922,6 +939,9 @@ ep3_become_landed_transfer_effect = {
 			government_is_tribal = {
 				save_scope_value_as = { name = old_government value = flag:tribal }
 			}
+			government_is_nomadic = {
+				save_scope_value_as = { name = old_government value = flag:nomad }
+			}
 		}
 	}
 	every_in_list = {
@@ -965,8 +985,8 @@ ep3_become_landed_transfer_effect = {
 		}
 	}
 	if = {
-		limit = { 
-			exists = scope:new_liege 
+		limit = {
+			exists = scope:new_liege
 			trigger_if = {
 				limit = {
 					exists = scope:ascended_throne_value
@@ -988,9 +1008,27 @@ ep3_become_landed_transfer_effect = {
 	resolve_title_and_vassal_change = scope:title_change
 	$TITLE_RECEIVER$ = {
 		# Change our government according to the government of our liege.
-		## Administrative.
+		## Nomad.
 		if = {
 			limit = {
+				OR = {
+					government_has_flag = government_is_nomadic
+					scope:new_liege ?= { government_has_flag = government_is_nomadic }
+					scope:old_government ?= flag:nomad
+					scope:new_capital.title_province = {
+						OR = {
+							has_holding_type = nomad_holding
+							has_holding_type = herder_holding
+						}
+					}
+				}
+			}
+			change_government = nomad_government
+		}
+		## Administrative.
+		else_if = {
+			limit = {
+				scope:new_primary_title = { tier > tier_duchy }
 				OR = {
 					scope:new_liege ?= { government_has_flag = government_is_administrative }
 					scope:old_government ?= flag:admin
@@ -1001,10 +1039,13 @@ ep3_become_landed_transfer_effect = {
 		## Clan.
 		else_if = {
 			limit = {
-				ep3_is_clan_inclined_trigger = yes
 				OR = {
 					scope:new_liege ?= { government_has_flag = government_is_clan }
 					scope:old_government ?= flag:clan
+					AND = {
+						ep3_is_clan_inclined_trigger = yes
+						is_independent_ruler = yes
+					}
 				}
 			}
 			change_government = clan_government
@@ -1069,7 +1110,7 @@ ep3_become_landed_transfer_effect = {
 			limit = {
 				calc_true_if = {
 					amount = 1
-					prestige_level <= 3 
+					prestige_level <= 3
 					scope:new_capital.culture ?= {
 						NOR = {
 							$TITLE_RECEIVER$.culture ?= this
@@ -1148,7 +1189,7 @@ purchase_land_interaction_effect = {
 	# scope:actor = adventurer
 	# scope:recipient = seller
 	# purchased_titles = titles
-	
+
 	hidden_effect = {
 		scope:actor = {
 			# if = {
@@ -1269,7 +1310,7 @@ purchase_land_interaction_shortened_effect = {
 			limit = {
 				calc_true_if = {
 					amount = 3
-					prestige_level <= 3 
+					prestige_level <= 3
 					OR = {
 						scope:new_primary_title.culture != culture
 						primary_spouse ?= {
@@ -1293,7 +1334,7 @@ purchase_land_interaction_shortened_effect = {
 			limit = {
 				calc_true_if = {
 					amount = 2
-					prestige_level <= 3 
+					prestige_level <= 3
 					OR = {
 						scope:new_primary_title.culture != culture
 						primary_spouse ?= {
@@ -1318,7 +1359,7 @@ purchase_land_interaction_shortened_effect = {
 			limit = {
 				calc_true_if = {
 					amount = 1
-					prestige_level <= 3 
+					prestige_level <= 3
 					OR = {
 						scope:new_primary_title.culture != culture
 						primary_spouse ?= {
@@ -1516,7 +1557,7 @@ negotiate_settlement_interaction_effect = {
 	# scope:actor = offerer
 	# scope:recipient = adventurer
 	# offered_titles = titles
-	
+
 	hidden_effect = {
 		scope:recipient = {
 			if = {
@@ -1631,8 +1672,7 @@ create_landed_ruler_message_effect = {
 					this = scope:landed
 					this = scope:landed_flavor_char
 				}
-				save_temporary_scope_as = informee
-				scope:landed = { in_diplomatic_range = scope:informee }
+				top_liege = scope:landed.top_liege
 			}
 			send_interface_message = {
 				type = msg_landless_adventurer_nearby
@@ -1753,7 +1793,7 @@ ep3_laamp_support_variable_cleanup_effect = {
 seize_realm_scheme_success_effect = {
 	# scope:target = ruler
 	# scope:owner = adventurer
-	
+
 	hidden_effect = {
 		scope:owner = {
 			if = {
@@ -2083,178 +2123,182 @@ adventurer_realm_destabilisation_list_effect = {
 								}
 							}
 						}
-						OR = {
-							primary_title.duchy ?= scope:title
-							primary_title.kingdom ?= scope:title
-							primary_title.empire ?= scope:title
+						any_held_title = {
+							target_is_de_jure_liege_or_above = scope:title
+						}
+					}
+					trigger_if = {
+						limit = {
+							government_allows = administrative
+						}
+						scope:title = {
+							OR = {
+								AND = {
+									scope:ruler.primary_title.tier = tier_kingdom
+									tier < tier_kingdom
+								}
+								tier < tier_empire
+							}
 						}
 					}
 				}
-				# Non-de jure automatically become independent
-				if = {
-					limit = {
-						NOR = {
-							primary_title.duchy ?= scope:title
-							primary_title.kingdom ?= scope:title
-							primary_title.empire ?= scope:title
+				# Calculate how likely are they to not become your vassal
+				random = {
+					chance = 0
+					### FAITH/CULTURE
+					modifier = { # Cultural acceptance differences
+						add = {
+							value = "culture.cultural_acceptance(scope:adventurer.culture)"
+							subtract = 100
+							abs = yes
+							divide = 5
+						}
+						culture = {
+							this != scope:adventurer.culture
+							cultural_acceptance = {
+								target = scope:adventurer.culture
+								value < 50
+							}
+							OR = {
+								this = scope:ruler.culture
+								"cultural_acceptance(scope:ruler.culture)" > "cultural_acceptance(scope:adventurer.culture)"
+							}
 						}
 					}
-					add_to_list = independent_vassals
-				}
-				# De jure have a chance to become independent
-				else = {
-					random = {
-						chance = 0
-						### FAITH/CULTURE
-						modifier = { # Cultural acceptance differences
-							add = {
-								value = "culture.cultural_acceptance(scope:adventurer.culture)"
-								subtract = 100
-								abs = yes
-								divide = 5
-							}
-							culture = {
-								this != scope:adventurer.culture
-								cultural_acceptance = {
-									target = scope:adventurer.culture
-									value < 50
-								}
-								OR = {
-									this = scope:ruler.culture
-									"cultural_acceptance(scope:ruler.culture)" > "cultural_acceptance(scope:adventurer.culture)"
-								}
-							}
+					modifier = { # Zealous of other faiths more likely
+						add = {
+							value = ai_zeal
+							multiply = 0.15
+							multiply = "scope:vassal_temp.faith.faith_hostility_level(scope:adventurer.faith)"
+							max = 25
 						}
-						modifier = { # Zealous of other faiths more likely
-							add = {
-								value = ai_zeal
-								multiply = 0.15
-								multiply = "scope:vassal_temp.faith.faith_hostility_level(scope:adventurer.faith)"
-								max = 25
-							}
-							ai_zeal > low_positive_zeal
-							faith = {
-								this != scope:adventurer.faith
-								"faith_hostility_level(scope:adventurer.faith)" > 0
-							}
+						ai_zeal > low_positive_zeal
+						faith = {
+							this != scope:adventurer.faith
+							"faith_hostility_level(scope:adventurer.faith)" > 0
 						}
-						### DISTANCE
-						modifier = { # Distant vassals more likely
-							add = {
-								value = 0
+					}
+					modifier = { # Theocatic Vassals of different faith more likely
+						factor = 2
+						has_government = theocracy_government
+						faith != scope:adventurer.faith
+					}
+					### DISTANCE
+					modifier = { # Distant vassals more likely
+						add = {
+							value = 0
+							add = scope:distance
+							if = {
+								limit = { scope:distance >= squared_distance_medium }
 								add = scope:distance
-								if = {
-									limit = { scope:distance >= squared_distance_medium }
-									add = scope:distance
-									multiply = 0.0001
-								}
-								max = 25
+								multiply = 0.0001
 							}
-							"capital_county.squared_distance(scope:ruler.capital_county)" >= squared_distance_medium
-							capital_county = {
-								save_temporary_scope_value_as = {
-									name = distance
-									value = "squared_distance(scope:ruler.capital_county)"
-								}
+							max = 25
+						}
+						"capital_county.squared_distance(scope:ruler.capital_county)" >= squared_distance_medium
+						capital_county = {
+							save_temporary_scope_value_as = {
+								name = distance
+								value = "squared_distance(scope:ruler.capital_county)"
 							}
 						}
-						### PERSONALITY
-						ai_value_modifier = { 
-							ai_boldness = 0.15
-							ai_energy = 0.15
-							ai_greed = 0.15
-							ai_honor = -0.15
-						}
-						### OPINION
-						opinion_modifier = { # More likely if dislikes adventurer
-							opinion_target = scope:adventurer
-							multiplier = -0.25
-						}
-						opinion_modifier = { # More likely if liked old ruler
-							opinion_target = scope:ruler
-							multiplier = 0.1
-						}
-						### STRENGTH
-						modifier = { # Small vassals less likely
-							add = -15
-							tier_difference = {
-								target = scope:ruler
-								value <= -2
-							}
-						}
-						modifier = {
-							add = -25
-							realm_size < tiny_realm_size
-						}
-						modifier = { # Powerful vassals more likely
-							factor = 1.25
-							is_powerful_vassal = yes
-						}
-						modifier = { # Powerful vassals more likely
-							add = {
-								value = highest_held_title_tier
-								multiply = 5
-							}
-						}
-						### RELEVANCE
-						modifier = { # Fringe vassals more likely
-							factor = 1.25
-							any_sub_realm_county = {
-								any_neighboring_county = { holder.top_liege != scope:ruler }
-							}
-						}
-						modifier = { # Core vassals less likely
-							factor = 0.75
-							scope:ruler.capital_county.kingdom = {
-								any_de_jure_county = { this = scope:vassal_temp.capital_county }
-							}
-						}
-						### FAMILY
-						modifier = { # Relatives of deposed more likely
-							factor = 1.1
-							is_close_family_of = scope:ruler
-							NOT = { is_close_family_of = scope:adventurer }
-						}
-						modifier = { # Dynasts of deposed more likely
-							factor = 1.1
-							dynasty ?= {
-								this = scope:ruler.dynasty
-								NOT = { this = scope:adventurer.dynasty }
-							}
-						}
-						modifier = { # Relatives of adventurer less likely
-							factor = 0.75
-							is_close_family_of = scope:adventurer
-							NOT = { is_close_family_of = scope:ruler }
-						}
-						modifier = { # Dynasts of adventurer less likely
-							factor = 0.75
-							dynasty ?= {
-								this = scope:adventurer.dynasty
-								NOT = { this = scope:ruler.dynasty }
-							}
-						}
-						### HOOKS
-						modifier = {
-							factor = 0
-							scope:adventurer = { has_hook = scope:vassal_temp }
-						}
-						modifier = {
-							factor = 2
-							scope:ruler = { has_hook = scope:vassal_temp }
-						}
-						### TIER
-						modifier = {
-							factor = 1.5
-							scope:ruler.primary_title.tier = tier_empire
-						}
-						modifier = {
-							factor = 1.25
-							scope:ruler.primary_title.tier = tier_kingdom
-						}
-						max = 95
-						add_to_list = independent_vassals
 					}
+					### PERSONALITY
+					ai_value_modifier = {
+						ai_boldness = 0.15
+						ai_energy = 0.15
+						ai_greed = 0.15
+						ai_honor = -0.15
+					}
+					### OPINION
+					opinion_modifier = { # More likely if dislikes adventurer
+						opinion_target = scope:adventurer
+						multiplier = -0.25
+					}
+					opinion_modifier = { # More likely if liked old ruler
+						opinion_target = scope:ruler
+						multiplier = 0.1
+					}
+					### STRENGTH
+					modifier = { # Small vassals less likely
+						add = -15
+						tier_difference = {
+							target = scope:ruler
+							value <= -2
+						}
+					}
+					modifier = {
+						add = -25
+						realm_size < tiny_realm_size
+					}
+					modifier = { # Powerful vassals more likely
+						factor = 1.25
+						is_powerful_vassal = yes
+					}
+					modifier = { # Powerful vassals more likely
+						add = {
+							value = highest_held_title_tier
+							multiply = 5
+						}
+					}
+					### RELEVANCE
+					modifier = { # Fringe vassals more likely
+						factor = 1.25
+						any_sub_realm_county = {
+							any_neighboring_county = { holder.top_liege != scope:ruler }
+						}
+					}
+					modifier = { # Core vassals less likely
+						factor = 0.75
+						scope:ruler.capital_county.kingdom = {
+							any_de_jure_county = { this = scope:vassal_temp.capital_county }
+						}
+					}
+					### FAMILY
+					modifier = { # Relatives of deposed more likely
+						factor = 1.1
+						is_close_family_of = scope:ruler
+						NOT = { is_close_family_of = scope:adventurer }
+					}
+					modifier = { # Dynasts of deposed more likely
+						factor = 1.1
+						dynasty ?= {
+							this = scope:ruler.dynasty
+							NOT = { this = scope:adventurer.dynasty }
+						}
+					}
+					modifier = { # Relatives of adventurer less likely
+						factor = 0.75
+						is_close_family_of = scope:adventurer
+						NOT = { is_close_family_of = scope:ruler }
+					}
+					modifier = { # Dynasts of adventurer less likely
+						factor = 0.75
+						dynasty ?= {
+							this = scope:adventurer.dynasty
+							NOT = { this = scope:ruler.dynasty }
+						}
+					}
+					### HOOKS
+					modifier = {
+						factor = 0
+						scope:adventurer = { has_hook = scope:vassal_temp }
+					}
+					modifier = {
+						factor = 2
+						scope:ruler = { has_hook = scope:vassal_temp }
+					}
+					### TIER
+					modifier = {
+						factor = 1.5
+						scope:ruler.primary_title.tier = tier_empire
+					}
+					modifier = {
+						factor = 1.25
+						scope:ruler.primary_title.tier = tier_kingdom
+					}
+					max = 95
+					add_to_list = independent_vassals
 				}
 			}
 			# Save heirs for claimant wars
@@ -2669,7 +2713,7 @@ points_of_interest_tracker_effect = {
 		if = {
 			limit = {
 				NOT = {
-					has_variable = poi_visited 
+					has_variable = poi_visited
 				}
 			}
 			set_variable = {
@@ -2690,12 +2734,10 @@ zealous_missionary_conversion_effect = {
 	if = {
 		limit = {
 			exists = location.barony.holder
-			government_has_flag = government_is_landless_adventurer 
+			government_has_flag = government_is_landless_adventurer
 			has_character_flag = zealous_missionary_timer
-			NOT = {
-				location.faith ?= root.faith
-			}
-		}
+			#location.county ?= { hasan_evangelize_province_trigger = yes }
+		}   # Warcraft
 		trigger_event = ep3_laamp_decision_event.1103
 	}
 }
@@ -2723,7 +2765,7 @@ war_contracts_completed_tracker_effect = {
 }
 
 bandit_king_maa_spawn_effect = {
-	
+
 	save_scope_as = bandit_king
 	if = {
 		limit = {
@@ -3004,6 +3046,13 @@ absolve_crusaders_of_gallowsbait_effect = {
 	}
 }
 
+temporarily_lock_visit_settlement_effect = {
+	set_variable = {
+		name = ep3_laamp_decision_1000_is_visiting
+		days = visit_settlement_lock_days
+	}
+}
+
 ##################################################
 # Admin Government
 ##################################################
@@ -3022,10 +3071,31 @@ create_noble_family_effect = {
 
 	save_scope_as = new_noble_family_holder
 	hidden_effect = { # NF can only be held by house heads
-		house ?= {
-			if = {
-				limit = { house_head != scope:new_noble_family_holder }
-				set_house_head = scope:new_noble_family_holder
+		if = { # Start by checking that we are not the house head already
+			limit = {
+				house ?= {
+					house_head != scope:new_noble_family_holder
+				}
+			}
+			if = { # If not, let's see if it would be reasonable to become house head...
+				limit = {
+					house ?= {
+						house_head ?= {
+							top_liege = scope:new_noble_family_holder.top_liege
+							OR = {
+								is_ruler = no
+								primary_title = {
+									tier <= tier_county
+								}
+							}
+							is_ai = yes #  Don't steal house head from a player
+						}
+					}
+				}
+				house = { set_house_head = scope:new_noble_family_holder }
+			}
+			else = { # ... Otherwise, we create a cadet branch
+				create_cadet_branch = yes
 			}
 		}
 	}
@@ -3072,7 +3142,7 @@ increase_governance_effect = {
 					exists = scope:task_contract
 				}
 				multiply = governance_task_contract_tier_value
-				
+
 				if = {
 					limit = {
 						$VALUE$ > 0
@@ -3402,6 +3472,9 @@ spawn_governance_contract_effect = {
 					is_title_maa_regiment = yes
 					is_raised = no
 					count >= 2
+				}
+				any_neighboring_and_across_water_realm_same_rank_owner = {
+					liege = root.liege
 				}
 			}
 
@@ -3961,7 +4034,7 @@ spawn_governance_contract_effect = {
 	}
 
 	play_sound_effect = "event:/DLC/EP3/SFX/Stingers/Byzantine_Flavor/ep3_mx_sting_byzantineflavor_become_governor"
-	
+
 	if = {
 		limit = { exists = scope:target_province }
 		if = {
@@ -3989,7 +4062,7 @@ spawn_governance_contract_effect = {
 generate_governance_outcome_effect = {
 	# INFO: We use this effect to randomize the options you get when doing a governor contract.
 	# $OPTIONS$ is the number of options the event has - Never use less than four, and try to have six if possible.
-	
+
 	# Unlock a bonus option if you have enough exp in the Governor trait - We do this here (and not in the option) to avoid blocking the option due to exp decay (if game is unpaused).
 	if = {
 		limit = {
@@ -4099,6 +4172,190 @@ generate_governance_outcome_effect = {
 	}
 }
 
+remove_other_eparch_modifiers_effect = {
+	hidden_effect = { # No need to show this
+		# Let's check for the county opinion modifier first
+		scope:liege ?= {
+			# We check and scope to all counties to make sure we remove any stray modifiers in case the capital is moved, etc.
+			if = {
+				limit = {
+					any_realm_county = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_county_opinion_modifier
+						}
+					}
+				}
+				every_realm_county = {
+					limit = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_county_opinion_modifier
+						}
+					}
+					every_county_province = {
+						limit = {
+							has_province_modifier = ep3_eparch_county_opinion_modifier
+						}
+						remove_province_modifier = ep3_eparch_county_opinion_modifier
+					}
+				}
+			}
+		}
+		
+		# Next is the troop modifier
+		scope:liege ?= {
+			# We check and scope to all counties to make sure we remove any stray modifiers in case the capital is moved, etc.
+			if = {
+				limit = {
+					any_realm_county = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_troops_modifier
+						}
+					}
+				}
+				every_realm_county = {
+					limit = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_troops_modifier
+						}
+					}
+					every_county_province = {
+						limit = {
+							has_province_modifier = ep3_eparch_troops_modifier
+						}
+						remove_province_modifier = ep3_eparch_troops_modifier
+					}
+				}
+			}
+		}
+		
+		# Next is the county control modifier
+		scope:liege ?= {
+			# We check and scope to all counties to make sure we remove any stray modifiers in case the capital is moved, etc.
+			if = {
+				limit = {
+					any_realm_county = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_control_modifier
+						}
+					}
+				}
+				every_realm_county = {
+					limit = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_control_modifier
+						}
+					}
+					every_county_province = {
+						limit = {
+							has_province_modifier = ep3_eparch_control_modifier
+						}
+						remove_province_modifier = ep3_eparch_control_modifier
+					}
+				}
+			}
+		}
+		
+		# And finally, the development modifier
+		scope:liege ?= {
+			# We check and scope to all counties to make sure we remove any stray modifiers in case the capital is moved, etc.
+			if = {
+				limit = {
+					any_realm_county = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_development_modifier
+						}
+					}
+				}
+				every_realm_county = {
+					limit = {
+						any_county_province = {
+							has_province_modifier = ep3_eparch_development_modifier
+						}
+					}
+					every_county_province = {
+						limit = {
+							has_province_modifier = ep3_eparch_development_modifier
+						}
+						remove_province_modifier = ep3_eparch_development_modifier
+					}
+				}
+			}
+		}
+	}
+}
+
+eparch_neglecting_duty_effect = {
+	custom_tooltip = {
+		text = eparch_neglecting_duty_warning_tt
+		
+		# We check if you have neglected duties in the past
+		if = {
+			limit = {
+				exists = var:eparch_neglecting_duty
+			}
+			# If you have, let's first increase the variable
+			change_variable = { name = eparch_neglecting_duty add = 5 }
+			
+			# Then check if the liege notices and decide to take action
+			random = {
+				chance = {
+					# Base value - Increases with each neglecting action
+					value = var:eparch_neglecting_duty
+					
+					# Add the difference in intrigue skill
+					add = {
+						value = liege.intrigue
+						subtract = intrigue
+					}
+					
+					# Add the difference in influence level
+					add = {
+						value = liege.influence_level
+						subtract = influence_level
+						multiply = 5
+					}
+					
+					# Lower the chance if you belong to a powerful or dominant family
+					if = {
+						limit = {
+							house ?= { is_powerful_family = yes }
+						}
+						subtract = 10
+					}
+					if = {
+						limit = {
+							house ?= { is_dominant_family = yes }
+						}
+						subtract = 20
+					}
+					
+					min = 5
+					max = 90
+				}
+				
+				# The liege have noticed - We reduce the variable slightly as a result (but never below 0)
+				if = {
+					limit = {
+						exists = var:eparch_neglecting_duty
+						var:eparch_neglecting_duty >= 20
+					}
+					change_variable = { name = eparch_neglecting_duty subtract = 20 }
+				}
+				else = {
+					set_variable = { name = eparch_neglecting_duty value = 0 }
+				}
+				
+				liege = {
+					trigger_event = { id = ep3_eparch_event.9000 days = { 10 90 } }
+				}
+			}
+		}
+		else = { # If you haven't, we'll set the variable and give you a free pass (you only get it for your very first time though)
+			set_variable = { name = eparch_neglecting_duty value = 0 }
+		}
+	}
+}
+
 add_influence_attacker_victory_effect = {
 	scope:attacker = {
 		if = {
@@ -4120,7 +4377,7 @@ add_influence_attacker_defeat_effect = {
 admin_change_government_effect = {
 	# Make sure you only use this effect on characters you are sure should change government! Since we don't do any extended triggers here.
 	# For a consistent behaviour, this effect is based on "convert_whole_realm_to_feudalism_effect"
-	
+
 	# First, let's see if the character only has their noble family title - then we don't bother changing their government
 	# We only destroy the family title to make sure it doesn't linger
 	if = {
@@ -4143,7 +4400,7 @@ admin_change_government_effect = {
 			prev = { destroy_title = scope:family_title }
 		}
 	}
-	
+
 	# If not, let's change the government type
 	# If liege has clan - Become clan!
 	else_if = {
@@ -5583,7 +5840,7 @@ disburse_chariot_race_activity_host_rewards = {
 						}
 					}
 				}
-				
+
 				# Rewards for employing a charioteer who wins/places/shows
 				if = {
 					limit = { employs_court_position = charioteer_court_position }
@@ -7405,7 +7662,6 @@ ep3_youth_castration_effect = {
 }
 
 ep3_greek_fire_success_effect = {
-	#TODO_CD_EP3_JC modifiers and MaA effects here will most likely be replaced/supplemented by deplete_army once we have code support
 	# scope:invading_commander = {
 	# 	add_character_modifier = {
 	# 		modifier = ravaged_by_greek_fire_modifier
@@ -8209,212 +8465,212 @@ ep3_create_random_maa_regiment_effect = {
 	$OWNER$ = {
 		switch = {
 			trigger = scope:maa_to_create
-			flag:light_footmen = {	
+			flag:light_footmen = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = light_footmen
 					SIZE = $SIZE$
 				}
 			}
-			flag:bowmen = {	
+			flag:bowmen = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = bowmen
 					SIZE = $SIZE$
 				}
 			}
-			flag:light_horsemen = {	
+			flag:light_horsemen = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = light_horsemen
 					SIZE = $SIZE$
 				}
 			}
-			flag:pikemen_unit = {	
+			flag:pikemen_unit = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = pikemen_unit
 					SIZE = $SIZE$
 				}
 			}
-			flag:huscarl = {	
+			flag:huscarl = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = huscarl
 					SIZE = $SIZE$
 				}
 			}
-			flag:bombard = {	
+			flag:bombard = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = bombard
 					SIZE = $SIZE$
 				}
 			}
-			flag:crossbowmen = {	
+			flag:crossbowmen = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = crossbowmen
 					SIZE = $SIZE$
 				}
 			}
-			flag:camel_rider = {	
+			flag:camel_rider = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = camel_rider
 					SIZE = $SIZE$
 				}
 			}
-			flag:war_elephant = {	
+			flag:war_elephant = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = war_elephant
 					SIZE = $SIZE$
 				}
 			}
-			flag:armored_footmen = {	
+			flag:armored_footmen = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = armored_footmen
 					SIZE = $SIZE$
 				}
 			}
-			flag:armored_horsemen = {	
+			flag:armored_horsemen = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = armored_horsemen
 					SIZE = $SIZE$
 				}
 			}
-			flag:trebuchet = {	
+			flag:trebuchet = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = trebuchet
 					SIZE = $SIZE$
 				}
 			}
-			flag:mangonel = {	
+			flag:mangonel = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = mangonel
 					SIZE = $SIZE$
 				}
 			}
-			flag:onager = {	
+			flag:onager = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = onager
 					SIZE = $SIZE$
 				}
 			}
 			#Warcraft
-			flag:archmage = {	
+			flag:archmage = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = archmage
 					SIZE = $SIZE$
 				}
 			}
-			flag:baradian_marine = {	
+			flag:baradian_marine = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = baradian_marine
 					SIZE = $SIZE$
 				}
 			}
-			flag:chaosborn = {	
+			flag:chaosborn = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = chaosborn
 					SIZE = $SIZE$
 				}
 			}
-			flag:hexer = {	
+			flag:hexer = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = hexer
 					SIZE = $SIZE$
 				}
 			}
-			flag:hag_maa = {	
+			flag:hag_maa = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = hag_maa
 					SIZE = $SIZE$
 				}
 			}
-			flag:huntress = {	
+			flag:huntress = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = huntress
 					SIZE = $SIZE$
 				}
 			}
-			flag:dwarven_riflemen = {	
+			flag:dwarven_riflemen = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = dwarven_riflemen
 					SIZE = $SIZE$
 				}
 			}
-			flag:dwarven_cannon = {	
+			flag:dwarven_cannon = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = dwarven_cannon
 					SIZE = $SIZE$
 				}
 			}
-			flag:tidehunter = {	
+			flag:tidehunter = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = tidehunter
 					SIZE = $SIZE$
 				}
 			}
-			flag:headhunter = {	
+			flag:headhunter = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = headhunter
 					SIZE = $SIZE$
 				}
 			}
-			flag:trapper = {	
+			flag:trapper = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = trapper
 					SIZE = $SIZE$
 				}
 			}
-			flag:wolfrider = {	
+			flag:wolfrider = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = wolfrider
 					SIZE = $SIZE$
 				}
 			}
-			flag:peacekeeper = {	
+			flag:peacekeeper = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = peacekeeper
 					SIZE = $SIZE$
 				}
 			}
-			flag:anchorite = {	
+			flag:anchorite = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = anchorite
 					SIZE = $SIZE$
 				}
 			}
-			flag:rangari = {	
+			flag:rangari = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = rangari
 					SIZE = $SIZE$
 				}
 			}
-			flag:fel_guard = {	
+			flag:fel_guard = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = fel_guard
 					SIZE = $SIZE$
 				}
 			}
-			flag:gorian_chariot = {	
+			flag:gorian_chariot = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = gorian_chariot
 					SIZE = $SIZE$
 				}
 			}
-			flag:wardancer = {	
+			flag:wardancer = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = wardancer
 					SIZE = $SIZE$
 				}
 			}
-			flag:banshee = {	
+			flag:banshee = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = banshee
 					SIZE = $SIZE$
 				}
 			}
-			flag:ghoul = {	
+			flag:ghoul = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = ghoul
 					SIZE = $SIZE$
 				}
 			}
-			flag:technomage = {	
+			flag:technomage = {
 				create_maa_or_upgrade_regiment_effect = {
 					TYPE = technomage
 					SIZE = $SIZE$
@@ -9011,7 +9267,7 @@ reinforce_soldiers_regiment_effect = {
 		every_maa_regiment = {
 			limit = { maa_regiments_valid_for_cheap_reinforcement_trigger = yes }
 			change_maa_troops_count = reinforce_soldiers_regiment_soldiers_value
-		}	
+		}
 	}
 }
 
@@ -9081,6 +9337,21 @@ refill_maa_with_gold_effect = {
 admin_government_reset_effect = {
 	if = {
 		limit = { is_landed = yes } # error suppression
+		### NOMADIC
+		if = {
+			limit = {
+				OR = {
+					government_has_flag = government_is_nomadic
+					capital_province = {
+						OR = {
+							has_holding_type = nomad_holding
+							has_holding_type = herder_holding
+						}
+					}
+				}
+			}
+			change_government = nomad_government
+		}
 		### TRIBAL - are all of your holdings Tribal?
 		if = {
 			limit = {
@@ -9109,6 +9380,9 @@ admin_government_reset_effect = {
 					like_islam_religion_trigger = yes
 					culture = {
 						OR = {
+							like_heritage_arabic_trigger = yes
+							like_heritage_iranian_trigger = yes
+							like_turkic_group_trigger = yes
 							has_cultural_pillar = heritage_orcish
 							has_cultural_pillar = heritage_tauren
 							has_cultural_pillar = heritage_gorian
@@ -9409,7 +9683,7 @@ ep3_governor_yearly_3010_war_aid_effect = {
 		scope:war = {
 			add_attacker = scope:governor
 		}
-		
+
 	}
 	if = {
 		limit = {
@@ -9671,7 +9945,7 @@ governor_resignation_title_transfer_effect = {
 			save_temporary_scope_as = liege_title
 			NOT = {
 				scope:resigner = {
-					any_held_title = { is_de_jure_liege_or_above_target = scope:liege_title } 
+					any_held_title = { is_de_jure_liege_or_above_target = scope:liege_title }
 				}
 			}
 		}
@@ -10122,7 +10396,7 @@ noble_family_adoption_effect = {
 			limit = {
 				$ADOPTER$ = {
 					NOT = { is_in_the_same_court_as = $ADOPTEE$ }
-				} 
+				}
 			}
 			$ADOPTER$ = { add_courtier = $ADOPTEE$ }
 		}
@@ -10147,7 +10421,7 @@ create_artifact_court_icon_large_effect = {
 				limit = {
 					exists = scope:inspiration_owner
 				}
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_wall_court_icon_large_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:painter
@@ -10163,7 +10437,7 @@ create_artifact_court_icon_large_effect = {
 				limit = {
 					exists = scope:adventurer
 				}
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_wall_court_icon_large_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:adventurer
@@ -10182,7 +10456,7 @@ create_artifact_court_icon_large_effect = {
 				}
 			}
 			else = {
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_wall_court_icon_large_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:painter
@@ -10230,7 +10504,7 @@ create_artifact_court_icon_small_effect = {
 				limit = {
 					exists = scope:inspiration_owner
 				}
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_wall_court_icon_small_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:painter
@@ -10246,7 +10520,7 @@ create_artifact_court_icon_small_effect = {
 				limit = {
 					exists = scope:adventurer
 				}
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_wall_court_icon_small_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:adventurer
@@ -10265,7 +10539,7 @@ create_artifact_court_icon_small_effect = {
 				}
 			}
 			else = {
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_wall_court_icon_small_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:painter
@@ -10313,7 +10587,7 @@ create_artifact_trinket_icon_effect = {
 				limit = {
 					exists = scope:inspiration_owner
 				}
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_trinket_icon_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:painter
@@ -10329,7 +10603,7 @@ create_artifact_trinket_icon_effect = {
 				limit = {
 					exists = scope:adventurer
 				}
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_trinket_icon_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:adventurer
@@ -10348,7 +10622,7 @@ create_artifact_trinket_icon_effect = {
 				}
 			}
 			else = {
-				create_artifact = {	
+				create_artifact = {
 					name = artifact_trinket_icon_name
 					description = placeholder # Will be regenerated in the post-creation effects
 					creator = scope:painter
@@ -10391,7 +10665,7 @@ create_artifact_trinket_icon_ancient_effect = {
 		get_artifact_wealth_effect = yes
 		# Create the artifact
 		scope:owner = {
-			create_artifact = {	
+			create_artifact = {
 				name = artifact_trinket_icon_name
 				description = placeholder # Will be regenerated in the post-creation effects
 				visuals = trinket_icon
@@ -10650,16 +10924,18 @@ laamp_as_mercenary_payout_effect = {
 }
 
 laamp_as_mercenary_payout_tooltip_effect = {
+	save_scope_as = war
 	show_as_tooltip = {
 		scope:defender = {
 			if = {
 				limit = {
+					exists = scope:war
 					any_war_ally = {
 						is_landless_adventurer = yes
 						OR = {
 							any_character_active_contract = {
 								has_task_contract_type = laamp_join_war_contract
-								var:task_contract_war = scope:war
+								var:task_contract_war ?= scope:war
 							}
 							AND = {
 								has_variable = owed_contract_assistance_gold
@@ -10745,6 +11021,7 @@ laamp_as_mercenary_payout_tooltip_effect = {
 		scope:attacker = {
 			if = {
 				limit = {
+					exists = scope:war
 					any_war_ally = {
 						is_landless_adventurer = yes
 						OR = {
@@ -11074,7 +11351,7 @@ disburse_camp_party_reward_effect = {
 		#100 Carousing
 		if = {
 			limit = { var:activity_special_type_progression >= 100 }
-			
+
 			#Stress Loss
 			every_attending_character = {
 				custom = every_attending_guest
@@ -11195,7 +11472,7 @@ disburse_camp_party_reward_effect = {
 						SPAWN_CONTRACTS = 2
 					}
 				}
- 
+
 				#Provisions
 				domicile = {
 					change_provisions = massive_provisions_gain
@@ -11217,7 +11494,7 @@ disburse_camp_party_reward_effect = {
 				var:activity_special_type_progression < 100
 				var:activity_special_type_progression >= 75
 			}
-			
+	
 			#Stress Loss
 			every_attending_character = {
 				custom = every_attending_guest
@@ -11889,7 +12166,10 @@ depose_effect = {
 		save_scope_as = winner
 	}
 	every_held_title = { add_to_list = target_titles }
-	trigger_event = ep3_laamps.0002
+	trigger_event = {
+		id = ep3_laamps.0002
+		days = 1
+	}
 }
 
 # Effect for handling players and AI continuing as landless if banished
@@ -12131,7 +12411,7 @@ governor_contract_invalidated_message_effect = {
 			title = admin_contract_invalidated_title
 			left_icon = scope:task_contract_character
 			desc = admin_contract_invalidated_desc
-			
+
 			current_travel_plan ?= { cancel_travel_plan = yes }
 		}
 	}
@@ -12187,7 +12467,7 @@ assign_favourite_child_effect = {
 					modifier = is_favorite_opinion
 				}
 			}
-		} 
+		}
 	}
 }
 
