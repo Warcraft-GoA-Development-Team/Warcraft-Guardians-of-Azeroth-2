@@ -5,6 +5,7 @@ ransom_interaction_effect = {
 		limit = {
 			NOR = {
 				scope:influence_send_option = yes
+				scope:herd_send_option = yes
 				scope:extortionate_current_gold = yes
 				scope:extortionate_gold = yes
 				scope:gold = yes
@@ -183,6 +184,16 @@ ransom_interaction_effect = {
 				}
 			}
 		}
+		# Herd
+		if = {
+			limit = { scope:herd_send_option = yes }
+			scope:payer = {
+				pay_herd = {
+					target = scope:imprisoner
+					value = scope:payer.domicile.medium_herd_value
+				}
+			}
+		}
 	}
 	scope:prisoner = { release_from_prison = yes }
 }
@@ -201,33 +212,9 @@ execute_prisoner_effect = {
 
 	show_as_tooltip = {
 		$VICTIM$ = {
-			if = {
-				limit = {
-					scope:executioner.faith = {
-						# Warcraft
-						has_doctrine_tenet_human_sacrifice_trigger = yes
-					}
-				}
-				$VICTIM$ = {
-					override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
-				}
-			}
-			else_if = {
-				limit = {
-					exists = scope:execution_kennel
-					scope:execution_kennel = yes
-				}
-				$VICTIM$ = {
-					death = {
-						death_reason = death_kennel
-						killer = $EXECUTIONER$
-					}
-				}
-			}
-			else = {
-				$VICTIM$ = {
-					override_death_killer_effect = { death_reason = death_execution killer = $EXECUTIONER$ }
-				}
+			override_death_killer_effect = {
+				death_reason = death_execution
+				killer = $EXECUTIONER$
 			}
 		}
 	}
@@ -673,7 +660,11 @@ execute_prisoner_effect = {
 			if = {
 				limit = {
 					exists = scope:victim.liege
-					NOT = { scope:victim.liege = scope:victim }
+					NOR = {
+						scope:victim.liege = scope:victim
+						scope:victim.liege = scope:executioner
+						scope:victim.liege = scope:imprisoner
+					}
 				}
 				scope:victim.liege = {
 					add_opinion = {
@@ -720,6 +711,208 @@ execute_prisoner_effect = {
 				REVERSE_NON_HOUSE_TARGET = no
 			}
 		}
+		#If you're a nomadic ruler, you can keep the head or send it for intimidation
+		if = {
+			limit = {
+				mpo_keep_prisoners_heads_trigger = yes
+				#execution by beheading, but that only gets tracked for players for some reason
+				OR = {
+					AND = {
+						is_ai = no
+						exists = scope:execution_beheaded
+						scope:execution_beheaded = yes
+					}
+					AND = {
+						is_ai = yes
+						NOT = {
+							scope:executioner.faith = { has_doctrine_parameter = human_sacrifice_active }
+						}
+					}
+				}
+				scope:victim = {
+					is_ruler = yes
+					is_adult = yes
+					highest_held_title_tier >= tier_county
+					#Need to be valid either for artifact or heir intimidation
+					OR = {
+						AND = {
+							exists = primary_heir
+							NOT = {
+								primary_heir = scope:executioner
+							}
+						}
+						highest_held_title_tier >= tier_kingdom
+					}
+				}
+			}
+			if = {
+				limit = {
+					scope:victim = {
+						highest_held_title_tier >= tier_empire
+					}
+				}
+				custom_tooltip = gain_illustrious_victim_head_artifact_tt
+				add_character_flag = {
+					flag = execution_head_illustrious_flag
+					days = 30
+				}
+			}
+			else_if = {
+				limit = {
+					scope:victim = {
+						highest_held_title_tier >= tier_kingdom
+					}
+				}
+				custom_tooltip = gain_famed_victim_head_artifact_tt
+				add_character_flag = {
+					flag = execution_head_famed_flag
+					days = 30
+				}
+			}
+			#Send head to heir
+			if = {
+				limit = {
+					scope:victim = {
+						AND = {
+							exists = primary_heir
+							NOT = {
+								primary_heir = scope:executioner
+							}
+						}
+						NOT = {
+							government_has_flag = government_is_theocratic
+						}
+					}
+				}
+				#Can send head for warscore
+				if = {
+					limit = {
+						is_at_war_with = scope:victim
+						any_character_war = {
+							primary_attacker = scope:executioner
+							primary_defender = scope:victim
+							casus_belli = {
+								any_target_title = {
+									this = scope:victim.primary_title
+								}
+							}
+						}
+						scope:victim = { is_ai = yes }
+						scope:victim.primary_heir = {
+							is_ai = yes
+						}
+						NAND = {
+							has_variable = peace_acceptance_head_scare
+							var:peace_acceptance_head_scare = {
+								this = scope:victim.primary_heir
+							}
+						}
+					}
+					custom_tooltip = send_head_for_warscore_tt
+					add_character_flag = {
+						flag = execution_head_warscore_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				#Can send head for vassalization acceptance
+				else_if = {
+					limit = {
+						scope:victim = {
+							is_independent_ruler = yes
+							highest_held_title_tier <= scope:executioner.highest_held_title_tier
+							primary_heir = {
+								highest_held_title_tier <= scope:executioner.highest_held_title_tier
+								NOR = {
+									is_vassal_or_below_of = scope:executioner
+									is_tributary_of_suzerain_or_above = scope:executioner
+								}
+							}
+							is_ai = yes
+							primary_heir = { is_ai = yes }
+						}
+					}
+					custom_tooltip = send_head_for_vassalization_tt
+					add_character_flag = {
+						flag = execution_head_vassalization_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				else_if = {
+					limit = {
+						OR = {
+							scope:victim = {
+								highest_held_title_tier > scope:executioner.highest_held_title_tier
+							}
+							scope:victim.primary_heir = {
+								highest_held_title_tier > scope:executioner.highest_held_title_tier
+							}
+						}
+					}
+					custom_tooltip = send_head_for_prestige_tt
+					add_character_flag = {
+						flag = execution_head_prestige_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				#Send head for obedient trait
+				else_if = {
+					limit = {
+						scope:victim = {
+							is_vassal_of = scope:executioner
+						}
+						scope:victim.primary_heir = {
+							obedience_target = root
+							is_obedient = no
+						}
+					}
+					custom_tooltip = send_head_for_obedience_tt
+					add_character_flag = {
+						flag = execution_head_obedience_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				#Can send head for fear hook
+				else_if = {
+					limit = {
+						scope:victim = {
+							highest_held_title_tier <= scope:executioner.highest_held_title_tier
+						}
+						scope:victim.primary_heir = {
+							highest_held_title_tier <= scope:executioner.highest_held_title_tier
+						}
+						can_add_hook = {
+							target = scope:victim.primary_heir
+							type = threat_hook
+						}
+					}
+					custom_tooltip = send_head_for_hook_tt
+					add_character_flag = {
+						flag = execution_head_hook_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+			}
+			
+			trigger_event = {
+				id = mpo_nomad_events.1010
+				days = 1
+			}
+		}
 	}
 
 	execute_opinion_effect = { VICTIM = scope:victim EXECUTIONER = scope:executioner }
@@ -749,7 +942,10 @@ execute_prisoner_effect = {
 				}
 			}
 			$VICTIM$ = {
-				override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
+				override_death_killer_effect = {
+					death_reason = death_sacrificed_to_gods
+					killer = $EXECUTIONER$
+				}
 			}
 		}
 		else_if = {
@@ -758,7 +954,7 @@ execute_prisoner_effect = {
 				scope:execution_kennel = yes
 			}
 			$VICTIM$ = {
-				death = {
+				override_death_killer_effect = {
 					death_reason = death_kennel
 					killer = $EXECUTIONER$
 				}
