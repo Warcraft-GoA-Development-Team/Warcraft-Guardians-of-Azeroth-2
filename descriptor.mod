@@ -29,4 +29,4 @@ replace_path="common/bookmark_portraits"
 replace_path="common/bookmarks"
 replace_path="gfx/interface/illustrations/loading_screens"
 
-supported_version="1.16.2.3"
+supported_version="1.17.1"
