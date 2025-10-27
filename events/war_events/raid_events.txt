@@ -30,19 +30,24 @@ raiding.0001 = {	#Hidden event: do I get a sacking?
 		scope:raider = { is_at_location = scope:barony.title_province }
 		scope:barony.title_province = { fort_level > 0 }
 		#The county must not have recently been sacked.
-		NOT = {
+		NOR = {
 			scope:county = { has_county_modifier = recently_sacked_modifier }
+			scope:county.title_province = { has_holding_type = herder_holding }
 		}
 	}
 
 	immediate = {
+		save_scope_as = raid_army
 		random = {
 			chance = 20
 			modifier = {
 				add = 20
 				scope:raider = { has_trait = viking }
 			}
-			save_scope_as = raid_army
+			modifier = {
+				add = 30
+				scope:raid_army = { raid_intent = raze_intent }
+			}
 			scope:raider = {
 				# Grab some loc things.
 				scope:county = { save_scope_as = sacked_county }
@@ -58,11 +63,11 @@ raiding.0002 = {	#Less hidden event: I do get a sacking!
 	type = character_event
 	title = raiding.0002.t
 	desc = raiding.0002.desc
-	theme = battle
+	theme = raid
 	override_background = { reference = burning_building }
 	left_portrait = {
 		character = root
-		animation = anger
+		animation = menacing
 	}
 	right_portrait = {
 		character = scope:sacked_county_owner
@@ -93,11 +98,16 @@ raiding.0002 = {	#Less hidden event: I do get a sacking!
 	option = {
 		name = raiding.0002.a
 		trigger = {
+			NOT = { government_has_flag = government_is_nomadic }
 			root.capital_county = { development_level < 15 }	#If you have a certain amount of development, you can't gain anything from this.
 			OR = {
 				scope:county = { development_level > 15 }	#The county must actually have enough development to be worth sacking.
 				scope:county.holder = {	#Or at least be a non-tribal place.
-					NOT = { government_has_flag = government_is_tribal }
+					NOR = {
+						government_has_flag = government_is_tribal
+						government_has_flag = government_is_nomadic
+						government_has_flag = government_is_herder
+					}
 				}
 			}
 		}
@@ -126,6 +136,61 @@ raiding.0002 = {	#Less hidden event: I do get a sacking!
 		}
 		root.capital_county = {
 			change_development_progress = medium_development_progress_gain
+		}
+		stress_impact = {
+			compassionate = minor_stress_impact_gain
+			forgiving = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = 0.5
+				ai_compassion = -0.5
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = compassionate
+			}
+			modifier = {	#Weight down for stress.
+				add = -20
+				has_trait = forgiving
+			}
+		}
+	}
+	
+	option = {
+		name = raiding.0002.a_nomad
+		trigger = {
+			government_has_flag = government_is_nomadic
+		}
+		scope:sacked_county = {
+			add_county_modifier = {	#Prevent the county from being sacked again, by anyone, for quite a while.
+				modifier = recently_sacked_modifier
+				years = 20
+			}
+			change_county_control = -10
+			change_development_progress = major_development_progress_loss	#Always deduct progress.
+			if = {	#If they don't have enough progress made, burn a level of development.
+				limit = { development_towards_level_increase < major_development_progress_gain }
+				change_development_level = -1
+			}
+			save_scope_value_as = {
+				name = sack_status
+				value = flag:admin_plundered
+			}
+			holder = {
+				trigger_event = raiding.0003
+				if = {
+					limit = { is_independent_ruler = no }
+					liege = { trigger_event = raiding.0004 }
+				}
+			}
+		}
+		root.capital_county = {
+			add_county_modifier = {
+				modifier = stolen_ewes_and_mares_modifier
+				years = 10
+			}
 		}
 		stress_impact = {
 			compassionate = minor_stress_impact_gain
@@ -311,7 +376,7 @@ raiding.0003 = {
 			desc = raiding.0003.desc.spared_plundered_vassal
 		}
 	}
-	theme = battle
+	theme = raid
 	override_background = {
 		reference = burning_building
 	}
@@ -378,6 +443,7 @@ raiding.0003 = {
 			is_independent_ruler = yes
 			NOT = { scope:sack_status = flag:spared_plundered }
 			NOT = { government_has_flag = government_is_tribal }	#Tribes don't care about development.
+			NOT = { government_has_flag = government_is_nomadic }
 			OR = {
 				is_ai = no
 				short_term_gold >= scope:sacked_barony.county.title_province.raid_gold_value
@@ -430,7 +496,7 @@ raiding.0004 = {
 			desc = 	raiding.0004.desc.spared_plundered #If the holding was spared, we have a lukewarm one response.
 		}
 	}
-	theme = battle
+	theme = raid
 	override_background = {
 		reference = burning_building
 	}
@@ -514,6 +580,7 @@ raiding.0004 = {
 			NOR = {
 				scope:sack_status = flag:spared_plundered
 				government_has_flag = government_is_tribal	#Tribes don't care about development.
+				government_has_flag = government_is_nomadic
 			}
 			OR = {
 				is_ai = no
@@ -586,9 +653,11 @@ raiding.0004 = {
 # #0011-0012
 ##################################################
 
-# Loot delivered.
+### DEPRECATED ###
+# Now the interface message is sent out by raid intents instead
 raiding.0011 = {
 	hidden = yes
+	orphan = yes
 	scope = army
 
 	immediate = {
@@ -659,15 +728,16 @@ raiding.0012 = {
 			}
 			scope:raider = {
 				send_interface_message = {
-					type = event_raid_bad
+					type = event_raid_bad_text
 					title = raiding.0012.a.t
 					desc = raiding.0012.a.desc
-					right_icon = root.army_commander
+					left_icon = root.army_commander
+					right_icon = scope:recipient
 				}
 			}
 			scope:recipient = {
 				send_interface_message = {
-					type = event_raid_good
+					type = event_raid_good_text
 					title = raiding.0012.b.t
 					desc = raiding.0012.b.desc
 					right_icon = root.army_commander
@@ -824,6 +894,32 @@ raiding.0013 = {
 					add = -20
 				}
 
+				modifier = {
+					root = { raid_intent = capture_intent_nomadic }
+					has_raid_intent_immunity = no
+					add = {
+						value = 15
+						if = {
+							limit = {
+								has_raid_intent_protection = yes
+							}
+							subtract = 10
+						}
+						if = {
+							limit = {
+								scope:raider = { has_perk = kidnapper_perk }
+							}
+							add = 10
+						}
+						if = {
+							limit = {
+								scope:raider.culture ?= { has_innovation = innovation_motte }
+							}
+							add = 5
+						}
+					}
+				}
+
 				# Capture Effects
 				if = {
 					limit = { desirable_for_capture_trigger = yes }
@@ -924,7 +1020,10 @@ raiding.0013 = {
 		every_in_list = {
 			list = killed_targets
 			limit = { is_alive = yes }
-			override_death_effect = { death_reason = death_raid }
+			# Warcraft
+			override_death_effect = {
+				death_reason = death_raid
+			}
 		}
 	}
 }
@@ -1112,7 +1211,7 @@ raiding.0023 = {
 	type = character_event
 	title = raiding.0023.t
 	desc = raiding.0023.desc
-	theme = war
+	theme = raid
 	override_background = {
 		reference = burning_building
 	}
@@ -1142,5 +1241,223 @@ raiding.0023 = {
 	option = {
 		name = raiding.0023.a
 		add_trait = viking
+	}
+}
+
+#################################
+# Hereward special raiding event
+# by Nick Meredith
+#################################
+#Warcraft
+#	You have the chance to sack a holding.
+#raiding.0031 = {
+#	hidden = yes
+#	scope = army
+#
+#	trigger = {
+#		#You need to be Hereward, plus leading your own forces.
+#		exists = army_commander
+#		army_commander = {
+#			has_trait = the_wake
+#		}
+#
+#		#The province must be ruled by a Norman, or Norman culture itself
+#		OR = {
+#			scope:barony.culture = culture:norman
+#			scope:barony.holder.culture = culture:norman
+#		}
+#	}
+#
+#	immediate = {
+#		root.army_commander = { save_scope_as = raid_leader }
+#		scope:raid_leader = {
+#			add_trait_xp = {
+#				trait = the_wake
+#				value = { 1 3 }
+#			}
+#		}
+#	}
+#}
+
+# Raid Intent Effects
+raiding.0040 = {
+	hidden = yes
+	scope = army
+
+	immediate = {
+		if = {
+			limit = {
+				raid_intent = raze_intent
+				has_raid_intent_immunity = no
+			}
+			scope:barony.title_province ?= {
+				random_list = {
+					10 = {
+						modifier = {
+							has_raid_intent_protection = yes
+							add = 10
+						}
+					} # Nothing happens
+					5 = {
+						modifier = {
+							scope:raider.culture ?= { has_innovation = innovation_motte }
+							add = 2
+						}
+						scope:raider = {
+							send_interface_message = {
+								type = event_raid_good
+								title = raze_intent_message
+
+								left_icon = scope:barony.holder
+								right_icon = root.army_commander
+								show_as_tooltip = {
+									scope:barony.title_province = {
+										add_province_modifier = {
+											modifier = shattered_defenses_modifier
+											years = 5
+										}
+									}
+								}
+							}
+						}
+						scope:barony.holder = {
+							send_interface_message = {
+								type = event_raid_bad
+								title = raze_intent_message
+
+								left_icon = scope:barony.holder
+								right_icon = root.army_commander
+								scope:barony.title_province = {
+									add_province_modifier = {
+										modifier = shattered_defenses_modifier
+										years = 5
+									}
+								}
+							}
+						}
+					}
+					5 = {
+						trigger = {
+							county = { development_level > 0 }
+						}
+						modifier = {
+							scope:raider.culture ?= { has_innovation = innovation_motte }
+							add = 2
+						}
+						scope:raider = {
+							send_interface_message = {
+								type = event_raid_good
+								title = raze_intent_message
+
+								left_icon = scope:barony.holder
+								right_icon = root.army_commander
+								show_as_tooltip = {
+									scope:county = { change_development_level = -1 }
+								}
+							}
+						}
+						scope:barony.holder = {
+							send_interface_message = {
+								type = event_raid_bad
+								title = raze_intent_message
+
+								left_icon = scope:barony.holder
+								right_icon = root.army_commander
+								scope:county = { change_development_level = -1 }
+							}
+						}
+					}
+					5 = {
+						trigger = {
+							num_buildings > 1
+						}
+						modifier = {
+							scope:raider.culture ?= { has_innovation = innovation_motte }
+							add = 2
+						}
+						destroy_random_building_variable_effect = yes
+						scope:raider = {
+							send_interface_message = {
+								type = event_raid_good
+								title = raze_intent_message
+
+								left_icon = scope:barony.holder
+								right_icon = root.army_commander
+								show_as_tooltip = {
+									scope:barony.title_province = {
+										destroy_random_building_effect = yes
+									}
+								}
+							}
+						}
+						scope:barony.holder = {
+							send_interface_message = {
+								type = event_raid_bad
+								title = raze_intent_message
+
+								left_icon = scope:barony.holder
+								right_icon = root.army_commander
+								scope:barony.title_province = {
+									destroy_random_building_effect = yes
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				raid_intent = plunder_intent_nomadic
+				scope:raider.culture = { can_get_innovation_from = scope:county.culture }
+				has_raid_intent_immunity = no
+			}
+			random = {
+				chance = {
+					value = 2
+					if = {
+						limit = {
+							has_raid_intent_protection = yes
+						}
+						divide = 2
+					}
+					if = {
+						limit = {
+							scope:raider.culture ?= { has_innovation = innovation_motte }
+						}
+						add = 1
+					}
+				}
+				scope:raider = {
+					send_interface_message = {
+						type = event_raid_good
+						title = raze_intent_message
+
+						left_icon = scope:barony.holder
+						right_icon = root.army_commander
+						scope:raider.culture = {
+							get_random_innovation_from = scope:county.culture
+						}
+					}
+				}	
+			}
+		}
+		scope:barony.holder ?= {
+			if = {
+				limit = {
+					government_has_flag = government_is_nomadic
+				}
+				send_interface_message = {
+					type = event_raid_bad
+					title = raid_herd_message
+
+					left_icon = scope:barony.holder
+					right_icon = root.army_commander
+					scope:barony.holder.domicile ?= {
+						change_herd = -100
+					}
+				}
+			}
+		}
 	}
 }
