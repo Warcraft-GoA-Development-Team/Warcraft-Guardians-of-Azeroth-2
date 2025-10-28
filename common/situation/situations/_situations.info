@@ -14,6 +14,8 @@ situation_type = {
 	# Enums:
 	#	situation
 	# 	the_great_steppe
+	# 	silk_road
+	# 	dynastic_cycle
 	#
 	window = situation
 
@@ -33,6 +35,31 @@ situation_type = {
 	#
 	gui_participation_window_name = window_situation_participation
 
+	### Brief: gui_tooltip_group_focused (bool )
+	# If phase effect tooltips display effects by Participant Group, instead of by Named Modifier Set (modifier_named_sets)
+	#
+	gui_tooltip_group_focused = no
+
+	# Path to illustration shown in the situation list window
+	illustration = "path/to/image.dds"
+
+	# Triggered icon for the situation, accessible via [Situation.GetIcon].
+	# Write one entry per icon. The trigger is based on a Situation scope.
+	# If no empty triggered asset is defined, the default will be the situation_type icon.
+	icon = {
+		trigger = { ... }
+		reference = "icon_path.dds"
+	}
+
+	# Foldable situation group type where to put this situation in the gui.
+	# Defaults to the 'minor' group.
+	situation_group_type = <key>
+
+	# The order that the situation should show up within its situation group in the gui.
+	# Higher number is sorted first, tie breaking is on definition order if same sort order.
+	# Defaults to 0.
+	sort_order = integer
+
 	### Brief: map_mode ( enum )
 	# Which map mode to use for this situation type
 	# Default is participant_groups
@@ -47,6 +74,7 @@ situation_type = {
 	# - Each sub-region has their own list of characters for each participant group (see below)
 	# - Each sub-region will also have their own current active phase (same phases and flow for all sub-regions, as defined in 'phases' below
 	# - You are required to have at least 1 sub-region (otherwise the situation doesn't affect anything)
+	# - You are restricted to max 255 sub-regions. This is needed to properly identify participant groups within the region (see below)
 	# - Subregions cannot overlap
 	sub_regions = {
 
@@ -72,6 +100,7 @@ situation_type = {
 	### Define one or more participant groups.
 	# Participating characters can only belong to one participant group at a time, for each sub-region.
 	# Characters being considered for participation will be placed in the *first* group they are valid for.
+	# You are restricted to max 255 participant groups. This is needed to properly identify participant groups within a specific region.
 	# There is a set of groups for each sub-region.
 	participant_groups = {
 
@@ -80,11 +109,17 @@ situation_type = {
 			# (optional) Path to icon for group
 			icon = "path/to/image.dds"
 
-			### Should this group automatically consider all rulers in a sub-region as potential participants
-			# Any rulers still need to be valid for the other conditions of this group to be added to the group.
-			# If this is 'no', then you will need to manually add/remove characters to the Situation instead
+			### Should this group automatically consider all landed rulers in a sub-region as potential participants
+			# Rulers still need to satisfy the other conditions of this group to be automatically added to it.
+			# If this is 'no', then you will need to manually add/remove landed rulers to the Situation instead
 			# (default: yes)
 			auto_add_rulers = yes
+
+			### Should this group automatically consider all rulers with their domicile in a sub-region as potential participants
+			# Landless rulers still need to satisfy the other conditions of this group to be automatically added to it.
+			# If this is 'no', then you will need to manually add/remove landless characters to the Situation instead
+			# (default: yes)
+			auto_add_landless_rulers = yes
 
 			# (optional) The color of the participant group, used for some map modes
 			map_color = { 1 0.5 0.2 }
@@ -98,6 +133,10 @@ situation_type = {
 			# Is it required that some part of the realm of participants is in the region?
 			# (default: yes)
 			require_realm_in_sub_region = yes
+			# Is it required that the character's domicile, if any, is in the region?
+			# Character without domicile will still satisfy this requirement.
+			# (default: no)
+			require_domicile_in_sub_region = no
 
 			### Trigger determining if a character is valid to be added / can stay in this group (optional)
 			# root = character
@@ -111,7 +150,7 @@ situation_type = {
 			# scope:situation_participant_group = situation participant group
 			# scope:situation_sub_region = situation sub region
 			on_join = {}
-			### Effect run when character leaves
+			### Effect run when character leaves the participant group (note: not fired when the situation ends)
 			# root = character
 			# scope:situation = situation
 			# scope:situation_participant_group = situation participant group
@@ -140,7 +179,7 @@ situation_type = {
 	# Root = character
 	on_join = {}
 
-	### Effect run on Character as they leave the situation
+	### Effect run on Character as they leave the situation (note: not fired when the situation ends)
 	# Root = character
 	on_leave = {}
 
@@ -148,6 +187,10 @@ situation_type = {
 	# (this allows access via scope `situation:<name_of_type>`)
 	# Default: no
 	is_unique = no
+
+	# Enables full catalyst history for the situation if set to yes.
+	# The catalyst history can become very big, only use this flag if needed.
+	keep_full_history = no
 
 	### If rulers involved in this situation should migrate in search for better fetrility
 	# Migration AI is a complex part of AI logic, so it needs to be explicitly enabled here
@@ -158,7 +201,11 @@ situation_type = {
 	# Which phase should this situation start in (if none if given on situation creation)
 	start_phase = my_phase_key
 
-	# Which phases can this Situation Type be in? (at least one needs to exist
+	# Are the situation phase icons flat or not? Mismatch here gives weird appearance in tooltips.
+	# Default: yes
+	use_situation_phase_flat_icons = yes
+
+	# Which phases can this Situation Type be in? (at least one needs to exist)
 	phases = {
 
 		# Definition of one phase
@@ -167,6 +214,7 @@ situation_type = {
 			### Brief: parameters ( parameter list )
 			# Arbitrary parameters related to the phase type
 			# Can be checked in gui by: SituationPhaseType.HasParameter('string')
+			# Note: Requires loc format "situation_parameter_<key>" to show up in tooltips
 			#
 			# Differenting from the parameters in modifier_named_sets in that these
 			# are always the same on the phase type regardless of involved characters
@@ -175,13 +223,13 @@ situation_type = {
 				some_parameter = yes
 			}
 
-			# Effect run when phase is started
-			# Root = character
+			# Effect run when phase is started in a specific sub region
+			# Root = situation
 			# scope:situation = situation
 			# scope:situation_sub_region = situation sub region this phase belongs to
 			on_start = { }
-			# Effect run when phase is being ended (and next phase has been determined)
-			# Root = character
+			# Effect run when phase in a specific sub region is being ended (and next phase has been determined)
+			# Root = situation
 			# scope:situation = situation
 			# scope:situation_sub_region = situation sub region this phase belongs to
 			on_end = { }
