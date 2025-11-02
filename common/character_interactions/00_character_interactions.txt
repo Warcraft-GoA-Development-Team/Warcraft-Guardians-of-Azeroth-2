@@ -12,25 +12,39 @@ offer_vassalization_interaction = {
 	ai_target_quick_trigger = {
 		adult = yes
 	}
-	ai_frequency = 12
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 12
+		kingdom = 12
+		empire = 12
+		hegemony = 12
+	}
 
 	is_shown = {
 		scope:actor = {
 			is_landed = yes
 		}
 		scope:recipient = {
-			NOT = { this = scope:actor }
+			this != scope:actor
 			is_playable_character = yes
 			OR = {
 				AND = {
-					is_independent_ruler = yes
+					top_liege = this
 					is_tributary = no
 				}
 				is_tributary_of_suzerain_or_above = scope:actor
 			}
-			highest_held_title_tier < scope:actor.highest_held_title_tier
-			NOR = { 
-				government_has_flag = cannot_be_vassal_or_liege 
+			trigger_if = {
+				limit = {
+					scope:actor = {
+						NOT = { government_has_flag = government_is_mandala }
+					}
+				}
+				highest_held_title_tier < scope:actor.highest_held_title_tier
+			}
+			NOR = {
+				government_has_flag = cannot_be_vassal_or_liege
 				government_has_flag = government_is_herder
 			}
 		}
@@ -45,7 +59,31 @@ offer_vassalization_interaction = {
 
 	is_valid_showing_failures_only = {
 		scope:actor = {
-			is_confederation_member = no
+			trigger_if = {
+				limit = { is_confederation_member = yes }
+				exists = house.house_confederation
+			}
+			trigger_if = {
+				limit = {
+					has_title = title:h_china
+				}
+				situation:dynastic_cycle ?= {
+					NOT = {
+						situation_current_phase = situation_dynastic_cycle_phase_instability
+					}
+					trigger_if = {
+						limit = {
+							situation_current_phase = situation_dynastic_cycle_phase_stability_advancement
+						}
+						scope:recipient = {
+							custom_tooltip = {
+								text = recipient_is_not_celestial_desc
+								government_has_flag = government_is_celestial
+							}
+						}
+					}
+				}
+			}
 		}
 		scope:recipient = {
 			is_at_war = no
@@ -59,6 +97,19 @@ offer_vassalization_interaction = {
 						target = scope:actor
 					}
 				}
+			}
+			trigger_if = {
+				limit = { is_tributary = yes }
+				custom_tooltip = {
+					text = was_recently_granted_independence
+					scope:recipient.suzerain = scope:actor
+				}	
+			}
+			trigger_if = {
+				limit = {
+					scope:actor = { government_has_flag = government_is_mandala }
+				}
+				highest_held_title_tier < scope:actor.highest_held_title_tier
 			}
 		}
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
@@ -74,6 +125,15 @@ offer_vassalization_interaction = {
 				limit = { scope:influence_send_option = yes }
 				add = scope:actor.medium_influence_value
 				desc = INFLUENCE_INTERACTION_ACCEPTANCE_SEND_OPTION
+			}
+		}
+		piety = {
+			value = 0
+			scope:actor = {
+				if = {
+					limit = { government_has_flag = government_is_mandala }
+					add = medium_piety_value
+				}
 			}
 		}
 	}
@@ -102,7 +162,9 @@ offer_vassalization_interaction = {
 		# OPINION SCALES
 		# Dread
 		# Compare Opinion modifier.
-		
+
+		#ALL these modifiers are also used in impress_intent_vassalization_acceptance_value, keep them synced
+
 		# PERKS
 		modifier = { # Perk boost
 			desc = offer_vassalization_true_ruler_perk_tt
@@ -147,6 +209,19 @@ offer_vassalization_interaction = {
 				}
 			}
 		}
+
+		modifier = { #Has no Available Vassal Limit
+			desc = offer_vassalization_interaction_aibehavior_vassal_limit_tt
+			trigger = {
+				scope:actor = {
+					vassal_limit_available < 1
+				}
+			}
+			add = {
+				value = -1000
+			}
+		}
+		
 
 		# MAIN
 		modifier = { #Different faith, no pluralism.
@@ -202,9 +277,7 @@ offer_vassalization_interaction = {
 					}
 				}
 				scope:recipient = {
-					NOT = {
-						faith = scope:actor.faith
-					}
+					faith != scope:actor.faith
 					NOT = {
 						scope:actor.faith = { has_doctrine = doctrine_pluralism_pluralistic }
 					}
@@ -248,9 +321,7 @@ offer_vassalization_interaction = {
 					}
 				}
 				scope:recipient = {
-					NOT = {
-						faith = scope:actor.faith
-					}
+					faith != scope:actor.faith
 					scope:actor.faith = { has_doctrine = doctrine_pluralism_pluralistic }
 					faith = { has_doctrine = doctrine_pluralism_pluralistic }
 				}
@@ -281,10 +352,10 @@ offer_vassalization_interaction = {
 				}
 			}
 		}
-		modifier = { #I am a King!
-			desc = offer_vassalization_interaction_aibehavior_amkingtier_tt
+		modifier = { #I am a King! Or Emperor!
+			desc = offer_vassalization_interaction_aibehavior_hightier_tt
 			trigger = {
-				scope:recipient = { highest_held_title_tier = tier_kingdom }
+				scope:recipient = { highest_held_title_tier >= tier_kingdom }
 			}
 			add = {
 				value = -50
@@ -301,15 +372,21 @@ offer_vassalization_interaction = {
 				}
 				if = {
 					limit = {
-						scope:recipient.sub_realm_size >= 5
+						scope:recipient.sub_realm_size >= 10
 					}
 					add = -50
 				}
 				if = {
 					limit = {
-						scope:recipient.sub_realm_size >= 10
+						scope:recipient.sub_realm_size >= 20
 					}
 					add = -100
+				}
+				if = {
+					limit = {
+						scope:recipient = { highest_held_title_tier = tier_empire }
+					}
+					multiply = 1.5 # We bump this up for emperors
 				}
 			}
 		}
@@ -408,9 +485,7 @@ offer_vassalization_interaction = {
 		modifier = { # Isolationist tradition
 			desc = isolationist_reason
 			trigger = {
-				NOT = {
-					scope:actor.culture = scope:recipient.culture
-				}
+				scope:actor.culture != scope:recipient.culture
 				scope:recipient.culture = {
 					has_cultural_tradition = tradition_isolationist
 				}
@@ -428,11 +503,46 @@ offer_vassalization_interaction = {
 			desc = offer_vassalization_interaction_aibehavior_widetitletier_tt
 			trigger = {
 				scope:actor = {
+					OR = {
+						NOT = { government_has_flag = government_is_celestial }
+						scope:recipient = {
+							NOT = { government_has_flag = government_is_celestial }
+						}
+					}
 					tier_difference = {
 						target = scope:recipient
 						value > 1
 					}
 				}
+			}
+			add = 10
+		}
+		modifier = { #Wide difference in rank (Celestial to Celestial)
+			desc = offer_vassalization_interaction_aibehavior_widetitletier_tt
+			trigger = {
+				scope:actor = {
+					government_has_flag = government_is_celestial
+					tier_difference = {
+						target = scope:recipient
+						value > 1
+					}
+				}
+				scope:recipient = {
+					government_has_flag = government_is_celestial
+				}
+			}
+			add = {
+				value = 20
+				multiply = {
+					value = scope:actor.highest_held_title_tier
+					subtract = scope:recipient.highest_held_title_tier
+				}
+			}
+		}
+		modifier = { # Is a Hegemon
+			desc = offer_vassalization_interaction_aibehavior_hegemony_tt
+			trigger = {
+				scope:actor = { highest_held_title_tier = tier_hegemony }
 			}
 			add = 10
 		}
@@ -467,9 +577,7 @@ offer_vassalization_interaction = {
 				scope:recipient = {
 					NOT = {
 						any_neighboring_top_liege_realm_owner = {
-							NOT = {
-								this = scope:actor
-							}
+							this != scope:actor
 						}
 					}
 					NOT = {
@@ -518,7 +626,7 @@ offer_vassalization_interaction = {
 			}
 			add = -500
 		}
-		modifier = {
+		modifier = { #Military Strength
 			desc = offer_vassalization_interaction_aibehavior_power_tt
 	  	  	add = {
 				value = 1
@@ -530,12 +638,10 @@ offer_vassalization_interaction = {
 				ceiling = yes
 	  		}
 		}
-		modifier = {
+		modifier = { #Vassal opinion
 			desc = offer_vassalization_interaction_aibehavior_vassal_opinion_tt
 			trigger = {
-				scope:actor = {
-				number_of_powerful_vassals >= 1
-				}
+				scope:actor = { number_of_powerful_vassals >= 1 }
 			}
 
 	  	  	add = {
@@ -824,6 +930,9 @@ offer_vassalization_interaction = {
 		}
 		opinion_modifier = { #Compare Opinion modifier.
 			trigger = {
+				NOT = { 
+					scope:actor = { government_has_flag = government_is_mandala } #Has their own Opinion modifier
+				}
 				OR = {
 					scope:actor = {
 						NOT = { government_has_flag = government_is_clan }
@@ -866,116 +975,116 @@ offer_vassalization_interaction = {
 		}
 
 		# CONTRACT OPTIONS
-		modifier = {
-			add = 60
-			scope:recipient = {	government_has_flag = government_is_feudal }
-			scope:religious_exemption = yes
-			desc = CONTRACT_RELIGIOUS_EXEMPTION_REASON
-		}
-		modifier = {
-			add = 30
-			scope:recipient = {	government_has_flag = government_is_clan }
-			scope:religious_exemption_clan = yes
-			desc = CONTRACT_RELIGIOUS_EXEMPTION_REASON
-		}
-		modifier = {
-			add = 30
-			scope:recipient = {	government_has_flag = government_is_feudal }
-			scope:low_obligations = yes
-			desc = CONTRACT_LOW_TAXES_REASON
-		}
-		modifier = {
-			add = -40
-			scope:recipient = {	government_has_flag = government_is_feudal }
-			scope:high_obligations = yes
-			desc = CONTRACT_HIGH_TAXES_REASON
-		}
+			modifier = {
+				add = 60
+				scope:recipient = {	government_has_flag = government_is_feudal }
+				scope:religious_exemption = yes
+				desc = CONTRACT_RELIGIOUS_EXEMPTION_REASON
+			}
+			modifier = {
+				add = 30
+				scope:recipient = {	government_has_flag = government_is_clan }
+				scope:religious_exemption_clan = yes
+				desc = CONTRACT_RELIGIOUS_EXEMPTION_REASON
+			}
+			modifier = {
+				add = 30
+				scope:recipient = {	government_has_flag = government_is_feudal }
+				scope:low_obligations = yes
+				desc = CONTRACT_LOW_TAXES_REASON
+			}
+			modifier = {
+				add = -40
+				scope:recipient = {	government_has_flag = government_is_feudal }
+				scope:high_obligations = yes
+				desc = CONTRACT_HIGH_TAXES_REASON
+			}
 
 		# INSPECTION BONUSES
-		modifier = {
-			desc = "INSPECTION_REASON"
-			add = 5
-			scope:recipient = {
-				has_variable_list = lesser_inspection_bonus
-				is_target_in_variable_list = {
-					name = lesser_inspection_bonus
-					target = scope:actor
+			modifier = {
+				desc = "INSPECTION_REASON"
+				add = 5
+				scope:recipient = {
+					has_variable_list = lesser_inspection_bonus
+					is_target_in_variable_list = {
+						name = lesser_inspection_bonus
+						target = scope:actor
+					}
 				}
 			}
-		}
-		modifier = {
-			desc = "INSPECTION_REASON"
-			add = 10
-			scope:recipient = {
-				has_variable_list = inspection_bonus
-				is_target_in_variable_list = {
-					name = inspection_bonus
-					target = scope:actor
+			modifier = {
+				desc = "INSPECTION_REASON"
+				add = 10
+				scope:recipient = {
+					has_variable_list = inspection_bonus
+					is_target_in_variable_list = {
+						name = inspection_bonus
+						target = scope:actor
+					}
 				}
 			}
-		}
-		modifier = {
-			desc = "INSPECTION_REASON_REWARD"
-			add = 10
-			scope:recipient = {
-				has_variable_list = inspection_reward
-				is_target_in_variable_list = {
-					name = inspection_reward
-					target = scope:actor
+			modifier = {
+				desc = "INSPECTION_REASON_REWARD"
+				add = 10
+				scope:recipient = {
+					has_variable_list = inspection_reward
+					is_target_in_variable_list = {
+						name = inspection_reward
+						target = scope:actor
+					}
 				}
 			}
-		}
-		modifier = {
-			desc = "INSPECTION_REASON_REWARD_FOCUSED"
-			add = 10
-			scope:actor = { has_character_modifier = inspection_reward_focused_vassal_acceptance }
-		}
+			modifier = {
+				desc = "INSPECTION_REASON_REWARD_FOCUSED"
+				add = 10
+				scope:actor = { has_character_modifier = inspection_reward_focused_vassal_acceptance }
+			}
 
 		# LOW LEGITIMACY
-		modifier = {
-			desc = "LOW_LEGITIMACY_REASON"
-			add = -25
-			scope:actor = {
-				has_legitimacy_flag = reduced_vassalization_acceptance
+			modifier = {
+				desc = "LOW_LEGITIMACY_REASON"
+				add = -25
+				scope:actor = {
+					has_legitimacy_flag = reduced_vassalization_acceptance
+				}
 			}
-		}
-		modifier = {
-			desc = "LOW_LEGITIMACY_REASON"
-			add = -50
-			scope:actor = {
-				has_legitimacy_flag = very_reduced_vassalization_acceptance
+			modifier = {
+				desc = "LOW_LEGITIMACY_REASON"
+				add = -50
+				scope:actor = {
+					has_legitimacy_flag = very_reduced_vassalization_acceptance
+				}
 			}
-		}
-		modifier = {
-			desc = "LOW_LEGITIMACY_REASON"
-			add = -75
-			scope:actor = {
-				has_legitimacy_flag = massively_reduced_vassalization_acceptance
+			modifier = {
+				desc = "LOW_LEGITIMACY_REASON"
+				add = -75
+				scope:actor = {
+					has_legitimacy_flag = massively_reduced_vassalization_acceptance
+				}
 			}
-		}
 
 		# HIGH LEGITIMACY
-		modifier = {
-			desc = "HIGH_LEGITIMACY_REASON"
-			add = 25
-			scope:actor = {
-				has_legitimacy_flag = increased_vassalization_acceptance
+			modifier = {
+				desc = "HIGH_LEGITIMACY_REASON"
+				add = 25
+				scope:actor = {
+					has_legitimacy_flag = increased_vassalization_acceptance
+				}
 			}
-		}
-		modifier = {
-			desc = "HIGH_LEGITIMACY_REASON"
-			add = 50
-			scope:actor = {
-				has_legitimacy_flag = very_increased_vassalization_acceptance
+			modifier = {
+				desc = "HIGH_LEGITIMACY_REASON"
+				add = 50
+				scope:actor = {
+					has_legitimacy_flag = very_increased_vassalization_acceptance
+				}
 			}
-		}
-		modifier = {
-			desc = "HIGH_LEGITIMACY_REASON"
-			add = 75
-			scope:actor = {
-				has_legitimacy_flag = extra_increased_vassalization_acceptance
+			modifier = {
+				desc = "HIGH_LEGITIMACY_REASON"
+				add = 75
+				scope:actor = {
+					has_legitimacy_flag = extra_increased_vassalization_acceptance
+				}
 			}
-		}
 
 		# INFLUENCE
 		modifier = {
@@ -1004,7 +1113,7 @@ offer_vassalization_interaction = {
 					}
 				}
 			}
-			
+
 			desc = "HISTORICAL_ADMIN_REASON"
 		}
 
@@ -1020,18 +1129,56 @@ offer_vassalization_interaction = {
 		# End of Warcraft
 
 		modifier = {
-			trigger = {
-				scope:actor = {
-					has_variable = severed_head_vassalization
-					var:severed_head_vassalization = {
-						this = scope:recipient
-					}
+			scope:actor = {
+				has_variable = severed_head_vassalization
+				var:severed_head_vassalization = {
+					this = scope:recipient
 				}
 			}
 			add = 200
 			desc = COWED_BY_SEVERED_HEAD_MODIFIER
 		}
 
+		#ALL these modifiers are also used in impress_intent_vassalization_acceptance_value, keep them synced
+
+		#Mandala
+			#Mandala Tributaries should not want to be vassals
+			modifier = {
+				scope:recipient = { is_tributary_of = scope:actor }
+				scope:actor = { government_has_flag = government_is_mandala }
+				add = -35
+				desc = is_tributary_of_me_mandala
+			}
+
+			modifier = {
+				scope:recipient = { government_has_flag = government_is_mandala }
+				scope:actor = { government_has_flag = government_is_mandala }
+				add = -25
+				desc = is_mandala_government
+			}
+
+			#Your Radiance
+			modifier = {
+				scope:actor = { has_mandala_capital_trigger = yes }
+				add = scope:actor.mandala_radiance_value
+				desc = actor_positive_mandala_radiance
+			}
+
+			#Tributary Realm Size
+			subject_realm_size_lose_weight_modifier = {
+				DEVARAJA = scope:actor
+				SUBJECT = scope:recipient
+			}
+			
+			#Do they like you?
+			opinion_modifier = { 
+				trigger = {
+					scope:actor = { government_has_flag = government_is_mandala }
+				}
+				who = scope:recipient
+				opinion_target = scope:actor
+				multiplier = 1
+			}
 		# Warcraft
 		scourge_vassalization_modifier = yes
 		scourge_interaction_modifiers = yes
@@ -1080,7 +1227,7 @@ offer_vassalization_interaction = {
 			}
 		}
 		is_valid = {
-			NOT = { scope:recipient.faith = scope:actor.faith }
+			scope:recipient.faith != scope:actor.faith
 		}
 		flag = religious_exemption
 		localization = religious_exemption
@@ -1120,7 +1267,7 @@ offer_vassalization_interaction = {
 			}
 		}
 		is_valid = {
-			NOT = { scope:recipient.faith = scope:actor.faith }
+			scope:recipient.faith != scope:actor.faith
 		}
 		flag = religious_exemption_clan
 		localization = religious_exemption
@@ -1178,8 +1325,9 @@ offer_vassalization_interaction = {
 
 	ai_potential = {
 		is_adult = yes
-		is_independent_ruler = yes
+		top_liege = this
 		highest_held_title_tier > tier_county
+		vassal_limit_available > 1
 	}
 
 	ai_will_do = {
@@ -1231,14 +1379,14 @@ offer_fealty_interaction = {
 
 	is_shown = {
 		scope:recipient = {
-			NOT = { this = scope:actor }
+			this != scope:actor
 			is_landed = yes
-			is_independent_ruler = yes # Target has to be independent
+			top_liege = this # Target has to be independent
 		}
 		scope:actor.highest_held_title_tier < scope:recipient.highest_held_title_tier
 		scope:actor = {
 			is_landed = yes
-			is_independent_ruler = yes # You have to be independent - This check exists to prevent a lot of edge-cases where you can change liege
+			top_liege = this # You have to be independent - This check exists to prevent a lot of edge-cases where you can change liege
 			NOT = { government_has_flag = cannot_be_vassal_or_liege }
 			is_confederation_member = no
 		}
@@ -1332,7 +1480,7 @@ offer_fealty_interaction = {
 		}
 
 		modifier = { # I am a King!
-			desc = offer_fealty_interaction_aibehavior_amkingtier_tt
+			desc = offer_fealty_interaction_aibehavior_hightier_tt
 			trigger = {
 				scope:actor = {
 					highest_held_title_tier >= tier_kingdom
@@ -1379,6 +1527,12 @@ offer_fealty_interaction = {
 						any_neighboring_top_liege_realm_owner = { this = scope:recipient }
 					}
 				}
+				trigger_if = {
+					limit = {
+						exists = scope:recipient.suzerain
+						scope:recipient.suzerain != scope:actor
+					}
+				}
 				scope:actor.capital_province = { squared_distance = { target = scope:recipient.capital_province value >= 200000 } }
 			}
 			add = -25
@@ -1402,7 +1556,7 @@ offer_fealty_interaction = {
 					has_relation_nemesis = scope:actor
 				}
 			}
-			add = -30
+			add = -100
 		}
 		modifier = { # Same Dynasty modifier.
 			desc = offer_vassalization_interaction_aibehavior_dynasty_tt
@@ -1510,10 +1664,10 @@ offer_fealty_interaction = {
 		# EP3
 		modifier = { # cowed from an emperor's impressive visit
 			add = 10
-			desc = speaks_same_language_interaction_reason
+			desc = cowed_from_visit_interaction_reason
 			trigger = {
 				scope:actor = {
-					knows_language_of_culture = scope:recipient.culture
+					has_character_flag = cowed_increased_vassalization_acceptance
 				}
 			}
 		}
@@ -1586,7 +1740,7 @@ offer_fealty_interaction = {
 			}
 		}
 		is_valid = {
-			NOT = { scope:recipient.faith = scope:actor.faith }
+			scope:recipient.faith != scope:actor.faith
 		}
 		flag = religious_taxation
 		localization = religious_taxation
@@ -1620,7 +1774,7 @@ offer_fealty_interaction = {
 			}
 		}
 		is_valid = {
-			NOT = { scope:recipient.faith = scope:actor.faith }
+			scope:recipient.faith != scope:actor.faith
 		}
 		flag = religious_exemption_clan
 		localization = religious_exemption
@@ -1680,7 +1834,7 @@ offer_fealty_interaction = {
 						}
 					}
 				}
-				
+
 				add_character_flag = {
 					flag = new_confederate
 					years = 3
@@ -1695,7 +1849,7 @@ offer_fealty_interaction = {
 					}
 				}
 			}
-			
+
 			# If you have a suzerain, they will get a lower opinion of you for not paying tribute anymore
 			suzerain ?= {
 				if = {
@@ -1795,7 +1949,7 @@ force_vote_in_succession_election_interaction = {
 				use_hook = scope:recipient
 			}
 		}
-		
+
 		# If we're a clan this interaction affects unity
 		add_clan_unity_interaction_effect = {
 			CHARACTER = scope:actor
@@ -1818,12 +1972,9 @@ set_primary_spouse_interaction = {
 		scope:actor = {
 			is_spouse_of = scope:recipient
 		}
-		NOT = {
-			scope:actor.primary_spouse = scope:recipient
-		}
+		scope:actor.primary_spouse != scope:recipient
 	}
 	is_valid_showing_failures_only = {
-		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:recipient = {
 			NOT = {
 				is_incapable_trigger = yes # Warcraft trigger
@@ -1892,7 +2043,7 @@ set_primary_spouse_interaction = {
 						target = scope:actor
 						opinion = -30
 					}
-				}	
+				}
 			}
 			set_primary_spouse = scope:recipient
 			hidden_effect = {
@@ -1943,7 +2094,14 @@ set_primary_spouse_interaction = {
 	ai_target_quick_trigger = {
 		adult = yes
 	}
-	ai_frequency = 72
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 72
+		kingdom = 72
+		empire = 72
+		hegemony = 72
+	}
 
 	ai_potential = {
 		any_spouse = {
@@ -1986,14 +2144,15 @@ grant_independence_interaction = {
 		}
 		scope:recipient = {
 			is_vassal_of = scope:actor
+			is_landed = yes
 		}
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 	}
 
 	is_valid_showing_failures_only = {
 		NOT = { scope:actor = { is_at_war_with = scope:recipient } }
 		scope:actor = {
-			is_independent_ruler = yes
+			top_liege = this
 			NOT = {
 				is_at_war = yes
 			}
@@ -2013,7 +2172,7 @@ grant_independence_interaction = {
 		custom_description = {
 			text = is_de_jure_vassal_check
 			object = scope:recipient
-			
+
 			trigger_if = { # Admin rulers can grant tribal vassals independence regardless of de jure
 				limit = {
 					scope:actor = { government_has_flag = government_is_administrative }
@@ -2030,11 +2189,15 @@ grant_independence_interaction = {
 					}
 				}
 			}
-			
+
 		}
 		custom_tooltip = {
 			text = can_only_remove_diarch_by_elevating_them.tt
 			NOT = { scope:recipient ?= scope:actor.diarch }
+		}
+		tgp_blocked_action_against_tenno_trigger = {
+			ACTOR = scope:actor
+			TARGET = scope:recipient
 		}
 	}
 
@@ -2085,13 +2248,13 @@ grant_independence_interaction = {
 				limit = {
 					any_liege_or_above = {
 						is_ai = no
-						NOT = { this = scope:actor }
+						this != scope:actor
 					}
 				}
 				every_liege_or_above = {
 					limit = {
 						is_ai = no
-						NOT = { this = scope:actor }
+						this != scope:actor
 					}
 					trigger_event = vassal_interaction.0023
 				}
@@ -2121,7 +2284,7 @@ grant_independence_interaction = {
 					every_vassal = {
 						limit = {
 							is_ai = no
-							NOT = { this = scope:recipient }
+							this != scope:recipient
 						}
 						trigger_event = {
 							id = vassal_interaction.0022
@@ -2254,18 +2417,15 @@ expose_secret_interaction = {
 			any_secret = {
 				is_known_by = scope:actor
 			}
-			NOT = { this = scope:actor }
+			this != scope:actor
 			age > 10
 		}
 	}
 
 	is_valid_showing_failures_only = {
-		scope:recipient = { is_busy_in_events_localised = yes }
-		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
 	}
 
 	on_accept = {
-
 		scope:actor = {
 			if = {
 				limit = {
