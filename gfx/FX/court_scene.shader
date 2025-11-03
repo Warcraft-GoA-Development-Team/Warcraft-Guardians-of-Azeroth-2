@@ -13,6 +13,7 @@ Includes = {
 	"jomini/portrait_user_data.fxh"
 	"jomini/hair_lighting.fxh"
 	"jomini/translucency.fxh"
+	"jomini/shader_utility.fxh"
 	"constants.fxh"
 	"standardfuncsgfx.fxh"
 	"parallax.fxh"
@@ -804,13 +805,27 @@ PixelShader =
 			Color += HOVER_COLOR * HOVER_INTENSITY * FresnelFactor * HoverMult;
 		}
 
-		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input, in GH_SPortraitEffect PortraitEffect, float HoverMult )
+		float3 TangentSpaceToWorldNormal( in VS_OUTPUT_PDXMESHPORTRAIT Input, float3 NormalSample )
 		{
 			// MOD(godherja)
 			GH_TryApplyStatueEffect(PortraitEffect, Diffuse, Properties);
 			// END MOD
 			float3x3 TBN = Create3x3( normalize( Input.Tangent ), normalize( Input.Bitangent ), normalize( Input.Normal ) );
-			float3 Normal = normalize( mul( NormalSample, TBN ) );
+			return normalize( mul( NormalSample, TBN ) );
+		}
+
+		float3 TangentSpaceToWorldNormalWithTwoNormal( in VS_OUTPUT_PDXMESHPORTRAIT Input, float3 FirstNormalSample, float3 SecondNormalSample, float NormalUVChannel )
+		{
+			float3x3 TBN = Create3x3( normalize( Input.Tangent ), normalize( Input.Bitangent ), normalize( Input.Normal ) );
+			float3 BaseWorldNormal  = normalize( mul( FirstNormalSample, TBN ) );
+			float3x3 TBN2 = BuildTangentFrame( BaseWorldNormal , Input.WorldSpacePos, Input.UV1 );
+			float3 LayeredNormal = normalize( mul( SecondNormalSample, TBN2 ) );
+			return lerp( BaseWorldNormal , LayeredNormal, NormalUVChannel );
+		}
+
+		float3 CommonPixelShaderColor( float4 Diffuse, float4 Properties, float3 Normal, in VS_OUTPUT_PDXMESHPORTRAIT Input, float HoverMult )
+		{
+			GetSpecularAA( Normal, 1.0f, 1.0f, Properties.a );
 			
 			SMaterialProperties MaterialProps = GetMaterialProperties( Diffuse.rgb, Normal, saturate( Properties.a ), Properties.g, Properties.b );
 			SLightingProperties LightingProps = GetSunLightingProperties( Input.WorldSpacePos, ShadowTexture );
@@ -894,6 +909,18 @@ PixelShader =
 
 			AddHoverHighlight( Color, Normal, LightingProps._ToCameraDir, HoverMult );
 			return Color;
+		}
+
+		float3 CommonPixelShader( float4 Diffuse, float4 Properties, float3 NormalSample, in VS_OUTPUT_PDXMESHPORTRAIT Input, float HoverMult )
+		{
+			float3 Normal = TangentSpaceToWorldNormal( Input, NormalSample );
+			return CommonPixelShaderColor( Diffuse, Properties, Normal, Input, HoverMult );
+		}
+
+		float3 CommonPixelShaderWithTwoNormal( float4 Diffuse, float4 Properties, float3 FirstNormalSample, float3 SecondNormalSample, float NormalUVChannel, in VS_OUTPUT_PDXMESHPORTRAIT Input, float HoverMult )
+		{
+			float3 Normal = TangentSpaceToWorldNormalWithTwoNormal( Input, FirstNormalSample, SecondNormalSample, NormalUVChannel );
+			return CommonPixelShaderColor( Diffuse, Properties, Normal, Input, HoverMult );
 		}
 
 		// Remaps Value to [IntervalStart, IntervalEnd]
@@ -1187,7 +1214,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
 				Out.Color = float4( Color, 1.0f );
 
 				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
@@ -1229,7 +1256,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, 0.f );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, 0.f );
 
 				Out.Color = float4( Color, 1.0f );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
@@ -1265,7 +1292,9 @@ PixelShader =
 					float4 SecondColorMask = vec4( 0.0f );
 					SecondColorMask.r = Properties.r;
 					SecondColorMask.g =  NormalSampleRaw.b;
-					ApplyVariationPatterns( Input, Diffuse, Properties, NormalSample, SecondColorMask );
+					float3 PatternNormal = NormalSample;
+					float NormalUVChannel = 0.0f;
+					ApplyVariationPatterns( Input, Diffuse, Properties, PatternNormal, SecondColorMask, NormalUVChannel );
 				#endif
 				
 				#ifdef COA_ENABLED
@@ -1294,11 +1323,18 @@ PixelShader =
 					#endif
 				#endif
 
+				#ifdef VARIATIONS_ENABLED
+					float3 Color = CommonPixelShaderWithTwoNormal( Diffuse, Properties, NormalSample, PatternNormal, NormalUVChannel, Input, AppliedHover );
+				#else 
+					float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, AppliedHover );
+				#endif
+
 				// MOD(godherja)
 				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
 				// END MOD
 
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, AppliedHover );
+				
 
 				Out.Color = float4( Color, Diffuse.a );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
@@ -1332,6 +1368,7 @@ PixelShader =
 
 				float2 UV0 = Input.UV0;
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );
+				clip( Diffuse.a - 1e-5 );
 				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				Properties *= vHairPropertyMult;
 				float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
@@ -1345,7 +1382,7 @@ PixelShader =
 				// END MOD
 
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
 
 				#ifdef ALPHA_TO_COVERAGE
 					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, UV0, DiffuseMap );
@@ -1400,7 +1437,7 @@ PixelShader =
 				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
 				// END MOD
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
 
 				Out.Color = float4( Color, Diffuse.a );
 				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
@@ -1780,7 +1817,7 @@ PixelShader =
 				PortraitEffect.Param = float4(0.0f, 0.0f, 0.0f, 0.0f);
 				// END MOD
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult );
 
 				#ifdef ALPHA_TO_COVERAGE
 					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, Input.UV0, DiffuseMap );
@@ -1907,7 +1944,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage
 	PixelShader = "PS_skin"
 	BlendState = "alpha_to_coverage"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "SKIN_SCATTERING" "TRANSLUCENCY" "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "SKIN_SCATTERING" "TRANSLUCENCY" "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" } //warcraft 
 }
 
 Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
@@ -1915,7 +1952,7 @@ Effect wc_portrait_skin_attachment_alpha_to_coverage_selection
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
 	RasterizerState = "rasterizer_no_culling"
-	Defines = { "SKIN_SCATTERING" "TRANSLUCENCY" "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "SKIN_SCATTERING" "TRANSLUCENCY" "EMISSIVE_NORMAL_BLUE" "ALPHA_TO_COVERAGE" "PDX_MESH_BLENDSHAPES" } //warcraft
 }
 
 Effect portrait_skinShadow
@@ -1930,7 +1967,7 @@ Effect portrait_skin_face
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_skin"
-	Defines = { "SKIN_SCATTERING" "TRANSLUCENCY" "EMISSIVE_NORMAL_BLUE" "DECALS" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" }
+	Defines = { "SKIN_SCATTERING" "TRANSLUCENCY" "EMISSIVE_NORMAL_BLUE" "DECALS" "ENABLE_TEXTURE_OVERRIDE" "PDX_MESH_BLENDSHAPES" } //warcraft
 }
 
 Effect portrait_skin_face_selection
@@ -1952,14 +1989,14 @@ Effect portrait_eye
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
-	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" "DECALS" }
+	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" "DECALS" } //warcraft
 }
 
 Effect portrait_eye_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
-	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" "DECALS" }
+	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" "DECALS" } //warcraft
 }
 
 Effect wc_portrait_eye_no_decal
@@ -2407,6 +2444,13 @@ Effect court_usercolor_coa
 	Defines = { "USER_COLOR" "COA" }
 }
 
+Effect court_parallax
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court"	
+	Defines = { "PARALLAX" }
+}
+
 Effect courtShadow
 {
 	VertexShader = "VertexPdxMeshStandardShadow"
@@ -2422,6 +2466,13 @@ Effect court_usercolorShadow
 }
 
 Effect court_usercolor_coaShadow
+{
+	VertexShader = "VertexPdxMeshStandardShadow"
+	PixelShader = "PixelPdxMeshStandardShadow"
+	RasterizerState = ShadowRasterizerState
+}
+
+Effect court_parallaxShadow
 {
 	VertexShader = "VertexPdxMeshStandardShadow"
 	PixelShader = "PixelPdxMeshStandardShadow"
@@ -2468,6 +2519,13 @@ Effect court_usercolor_coa_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
+}
+
+Effect court_parallax_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court_selection"	
+	Defines = { "PARALLAX" }
 }
 
 Effect portrait_artifact_pattern
@@ -2576,6 +2634,18 @@ Effect snap_to_terrain_selection
 }
 
 Effect standard_atlas_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_selection_mapobject
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"
@@ -2890,6 +2960,18 @@ Effect snap_to_terrain_alpha_to_coverage
 	PixelShader = "PS_noop"
 }
 
+Effect snap_to_terrain_alpha_to_coverage_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_alpha_to_coverage_selection_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
 Effect material_test
 {
 	VertexShader = "VS_standard"
@@ -2982,3 +3064,14 @@ Effect court_rgb_mask_blend_alpha_to_coverage_selection
 	PixelShader = "PS_court_selection"
 }
 
+Effect tabletop_standard
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect tabletop_standard_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
