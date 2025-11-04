@@ -14,23 +14,52 @@
 			scope:recipient = scope:actor
 		}
 		scope:recipient = {
-			is_landed = yes
+			is_playable_character = yes
 		}
 		scope:actor = {
 			NOT = {
 				is_at_war_with = scope:recipient
 			}
 		}
+
+		trigger_if = {
+			limit = {
+				scope:actor = {
+					has_title = title:e_horde
+					game_start_date = 583.1.1
+				}
+			}
+			has_global_variable = horde_invasions_started
+		}
 	}
 
 	is_valid_showing_failures_only = {
 		scope:actor = {
 			# Warcraft
-			wc_can_declare_wars = yes
+			wc_can_declare_wars = yes			
+			scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }
 			
+			NOT = { has_trait = incapable }
 			can_attack_in_hierarchy = scope:recipient
-			NOT = {
-				has_raised_armies = yes
+			trigger_if = {
+				limit = {
+					NOT = {
+						government_has_flag = can_start_war_with_raised_troops
+					}
+				}
+				NOT = {
+					has_raised_armies = yes
+				}
+			}
+			trigger_else = {
+				custom_description = {
+					text = army_blocks_defender_army
+					NOT = {
+						any_army = {
+							location.county.holder ?= scope:recipient
+						}
+					}
+				}
 			}
 			has_any_display_cb_on = scope:recipient
 			NOT = {
@@ -77,14 +106,123 @@
 			#		}
 			#	}
 			#}
-			# Warcraft mongol
 		}
-		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
 		scope:recipient = {
+			custom_tooltip = {
+				text = is_a_herder_recipient_tt
+				NOT = { government_has_flag = government_is_herder } # herders can't fight
+			}
+			NOT = { is_tributary_of_suzerain_or_above = scope:actor } # can't fight your tributaries or your tributaries' tributaries
+			NOT = { has_strong_hook = scope:actor }
 			trigger_if = {
 				limit = { is_imprisoned = yes }
 				NOT = {
 					imprisoner = scope:actor
+				}
+			}
+		}
+		scope:actor = {
+			trigger_if = {
+				limit = {
+					NOT = { government_allows = administrative }
+					liege ?= {
+						has_realm_law_flag = vassal_all_wars_banned_permanent
+						NOT = { this = scope:actor }
+					}
+				}
+				custom_tooltip = {
+					text = admin_all_vassal_wars_banned
+					always = no
+				}
+			}
+			trigger_if = {
+				limit = {
+					government_allows = administrative
+					top_liege = scope:recipient.top_liege
+					scope:recipient = { government_allows = administrative }
+					NOT = { top_liege = scope:recipient }
+				}
+				custom_tooltip = {
+					text = admin_cannot_declare_internal_wars
+					always = no
+				}
+			}
+			trigger_if = { # Admin - Laws only allow frontier and naval themes to declare war
+				limit = {
+					government_allows = administrative
+					is_independent_ruler = no
+					top_liege = {
+						this != scope:recipient.top_liege
+						has_realm_law_flag = admin_vassal_wars_restricted
+					}
+				}
+				custom_tooltip = {
+					text = admin_all_vassal_wars_banned
+					OR = {
+						vassal_contract_has_flag = admin_theme_frontier
+						vassal_contract_has_flag = admin_theme_naval
+					}
+				}
+			}
+			trigger_if = { # Admin - Laws only allow frontier and naval themes to declare war IF they have permission
+				limit = {
+					government_allows = administrative
+					OR = {
+						vassal_contract_has_flag = admin_theme_frontier
+						vassal_contract_has_flag = admin_theme_naval
+					}
+					top_liege = {
+						this != scope:recipient.top_liege
+						has_realm_law_flag = admin_vassal_wars_permission_only
+						NOT = { has_realm_law_flag = admin_vassal_wars_banned }
+					}
+				}
+				custom_tooltip = {
+					text = admin_vassal_wars_permission_only_desc
+					has_variable = admin_permission_to_declare_war
+				}
+			}
+			trigger_if = { # Admin - Laws prevent all vassals from declaring war
+				limit = {
+					government_allows = administrative
+					OR = {
+						vassal_contract_has_flag = admin_theme_frontier
+						vassal_contract_has_flag = admin_theme_naval
+					}
+					top_liege = {
+						this != scope:recipient.top_liege
+						has_realm_law_flag = admin_vassal_wars_banned
+					}
+				}
+				custom_tooltip = {
+					text = admin_all_vassal_wars_banned
+					always = no
+				}
+			}
+		}
+		scope:actor = {
+			trigger_if = {
+				limit = { is_landless_adventurer = yes }
+				custom_tooltip = {
+					text = camp_located_in_defender_realm.tt
+					domicile.domicile_location.county.holder = {
+						NOR = {
+							this = scope:recipient
+							any_liege_or_above = { this = scope:recipient }
+						}
+					}
+				}
+			}
+		}
+		trigger_if = {
+			limit = {
+				scope:actor = {
+					is_confederation_member = yes
+				}
+			}
+			NOT = {
+				scope:recipient = {
+					is_member_of_confederation = scope:actor.confederation
 				}
 			}
 		}
@@ -137,6 +275,7 @@
 			#Feedback!
 			hidden_effect = {
 				send_interface_toast = {
+					type = event_toast_effect_neutral
 					title = declare_war_interaction_notification
 
 					left_icon = scope:actor					
@@ -272,6 +411,7 @@
 							}
 						}
 						send_interface_toast = {
+							type = msg_war_declared_on_liege
 							title = declare_war_interaction_notification
 
 							left_icon = scope:actor					
@@ -281,6 +421,14 @@
 						}
 					}
 				}
+			}
+			
+			# If you are admin and had permission to start war, spend said permission
+			if = {
+				limit = {
+					has_variable = admin_permission_to_declare_war
+				}
+				remove_variable = admin_permission_to_declare_war
 			}
 		}
 	}
@@ -401,7 +549,7 @@ end_war_attacker_victory_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_actor
-					scope:recipient = { is_landed = yes }
+					scope:recipient = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_actor
@@ -412,7 +560,7 @@ end_war_attacker_victory_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_recipient
-					scope:actor = { is_landed = yes }
+					scope:actor = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_recipient
@@ -434,9 +582,10 @@ end_war_attacker_victory_interaction = {
 					every_vassal = {
 						limit = { NOT = { this = scope:defender_loser } }
 						send_interface_toast = {
+							type = msg_liege_war_ended_attacker_win
 							title = war_event.notification_liege_win.t
 							left_icon = scope:attacker_winner
-							left_icon = scope:defender_loser
+							right_icon = scope:defender_loser
 							custom_tooltip = war_event.1901
 						}
 					}
@@ -452,6 +601,7 @@ end_war_attacker_victory_interaction = {
 							NOT = { this = scope:attacker_winner }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_attacker_win
 							title = war_event.notification_liege_loss.t
 							left_icon = scope:defender_loser
 							right_icon = scope:attacker_winner
@@ -479,13 +629,56 @@ end_war_attacker_victory_interaction = {
 			OR = {
 				attacker_war_score >= 100
 				AND = {
-					attacker_war_score >= 90
+					OR = {
+						attacker_war_score >= 90
+						AND = {
+							attacker_war_score >= 80
+							root = {
+								dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+							}
+						}
+					}
 					root = {
 						has_perk = peacemaker_perk
 					}
 					primary_defender = {
 						is_ai = yes
 					}
+				}
+				AND = {
+					OR = {
+						attacker_war_score >= 90
+						AND = {
+							attacker_war_score >= 80
+							root = {
+								has_perk = peacemaker_perk
+							}
+						}
+					}
+					root = {
+						dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+					}
+					primary_defender = {
+						is_ai = yes
+					}
+				}
+				#SENT A SCARY SEVERED HEAD AAAAHHH
+				AND = {
+					attacker_war_score >= 70
+					primary_defender = {
+						is_ai = yes
+						save_temporary_scope_as = defender
+					}
+					root = {
+						has_variable = peace_acceptance_head_scare
+						var:peace_acceptance_head_scare = {
+							this = scope:defender
+						}
+					}
+				}
+				primary_defender = {
+					is_ai = yes
+					ai_has_conqueror_personality = yes
 				}
 			}
 		}
@@ -500,12 +693,63 @@ end_war_attacker_victory_interaction = {
 				OR = {
 					attacker_war_score >= 100
 					AND = {
-						attacker_war_score >= 90
-						scope:actor = {
+						OR = {
+							attacker_war_score >= 90
+							AND = {
+								attacker_war_score >= 80
+								root = {
+									dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+								}
+							}
+						}
+						root = {
 							has_perk = peacemaker_perk
 						}
 						primary_defender = {
 							is_ai = yes
+						}
+					}
+					AND = {
+						OR = {
+							attacker_war_score >= 90
+							AND = {
+								attacker_war_score >= 80
+								root = {
+									has_perk = peacemaker_perk
+								}
+							}
+						}
+						root = {
+							dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+						}
+						primary_defender = {
+							is_ai = yes
+						}
+					}
+					#SENT A SCARY SEVERED HEAD AAAAHHH
+					AND = {
+						attacker_war_score >= 70
+						primary_defender = {
+							is_ai = yes
+							save_temporary_scope_as = defender
+						}
+						root = {
+							has_variable = peace_acceptance_head_scare
+							var:peace_acceptance_head_scare = {
+								this = scope:defender
+							}
+						}
+					}
+					AND = {
+						NOR = {
+							using_cb = undirected_great_holy_war
+							using_cb = mongol_invasion_war
+							using_cb = mongol_realm_invasion_war
+							#using_cb = mpo_gok_onslaught_cb
+						}
+						primary_defender = {
+							is_ai = yes
+							ai_has_conqueror_personality = yes
 						}
 					}
 				}
@@ -545,6 +789,36 @@ end_war_attacker_victory_interaction = {
 
 			desc = "PEACEMAKER_PERK_MODIFIER"
 		}
+		modifier = {
+			scope:war.casus_belli = {
+				primary_attacker = {
+					dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+					NOT = { this = scope:recipient }
+				}
+			}
+
+			add = 10
+
+			desc = "NOMAD_LEGACY_PERK_MODIFIER"
+		}
+		modifier = {
+			scope:war.casus_belli = {
+				primary_defender = {
+					save_temporary_scope_as = defender
+				}
+				primary_attacker = {
+					has_variable = peace_acceptance_head_scare
+					var:peace_acceptance_head_scare = {
+						this = scope:defender
+					}
+				}
+				primary_defender = {
+					is_ai = yes
+				}
+			}
+			add = 30
+			desc = "COWED_BY_SEVERED_HEAD_MODIFIER"
+		}
 
 		# Hostages
 		modifier = {
@@ -557,24 +831,125 @@ end_war_attacker_victory_interaction = {
 			add = war_recipient_hostage_value
 			desc = WAR_OVERVIEW_HOSTAGE_DEMAND_VALUE
 		}
+				# The AI cannot accept the outcome, if they will lose all their land and you try to take a hostage from them
+		modifier = {
+			scope:war = {
+				OR = {
+					exists = scope:secondary_actor
+					exists = scope:secondary_recipient
+				}
+				casus_belli = {
+					any_target_title = {
+						count >= 1
+						add_to_temporary_list = target_titles
+					}
+				}
+				NOT = {
+					scope:recipient = {
+						any_held_title = {
+							tier = tier_county
+							NOT = {
+								any_this_title_or_de_jure_above = { is_in_list = target_titles }
+							}
+						}
+					}
+				}
+			}
+			add = -10000
+			desc = WAR_OVERVIEW_HOSTAGE_DEMAND_BLOCKED
+		}
+		# This is a bit of a hidden modifier, only used to make sure we get the right icon when you force it through at 100 war score, and the opponent has more realm left
+		modifier = {
+			scope:war = { 
+				attacker_war_score >= 100 
+				OR = {
+					exists = scope:secondary_actor
+					exists = scope:secondary_recipient
+				}
+				casus_belli = {
+					any_target_title = {
+						count >= 1
+						add_to_temporary_list = target_titles
+					}
+				}
+				scope:recipient = {
+					any_held_title = {
+						tier = tier_county
+						NOT = {
+							any_this_title_or_de_jure_above = { is_in_list = target_titles }
+						}
+					}
+				}
+			}
+			add = 1000
+			desc = "WARSCORE_MODIFIER"
+		}
 		
 		# Warcraft
 		religion_obey_crisis_modifier = { WINNER = primary_attacker LOSER = primary_defender }
 	}
 
 	auto_accept = {
-		OR = {
-			scope:war = {
-				attacker_war_score >= 100
+		trigger_if = {
+			limit = {
+				OR = {
+					scope:war = {
+						attacker_war_score >= 100
+					}
+					AND = {
+						scope:recipient = { is_ai = yes }
+						primary_attacker = scope:recipient
+					}
+					scope:war.casus_belli = { # Conquerors know when to fold
+						primary_attacker = {
+							is_ai = yes
+							current_military_strength >= scope:recipient.fifty_percent_more_of_current_military_strength
+						}
+						primary_defender = {
+							is_ai = yes
+							ai_has_conqueror_personality = yes
+							this = scope:recipient
+						}
+					}
+				}
 			}
-			AND = {
-				scope:recipient = { is_ai = yes }
-				primary_attacker = scope:recipient
+			always = yes
+		}
+		trigger_else = {
+			always = no
+		}
+		# The auto accept kind of messes up the hostage interaction a bit, so we block the auto accept if they try to grab a hostage and all the opponent's land at the same time
+		scope:war = {
+			trigger_if = {
+				limit = {
+					OR = {
+						exists = scope:secondary_actor
+						exists = scope:secondary_recipient
+					}
+					casus_belli = {
+						any_target_title = {
+							count >= 1
+							add_to_temporary_list = target_titles
+						}
+					}
+					NOT = {
+						scope:recipient = {
+							any_held_title = {
+								tier = tier_county
+								NOT = {
+									any_this_title_or_de_jure_above = { is_in_list = target_titles }
+								}
+							}
+						}
+					}
+				}
+				always = no
 			}
 		}
 	}
 
 	is_valid_showing_failures_only = {
+		#scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
 		scope:war = {
 			has_valid_casus_belli = yes
 			trigger_if = { # Cannot exchange hostages with soon to be landless
@@ -721,7 +1096,7 @@ end_war_attacker_white_peace_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_actor
-					scope:recipient = { is_landed = yes }
+					scope:recipient = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_actor
@@ -732,7 +1107,7 @@ end_war_attacker_white_peace_interaction = {
 			if = {
 				limit = {
 					exists = scope:secondary_recipient
-					scope:actor = { is_landed = yes }
+					scope:actor = { is_landed_or_landless_administrative = yes }
 				}
 				hostage_depart_effect = {
 					HOSTAGE = scope:secondary_recipient
@@ -754,6 +1129,7 @@ end_war_attacker_white_peace_interaction = {
 							NOT = { this = scope:defender_white_peace }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_white_peace
 							title = WAR_RESULTS_WHITE_PEACE
 							left_icon = scope:attacker_white_peace
 							right_icon = scope:defender_white_peace
@@ -772,6 +1148,7 @@ end_war_attacker_white_peace_interaction = {
 							NOT = { this = scope:attacker_white_peace }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_white_peace
 							title = WAR_RESULTS_WHITE_PEACE
 							left_icon = scope:defender_white_peace
 							right_icon = scope:attacker_white_peace
@@ -1147,6 +1524,19 @@ end_war_attacker_white_peace_interaction = {
 				}
 			}
 		}
+
+		# I don't have time for this, I need to conquer
+		modifier = {
+			scope:war.casus_belli = {
+				primary_defender = {
+					this = scope:actor
+					ai_has_conqueror_personality = yes
+				}
+				primary_attacker = { is_ai = yes }
+			}
+
+			add = 100
+		}
 	}
 
 	ai_accept = {
@@ -1311,6 +1701,72 @@ end_war_attacker_white_peace_interaction = {
 			
 			desc = "PEACEMAKER_PERK_MODIFIER"
 		}
+		modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_defender = scope:recipient
+					primary_attacker = { 
+						dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+					}
+				}
+			}
+			add = 10
+			
+			desc = "NOMAD_LEGACY_PERK_MODIFIER"
+		}
+		modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_attacker = scope:recipient
+					primary_defender = {
+						dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+					}
+				}
+			}
+			add = 10
+			
+			desc = "NOMAD_LEGACY_PERK_MODIFIER"
+		}
+		modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_attacker = scope:recipient
+					primary_attacker = {
+						is_ai = yes
+						save_temporary_scope_as = attacker
+					}
+					primary_defender = {
+						has_variable = peace_acceptance_head_scare
+						var:peace_acceptance_head_scare = {
+							this = scope:attacker
+						}
+					}
+				}
+			}
+			add = 30
+			
+			desc = "COWED_BY_SEVERED_HEAD_MODIFIER"
+		}
+		modifier = {
+			trigger = {
+				scope:war.casus_belli = {
+					primary_defender = scope:recipient
+					primary_defender = {
+						is_ai = yes
+						save_temporary_scope_as = defender
+					}
+					primary_attacker = {
+						has_variable = peace_acceptance_head_scare
+						var:peace_acceptance_head_scare = {
+							this = scope:defender
+						}
+					}
+				}
+			}
+			add = 30
+			
+			desc = "COWED_BY_SEVERED_HEAD_MODIFIER"
+		}
 
 		# Cultural Traditions
 		modifier = {
@@ -1387,6 +1843,7 @@ end_war_attacker_white_peace_interaction = {
 	}
 	
 	is_valid_showing_failures_only = {
+		#scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
 		exists = scope:war
 		scope:war = {
 			has_valid_casus_belli = yes
@@ -1544,6 +2001,7 @@ end_war_attacker_defeat_interaction = {
 							NOT = { this = scope:defender_winner }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_defender_win
 							title = war_event.notification_liege_loss.t
 							left_icon = scope:attacker_loser
 							right_icon = scope:defender_winner
@@ -1562,6 +2020,7 @@ end_war_attacker_defeat_interaction = {
 							NOT = { this = scope:attacker_loser }
 						}
 						send_interface_toast = {
+							type = msg_liege_war_ended_defender_win
 							title = war_event.notification_liege_win.t
 							left_icon = scope:defender_winner
 							right_icon = scope:attacker_loser
@@ -1586,17 +2045,50 @@ end_war_attacker_defeat_interaction = {
 			OR = {
 				defender_war_score >= 100
 				AND = {
-					defender_war_score >= 90
-					root = {
-						OR = {
-							has_perk = peacemaker_perk
-							culture = {
-								has_cultural_parameter = can_end_defensive_wars_earlier
+					OR = {
+						attacker_war_score >= 90
+						AND = {
+							attacker_war_score >= 80
+							root = {
+								dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
 							}
 						}
 					}
+					root = {
+						has_perk = peacemaker_perk
+					}
+					primary_defender = {
+						is_ai = yes
+					}
+				}
+				AND = {
+					OR = {
+						attacker_war_score >= 90
+						AND = {
+							attacker_war_score >= 80
+							root = {
+								has_perk = peacemaker_perk
+							}
+						}
+					}
+					root = {
+						dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+					}
+					primary_defender = {
+						is_ai = yes
+					}
+				}
+				AND = {
+					defender_war_score >= 70
 					primary_attacker = {
 						is_ai = yes
+						save_temporary_scope_as = attacker
+					}
+					root = {
+						has_variable = peace_acceptance_head_scare
+						var:peace_acceptance_head_scare = {
+							this = scope:attacker
+						}
 					}
 				}
 			}
@@ -1623,6 +2115,28 @@ end_war_attacker_defeat_interaction = {
 						}
 						primary_attacker = {
 							is_ai = yes
+						}
+					}
+					AND = {
+						defender_war_score >= 90
+						scope:actor = {
+							dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+						}
+						primary_attacker = {
+							is_ai = yes
+						}
+					}
+					AND = {
+						defender_war_score >= 70
+						primary_attacker = {
+							is_ai = yes
+							save_temporary_scope_as = attacker
+						}
+						root = {
+							has_variable = peace_acceptance_head_scare
+							var:peace_acceptance_head_scare = {
+								this = scope:attacker
+							}
 						}
 					}
 				}				
@@ -1672,6 +2186,35 @@ end_war_attacker_defeat_interaction = {
 		modifier = {
 			scope:war.casus_belli = {
 				primary_defender = {
+					dynasty ?= { has_dynasty_perk = mpo_nomad_legacy_3 }
+					NOT = { this = scope:recipient }
+				}
+			}
+			
+			add = 10
+			
+			desc = "NOMAD_LEGACY_PERK_MODIFIER"
+		}
+
+		modifier = {
+			scope:war.casus_belli = {
+				primary_attacker = {
+					is_ai = yes
+					save_temporary_scope_as = attacker
+				}
+				primary_defender = {
+					has_variable = peace_acceptance_head_scare
+					var:peace_acceptance_head_scare = {
+						this = scope:attacker
+					}
+				}
+			}
+			add = 30
+			desc = "COWED_BY_SEVERED_HEAD_MODIFIER"
+		}
+		modifier = {
+			scope:war.casus_belli = {
+				primary_defender = {
 					culture = {
 						has_cultural_parameter = can_end_defensive_wars_earlier
 					}
@@ -1712,6 +2255,7 @@ end_war_attacker_defeat_interaction = {
 	}
 	
 	is_valid_showing_failures_only = {
+		#scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
 		scope:war = {
 			has_valid_casus_belli = yes
 		}

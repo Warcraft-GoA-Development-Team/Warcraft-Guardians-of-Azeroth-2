@@ -98,6 +98,7 @@ fp1_shieldmaiden.0001 = {
 		has_fp1_dlc_trigger = yes
 		#Standard checks.
 		is_available_at_peace_adult = yes
+		is_landed = yes
 		NOT = { has_character_flag = had_event_fp1_shieldmaiden_0001 }
 		#Has access to the appropriate cultural parameter.
 		culture = { has_cultural_parameter = has_access_to_shieldmaidens }
@@ -725,25 +726,13 @@ fp1_shieldmaiden.0012 = {
 
 scripted_trigger suitable_shieldmaiden_savior_trigger = {
 	has_trait = shieldmaiden
-	save_temporary_scope_as = prospective_shieldmaiden
-	NOR = {
-		#Require that they don't hate their liege.
-		has_relation_rival = scope:target
-		opinion = {
-			target = scope:target
-			value <= high_negative_opinion
-		}
-		#Can't be directly involved with the scheme either.
-		scope:scheme = {
-			any_scheme_agent = { this = scope:prospective_shieldmaiden }
-		}
-		root = scope:prospective_shieldmaiden
-	}
+	bodyguard_will_actually_do_job_trigger = yes
 }
 
 #	Scheme owner: shieldmaiden intervenes in murder.
 fp1_shieldmaiden.0021 = {
 	type = character_event
+	window = scheme_failed_event
 	title = fp1_shieldmaiden.0021.t
 	desc = {
 		first_valid = {
@@ -772,12 +761,29 @@ fp1_shieldmaiden.0021 = {
 	}
 	theme = murder_scheme
 	left_portrait = {
-		character = scope:target
-		animation = shock
+		character = scope:owner
+		triggered_animation = {
+			trigger = { exists = scope:scheme_discovered }
+			animation = fear
+		}
+		animation = stress
+	}
+	center_portrait = {
+		character = scope:bodyguard
+		triggered_animation = {
+			trigger = { is_alive = no }
+			animation = map_fear
+		}
+		animation = random_weapon_aggressive
+		camera = camera_event_center_pointing_left
 	}
 	right_portrait = {
-		character = scope:shieldmaiden
-		animation = rage
+		character = scope:target
+		triggered_animation = {
+			trigger = { exists = scope:scheme_discovered }
+			animation = rage
+		}
+		animation = paranoia
 	}
 	widget = {
 		gui = "event_window_widget_scheme"
@@ -787,50 +793,63 @@ fp1_shieldmaiden.0021 = {
 	trigger = {
 		#DLC check.
 		has_fp1_dlc_trigger = yes
-		OR = {
-			scope:murder_method = flag:hired_assassin
-			scope:murder_method = flag:hired_thugs
-			scope:murder_method = flag:riled_up_mob
-			scope:murder_method = flag:lured_into_forest
-			scope:murder_method = flag:child_pushed
-		}
 		scope:target = {
-			any_courtier = { suitable_shieldmaiden_savior_trigger = yes }
-			NOT = { has_character_flag = recently_saved_by_shieldmaiden }
+			any_court_position_holder = {
+				type = bodyguard_court_position
+				suitable_shieldmaiden_savior_trigger = yes
+			}
 		}
-	}
-
-	weight_multiplier = {
-		base = 1
 	}
 
 	immediate = {
-		save_scope_value_as = {
-			name = murder_saved
-			value = flag:shieldmaiden_stopped_assassin
-		}
-		scope:target = {
-			random_courtier_or_guest = {
-				limit = { suitable_shieldmaiden_savior_trigger = yes }
-				weight = {
-					base = 1
-					compare_modifier = {
-						value = ai_boldness
-						multiplier = 0.01
-						min = 0
-					}
-					opinion_modifier = {
-						opinion_target = scope:target
-						multiplier = 0.01
-						min = 0
-					}
+		# Select a murder method.
+		random_list = {
+			100 = {
+				save_scope_value_as = {
+					name = murder_method
+					value = flag:hired_assassin
 				}
+			}
+			100 = {
+				save_scope_value_as = {
+					name = murder_method
+					value = flag:hired_thugs
+				}
+			}
+			100 = {
+				save_scope_value_as = {
+					name = murder_method
+					value = flag:riled_up_mob
+				}
+			}
+			100 = {
+				save_scope_value_as = {
+					name = murder_method
+					value = flag:lured_into_forest
+				}
+			}
+			100 = {
+				save_scope_value_as = {
+					name = murder_method
+					value = flag:child_pushed
+				}
+				# Try to grab a suitable thing to lure them in with too.
+				rooftop_murder_lure_for_child_effect = yes
+			}
+		}
+		# Sort our shieldmaiden
+		scope:target = {
+			ordered_court_position_holder = {
+				type = bodyguard_court_position
+				limit = { suitable_shieldmaiden_savior_trigger = yes }
+				order_by = { value = murder_weight_best_bodyguard_value }
 				save_scope_as = shieldmaiden
 			}
 		}
 		hidden_effect = {
 			if = {
 				limit = {
+					# Shieldmaidens can't die from some murder methods.
 					NOR = {
 						scope:murder_method = flag:lured_into_forest
 						scope:murder_method = flag:child_pushed
@@ -838,7 +857,7 @@ fp1_shieldmaiden.0021 = {
 				}
 				random = {
 					chance = {
-						value = 30
+						value = 75
 						subtract = scope:shieldmaiden.prowess
 					}
 					set_local_variable = {
@@ -851,78 +870,38 @@ fp1_shieldmaiden.0021 = {
 		if = {
 			limit = { exists = local_var:shieldmaiden_dies }
 			show_as_tooltip = {
-				if = {
-					limit = {
-						exists = scope:scheme_discovered
-					}
-					known_murder_effect = {
-						VICTIM = scope:shieldmaiden
-						MURDERER = root
-						EXPOSER = scope:target
-					}
-				}
-				else = {
-					unknown_murder_effect = {
-						VICTIM = scope:shieldmaiden
-						MURDERER = root
-						REASON = death_duel
-					}
+				murder_interception_handle_extra_deaths_effect = {
+					VICTIM = scope:shieldmaiden
+					REASON = death_murder
 				}
 			}
 		}
 		random_dummy_gender_assassin_effect = yes
-		murder_failure_effect = yes # Fires the response for the target
+		murder_failure_effect = yes
 	}
 
 	#It's over.
-	option = {
-		name = fp1_shieldmaiden.0021.a
-		show_as_tooltip = {
-			if = {
-				limit = { exists = scope:scheme_discovered }
-				add_dread = medium_dread_gain
-			}
-			scope:scheme = {
-				end_scheme = yes
-			}
-		}
-		ai_chance = {
-			base = 100
-		}
-	}
+	option = { name = fp1_shieldmaiden.0021.a }
 
 	#It's not over till I say it's over!
 	option = {
 		name = fp1_shieldmaiden.0021.b
-		show_as_tooltip = {
-			if = {
-				limit = { exists = scope:scheme_discovered }
-				add_dread = medium_dread_gain
-			}
-			start_scheme = {
-				type = murder
-				target = scope:target
-			}
+		trigger = {
+			NOT = { exists = scope:scheme_discovered }
 		}
-		hidden_effect = {
-			save_scope_value_as = {
-				name = restart_scheme
-				value = yes
-			}
-		}
-		ai_chance = {
-			base = 0
-		}
+		restart_murder_scheme_effect = yes
 	}
 
+	# Fire the rest of the outcome.
 	after = {
-		hidden_effect = { trigger_event = murder_outcome.9999 }
+		scope:target = { trigger_event = fp1_shieldmaiden.0022 }
 	}
 }
 
 # Shieldmaiden saves you from murder
 fp1_shieldmaiden.0022 = {
 	type = character_event
+	window = scheme_target_event
 	title = fp1_shieldmaiden.0022.t
 	desc = {
 		# This block is only for the setup of child_pushed.
@@ -1030,29 +1009,32 @@ fp1_shieldmaiden.0022 = {
 		trigger = { scope:murder_method = flag:lured_into_forest }
 		reference = wilderness_forest
 	}
-
 	left_portrait = {
-		character = scope:shieldmaiden
-		animation = rage
+		character = scope:target
+		triggered_animation = {
+			trigger = { exists = scope:scheme_discovered }
+			animation = rage
+		}
+		animation = paranoia
+	}
+	center_portrait = {
+		character = scope:bodyguard
+		triggered_animation = {
+			trigger = { is_alive = no }
+			animation = map_fear
+		}
+		animation = random_weapon_aggressive
 	}
 	right_portrait = {
-		character = scope:owner_revealed
-		animation = anger
-	}
-
-	trigger = {
-		exists = scope:murder_saved
-		scope:murder_saved = flag:shieldmaiden_stopped_assassin
-		scope:target = {
-			NOT = { has_character_flag = recently_saved_by_shieldmaiden }
+		character = scope:owner_to_reveal
+		triggered_animation = {
+			trigger = { exists = scope:scheme_discovered }
+			animation = fear
 		}
+		animation = stress
 	}
 
 	immediate = {
-		add_character_flag = {
-			flag = recently_saved_by_shieldmaiden
-			years = 10
-		}
 		if = {
 			limit = { scope:murder_method = flag:hired_thugs }
 			scope:home_province = {	save_scope_as = background_wilderness_scope }
@@ -1060,22 +1042,9 @@ fp1_shieldmaiden.0022 = {
 		# Handle the death of the Shieldmaiden if necessary
 		if = {
 			limit = { exists = local_var:shieldmaiden_dies }
-			if = {
-				limit = {
-					exists = scope:scheme_discovered
-				}
-				known_murder_effect = {
-					VICTIM = scope:shieldmaiden
-					MURDERER = root
-					EXPOSER = scope:target
-				}
-			}
-			else = {
-				unknown_murder_effect = {
-					VICTIM = scope:shieldmaiden
-					MURDERER = root
-					REASON = death_duel
-				}
+			murder_interception_handle_extra_deaths_effect = {
+				VICTIM = scope:shieldmaiden
+				REASON = death_murder
 			}
 		}
 	}
@@ -1084,9 +1053,7 @@ fp1_shieldmaiden.0022 = {
 	option = {
 		name = fp1_shieldmaiden.0022.a
 		trigger = {
-			NOT = {
-				exists = scope:scheme_discovered
-			}
+			NOT = { exists = scope:scheme_discovered }
 		}
 		custom_tooltip = murder_save.failure_unknown_owner_tt
 	}
@@ -1094,9 +1061,7 @@ fp1_shieldmaiden.0022 = {
 	#Vengeance!
 	option = {
 		name = fp1_shieldmaiden.0022.b
-		trigger = {
-			exists = scope:scheme_discovered
-		}
+		trigger = { exists = scope:scheme_discovered }
 		custom_tooltip = murder_save.failure_known_owner_tt
 	}
 
