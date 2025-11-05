@@ -1265,7 +1265,7 @@ PixelShader =
 					float4 SecondColorMask = vec4( 0.0f );
 					SecondColorMask.r = Properties.r;
 					SecondColorMask.g =  NormalSampleRaw.b;
-					ApplyVariationPatterns( Input, Diffuse, Properties, NormalSample, SecondColorMask );
+					ApplyVariationPatterns( Input, Diffuse, Properties, PatternNormal, SecondColorMask, NormalUVChannel );
 				#endif
 				
 				#ifdef COA_ENABLED
