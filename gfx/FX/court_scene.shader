@@ -1265,6 +1265,8 @@ PixelShader =
 					float4 SecondColorMask = vec4( 0.0f );
 					SecondColorMask.r = Properties.r;
 					SecondColorMask.g =  NormalSampleRaw.b;
+					float3 PatternNormal = NormalSample;
+					float NormalUVChannel = 0.0f;
 					ApplyVariationPatterns( Input, Diffuse, Properties, PatternNormal, SecondColorMask, NormalUVChannel );
 				#endif
 				
