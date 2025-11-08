@@ -1,0 +1,270 @@
+﻿tribute_mission_clean_up_variables_effect = {
+	remove_variable = tribute_mission_target_scope
+	remove_variable = offered_gold_value
+	remove_variable = tribute_mission_type
+	remove_variable = offered_herd_value
+	remove_variable = offered_concubine
+	remove_variable = offered_eunuch
+	remove_variable = offered_artifact
+	remove_variable = tribute_reward_fascination_progress
+
+	if = {
+		limit = {
+			has_character_flag = tribute_mission_character_flag # Under select circumstances it's possible this will be rerun, so this avoids an error
+		}
+		remove_character_flag = tribute_mission_character_flag
+	}
+
+	if = {
+		limit = { exists = scope:receiving_character }
+		scope:receiving_character = {
+			if = {
+				limit = { has_character_flag = created_attendant }
+				silent_disappearance_effect = yes
+			}
+		}
+	}
+}
+
+tribute_mission_clean_up_request_variables_effect = {
+	remove_variable = requested_tribute_mission
+	remove_variable = requested_tribute_mission_type_gold
+	remove_variable = requested_tribute_mission_type_herd
+	remove_variable = requested_tribute_mission_type_artifact
+	remove_variable = requested_tribute_mission_type_concubine
+	remove_variable = requested_tribute_mission_type_eunuch
+	remove_variable = declined_requested_tribute_recently
+	remove_variable = predetermined_concubine_tribute
+	remove_variable = predetermined_eunuch_tribute
+	remove_variable = predetermined_artifact_tribute
+}
+
+requested_tribute_mission_clean_up_variables_effect = {
+	remove_variable = requested_tribute_mission
+	remove_variable = invalidation_should_fail_ongoing_requested_tribute_mission
+}
+
+set_or_change_offered_tribute_value_effect = {
+	if = {
+		limit = { has_variable = offered_$TYPE$_value }
+		change_variable = {
+			name = offered_$TYPE$_value
+			add = $VALUE$
+		}
+	}
+	else = {
+		set_variable = {
+			name = offered_$TYPE$_value
+			value = $VALUE$
+		}
+	}
+}
+
+save_tribute_mission_target_scope_effect = { # Warcraft 1.18 TODO - readd if needed
+	# if = {
+	# 	limit = { is_tributary_or_independent_neighbor_of_china_trigger = yes }
+	# 	title:h_pandaria.holder = {
+	# 		save_scope_as = tribute_mission_target
+	# 	}
+	# }
+	# else = {
+		overlord = {
+			save_scope_as = tribute_mission_target
+		}
+	# }
+	if = {
+		limit = { 
+			NOT = { exists = scope:tribute_mission_target }
+			scope:tribute_mission_target = this
+		}
+		error_log = "Failed to set tribute_mission_target or character has no overlord!"
+	}
+}
+
+tribute_mission_set_up_tribute_travel_effect = {
+	#Saving the tribute_mission_target, in case something happens along the way
+	set_variable = {
+		name = tribute_mission_target_scope
+		value = scope:tribute_mission_target
+	}
+	#Travel posted first should look neater in tooltip
+	hidden_effect = { # ensure we subtract everything we've offered
+		if = {
+			limit = { has_variable = offered_gold_value }
+			remove_short_term_gold = var:offered_gold_value
+		}
+		if = {
+			limit = { has_variable = offered_herd_value }
+			domicile ?= {
+				change_herd = { subtract = prev.var:offered_herd_value }
+			}
+		}	
+	}
+	trigger_event = { on_action = tribute_mission_start }
+	if = {
+		limit = { location = scope:tribute_mission_target.capital_province }
+		trigger_event = tribute_mission.0002
+	}
+	#Add the concubine
+	else_if = {
+		limit = { has_variable = offered_concubine }
+		start_travel_plan = {
+			destination = scope:tribute_mission_target.capital_province
+			companion = var:offered_concubine
+			on_travel_planner_cancel_on_action = tribute_mission_travel_planner_exit 
+			on_arrival_event = tribute_mission.0002
+		}
+	}
+	#Add the eunuch
+	else_if = {
+		limit = { has_variable = offered_eunuch }
+		start_travel_plan = {
+			destination = scope:tribute_mission_target.capital_province
+			companion = var:offered_eunuch
+			on_travel_planner_cancel_on_action = tribute_mission_travel_planner_exit 
+			on_arrival_event = tribute_mission.0002
+		}
+	}
+	else = {
+		custom_tooltip = tribute_mission.travel_to.tt
+		start_travel_plan = {
+			destination = scope:tribute_mission_target.capital_province
+			on_travel_planner_cancel_on_action = tribute_mission_travel_planner_exit 
+			on_arrival_event = tribute_mission.0002
+		}
+	}
+}
+
+tribute_mission_invalidation_effect = {
+	if = {
+		limit = { has_variable = tribute_mission_type }
+		if = {
+			limit = { # sanity check to ensure we're still a valid tribute provider
+				OR = {
+					is_independent_ruler = no # if we have a liege we cannot also pay tribute to someone else
+					# AND = { # if we're not a tributary we are only valid if we're paying tribute to China
+					# 	is_tributary = no
+					# 	var:tribute_mission_target_scope != title:h_pandaria.holder
+					# }
+				}  # Warcraft 1.18 TODO - readd if needed
+			}
+			#Return home and refund
+			trigger_event = tribute_mission.9800
+		}
+		else_if = { #If our offerings have perished or been imprisoned along the way, maybe swap to gold
+			limit = {
+				has_variable = tribute_mission_type
+				OR = {
+					AND = {
+						has_variable = offered_concubine
+						OR = {
+							var:offered_concubine = { is_alive = no }
+							var:offered_concubine = { is_imprisoned = yes }
+						}
+					}
+					AND = {
+						has_variable = offered_eunuch
+						OR = {
+							var:offered_eunuch = { is_alive = no }
+							var:offered_eunuch = { is_imprisoned = yes }
+						}
+					}
+				}
+			}
+			trigger_event = tribute_mission.9750
+		}
+		else_if = {
+			#We're still a tributary on our way to pay tribute, but our suzerain is not the person we were going to pay tribute to
+			limit = {
+				has_variable = tribute_mission_target_scope
+				OR = {
+					AND = {
+						is_tributary = yes
+						var:tribute_mission_target_scope != suzerain
+					} # Warcraft 1.18 TODO - readd if needed
+					# AND = {
+					# 	is_tributary = no
+					# 	var:tribute_mission_target_scope != title:h_pandaria.holder
+					# }	
+				}
+			}
+			var:tribute_mission_target_scope = { save_scope_as = old_overlord }
+			suzerain = { save_scope_as = new_overlord }
+			#Clean up Requested Tribute Mission variables
+			requested_tribute_mission_clean_up_variables_effect = yes
+			#The new Overlord is in the same place and can accept the tribute
+			if = {
+				limit = { 
+					#Make sure they can still accept our offerings; if so, just set the new target
+					current_travel_plan.next_destination_province = scope:new_overlord.capital_province
+					has_variable = tribute_mission_type
+					trigger_if = {
+						limit = {
+							OR = {
+								has_variable = offered_concubine
+								has_variable = offered_eunuch
+							}
+						}
+						OR = {
+							AND = {
+								has_variable = offered_concubine
+								var:offered_concubine = {
+									can_become_concubine_of_character_valid_trigger = { CHARACTER = scope:new_overlord }
+								}
+							}
+							AND = {
+								has_variable = offered_eunuch
+								scope:new_overlord = { 
+									culture = { has_cultural_parameter = can_appoint_chief_eunuch } 
+								}
+							}
+						}
+					}	
+				}
+				send_interface_message = {
+					type = msg_mandala_neutral_text
+					title = tribute_mission_notification.new_overlord.title
+					left_icon = scope:new_overlord
+					desc = tribute_mission_notification.new_overlord.desc		
+				}
+				set_variable = {
+					name = tribute_mission_target_scope
+					value = scope:new_overlord
+				}		
+			}
+			#The Overlord is somewhere else; please try again
+			else_if = {
+				limit = {
+					current_travel_plan.next_destination_province != scope:new_overlord.capital_province
+				}
+				set_variable = new_overlord_somewhere_else
+				#Return home and refund
+				trigger_event = tribute_mission.9800
+			}
+			else = {
+				set_variable = new_overlord_unable_to_accept_tribute
+				#Return home and refund
+				trigger_event = tribute_mission.9800
+			}
+		}
+	}	
+}
+
+tribute_mission_mandala_piety_effect = {
+	if = {
+		limit = { government_has_flag = government_is_mandala }
+		overlord = { add_piety = minor_piety_gain }
+	}
+}
+
+requested_tribute_mission_penalty_effect = {
+	if = {
+		limit = {
+			has_variable = invalidation_should_fail_ongoing_requested_tribute_mission
+		}
+		trigger_event = {
+			id = tribute_mission.9500
+			delayed = yes
+		}
+	}
+}
