@@ -92,7 +92,7 @@ action_above_domain_limit = {
 		root = {
 			open_view_data = {
 				view = my_realm
-				data = flag:bookmark_subjects
+				data = flag:bookmark_domain
 			}
 		}
 		#start_tutorial_lesson = reactive_advice_domain_limit # Warcraft
@@ -219,6 +219,7 @@ action_wrong_holding_type = {
 			limit = {
 				is_leased_out = no
 				is_nomad_title = no
+				is_landless_type_title = no
 				OR = {
 					AND = {
 						tier = tier_barony
@@ -261,8 +262,8 @@ action_upgrade_tribal_holding_type = {
 	
 	check_create_action = {
 		every_held_title = {
+			title_tier = county
 			limit = {
-				tier = tier_county
 				title_province = {
 					has_holding_type = tribal_holding
 					barony = {
@@ -305,23 +306,28 @@ action_disabled_building = {
 					OR = {
 						AND = {
 							tier = tier_barony
-							has_disabled_building = yes
 							has_wrong_holding_type = no
-							title_province = { is_county_capital = no }
+							#AND = { Warcraft
+								has_disabled_building = yes
+								#title_province = { NOT = { has_building_or_higher = forbidden_city_01 } }
+							# }
+							#title_province = { is_county_capital = no }
 						}
 						AND = {
 							tier = tier_county
-							title_province = {
-								barony = {
+							is_landless_type_title = no
+							title_province.barony ?= {
+								has_wrong_holding_type = no
+								#AND = { Warcraft
 									has_disabled_building = yes
-									has_wrong_holding_type = no
-								}
+									#title_province = { NOT = { has_building_or_higher = forbidden_city_01 } }
+								#}
 							}
 						}
-					}
-					NOR = {
-						title_province = { has_holding_type = tribal_holding } #If this is true then "action_upgrade_tribal_holding_type" is enough
-						title_province = { religious_special_building_exclusion_trigger = yes }
+						NOR = {
+							title_province = { has_holding_type = tribal_holding } #If this is true then "action_upgrade_tribal_holding_type" is enough
+							title_province = { religious_special_building_exclusion_trigger = yes }
+						}
 					}
 				}
 				try_create_important_action = {
@@ -380,7 +386,7 @@ action_county_in_dangerous_populist_faction = {
 				any_title_joined_faction = {
 					faction_is_type = populist_faction
 					faction_power > faction_power_threshold
-					faction_target = { NOT = { this = root }}
+					faction_target = { this != root}
 				}
 			}
 
@@ -438,6 +444,24 @@ action_in_debt = {
 	}
 }
 
+action_in_treasury_debt = {
+	is_dangerous = yes
+	
+	check_create_action = {
+		if = {
+			limit = {
+				is_landed = yes
+				has_treasury = yes
+				treasury < 0
+			}
+			try_create_important_action = {
+				important_action_type = action_in_treasury_debt
+				actor = root
+			}
+		}
+	}
+}
+
 action_missing_ghw_beneficiary = {
 	type = alert
 	
@@ -446,7 +470,7 @@ action_missing_ghw_beneficiary = {
 			limit = {
 				exists = faith.great_holy_war
 				faith.great_holy_war = { has_pledged_attacker = root }
-				NOT = { root = root.faith.great_holy_war.ghw_war_declarer } #Not for the Caliph himself.
+				root != root.faith.great_holy_war.ghw_war_declarer #Not for the Caliph himself.
 				NOT = { exists = ghw_beneficiary }
 			}
 			try_create_important_action = {
@@ -601,19 +625,17 @@ action_low_control_in_county = {
 	combine_into_one = yes
 	check_create_action = {
 		every_held_title = {
+			title_tier = county
 			limit = {
-				tier = tier_county
 				county_control <= 90
 				is_landless_type_title = no
+				is_noble_family_title = no
 				save_temporary_scope_as = county_check
 				trigger_if = { #Marshal is not already working on it
 					limit = {
-						exists = root.cp:councillor_marshal
-						root.cp:councillor_marshal = { is_performing_council_task = task_increase_control }
+						root.cp:councillor_marshal ?= { is_performing_council_task = task_increase_control }
 					}
-					root.cp:councillor_marshal = {
-						NOT = { councillor_task_target = scope:county_check.title_province }
-					}
+					NOT = { root.cp:councillor_marshal.councillor_task_target ?= scope:county_check.title_province }
 				}
 				trigger_if = {
 					limit = {
@@ -687,7 +709,6 @@ action_can_use_hook_to_change_contract = {
 				}
 				vassal_contract_has_modifiable_obligations = yes
 				subject_contract_is_blocked_from_modification = no
-				is_busy_in_events_localised = yes
 				NOT = { is_at_war_with = root }
 				NOR = {
 					government_has_flag = government_is_clan
@@ -734,7 +755,6 @@ action_grant_vassal_to_rightful_liege = {
 				save_temporary_scope_as = vassal_to_transfer
 		
 				highest_held_title_tier > tier_barony
-				is_busy_in_events_localised = yes
 
 				NOT = { is_at_war_with = root }
 
@@ -745,11 +765,14 @@ action_grant_vassal_to_rightful_liege = {
 						}
 					}
 				}
-				NOT = {
-					primary_title.de_jure_liege.holder = liege
-				}
+				primary_title.de_jure_liege.holder != liege
 				NOT = {
 					root.diarch ?= this
+				}
+				# TGP Bloc limitation
+				NAND = {
+					is_house_head = yes
+					house.house_confederation.leading_house = house
 				}
 			}
 			
@@ -764,11 +787,15 @@ action_grant_vassal_to_rightful_liege = {
 					primary_title.de_jure_liege.holder = {
 						liege = scope:vassal_to_transfer.liege
 
-						is_busy_in_events_localised = yes
 						NOR = {
 							is_at_war_with = root
 							is_at_war_with = scope:vassal_to_transfer
 						}
+					}
+					NAND = {
+						primary_title.de_jure_liege.holder.liege ?= { has_government = japan_administrative_government }
+						primary_title.de_jure_liege.holder ?= { has_government = japan_administrative_government }
+						has_government = japan_feudal_government
 					}
 				}
 				try_create_important_action = {
@@ -785,13 +812,17 @@ action_grant_vassal_to_rightful_liege = {
 					exists = primary_title.de_jure_liege.holder.liege
 
 					primary_title.de_jure_liege.holder.liege = {
-						NOT = { this = root }
+						this != root
 						liege = scope:vassal_to_transfer.liege
 
-						is_busy_in_events_localised = yes
 						NOT = {
 							is_at_war_with = root
 						}
+					}
+					NAND = {
+						primary_title.de_jure_liege.holder.liege ?= { has_government = japan_administrative_government }
+						primary_title.de_jure_liege.holder ?= { has_government = japan_administrative_government }
+						has_government = japan_feudal_government
 					}
 				}
 				try_create_important_action = {
@@ -876,10 +907,10 @@ action_can_claim_liege_title = {
 	check_create_action = {
 		if = {
 			limit = {
-				is_independent_ruler = no
+				top_liege != this
 				liege ?= {
 					any_held_title = {
-						tier >= tier_county
+						title_tier >= county
 						NOT = { any_claimant = { this = root } }
 					} 		
 					NOT = {
