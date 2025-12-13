@@ -436,7 +436,23 @@ celestial_demand_treasury_interaction = {
 		scope:recipient = {
 			has_treasury = yes
 			this != scope:actor
-			is_vassal_of = scope:actor
+			trigger_if = {
+				limit = {
+					vassal_contract_has_flag = celestial_military_appointment
+					title:e_minister_of_war.holder ?= scope:actor
+				}
+				top_liege = scope:actor.top_liege
+			}
+			trigger_else_if = {
+				limit = {
+					NOT = { vassal_contract_has_flag = celestial_military_appointment }
+					title:e_minister_of_revenue.holder ?= scope:actor
+				}
+				top_liege = scope:actor.top_liege
+			}
+			trigger_else = {
+				is_vassal_or_below_of = scope:actor
+			}
 		}
 	}
 
@@ -773,6 +789,25 @@ celestial_demand_treasury_interaction = {
 			add = cowed_reason_value
 			desc = COWED_REASON
 		}
+		modifier = {
+			scope:actor = {
+				has_title = title:e_minister_of_revenue
+			}
+			add = 10
+			desc = MINISTER_OF_REVENUE_REASON
+		}
+		modifier = {
+			scope:actor = {
+				has_title = title:e_minister_of_war
+			}
+			add = 10
+			desc = MINISTER_OF_WAR_REASON
+		}
+		modifier = {
+			scope:actor = scope:recipient.top_liege
+			add = 10
+			desc = TOP_LIEGE_REASON
+		}
 	}
 }
 
@@ -929,6 +964,8 @@ celestial_give_treasury_interaction = {
 					}
 					change_merit = medium_merit_value
 				}
+
+				change_influence = medium_influence_value
 
 				scope:recipient = {
 					# They will like actor for it
@@ -2382,11 +2419,6 @@ change_career_path_for_family_member_interaction = {
 				is_female = no
 			}
 			trigger_else = { always = yes }
-
-			NOR = {
-				has_character_flag = passed_child_exam
-				has_character_modifier = tgp_child_exam_cooldown_modifier
-			}
 		}
 	}
 
@@ -2600,7 +2632,7 @@ send_child_to_examination_interaction = {
 		# Warcraft
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }
 		scope:recipient = {
-			age > 5
+			age >= child_exam_min_age
 			custom_tooltip = {
 				text = cant_be_another_player_tt
 				is_ai = yes
@@ -3041,10 +3073,6 @@ celestial_ask_to_switch_movements_interaction = {
 				}
 			}
 		}
-		#reset previous variable
-		scope:recipient = {
-			remove_variable = movement_member
-		}
 		scope:actor = {
 			send_interface_toast = {
 				type = event_toast_effect_good
@@ -3284,7 +3312,7 @@ celestial_ask_to_switch_movements_interaction = {
 				# Piety
 				if = {
 					limit = { always = scope:piety }
-					add_prestige = {
+					add_piety = {
 						value = piety_bribe_value
 						multiply = -1
 					}
@@ -3384,7 +3412,7 @@ celestial_ask_to_switch_movements_interaction = {
 	}
 	on_decline = {
 		scope:recipient = {
-			add_opinion = {
+			reverse_add_opinion = {
 				modifier = refused_faction_switch_modifier
 				target = scope:actor
 				years = 5
@@ -3411,79 +3439,87 @@ celestial_ask_to_switch_movements_interaction = {
 
 	ai_frequency_by_tier = {
 		barony = 0
-		county = 48
-		duchy = 36
-		kingdom = 36
+		county = 24
+		duchy = 12
+		kingdom = 12
 		empire = 12
 		hegemony = 12
 	}
 
 	is_available = {
-		exists = title:h_pandaria.holder #Warcraft
-		any_character_situation = {
-			situation_type = dynastic_cycle
-		}
-		situation:dynastic_cycle ?= {
-			situation_participant_group:other_rulers = {
-				NOT = {
-					participant_group_has_character = root
-				}
+		title:h_pandaria.holder #Warcraft
+		top_participant_group:dynastic_cycle ?= {
+			NOR = {
+				participant_group_type = other_rulers
+				participant_group_type = undecided_movement
 			}
 		}
-		top_participant_group:dynastic_cycle ?= {
-			NOT = { participant_group_type = undecided_movement }
+		trigger_if = {
+			limit = {
+				is_ai = yes
+			}
+			OR = {
+				this = top_liege
+				situation:dynastic_cycle ?= { # Is a movement leader
+					any_participant_group = {
+						var:movement_leader ?= root
+					}
+				}
+				house ?= {
+					is_dominant_family = yes
+				}
+				house ?= {
+					is_powerful_family = yes
+				}
+				any_relation = { # So that they can ask players to change
+					type = disciple
+					is_ai = no
+				}
+			}
 		}
 	}
 
 	ai_will_do = {
-		base = -5
-		# leader of a Movement
+		base = 25
+		modifier = { # Prefer getting people from movements with higher power!
+			exists = scope:actor.top_participant_group:dynastic_cycle.var:movement_power
+			exists = scope:recipient.top_participant_group:dynastic_cycle.var:movement_power
+			scope:recipient.top_participant_group:dynastic_cycle.var:movement_power >= scope:actor.top_participant_group:dynastic_cycle.var:movement_power
+			add = 75
+		}
 		modifier = {
-			situation:dynastic_cycle ?= {
-				any_participant_group = {
-					var:movement_leader ?= scope:actor
+			scope:recipient = {
+				top_participant_group:dynastic_cycle ?= {
+					participant_group_type = undecided_movement
 				}
 			}
-			add = 10
+			add = 75
 		}
-		modifier = {
-			scope:actor.house ?= {
-				is_dominant_family = yes
-			}
-			add = 10
-		}
-		modifier = {
-			scope:actor.house ?= {
-				is_powerful_family = yes
-			}
-			add = 5
-		}
-		modifier = {
+		modifier = { # Mainly the Hegemon spreads the Pro-Hegemon movement
 			scope:actor = {
-				is_powerful_vassal = yes
+				this != top_liege
+				top_participant_group:dynastic_cycle ?= {
+					participant_group_type = pro_hegemon_movement
+				}
 			}
-			add = 5
+			scope:recipient.top_participant_group:dynastic_cycle.var:movement_power <= scope:actor.top_participant_group:dynastic_cycle.var:movement_power
+			add = -65
 		}
-		## Send Options
-		# gold is always good
 		modifier = {
 			scope:gift = yes
-			add = 5
+			add = -1
 		}
 		modifier = {
 			scope:prestige = yes
-			scope:actor.prestige >= prestige_bribe_value
-			add = 5
+			add = -1
 		}
 		modifier = {
 			scope:influence = yes
-			scope:actor.influence >= influence_bribe_value
-			add = 5
+			add = -1
 		}
 		modifier = {
 			scope:piety = yes
-			scope:actor.piety >= piety_bribe_value
-			add = 5
+			add = -1
 		}
 	}
 	ai_accept = {
@@ -3904,6 +3940,7 @@ transfer_small_gold_amount_to_treasury_interaction = {
 	}
 	ai_potential = {
 		has_treasury = yes
+		gold > 10
 		gold > medium_gold_value
 	}
 
@@ -3988,7 +4025,92 @@ transfer_large_gold_amount_to_treasury_interaction = {
 	}
 	ai_potential = {
 		has_treasury = yes
+		gold > 50
 		gold > major_gold_value
+	}
+
+	ai_will_do = {
+		base = 0
+		modifier = {
+			add = 100
+			scope:actor = {
+				NOT = { has_trait = greedy }
+				treasury < major_gold_value
+			}
+		}
+		modifier = {
+			add = 100
+			scope:actor = {
+				treasury < 0
+			}
+		}
+	}
+}
+
+transfer_huge_gold_amount_to_treasury_interaction = {
+	common_interaction = yes
+	category = interaction_category_friendly
+	desc = transfer_gold_amount_to_treasury_interaction_desc
+	icon = treasury
+	hidden = yes
+
+	ai_targets = {
+		ai_recipients = self
+	}
+
+	is_shown = {
+		scope:recipient = scope:actor
+	}
+
+	is_valid_showing_failures_only = {
+		scope:actor = {
+			has_treasury = yes
+			gold > 500
+			gold > medium_gold_value
+		}
+	}
+
+	on_accept = {
+		scope:actor = {
+			remove_short_term_gold = 500
+		}
+		scope:recipient = {
+			add_treasury = 500
+		}
+		scope:actor = {
+			if = {
+				limit = {
+					has_trait = greedy
+				}
+				custom_description_no_bullet = {
+					text = transfer_treasury_because_you_are_greedy
+				}
+				add_stress = 5
+			}
+			if = {
+				limit = {
+					has_trait = generous
+				}
+				custom_description_no_bullet = {
+					text = transfer_treasury_because_you_are_generous
+				}
+				add_stress = -5
+			}
+		}
+	}
+
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 0
+		kingdom = 1
+		empire = 1
+		hegemony = 1
+	}
+
+	ai_potential = {
+		has_treasury = yes
+		gold > 500
 	}
 
 	ai_will_do = {
@@ -4095,6 +4217,11 @@ influence_meritorious_career_interaction = {
 	auto_accept = yes
 
 	send_option = {
+		is_shown = {
+			scope:actor = {
+				tgp_is_any_minister = no
+			}
+		}
 		flag = major_influence_option
 		localization = "major_influence_option_desc"
 		starts_enabled = {
@@ -4102,6 +4229,11 @@ influence_meritorious_career_interaction = {
 		}
 	}
 	send_option = {
+		is_shown = {
+			scope:actor = {
+				tgp_is_any_minister = no
+			}
+		}
 		flag = medium_influence_option
 		localization = "medium_influence_option_desc"
 		starts_enabled = {
@@ -4112,11 +4244,68 @@ influence_meritorious_career_interaction = {
 		}
 	}
 	send_option = {
+		is_shown = {
+			scope:actor = {
+				tgp_is_any_minister = no
+			}
+		}
 		flag = minor_influence_option
 		localization = "minor_influence_option_desc"
 		starts_enabled = {
 			scope:actor = { influence < career_score_medium_cost_value }
 		}
+	}
+
+	send_option = {
+		is_shown = {
+			scope:actor = {
+				tgp_is_any_minister = yes
+			}
+		}
+		flag = candidate_succession_score_option
+		localization = "candidate_succession_score_option_desc"
+	}
+	send_option = {
+		is_shown = {
+			scope:actor = {
+				tgp_is_any_minister = yes
+			}
+		}
+		is_valid = {
+			scope:recipient = {
+				merit_level < maximum_merit_level
+			}
+		}
+		flag = merit_bestowal_option
+		localization = "merit_bestowal_option_desc"
+	}
+	send_option = {
+		is_shown = {
+			scope:actor = {
+				tgp_is_any_minister = yes
+			}
+		}
+		is_valid = {
+			scope:recipient = {
+				is_close_or_extended_family_of = scope:actor
+				custom_tooltip = {
+					text = has_passed_all_exams
+					OR = {
+						NOT = {
+							has_character_flag = passed_provincial_exam
+						}
+						NOT = {
+							has_character_flag = passed_metropolitan_exam
+						}
+						NOT = {
+							has_character_flag = passed_palace_exam
+						}
+					}
+				}
+			}
+		}
+		flag = examination_bypass_option
+		localization = "examination_bypass_option_desc"
 	}
 
 	localization_values = {
@@ -4145,6 +4334,26 @@ influence_meritorious_career_interaction = {
 				scope:minor_influence_option = {
 					add = {
 						value = career_score_minor_cost_value
+						desc = BASE
+					}
+				}
+				scope:candidate_succession_score_option = {
+					add = {
+						value = career_score_major_cost_value
+						desc = BASE
+					}
+				}
+				scope:merit_bestowal_option = {
+					add = {
+						value = career_score_major_cost_value
+						multiply = 0.8
+						desc = BASE
+					}
+				}
+				scope:examination_bypass_option = {
+					add = {
+						value = career_score_major_cost_value
+						multiply = 0.6
 						desc = BASE
 					}
 				}
@@ -4181,7 +4390,7 @@ influence_meritorious_career_interaction = {
 				}
 				add = {
 					value = scope:calculated_base_cost
-					multiply = -0.25
+					multiply = -0.3
 					desc = you_are_the_minister_of_personnel_desc
 				}
 			}
@@ -4280,6 +4489,151 @@ influence_meritorious_career_interaction = {
 					value = 5
 				}
 			}
+			scope:candidate_succession_score_option = {
+				scope:recipient = {
+					send_interface_toast = {
+						type = event_toast_effect_good
+						title = bolstered_career_notification
+						left_icon = scope:actor
+						right_icon = scope:recipient
+						save_scope_value_as = {
+							name = increased_career_score
+							value = {
+								add = career_score_major_base_value
+								multiply = 1.5
+							}
+						}
+						save_scope_value_as = {
+							name = opinion_change_value
+							value = 15
+						}
+						if = {
+							limit = {
+								is_military_candidate_trigger = yes
+							}
+							custom_tooltip = influence_meritorious_career_effect_military_desc
+						}
+						else = {
+							custom_tooltip = influence_meritorious_career_effect_civilian_desc
+						}
+						add_opinion = {
+							modifier = pleased_opinion
+							target = scope:actor
+							opinion = 20
+						}
+						custom_tooltip = influence_meritorious_career_effect_warning_desc
+					}
+				}
+			}
+			scope:merit_bestowal_option = {
+				scope:recipient = {
+					send_interface_toast = {
+						type = event_toast_effect_good
+						title = bolstered_career_notification
+						left_icon = scope:actor
+						right_icon = scope:recipient
+						change_merit = {
+							value = 0
+							add = monumental_merit_gain
+							multiply = scope:actor.merit_level
+						}
+						add_opinion = {
+							modifier = pleased_opinion
+							target = scope:actor
+							opinion = 20
+						}
+					}
+				}
+			}
+			scope:examination_bypass_option = {
+				scope:actor = {
+					if = {
+						limit = {
+							NOT = {
+								has_character_flag = used_examination_bypass
+							}
+						}
+						add_character_flag = used_examination_bypass
+					}
+					else = {
+						change_merit = {
+							value = monumental_merit_loss
+							multiply = scope:actor.merit_level
+						}
+						hidden_effect = {
+							situation:dynastic_cycle ?= {
+								if = {
+									limit = {
+										situation_top_has_catalyst = catalyst_ministers_abused_privilege_of_office
+									}
+									trigger_situation_catalyst = {
+										catalyst = catalyst_ministers_abused_privilege_of_office
+										character = scope:actor
+									}
+								}
+							}
+						}
+						custom_tooltip = examination_bypass_option_you_have_been_warned_desc
+					}
+				}
+				scope:recipient = {
+					send_interface_toast = {
+						type = event_toast_effect_good
+						title = exam_bypass_notification
+						left_icon = scope:actor
+						right_icon = scope:recipient
+						if = {
+							limit = {
+								NOT = {
+									has_character_flag = passed_provincial_exam
+								}
+							}
+							add_character_flag = passed_provincial_exam
+							add_character_modifier = {
+								modifier = tgp_passed_provincial_exam_modifier
+							}
+						}
+						if = {
+							limit = {
+								NOT = {
+									has_character_flag = passed_metropolitan_exam
+								}
+							}
+							add_character_flag = passed_metropolitan_exam
+							add_character_modifier = {
+								modifier = tgp_passed_metropolitan_exam_modifier
+							}
+						}
+						if = {
+							limit = {
+								NOT = {
+									has_character_flag = passed_palace_exam
+								}
+							}
+							add_character_flag = passed_palace_exam
+							add_character_modifier = {
+								modifier = tgp_passed_palace_exam_modifier
+							}
+						}
+						change_merit = kingdom_starting_merit_value
+						if = {
+							limit = {
+								scope:actor = {
+									NOT = {
+										has_character_flag = used_examination_bypass
+									}
+								}
+							}
+							custom_tooltip = examination_bypass_option_warning_desc
+						}
+					}
+					add_opinion = {
+						modifier = pleased_opinion
+						target = scope:actor
+						opinion = 30
+					}
+				}
+			}
 		}
 
 		# Update the score for the target character
@@ -4288,6 +4642,7 @@ influence_meritorious_career_interaction = {
 				if = {
 					limit = {
 						is_military_candidate_trigger = yes
+						exists = scope:increased_career_score # since we now have options that don't save this
 					}
 					if = {
 						limit = {
@@ -4305,7 +4660,10 @@ influence_meritorious_career_interaction = {
 						}
 					}
 				}
-				else = {
+				else_if = {
+					limit = {
+						exists = scope:increased_career_score # since we now have options that don't save this
+					}
 					if = {
 						limit = {
 							has_variable = merit_civilian_career_score_bonus
@@ -4323,17 +4681,24 @@ influence_meritorious_career_interaction = {
 					}
 				}
 			}
-			# Display the relevant information
 			if = {
 				limit = {
-					is_military_candidate_trigger = yes
+					scope:actor = {
+						tgp_is_any_minister = no # we only show this for everything when you don't trigger the special options
+					}
 				}
-				custom_tooltip = influence_meritorious_career_effect_military_desc
+				# Display the relevant information
+				if = {
+					limit = {
+						is_military_candidate_trigger = yes
+					}
+					custom_tooltip = influence_meritorious_career_effect_military_desc
+				}
+				else = {
+					custom_tooltip = influence_meritorious_career_effect_civilian_desc
+				}
+				custom_tooltip = influence_meritorious_career_effect_warning_desc
 			}
-			else = {
-				custom_tooltip = influence_meritorious_career_effect_civilian_desc
-			}
-			custom_tooltip = influence_meritorious_career_effect_warning_desc
 		}
 	}
 
@@ -4751,6 +5116,7 @@ celestial_request_military_aid_interaction = {
 			save_scope_as = joining_governor
 		}
 		scope:recipient = {
+			change_influence = major_influence_value
 			if = {
 				limit = {
 					is_ai = yes
@@ -4984,6 +5350,7 @@ celestial_request_treasury_interaction = {
 			}
 			this != scope:recipient
 		}
+		scope:actor.top_liege = scope:recipient.top_liege
 		scope:recipient = {
 			government_has_flag = government_is_celestial
 			OR = {
@@ -5065,6 +5432,38 @@ celestial_request_treasury_interaction = {
 		flag = dominant_family
 		localization = OPTION_DOMINANT_FAMILY
 	}
+	send_option = {
+		is_shown = {
+			scope:actor = {
+				treasury < 0
+			}
+			scope:recipient = {
+				OR = {
+					has_title = title:e_minister_of_revenue
+					has_title = title:e_minister_of_war
+					this = scope:actor.top_liege
+				}
+			}
+		}
+		is_valid = {
+			scope:recipient = {
+				treasury >= {
+					value = scope:actor.treasury
+					multiply = -1
+				}
+			}
+		}
+		starts_enabled = {
+			scope:recipient = {
+				treasury >= {
+					value = scope:actor.treasury
+					multiply = -1
+				}
+			}
+		}
+		flag = clear_debt
+		localization = OPTION_CLEAR_DEBT
+	}
 	should_use_extra_icon = {
 		scope:actor = { has_usable_hook = scope:recipient }
 	}
@@ -5099,9 +5498,42 @@ celestial_request_treasury_interaction = {
 		}
 
 		scope:recipient = {
-			pay_short_term_treasury = {
-				target = scope:actor
-				treasury = request_treasury_value
+			change_influence = major_influence_value
+			if = {
+				limit = {
+					scope:clear_debt = yes
+				}
+				pay_short_term_treasury = {
+					target = scope:actor
+					treasury = {
+						value = scope:actor.treasury
+						multiply = -1
+					}
+				}
+				add_hook = {
+					type = strong_indebted_hook
+					target = scope:actor
+				}
+				situation:dynastic_cycle ?= {
+					if = {
+						limit = {
+							situation_top_has_catalyst = catalyst_cleared_treasury_debt
+							any_situation_participant = {
+								this = scope:actor
+							}
+						}
+						trigger_situation_catalyst = {
+							catalyst = catalyst_cleared_treasury_debt
+							character = scope:actor
+						}
+					}
+				}
+			}
+			else = {
+				pay_short_term_treasury = {
+					target = scope:actor
+					treasury = request_treasury_value
+				}
 			}
 			# If recipient is a player - let's add a global AI cooldown so you don't get spammed with requests
 			if = {
@@ -5376,6 +5808,7 @@ celestial_request_commander_interaction = {
 			}
 			this != scope:recipient
 		}
+		scope:actor.top_liege = scope:recipient.top_liege
 		scope:recipient = {
 			has_title = title:e_minister_of_war
 		}
@@ -5526,6 +5959,9 @@ celestial_request_commander_interaction = {
 
 				add_courtier = scope:secondary_recipient
 			}
+		}
+		scope:recipient = {
+			change_influence = major_influence_value
 		}
 	}
 
@@ -5763,6 +6199,7 @@ celestial_request_examination_support_interaction = {
 			is_governor_or_admin_count = yes
 			this != scope:recipient
 		}
+		scope:actor.top_liege = scope:recipient.top_liege
 		scope:recipient = {
 			has_title = title:e_minister_of_rites
 		}
@@ -5887,6 +6324,9 @@ celestial_request_examination_support_interaction = {
 					}
 				}
 			}
+		}
+		scope:recipient = {
+			change_influence = major_influence_value
 		}
 	}
 
@@ -6541,6 +6981,9 @@ set_favored_minister_interaction = {
 				}
 			}
 			custom_tooltip = recipient_favored_minister_aptitude_tt
+		}
+		scope:recipient = {
+			change_influence = monumental_influence_value
 		}
 	}
 
@@ -7276,8 +7719,6 @@ find_elder_interaction = {
 	notification_text = tgp_interaction_event.0031.desc # Intentional
 	filter_tags = { dynastic_cycle }
 	custom_character_sort = { merit }
-	pre_answer_yes_key = find_elder_interaction_yes_key #TODO_TGP_CD_AM: make sure this works after TIT-64165 is fixed
-	pre_answer_yes_breakdown_key = find_elder_interaction_yes_key #same as above on purpose
 	cooldown = { years = 1 }
 	is_shown = {
 		scope:actor = {
@@ -7294,7 +7735,6 @@ find_elder_interaction = {
 			government_allows = merit
 		}
 	}
-
 	is_valid_showing_failures_only = {
 		# Warcraft
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }
@@ -7321,9 +7761,16 @@ find_elder_interaction = {
 							}
 						}
 					}
-					any_vassal = {
-						eligible_for_elder_trigger = {
-							DISCIPLE = scope:actor
+					trigger_if = {
+						limit = {
+							scope:actor = {
+								is_ai = no # we filter out vassals for the AI to avoid perspective issues for the player
+							}
+						}
+						any_vassal = {
+							eligible_for_elder_trigger = {
+								DISCIPLE = scope:actor
+							}
 						}
 					}
 				}
@@ -7362,33 +7809,51 @@ find_elder_interaction = {
 					add_to_list = characters
 				}
 			}
-			every_vassal = {
+			if = {
 				limit = {
-					eligible_for_elder_trigger = {
-						DISCIPLE = scope:actor
+					scope:actor = {
+						is_ai = no # we filter out vassals for the AI to avoid perspective issues for the player
 					}
 				}
-				add_to_list = characters
-				every_pool_character = {
-					province = scope:recipient.capital_province
+				every_vassal = {
 					limit = {
 						eligible_for_elder_trigger = {
 							DISCIPLE = scope:actor
 						}
 					}
 					add_to_list = characters
+					every_pool_character = {
+						province = scope:recipient.capital_province
+						limit = {
+							eligible_for_elder_trigger = {
+								DISCIPLE = scope:actor
+							}
+						}
+						add_to_list = characters
+					}
 				}
 			}
 		}
 	}
 
-	auto_accept = {
-		custom_description = {
-			text = find_elder_interaction_secondary_recipient_decides
-			subject = scope:secondary_recipient
-			object = scope:actor
-			value = scope:secondary_recipient.find_elder_acceptance_value
-			scope:recipient != scope:secondary_recipient
+	can_be_picked = {
+		scope:actor = {
+			trigger_if = {
+				limit = {
+					is_ai = yes
+				}
+				OR = {
+					scope:recipient = scope:secondary_recipient
+					AND = { # perspective issues for the player if the AI is requesting their courtiers, as well as frequency
+						scope:recipient = {
+							is_ai = yes
+						}
+						scope:secondary_recipient = {
+							is_ai = yes
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -7399,12 +7864,12 @@ find_elder_interaction = {
 	}
 
 	highlighted_reason = HIGHLIGHTED_FIND_ELDER
-	on_auto_accept = {
+	on_accept = {
 		scope:secondary_recipient = {
 			trigger_event = tgp_interaction_event.0031
 		}
-		show_as_tooltip = {
-			scope:actor = {
+		scope:actor = {
+			show_as_tooltip = {
 				set_elder_relation_effect = {
 					ELDER = scope:secondary_recipient
 					DISCIPLE = scope:actor
@@ -7413,44 +7878,7 @@ find_elder_interaction = {
 			}
 		}
 	}
-	on_accept = {
-		if = {
-			limit = {
-				scope:secondary_recipient = scope:recipient
-			}
-			scope:actor = { trigger_event = tgp_interaction_event.00311 }
-			show_as_tooltip = {
-				scope:actor = {
-					set_elder_relation_effect = {
-						ELDER = scope:secondary_recipient
-						DISCIPLE = scope:actor
-						MERIT = minor_merit_gain
-					}
-				}
-			}
-		}
-		else = {
-			show_as_tooltip = {
-				scope:actor = {
-					set_elder_relation_effect = {
-						ELDER = scope:secondary_recipient
-						DISCIPLE = scope:actor
-						MERIT = minor_merit_gain
-					}
-				}
-			}
-		}
-	}
 
-	on_decline = {
-		scope:actor = {
-			add_opinion = {
-				target = scope:secondary_recipient
-				modifier = refused_to_be_elder_opinion
-				opinion = -10
-			}
-		}
-	}
 	ai_targets = {
 		ai_recipients = peer_vassals
 		max = 20
@@ -8063,7 +8491,7 @@ celestial_request_elders_support_interaction = {
 				}
 				scope:request_artifacts ?= {
 					scope:recipient = {
-						random_character_artifact = {
+						ordered_character_artifact = {
 							limit = {
 								NOR = {
 									has_variable = 1025_treasure_map
@@ -8073,18 +8501,10 @@ celestial_request_elders_support_interaction = {
 								}
 								scope:recipient = { can_benefit_from_artifact = prev }
 							}
-							weight = {
-								base = 1
-								modifier = {
-									artifact_slot_type = book
-									add = 10
-								}
-								modifier = {
-									is_equipped = no
-									add = 1
-								}
-							}
-							save_scope_as = requested_artifact
+							position = 0 
+							order_by = artifact_rarity 
+							save_scope_as = artifact_to_take
+
 						}
 						add_opinion = {
 							modifier = laamp_used_contact_opinion
@@ -8093,7 +8513,7 @@ celestial_request_elders_support_interaction = {
 						}
 					}
 					scope:actor = {
-						scope:requested_artifact = {
+						scope:artifact_to_take = {
 							set_owner = {
 								target = scope:actor
 								history = {
@@ -9889,10 +10309,12 @@ create_ceremonial_claimant_faction_against_interaction = {
 
 	redirect = {
 		scope:actor.top_liege.primary_title.var:administrative_ui_special_title.holder ?= { save_scope_as = secondary_actor }
+		scope:recipient = { save_scope_as = secondary_recipient }
 		clear_saved_scope = recipient
 	}
 
 	is_shown = {
+		scope:secondary_recipient.top_liege = scope:actor.top_liege
 		scope:actor = {
 			tgp_realm_has_ceremonial_liege_trigger = yes
 			NOT = { scope:secondary_actor ?= this }
@@ -9951,7 +10373,6 @@ create_ceremonial_claimant_faction_against_interaction = {
 			limit = { exists = scope:recipient }
 			scope:recipient = {
 				tgp_is_in_ceremonial_house_trigger = yes
-				NOT = { has_trait = devoted }
 				trigger_if = {
 					limit = {
 						scope:title_temp = {
@@ -10686,11 +11107,38 @@ censor_find_secrets_interaction = {
 	interface_priority = 50
 	category = interaction_category_hostile
 	common_interaction = yes
-	desc = censor_find_secrets_interaction_desc
-	
+	desc = {
+		triggered_desc = {
+			trigger = {
+				scope:actor = {
+					has_title = title:e_minister_censor
+					has_council_position = councillor_spymaster
+				}
+			}
+			desc = censor_find_secrets_interaction_desc
+		}
+		triggered_desc = {
+			trigger = {
+				scope:actor = {
+					has_title = title:e_minister_of_justice
+					has_council_position = minister_justice
+				}
+			}
+			desc = censor_find_secrets_interaction_desc_justice
+		}
+	}
 	is_shown = {
 		scope:actor = {
-			has_council_position = councillor_spymaster
+			OR = {
+				AND = {
+					has_title = title:e_minister_censor
+					has_council_position = councillor_spymaster
+				}
+				AND = {
+					has_title = title:e_minister_of_justice
+					has_council_position = minister_justice
+				}
+			}
 			top_liege = {
 				tgp_has_access_to_ministry_trigger = yes
 			}
@@ -10740,11 +11188,12 @@ censor_find_secrets_interaction = {
 		county = 0
 		duchy = 0
 		kingdom = 0
-		empire = 36 #The Censor title is empire tier
+		empire = 48 #The Censor title is empire tier
 		hegemony = 0
 	}
 	ai_targets = {
 		ai_recipients = peer_vassals
+		max = 20
 	}
 	ai_potential = {
 		is_at_war = no
@@ -10754,4 +11203,545 @@ censor_find_secrets_interaction = {
 			}
 		}
 	}	
+}
+
+celestial_extinguish_noble_family_interaction = {
+	icon = extinguish_noble_family
+	category = interaction_category_prison
+	common_interaction = yes
+	interface_priority = 65
+	desc = celestial_extinguish_noble_family_interaction_desc
+
+	is_shown = {
+		scope:actor = {
+			is_ai = no
+			government_has_flag = government_is_celestial
+			this = top_liege
+			highest_held_title_tier >= tier_empire
+		}
+		scope:recipient = {
+			OR = {
+				is_imprisoned_by = scope:actor
+				AND = {
+					is_imprisoned_by = title:e_minister_censor.holder
+					title:e_minister_censor.holder.top_liege = scope:actor
+				}
+				AND = {
+					is_imprisoned_by = title:e_minister_of_justice.holder
+					title:e_minister_of_justice.holder.top_liege = scope:actor
+				}
+			}
+			top_liege = scope:actor
+			any_held_title = {
+				is_noble_family_title = yes
+			}
+			is_ai = yes
+		}
+	}
+
+	is_highlighted = {
+		OR = {
+			scope:actor = { has_trait = sadistic }
+			scope:actor = { has_relation_rival = scope:recipient }
+			scope:actor = {
+				OR = {
+					has_execute_reason = scope:recipient
+					has_banish_reason = scope:recipient
+				}
+			}
+		}
+	}
+
+	highlighted_reason = HIGHLIGHTED_HAS_EXECUTION_REASON
+
+	is_valid_showing_failures_only = {
+		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
+		scope:recipient = {
+			custom_description = {
+				text = "currently_being_tortured"
+				NOT = { has_character_flag = is_being_tortured }
+			}
+		}
+
+		# Blocked by current struggle phase
+		custom_tooltip = {
+			text = struggle_parameter_struggle_cannot_execute_involved_prisoners
+			NOT = {
+				scope:actor = {
+					any_character_struggle = {
+						involvement = involved
+						has_struggle_phase_parameter = struggle_cannot_execute_involved_prisoners
+						is_secondary_character_involvement_involved_trigger = {
+							CHAR = scope:recipient
+						}
+					}
+				}
+			}
+		}
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
+		}
+	}
+
+	auto_accept = {
+		custom_description = {
+			text = auto_accept_interaction_huangdi
+			always = yes
+		}
+	}
+
+	on_auto_accept = {
+		# covered by on_accept
+	}
+
+	on_accept = {
+		show_as_tooltip = {
+			hidden_effect = { # we need this for Dread and Tyranny calculations
+				scope:recipient = {
+					every_close_or_extended_family_member = {
+						limit = {
+							top_liege = scope:actor
+							house = scope:recipient.house
+							NOR = {
+								any_spouse = {
+									house ?= scope:actor.house
+								}
+								any_parent = {
+									house ?= scope:actor.house
+								}
+							}
+						}
+						if = {
+							limit = {
+								age >= 16
+								NOT = {
+									tgp_is_above_retirement_age_trigger = {
+										REALM_OWNER = scope:actor
+									}							
+								}
+								AND = {
+									is_faith_dominant_gender = yes
+									OR = {
+										is_parent_of = scope:recipient
+										is_child_of = scope:recipient
+									}
+								}
+							}
+							add_to_list = those_to_kill
+						}
+						else = {
+							add_to_list = those_to_banish
+						}
+					}
+					every_spouse = {
+						limit = {
+							top_liege = scope:actor
+							NOR = {
+								any_parent = {
+									house ?= scope:actor.house
+								}
+								tgp_is_above_retirement_age_trigger = {
+									REALM_OWNER = scope:actor
+								}
+							}
+						}
+						add_to_list = those_to_banish
+					}
+				}
+				every_in_list = {
+					list = those_to_banish
+					limit = {
+						is_imprisoned = no
+					}
+					scope:actor = {
+						imprison = {
+							target = prev
+							type = house_arrest
+						}
+					}
+					add_character_flag = is_currently_being_purged
+					add_to_list = asset_forfeiture_list
+				}
+				every_in_list = {
+					list = those_to_kill
+					limit = {
+						is_imprisoned = no
+					}
+					scope:actor = {
+						imprison = {
+							target = prev
+							type = house_arrest
+						}
+					}
+					add_character_flag = is_currently_being_purged
+					add_to_list = asset_forfeiture_list
+				}
+				scope:recipient = {
+					add_character_flag = is_currently_being_purged
+					add_to_list = asset_forfeiture_list
+				}
+			}
+			scope:actor = {
+				add_treasury_or_gold = {
+					value = {
+						add = scope:recipient.current_gold_value # asset forfeiture
+						add = {
+							every_in_list = {
+								list = those_to_banish
+								limit = {
+									gold > 0
+								}
+								add = current_gold_value
+							}
+						}
+						add = {
+							every_in_list = {
+								list = those_to_kill
+								limit = {
+									gold > 0
+								}
+								add = current_gold_value
+							}
+						}
+					}
+				}
+				add_dread = {
+					value = miniscule_dread_gain
+					multiply = {
+						value = {
+							value = 0
+							add = {
+								every_in_list = {
+									list = those_to_banish
+									limit = {
+										NOT = {
+											scope:actor = {
+												OR = {
+													has_banish_reason = prev
+													has_execute_reason = prev
+												}
+											}
+										}
+									}
+									add = {
+										value = highest_held_title_tier
+										multiply = 0.5
+										round = yes
+									}
+								}
+							}
+							add = {
+								every_in_list = {
+									list = those_to_kill
+									limit = {
+										NOT = {
+											scope:actor = {
+												has_execute_reason = prev
+											}
+										}
+									}
+									add = highest_held_title_tier
+								}
+							}
+							add = scope:recipient.highest_held_title_tier
+						}
+					}
+				}
+				if = {
+					limit = {
+						NOT = {
+							scope:actor = {
+								has_execute_reason = scope:recipient
+							}
+						}
+					}
+					add_tyranny = {
+						value = medium_tyranny_gain
+						multiply = {
+							value = {
+								value = 0
+								add = {
+									every_in_list = {
+										list = those_to_banish
+										add = {
+											value = highest_held_title_tier
+											multiply = 0.5
+											round = yes
+										}
+									}
+								}
+								add = {
+									every_in_list = {
+										list = those_to_kill
+										add = highest_held_title_tier
+									}
+								}
+								add = scope:recipient.highest_held_title_tier
+							}
+						}
+					}
+					if = {
+						limit = {
+							exists = top_participant_group:dynastic_cycle
+							any_character_situation = {
+								situation_type = dynastic_cycle
+							}
+						}
+						situation:dynastic_cycle ?= {
+							if = {
+								limit = {
+									situation_top_has_catalyst = catalyst_tyrannical_extinguish_noble_family
+								}
+								trigger_situation_catalyst = {
+									catalyst = catalyst_tyrannical_extinguish_noble_family
+									character = root
+								}
+							}
+						}
+					}
+				}
+				if = {
+					limit = {
+						has_execute_reason = scope:recipient
+					}
+					stress_impact = {
+						sadistic = medium_stress_impact_loss
+						compassionate = minor_stress_impact_gain
+						forgiving = medium_stress_impact_gain
+						generous = minor_stress_impact_gain
+					}
+				}
+				else = {
+					stress_impact = {
+						sadistic = medium_stress_impact_loss
+						compassionate = major_stress_impact_gain
+						forgiving = medium_stress_impact_gain
+						generous = medium_stress_impact_gain
+						trusting = minor_stress_impact_gain
+						content = minor_stress_impact_gain
+					}
+				}
+			}
+			scope:recipient = {
+				death = {
+					death_reason = death_execution
+					killer = scope:actor
+				}
+				custom_tooltip = {
+					text = celestial_extinguish_noble_family_interaction_death_explanation
+				}
+				custom_tooltip = {
+					text = celestial_extinguish_noble_family_interaction_banish_explanation
+				}
+				custom_tooltip = {
+					text = celestial_extinguish_noble_family_interaction_exemption_explanation
+				}
+				every_held_title = {
+					limit = {
+						is_noble_family_title = yes
+					}
+					scope:recipient = {
+						destroy_title = prev
+					}
+				}
+			}
+		}
+		scope:actor = {
+			trigger_event = {
+				id = tgp_east_asia_interaction_events.2000
+			}
+		}
+	}
+}
+
+pay_treasury_debt_interaction = {
+	icon = icon_imperial_treasury
+	category = interaction_category_vassal
+	common_interaction = yes
+	interface_priority = 65
+	desc = pay_treasury_debt_interaction_desc
+
+	is_shown = {
+		scope:actor = {
+			has_treasury = yes
+			OR = {
+				this = scope:recipient.top_liege
+				has_title = title:e_minister_of_revenue
+				has_title = title:e_minister_of_war
+			}
+		}
+		scope:recipient = {
+			top_liege = scope:actor.top_liege
+			has_treasury = yes
+			trigger_if = {
+				limit = {
+					title:e_minister_of_revenue.holder ?= scope:actor
+					NOT = { vassal_contract_has_flag = celestial_military_appointment }
+				}
+			}
+			trigger_else_if = {
+				limit = {
+					title:e_minister_of_war.holder ?= scope:actor
+					vassal_contract_has_flag = celestial_military_appointment
+				}
+			}
+			trigger_else = {
+				top_liege = scope:actor
+			}
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		scope:recipient = { treasury <= 0 }
+		scope:actor = {
+			treasury >= {
+				value = scope:recipient.treasury
+				multiply = -1
+			}
+		}
+	}
+
+	on_accept = {
+		scope:actor = {
+			pay_short_term_treasury	= {
+				target = scope:recipient
+				treasury = {
+					value = scope:recipient.treasury
+					multiply = -1
+				}
+			}
+			add_hook = {
+				type = strong_indebted_hook
+				target = scope:recipient
+			}
+			change_influence = major_influence_value
+		}
+		situation:dynastic_cycle ?= {
+			if = {
+				limit = {
+					situation_top_has_catalyst = catalyst_cleared_treasury_debt
+					any_situation_participant = {
+						this = scope:recipient
+					}
+				}
+				trigger_situation_catalyst = {
+					catalyst = catalyst_cleared_treasury_debt
+					character = scope:actor
+				}
+			}
+		}
+	}
+
+	ai_accept = {
+		base = 5
+		# Don't want to give hooks to rivals
+ 		house_relation_ai_accept_modifiers = { # House Relations
+ 			HOUSE_1_MEMBER = scope:actor
+ 			HOUSE_2_MEMBER = scope:recipient
+ 			MULTIPLIER = 1
+ 		}
+		modifier = { # Rivalry modifier.
+			desc = offer_vassalization_interaction_aibehavior_rival_tt
+			trigger = {
+				scope:recipient = {
+					has_relation_rival = scope:actor
+					NOT = { has_relation_nemesis = scope:actor }
+				}
+			}
+			add = -10
+		}
+		modifier = { # Nemesis modifier.
+			desc = offer_vassalization_interaction_aibehavior_nemesis_tt
+			trigger = {
+				scope:recipient = {
+					has_relation_nemesis = scope:actor
+				}
+			}
+			add = -50
+		}
+	}
+
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 0
+		kingdom = 0
+		empire = 36
+		hegemony = 0
+	}
+
+	ai_targets = {
+		ai_recipients = peer_vassals
+	}
+	ai_targets = {
+		ai_recipients = situation_participant_group
+		parameter = dynastic_cycle
+		max = 20
+	}
+
+	ai_potential = {
+		is_adult = yes
+		treasury > 1000 # Let's make sure the AI don't spend their treasury needlessly
+	}
+
+	ai_will_do = {
+		base = 30
+
+		# Personality
+		modifier = {
+			add = -30
+			has_trait = greedy
+		}
+		modifier = {
+			add = -20
+			has_trait = ambitious
+		}
+		modifier = {
+			add = 10
+			has_trait = trusting
+		}
+		modifier = {
+			add = 15
+			has_trait = generous
+		}
+
+		# Support your fellow movement members
+		modifier = {
+			add = 100
+			is_in_same_movement_as = { TARGET = scope:recipient }
+		}
+
+		# Slight preference to do this towards players
+		modifier = {
+			add = 30
+			scope:recipient = {
+				is_ai = no
+			}
+		}
+
+		# Don't support bad relations
+		modifier = {
+			factor = 0
+			OR = {
+				has_relation_rival = scope:recipient
+				has_relation_nemesis = scope:recipient
+			}
+		}
+
+		# Avoid sending treasury multiple times
+		modifier = {
+			factor = 0
+			scope:recipient = {
+				has_opinion_modifier = {
+					target = scope:actor
+					modifier = treasury_gift_opinion
+				}
+			}
+		}
+	}
 }
