@@ -212,6 +212,8 @@ great_project_contribution_catalyst_effect = {
 	if = {
 		limit = {
 			this != scope:owner
+			this != scope:founder
+			tgp_is_any_minister = no
 			scope:owner ?= {
 				any_character_situation = {
 					situation_type = dynastic_cycle
@@ -253,7 +255,7 @@ great_project_reward_contribution_completion_notification_effect = {
 		send_interface_toast = {
 			title = great_project_contribution_msg_t
 			left_icon = root
-			right_icon = scope:province
+			right_icon = scope:province.barony
 			
 			great_project_contribution_completion_reward_$LEVEL$_effect = { EXTRA_EFFECT = $OWNER_REWARD_EFFECT$ }
 		}
@@ -785,12 +787,12 @@ hold_examinations_effect = {
 }
 change_retirement_law_increase_effect = {
 	scope:hegemon = {
-		change_realm_law_level = { law_group = celestial_retirement_law change = -1 }
+		change_realm_law_level = { law_group = celestial_retirement_law change = 1 }
 	}
 }
 change_retirement_law_decrease_effect = {
 	scope:hegemon = {
-		change_realm_law_level = { law_group = celestial_retirement_law change = 1 }
+		change_realm_law_level = { law_group = celestial_retirement_law change = -1 }
 	}
 }
 change_candidate_score_law_effect = {
@@ -810,7 +812,7 @@ increase_budget_salary_effect = {
 	scope:hegemon = {
 		if = {
 			limit = {
-			scope:petitioner.var:budget_change ?= flag:decrease_ministry
+				scope:petitioner.var:budget_change ?= flag:decrease_ministry
 			}
 			change_realm_law_level = { law_group = budget_allocation_salary_law change = 1 }
 			change_realm_law_level = { law_group = budget_allocation_ministry_law change = -1 }
@@ -1844,6 +1846,10 @@ got_minister_position_effect = {
 						limit = {
 							NOT = { has_diarchy_type = grand_secretariat }
 						}
+						if = {#  Clear out any old diarchy
+							limit = { has_active_diarchy = yes }
+							end_diarchy = yes
+						}
 						try_start_diarchy = grand_secretariat
 					}
 					set_diarch = scope:new_minister
@@ -1909,6 +1915,12 @@ got_minister_position_effect = {
 			situation:dynastic_cycle = {
 				add_manual_participant = prev
 			}
+		}
+		if = {
+			limit = {
+				NOT = { has_character_modifier = minister_scheme_slots_modifier }
+			}
+			add_character_modifier = minister_scheme_slots_modifier
 		}
 	}
 }
@@ -2042,6 +2054,7 @@ fired_minister_position_effect = {
 				}
 			}
 		}
+		remove_character_modifier = minister_scheme_slots_modifier
 	}
 }
 
@@ -2397,20 +2410,30 @@ set_duchies_to_attack_effect = {
 		limit = {
 			list_size:duchies_to_attack > 0
 		}
-		random_in_list = {
-			list = duchies_to_attack
+		# Assign the project's location Duchy as the mandatory contribution
+		if = {
 			limit = {
-				this = scope:grand_campaign_project.great_project_location.duchy
+				NOT = { exists = scope:grand_campaign_project.var:attack_1 }
 			}
-			set_duchies_to_attack_variable_effect = {
-				VALUE = 1
+			random_in_list = {
+				list = duchies_to_attack
+				limit = {
+					this = scope:grand_campaign_project.great_project_location.duchy
+				}
+				set_duchies_to_attack_variable_effect = {
+					VALUE = 1
+				}
 			}
 		}
+		# Otherwise pick the smallest duchy and assign it the furthest possible variable
 		ordered_in_list = {
 			list = duchies_to_attack
 			order_by = {
 				value = holder.realm_size
 				multiply = -1
+			}
+			limit = {
+				this != scope:grand_campaign_project.great_project_location.duchy
 			}
 			switch = {
 				trigger = list_size:duchies_to_attack
@@ -2549,37 +2572,95 @@ grand_campaign_contribution_effect = {
 			target = scope:target_title
 		}
 	}
-	# if war does not exist yet, declare it
-	if = {
-		limit = {
-			NOT = { exists = scope:great_project.var:grand_campaign_war }
-		}
-		scope:war_leader = {
-			trigger_event = tgp_china_ministry.0001
-		}
-		custom_tooltip = grand_campaign_start_tt
+	scope:great_project ?= {
+        every_in_list = {
+            variable = grand_campaign_titles
+            every_in_de_jure_hierarchy = {
+				continue = {
+					tier <= tier_duchy
+					tier >= tier_county
+				}
+                limit = {
+               		tier = tier_county
+                    holder ?= {
+                        top_overlord != scope:war_leader.top_liege
+                        NAND = {
+                            is_independent_ruler = yes
+                            government_allows = redirects_wars_to_overlord
+                        }
+                    }
+                }
+                holder.top_overlord = {
+                    add_to_list = potential_primary_defender
+                }
+            }
+        }
+        ordered_in_list = {
+            list = potential_primary_defender
+            order_by = highest_held_title_tier
+            save_scope_as = defender
+    	}
+        if = {
+            limit = {
+                NOT = { exists = scope:defender }
+            }
+            create_title_and_vassal_change = {
+                type = conquest
+                save_scope_as = change_herders
+                add_claim_on_loss = no
+            }
+            every_in_list = {
+                variable = grand_campaign_titles
+                every_in_de_jure_hierarchy = {
+					continue = {
+						tier <= tier_duchy
+						tier >= tier_county
+					}
+                    limit = {
+                   		tier = tier_county
+                        holder ?= {
+                            top_overlord != scope:war_leader.top_liege
+                            is_independent_ruler = yes
+                            government_allows = redirects_wars_to_overlord
+                        }
+                    }
+                    change_title_holder = {
+                        holder = scope:owner
+                        change = scope:change_herders
+                        take_baronies = no
+                    }
+                }
+            }
+            resolve_title_and_vassal_change = scope:change_herders
+        }
+        # if war does not exist yet, declare it
+        else_if = {
+            limit = {
+            	NOT = { exists = scope:great_project.var:grand_campaign_war }
+            }
+            scope:war_leader = {
+            	trigger_event = tgp_china_ministry.0001
+            }
+            custom_tooltip = grand_campaign_start_tt
+        }
+        # if war exists, pull everyone in
+        else = {
+            scope:contributor = {
+                trigger_event = tgp_china_ministry.0004
+        	}
+        }
+        custom_tooltip = great_project_type_grand_campaign_project_contribution_tt
 	}
-	# if war exists, pull everyone in
-	else = {
-		trigger_event = tgp_china_ministry.0004
-	}
-	custom_tooltip = great_project_type_grand_campaign_project_contribution_tt
 }
 
 grand_campaign_contribution_complete_effect = {
+	custom_tooltip = great_project_type_grand_campaign_project_contribution_win_tt
 	if = {
 		limit = {
-			situation:dynastic_cycle ?= {
-				OR = {
-					situation_current_phase = situation_dynastic_cycle_phase_stability_advancement
-					situation_current_phase = situation_dynastic_cycle_phase_instability
-				}
-			}
+			tgp_is_any_minister = yes
+			is_alive = yes # this is actually necessary, because they remain the scope character and accessible even after death
 		}
-		custom_tooltip = great_project_type_grand_campaign_project_contribution_win_tributaries_tt
-	}
-	else = {
-		custom_tooltip = great_project_type_grand_campaign_project_contribution_win_tt
+		change_influence = minister_influence_gain_value
 	}
 }
 
@@ -4233,161 +4314,170 @@ generate_new_steppe_admin_families_effect = {
 }
 
 tgp_cranial_trophies_beheading_effect = {
-	$KILLER$ = {
-		save_temporary_scope_as = the_killer # for the Artifact localization
-	}
-	$DEAD$ = {
-		save_temporary_scope_as = dead_one # for the Artifact localization
-		save_scope_as = dead_character
-	}
 	if = {
 		limit = {
-			$DEAD$ = {
-				highest_held_title_tier = tier_hegemony
+			NOT = {
+				$KILLER$ = {
+					mpo_keep_prisoners_heads_trigger = yes
+				}
 			}
 		}
 		$KILLER$ = {
-			create_artifact = {
-				name = tgp_cranial_trophy_artifact
-				description = tgp_cranial_trophy_artifact_desc
-				rarity = illustrious
-				type = miscellaneous
-				modifier = cranial_trophy_modifier_t6
-				decaying = yes
-				template = tgp_severed_head_template
-				visuals = pocket_severed_head
-				creator = $DEAD$
-				save_scope_as = new_head_artifact
+			save_temporary_scope_as = the_killer # for the Artifact localization
+		}
+		$DEAD$ = {
+			save_temporary_scope_as = dead_one # for the Artifact localization
+			save_scope_as = dead_character
+		}
+		if = {
+			limit = {
+				$DEAD$ = {
+					highest_held_title_tier = tier_hegemony
+				}
+			}
+			$KILLER$ = {
+				create_artifact = {
+					name = tgp_cranial_trophy_artifact
+					description = tgp_cranial_trophy_artifact_desc
+					rarity = illustrious
+					type = miscellaneous
+					modifier = cranial_trophy_modifier_t6
+					decaying = yes
+					template = tgp_severed_head_template
+					visuals = pocket_severed_head
+					creator = $DEAD$
+					save_scope_as = new_head_artifact
+				}
 			}
 		}
-	}
-	else_if = {
-		limit = {
-			$DEAD$ = {
-				highest_held_title_tier = tier_empire
+		else_if = {
+			limit = {
+				$DEAD$ = {
+					highest_held_title_tier = tier_empire
+				}
 			}
+			$KILLER$ = {
+				create_artifact = {
+					name = tgp_cranial_trophy_artifact
+					description = tgp_cranial_trophy_artifact_desc
+					rarity = illustrious
+					type = miscellaneous
+					modifier = cranial_trophy_modifier_t5
+					decaying = yes
+					template = tgp_severed_head_template
+					visuals = pocket_severed_head
+					creator = $DEAD$
+					save_scope_as = new_head_artifact
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				$DEAD$ = {
+					highest_held_title_tier = tier_kingdom
+				}
+			}
+			$KILLER$ = {
+				create_artifact = {
+					name = tgp_cranial_trophy_artifact
+					description = tgp_cranial_trophy_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = cranial_trophy_modifier_t4
+					decaying = yes
+					template = tgp_severed_head_template
+					visuals = pocket_severed_head
+					creator = $DEAD$
+					save_scope_as = new_head_artifact
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				$DEAD$ = {
+					highest_held_title_tier = tier_duchy
+				}
+			}
+			$KILLER$ = {
+				create_artifact = {
+					name = tgp_cranial_trophy_artifact
+					description = tgp_cranial_trophy_artifact_desc
+					rarity = famed
+					type = miscellaneous
+					modifier = cranial_trophy_modifier_t3
+					decaying = yes
+					template = tgp_severed_head_template
+					visuals = pocket_severed_head
+					creator = $DEAD$
+					save_scope_as = new_head_artifact
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				$DEAD$ = {
+					highest_held_title_tier = tier_county
+				}
+			}
+			$KILLER$ = {
+				create_artifact = {
+					name = tgp_cranial_trophy_artifact
+					description = tgp_cranial_trophy_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = cranial_trophy_modifier_t2
+					decaying = yes
+					template = tgp_severed_head_template
+					visuals = pocket_severed_head
+					creator = $DEAD$
+					save_scope_as = new_head_artifact
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				$DEAD$ = {
+					highest_held_title_tier = tier_barony
+				}
+			}
+			$KILLER$ = {
+				create_artifact = {
+					name = tgp_cranial_trophy_artifact
+					description = tgp_cranial_trophy_artifact_desc
+					rarity = masterwork
+					type = miscellaneous
+					modifier = cranial_trophy_modifier_t1
+					decaying = yes
+					template = tgp_severed_head_template
+					visuals = pocket_severed_head
+					creator = $DEAD$
+					save_scope_as = new_head_artifact
+				}
+			}
+		}
+		else = {
+			$KILLER$ = {
+				create_artifact = {
+					name = tgp_cranial_trophy_artifact
+					description = tgp_cranial_trophy_artifact_desc
+					rarity = common
+					type = miscellaneous
+					modifier = cranial_trophy_modifier_t0
+					decaying = yes
+					template = tgp_severed_head_template
+					visuals = pocket_severed_head
+					creator = $DEAD$
+					save_scope_as = new_head_artifact
+				}
+			}
+		}
+		scope:new_head_artifact = {
+			flag_as_trash_artifact = yes
 		}
 		$KILLER$ = {
-			create_artifact = {
-				name = tgp_cranial_trophy_artifact
-				description = tgp_cranial_trophy_artifact_desc
-				rarity = illustrious
-				type = miscellaneous
-				modifier = cranial_trophy_modifier_t5
-				decaying = yes
-				template = tgp_severed_head_template
-				visuals = pocket_severed_head
-				creator = $DEAD$
-				save_scope_as = new_head_artifact
+			add_piety = {
+				value = cranial_trophies_stolen_prestige_value
 			}
-		}
-	}
-	else_if = {
-		limit = {
-			$DEAD$ = {
-				highest_held_title_tier = tier_kingdom
-			}
-		}
-		$KILLER$ = {
-			create_artifact = {
-				name = tgp_cranial_trophy_artifact
-				description = tgp_cranial_trophy_artifact_desc
-				rarity = famed
-				type = miscellaneous
-				modifier = cranial_trophy_modifier_t4
-				decaying = yes
-				template = tgp_severed_head_template
-				visuals = pocket_severed_head
-				creator = $DEAD$
-				save_scope_as = new_head_artifact
-			}
-		}
-	}
-	else_if = {
-		limit = {
-			$DEAD$ = {
-				highest_held_title_tier = tier_duchy
-			}
-		}
-		$KILLER$ = {
-			create_artifact = {
-				name = tgp_cranial_trophy_artifact
-				description = tgp_cranial_trophy_artifact_desc
-				rarity = famed
-				type = miscellaneous
-				modifier = cranial_trophy_modifier_t3
-				decaying = yes
-				template = tgp_severed_head_template
-				visuals = pocket_severed_head
-				creator = $DEAD$
-				save_scope_as = new_head_artifact
-			}
-		}
-	}
-	else_if = {
-		limit = {
-			$DEAD$ = {
-				highest_held_title_tier = tier_county
-			}
-		}
-		$KILLER$ = {
-			create_artifact = {
-				name = tgp_cranial_trophy_artifact
-				description = tgp_cranial_trophy_artifact_desc
-				rarity = masterwork
-				type = miscellaneous
-				modifier = cranial_trophy_modifier_t2
-				decaying = yes
-				template = tgp_severed_head_template
-				visuals = pocket_severed_head
-				creator = $DEAD$
-				save_scope_as = new_head_artifact
-			}
-		}
-	}
-	else_if = {
-		limit = {
-			$DEAD$ = {
-				highest_held_title_tier = tier_barony
-			}
-		}
-		$KILLER$ = {
-			create_artifact = {
-				name = tgp_cranial_trophy_artifact
-				description = tgp_cranial_trophy_artifact_desc
-				rarity = masterwork
-				type = miscellaneous
-				modifier = cranial_trophy_modifier_t1
-				decaying = yes
-				template = tgp_severed_head_template
-				visuals = pocket_severed_head
-				creator = $DEAD$
-				save_scope_as = new_head_artifact
-			}
-		}
-	}
-	else = {
-		$KILLER$ = {
-			create_artifact = {
-				name = tgp_cranial_trophy_artifact
-				description = tgp_cranial_trophy_artifact_desc
-				rarity = common
-				type = miscellaneous
-				modifier = cranial_trophy_modifier_t0
-				decaying = yes
-				template = tgp_severed_head_template
-				visuals = pocket_severed_head
-				creator = $DEAD$
-				save_scope_as = new_head_artifact
-			}
-		}
-	}
-	scope:new_head_artifact = {
-		flag_as_trash_artifact = yes
-	}
-	$KILLER$ = {
-		add_piety = {
-			value = cranial_trophies_stolen_prestige_value
 		}
 	}
 }
@@ -4835,11 +4925,18 @@ tgp_domicile_conversion_when_changing_government_type = {
 				any_held_title = {
 					is_noble_family_title = yes
 				}
-				has_domicile = yes
-				NOT = {
-					domicile ?= {
-						is_domicile_type = $NEW_DOMICILE_TYPE$
+				trigger_if = {
+					limit = {
+						has_domicile = yes #If we have a domicile we check its type
 					}
+					NOT = {
+						domicile ?= {
+							is_domicile_type = $NEW_DOMICILE_TYPE$
+						}
+					}
+				}
+				trigger_else = {
+					has_domicile = no #If we do not have a domicile we need to still pass so we can add one
 				}
 			}
 			random_held_title = {
