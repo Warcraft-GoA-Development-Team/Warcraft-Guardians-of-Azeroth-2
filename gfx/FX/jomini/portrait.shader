@@ -897,6 +897,13 @@ Effect portrait_eye
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
+	Defines = { "DECALS" }
+}
+
+Effect wc_emissive_portrait_eye
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_eye"
 	Defines = { "EMISSIVE" "DECALS" }
 }
 
