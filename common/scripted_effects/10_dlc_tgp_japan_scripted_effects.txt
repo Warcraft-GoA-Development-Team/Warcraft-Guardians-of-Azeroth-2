@@ -570,19 +570,6 @@ restore_ceremonial_liege_faction_reward_effect = {
 			add_to_list = target_titles
 		}
 	}
-	create_title_and_vassal_change = {
-		type = granted
-		save_scope_as = change
-		add_claim_on_loss = yes
-	}
-	every_in_list = {
-		list = target_titles
-		change_title_holder_include_vassals = {
-			holder = scope:ceremonial_liege_temp
-			change = scope:change
-		}
-	}
-	resolve_title_and_vassal_change = scope:change
 	scope:ceremonial_liege_temp = {
 		if = {
 			limit = { has_legitimacy = yes }
@@ -665,8 +652,10 @@ faction_demand_regent_transfer_effect = {
 		hidden_effect = {
 			every_held_title = {
 				limit = {
+					tier > tier_barony # we don't want to try and pass off baronies
 					is_landless_type_title = no
 					is_noble_family_title = no
+					NOT = { exists = var:ceremonial_title } # we don't want to hand away the ceremonial throne, which is not landless
 				}
 				change_title_holder_include_vassals = {
 					holder = scope:new_regent_temp
@@ -682,8 +671,11 @@ faction_demand_regent_transfer_effect = {
 	resolve_title_and_vassal_change = scope:title_change
 	scope:new_regent_temp = { 
 		if = {
-			limit = { capital_county != scope:preferred_capital_temp }
-			set_capital_county = scope:preferred_capital_temp
+			limit = {
+				has_title = scope:preferred_capital_temp # do I own the preferred capital?
+				capital_county != scope:preferred_capital_temp # and is my capital not the preferred capital?
+			}
+			set_realm_capital = scope:preferred_capital_temp # now my capital is the preferred capital
 		}
 		# GOVERNMENT
 		if = {
@@ -699,13 +691,28 @@ faction_demand_regent_transfer_effect = {
 				government_has_flag = government_is_japan_administrative
 				tgp_has_ceremonial_liege_title_trigger = no
 				NOT = {
-					scope:primary_title_temp.holder = { has_realm_law = japanese_regency_succession_law }
+					has_realm_law = japanese_regency_succession_law
 				}
 			}
-			scope:primary_title_temp.holder = { add_realm_law_skip_effects = japanese_regency_succession_law }
+			add_realm_law_skip_effects = japanese_regency_succession_law
 		}
-		else = {
-			scope:primary_title_temp.holder = { add_realm_law_skip_effects = single_heir_succession_law }
+		else_if = {
+			limit = {
+				government_has_flag = government_is_meritocratic
+				tgp_has_ceremonial_liege_title_trigger = no
+				NOT = {
+					has_realm_law = meritocratic_regency_succession_law
+				}
+			}
+			add_realm_law_skip_effects = meritocratic_regency_succession_law
+		}
+		else_if = {
+			limit = {
+				NOT = {
+					has_realm_law = single_heir_succession_law # sanity check
+				}
+			}
+			add_realm_law_skip_effects = single_heir_succession_law
 		}
 	}
 }
@@ -714,7 +721,9 @@ tgp_japan_schoolhouse_education_boost_effect = {
 	save_scope_as = student
 	house.house_head.domicile ?= {
 		if = {
-			limit = { has_domicile_parameter = education_boost }
+			limit = { 
+				has_domicile_parameter = japanese_schoolhouse_education_boost_1
+			}
 			switch = {
 				trigger = has_domicile_building
 				japanese_schoolhouse_01 = { scope:student = { education_point_add_general_effect = { VALUE = 1 } } }
@@ -774,7 +783,7 @@ tgp_destroy_ceremonial_throne_effect = {
 			tgp_destroy_ceremonial_liege_title_effect = yes
 		}
 		every_held_title = {
-			limit = { exists = var:administrative_ui_special_title }
+			limit = { exists = var:administrative_ui_special_title.holder }
 			var:administrative_ui_special_title.holder = { tgp_destroy_ceremonial_liege_title_effect = yes }
 		}
 	}
@@ -785,6 +794,7 @@ tgp_destroy_ceremonial_liege_title_effect = {
 	random_held_title = {
 		limit = { exists = var:ceremonial_title }
 		save_scope_as = ceremonial_title
+		var:ceremonial_title = { save_scope_as = regent_title }
 	}
 	random_held_title = {
 		limit = { is_noble_family_title = yes }
@@ -797,11 +807,12 @@ tgp_destroy_ceremonial_liege_title_effect = {
 				NOT = { exists = scope:ceremonial_title.var:ceremonial_title.holder }
 				scope:ceremonial_title.holder.top_liege != scope:ceremonial_title.var:ceremonial_title.holder.top_liege
 				scope:ceremonial_title.holder.top_liege != scope:ceremonial_title.holder.liege
+				scope:ceremonial_title.holder.top_liege.highest_held_title_tier = tier_hegemony
 			}
 		}
 		# MESSAGE
 		every_player = {
-			limit = { top_liege = scope:vassal.top_liege }
+			limit = { top_liege = scope:ceremonial_liege.top_liege }
 			send_interface_message = {
 				type = event_generic_bad
 				title = tgp_destroy_ceremonial_liege_throne_title
@@ -809,12 +820,31 @@ tgp_destroy_ceremonial_liege_title_effect = {
 				right_icon = scope:liege
 				show_as_tooltip = {
 					scope:liege = { destroy_title = scope:ceremonial_title }
-					scope:ceremonial_liege = { add_trait = former_emperor }
+					scope:ceremonial_liege = {
+						if = {
+							limit = { is_independent_ruler = no }
+							add_trait = former_emperor
+						}
+					}
 				}
 			}
 		}
 		# Actually destroy
-		scope:ceremonial_liege = { add_trait = former_emperor }
+		scope:ceremonial_liege = {
+			if = {
+				limit = { has_treasury = yes }
+				custom_tooltip = {
+					text = treasury_emptying_effect_desc
+					empty_treasury_when_abandoning_landed_life_effect = yes # otherwise the treasury sticks around
+				}
+			}
+			if = {
+				limit = { is_independent_ruler = no }
+				add_trait = former_emperor
+			}
+		}
+		scope:ceremonial_title = { remove_variable = ceremonial_title }
+		scope:regent_title = { remove_variable = administrative_ui_special_title }
 		scope:liege = { destroy_title = scope:ceremonial_title }
 	}
 }
@@ -1551,7 +1581,8 @@ tgp_japan_soryo_eradicate_cb_transfer_effect = {
 		every_held_title = {
 			limit = {
 				is_landless_type_title = no
-				tier > tier_barony 
+				tier < tier_kingdom
+				tier > tier_barony  
 			}
 
 			change_title_holder = {
@@ -1700,10 +1731,30 @@ tgp_japan_become_a_monk_decision_effect = {
 	add_character_modifier = { modifier = ep3_renounced_estate }
 	custom_tooltip = {
 		text = renounce_noble_family_title_decision_tt
-		depose = yes
+		send_interface_toast = {
+			type = event_toast_effect_neutral
+			title = renounce_noble_family_title_decision_toast_title
+			custom_tooltip = renounce_noble_family_title_decision_toast_desc
+			left_icon = scope:new_player
+			right_icon = root
+		}
 	}
 	if = {
 		limit = { exists = scope:new_player }
+		hidden_effect = {
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = title_change
+				add_claim_on_loss = no
+			}
+			every_held_title = {
+				change_title_holder = {
+					holder = scope:new_player
+					change = scope:title_change
+				}
+			}
+			resolve_title_and_vassal_change = scope:title_change
+		}
 		house = { set_house_head = scope:new_player }
 		set_player_character = scope:new_player
 		progress_towards_friend_effect = {
