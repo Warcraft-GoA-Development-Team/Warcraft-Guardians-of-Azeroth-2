@@ -65,6 +65,7 @@ invite_to_house_bloc_interaction = {
 			trigger_if = {
 				limit = {
 					NOT = { exists = house.house_confederation } # You have no Bloc
+					this != top_liege # exception for top liege
 				}
 				any_confederation = { # There are 4 or fewer Blocs in your realm (Japan)
 					count < 5
@@ -156,12 +157,13 @@ invite_to_house_bloc_interaction = {
 				}
 			}
 			custom_tooltip = {
-				text = join_bloc_left_cooldown_tt
+				text = join_bloc_left_cooldown_recipient_tt
 				NOT = {
 					house = {
 						any_in_list = {
 							variable = left_bloc_cooldown
 							scope:actor.house.house_confederation ?= this
+							save_temporary_scope_as = bloc_cooldown_temp
 						}
 					}
 				}
@@ -258,61 +260,51 @@ invite_to_house_bloc_interaction = {
 
 	on_accept = {
 		scope:recipient = {
-			house = { #This is just for showing the tooltip so you know WHO is joining you
-				every_house_member = {
-					limit = {
-						is_landed = yes
-					}
-					house = { save_temporary_scope_as = joiner }
-					scope:actor.house = { save_temporary_scope_as = inviter }
-					custom_tooltip = join_house_bloc_tt_no_scope
-				}
-			}
 			house = {
 				if = { # LEAVE OLD BLOC IF NECESSARY
 					limit = { exists = house_confederation }
-					if = {
-						limit = {
-							scope:hook = yes
+					switch = {
+						trigger = yes
+						scope:hook = {
+							set_variable = {
+								name = bloc_leaving_reason
+								value = flag:reason_bribe_hook
+								days = 4
+							}
 						}
-						set_variable = {
-							name = bloc_leaving_reason
-							value = flag:reason_bribe_hook
-							days = 4
+						scope:gold = {
+							set_variable = {
+								name = bloc_leaving_reason
+								value = flag:reason_bribe_gold
+								days = 4
+							}
 						}
-					}
-					else_if = {
-						limit = { scope:gold = yes }
-						set_variable = {
-							name = bloc_leaving_reason
-							value = flag:reason_bribe_gold
-							days = 4
+						scope:prestige = {
+							set_variable = {
+								name = bloc_leaving_reason
+								value = flag:reason_bribe_prestige
+								days = 4
+							}
 						}
-					}
-					else_if = {
-						limit = { scope:prestige = yes }
-						set_variable = {
-							name = bloc_leaving_reason
-							value = flag:reason_bribe_prestige
-							days = 4
+						scope:influence = {
+							set_variable = {
+								name = bloc_leaving_reason
+								value = flag:reason_bribe_influence
+								days = 4
+							}
 						}
-					}
-					else_if = {
-						limit = { scope:influence = yes }
-						set_variable = {
-							name = bloc_leaving_reason
-							value = flag:reason_bribe_influence
-							days = 4
+						scope:influence = {
+							set_variable = {
+								name = bloc_leaving_reason
+								value = flag:reason_bribe_influence
+								days = 4
+							}
 						}
-					}
-					else = {
-						scope:recipient = {
-							save_scope_as = leaver
+						fallback = {
+							scope:recipient = { save_scope_as = leaver }
+							scope:actor = { save_scope_as = inviter }
+							tgp_save_bloc_leaving_reason_effect = yes
 						}
-						scope:actor = {
-							save_scope_as = inviter
-						}
-						tgp_save_bloc_leaving_reason_effect = yes
 					}
 					tgp_leave_house_bloc_effect = {
 						OPINION = flag:yes
@@ -387,7 +379,7 @@ invite_to_house_bloc_interaction = {
 					OPINION = flag:yes
 				}
 			}
-			custom_tooltip = forced_bloc_membership_tt # You cannot leave the bloc for 5y
+			custom_tooltip = forced_bloc_membership_tt # You cannot leave the bloc for 10y
 			add_character_flag = {
 				flag = forced_bloc_membership
 				years = 10
@@ -533,9 +525,7 @@ invite_to_house_bloc_interaction = {
 		modifier = { # Encourage large houses to form blocs
  			NOT = { exists = house.house_confederation }
 			house = {
-				any_house_member = {
-					count >= 20
-				}
+				any_house_member = { count >= 20 }
 			}
 			add = 75
 		}
@@ -576,25 +566,36 @@ invite_to_house_bloc_interaction = {
 			}
  			add = 100
  		}
-		modifier = { # Don't invite people of different House Aspiration if you have low Cohesion
-			scope:actor = {
-				exists = house.house_confederation
-				house.house_confederation = { cohesion < 75 }
-			}
+		modifier = { # Don't invite people of different House Aspiration
 			scope:recipient.house ?= {
 				NOT = { has_same_house_power_as = scope:actor.house }
 			}
- 			add = -200
+ 			add = -100
+ 		}
+		modifier = { # Cont - esp. if you have low Cohesion
+			exists = scope:recipient.house
+			scope:actor.house ?= {
+				house_confederation ?= { cohesion < 75 }
+				NOT = { has_same_house_power_as = scope:recipient.house }
+			}
+ 			add = -150
  		}
 		modifier = { # ...or different Government Type
 			scope:actor = {
 				NOT = { has_same_government = scope:recipient }
 			}
- 			add = -250
+ 			add = -150
+ 		}
+		modifier = { # Cont - esp. if you have low Cohesion
+			scope:actor = {
+				house.house_confederation ?= { cohesion < 75 }
+				NOT = { has_same_government = scope:recipient }
+			}
+ 			add = -100
  		}
 		modifier = { # Encourage creation of one of each type of bloc
-			NOT = { exists = house.house_confederation }
-			NOT = {
+			NOR = {
+				exists = house.house_confederation
 				any_confederation = {
 					has_leading_house = yes
 					leading_house.house_head.top_liege = scope:actor.top_liege
@@ -854,12 +855,8 @@ join_house_bloc_interaction = {
 			if = {
 				limit = { is_confederation_member = yes }
 				house = {
-					scope:actor = {
-						save_scope_as = leaver
-					}
-					scope:recipient = {
-						save_scope_as = inviter
-					}
+					scope:actor = { save_scope_as = leaver }
+					scope:recipient = { save_scope_as = inviter }
 					tgp_save_bloc_leaving_reason_effect = yes
 					tgp_leave_house_bloc_effect = {
 						OPINION = flag:yes
@@ -1378,6 +1375,11 @@ kick_from_house_bloc_interaction = {
 
 	on_accept = {
 		scope:recipient.house = {
+			set_variable = {
+				name = bloc_leaving_reason
+				value = flag:reason_kicked
+				days = 4
+			}
 			tgp_leave_house_bloc_effect = {
 				OPINION = flag:no
 				TRUCE = flag:yes
@@ -1667,7 +1669,7 @@ assume_house_bloc_leadership_interaction = {
 				text = sub_vassal_leadership_blocked_tt
 				trigger_if = {
 					limit = { is_independent_ruler = no }
-					house.house_confederation.leading_house.house_head.liege = scope:actor.liege
+					NOT = { is_vassal_or_below_of = scope:recipient }
 				}
 			}
 			custom_tooltip = {
@@ -1723,6 +1725,12 @@ assume_house_bloc_leadership_interaction = {
 				is_landed = no
 				#NOT = { has_title = title:k_chrysanthemum_throne }
 			}
+		}
+		trigger_if = {
+			limit = {
+				scope:recipient = { is_vassal_or_below_of = scope:actor }
+			}
+			always = yes
 		}
 		trigger_else = {
 			custom_description = {
