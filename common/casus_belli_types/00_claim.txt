@@ -20,7 +20,7 @@
 							var:legitimist_claimed_title = {
 								OR = {
 									holder = scope:defender
-									de_jure_liege = scope:defender
+									de_jure_liege.holder = scope:defender
 								}
 							}
 						}
@@ -73,6 +73,10 @@
 		scope:claimant = {
 			is_incapable_trigger = no # Warcraft
 			is_hostage = no
+			custom_description = {
+				text = is_not_a_minister_desc
+				tgp_is_any_minister = no
+			}
 			trigger_if = {
 				limit = { scope:claimant != scope:attacker } # You can always press your own claims
 				is_imprisoned = no
@@ -157,18 +161,7 @@
 				custom_description = {
 					text = "byzantine_claimant_is_disfigured"
 					object = scope:claimant
-					is_eunuch_trigger = no
-					NOR = {
-						is_incapable_trigger = yes
-						has_trait = blind
-						has_trait = disfigured
-						has_trait = maimed
-						has_trait = one_eyed
-						has_trait = one_legged
-						has_trait = clubfooted
-						has_trait = hunchbacked
-						has_trait = dwarf
-					}
+					valid_for_byz_succession_trigger = yes
 				}
 			}
 		}
@@ -182,7 +175,7 @@
 					text = "byzantine_claimant_is_celibate"
 					object = scope:defender
 					is_eunuch_trigger = no
-					NOR = {
+					NOT = {
 						has_trait = celibate
 					}
 				}
@@ -202,7 +195,7 @@
 				has_realm_law = camp_purpose_legitimists
 			}
 		}
-		tgp_japan_offensive_wars_ban_trigger = yes
+		#tgp_japan_offensive_wars_ban_trigger = yes
 	}
 
 	cost = {
@@ -223,7 +216,7 @@
 				}
 				multiply = {
 					value = 0
-					desc = "not_imprisoned_filter" # Says 'free'
+					desc = "free_cost" # Says 'free'
 				}
 			}
 
@@ -311,17 +304,20 @@
 				}
 			}
 			AND = { 
-				scope:claimant != scope:attacker 
+				scope:claimant != scope:attacker
 				scope:claimant = {
 					OR = {
 						is_alive = no 
 						NOR = { 
 							is_vassal_or_below_of = scope:attacker 
-							is_courtier_of = scope:attacker 
+							is_courtier_of = scope:attacker
 						}
 					}
 				}
-			} 
+			}
+			scope:claimant = {
+				tgp_is_any_minister = yes
+			}
 		}
 	}
 
@@ -343,10 +339,19 @@
 								is_vassal_or_below_of = scope:attacker 
 								is_courtier_of = scope:attacker 
 							}
+							tgp_is_any_minister = yes
 						}
 					}
 				}
 				desc = msg_claim_war_invalidated_claimant_unavailable_not_vassal_message
+			}
+			triggered_desc = {
+				trigger = {
+					scope:claimant = {
+						tgp_is_any_minister = yes
+					}
+				}
+				desc = msg_claim_war_invalidated_claimant_is_now_a_minister_message
 			}
 			desc = msg_claim_war_invalidated_message
 		}
@@ -372,6 +377,25 @@
 	}
 
 	on_victory = {
+		#Grab the higher title tier
+		ordered_in_list = {
+			list = target_titles
+			order_by = tier
+			save_scope_as = target
+		}
+		#Generate a nice informative tooltip
+		scope:claimant = {
+			if = {
+				limit = { is_landless_adventurer = yes }
+				ep3_landless_invasion_titles_taken_effect = {
+					TITLE_GIVER = scope:defender
+					TITLE_RECEIVER = scope:claimant
+					TITLE = scope:target
+					TITLE_LIST = target_titles
+				}
+			}
+		}
+
 		scope:attacker = {
 			if = {
 				limit = {
@@ -423,18 +447,21 @@
 					add = 1
 				}
 			}
+
+			show_pow_release_message_effect = yes
+
+			#EP2 Accolade glory gain from winning against higher ranked enemy
+			accolade_attacker_war_end_glory_gain_med_effect = yes
+
+			# FP1: note the victory for future memorialisation via stele (if applicable)
+			fp1_remember_recent_conquest_victory_effect = yes
 		}
-	
-		scope:attacker = { show_pow_release_message_effect = yes }
 
 		# Legitimacy
 		add_legitimacy_attacker_victory_effect = yes
 
 		# Influence
 		add_influence_attacker_victory_effect = yes
-
-		#EP2 Accolade glory gain from winning against higher ranked enemy
-		scope:attacker = { accolade_attacker_war_end_glory_gain_med_effect = yes }
 
 		scope:defender ?= {
 			if = {
@@ -445,35 +472,91 @@
 				}
 				every_held_title = {
 					title_tier >= county
-					limit = {
-						is_noble_family_title = no
-					}
+					limit = { is_noble_family_title = no }
 					add_to_list = target_titles
 				}
 			}
+
+			# EP3 Laamp possibility warning
+			ep3_war_loss_adventurer_tt_effect = yes
 		}
 
-		create_title_and_vassal_change = {
-			type = conquest_claim
-			save_scope_as = change
-			add_claim_on_loss = yes
+		#If it works, it works
+		custom_tooltip = {
+			text = null
+			create_title_and_vassal_change = {
+				type = conquest_claim
+				save_scope_as = change
+				add_claim_on_loss = yes
+			}
+			
+			# Create a claim CB which is executed to handle title/vassal changes, in addition to being used to calculate Prestige awards for war participants.
+			setup_claim_cb = {
+				titles = target_titles
+				attacker = scope:attacker
+				defender = scope:defender
+				claimant = scope:claimant
+				change = scope:change
+			}
+
+			resolve_title_and_vassal_change = scope:change
 		}
 
-		# EP3 Laamp possibility warning
-		scope:defender = { ep3_war_loss_adventurer_tt_effect = yes }
-		
-		# Create a claim CB which is executed to handle title/vassal changes, in addition to being used to calculate Prestige awards for war participants.
-		setup_claim_cb = {
-			titles = target_titles
-			attacker = scope:attacker
-			defender = scope:defender
-			claimant = scope:claimant
-			change = scope:change
-		}
-
-		resolve_title_and_vassal_change = scope:change
-
+		# Landless Ceremonial Liege
 		if = {
+			limit = {
+				scope:claimant.top_liege != scope:defender.top_liege
+				scope:claimant.primary_title.tier < scope:defender.primary_title.tier
+				scope:claimant = { is_landed = no }
+				any_in_list = {
+					list = target_titles
+					exists = var:ceremonial_title
+				}
+				NOT = {
+					any_in_list = {
+						list = target_titles
+						OR = {
+							is_landless_type_title = no
+							is_noble_family_title = yes
+						}
+					}
+				}
+			}
+			scope:defender = {
+				faction_demand_regent_transfer_effect = {
+					NEW_REGENT = scope:claimant
+					REASON = conquest_claim
+				}
+			}
+			create_title_and_vassal_change = {
+				type = conquest_claim
+				save_scope_as = change_three
+				add_claim_on_loss = no
+			}
+			# Landless Ceremonial Liege must be house head
+			scope:claimant = {
+				if = {
+					limit = { is_house_head = no }
+					house = {
+						house_head = {
+							if = {
+								limit = {
+									is_landed = no
+									is_ai = no
+								}
+								found_cadet_house_decision_effect = {
+									CHARACTER = this
+									PRESTIGE = 0
+								}
+							}
+						}
+						set_house_head = scope:claimant
+					}
+				}
+			}
+			resolve_title_and_vassal_change = scope:change_three
+		}
+		else_if = {
 			limit = {
 				scope:claimant != scope:attacker
 				scope:claimant.primary_title.tier < scope:attacker.primary_title.tier
@@ -481,7 +564,6 @@
 					NOT = { target_is_liege_or_above = scope:attacker }
 				}
 			}
-
 			create_title_and_vassal_change = {
 				type = conquest_claim
 				save_scope_as = change_two
@@ -528,9 +610,6 @@
 
 		# truce
 		add_truce_attacker_victory_effect = yes
-
-		# FP1: note the victory for future memorialisation via stele (if applicable).
-		scope:attacker = { fp1_remember_recent_conquest_victory_effect = yes }
 
 		# EP3: note gold gained from military assistance/join war contracts and their war contribution threshold
 		laamp_as_mercenary_payout_tooltip_effect = yes
@@ -773,6 +852,6 @@
 			multiply = 0.4
 		}
 		# Warcraft
-	#	add = frankokratia_leader_protection_value #Set back to 0. Declaring war on the frankokratia leader can really ruin the whole thing
+		#add = frankokratia_leader_protection_value #Set back to 0. Declaring war on the frankokratia leader can really ruin the whole thing
 	}
 }
