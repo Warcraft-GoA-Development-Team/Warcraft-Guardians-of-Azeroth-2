@@ -142,6 +142,11 @@ petition_liege.9000 = {
 					limit = { var:petition_type = flag:development }
 					liege.capital_province.county.development_level >= petitioner_development_difference_decision_value
 				}
+				trigger_else_if = { # House Fief
+					limit = { var:petition_type = flag:house_fief }
+					has_tgp_dlc_trigger = yes
+					has_government = japan_administrative_government
+				}
 				trigger_else_if = { # Fallback
 					limit = { var:petition_type = flag:fallback }
 				}
@@ -317,7 +322,7 @@ petition_liege.9000 = {
 						save_scope_as = petition_county_example
 						ordered_title_to_title_neighboring_county = {
 							limit = {
-								NOT = { holder.top_liege = scope:petition_vassal.top_liege }
+								holder.top_liege != scope:petition_vassal.top_liege
 							}
 							order_by = holder.top_liege.max_military_strength
 							holder.top_liege = { save_scope_as = second_party }
@@ -378,6 +383,7 @@ petition_liege.9000 = {
 						save_scope_as = petition_county_example 
 					}
 				}
+				flag:house_fief = {} # House Fief
 			}
 			scope:petition_liege = { trigger_event = petition_liege.0001 }
 			scope:petition_vassal = {
@@ -655,6 +661,17 @@ petition_liege.9001 = {
 				target = flag:development
 			}
 		}
+		if = { # House Fief
+			limit = {
+				NOT = { var:petition_type = flag:house_fief }
+				has_tgp_dlc_trigger = yes
+				has_government = japan_administrative_government
+			}
+			add_to_variable_list = {
+				name = available_petitions
+				target = flag:house_fief
+			}
+		}
 		# Cull list to 4 max
 		# Initialize the variable list
 		random_in_list = {
@@ -674,7 +691,7 @@ petition_liege.9001 = {
 					limit = {
 						any_in_list = {
 							variable = petitions_to_show
-							NOT = { this = prev }
+							this != prev
 						}
 					}
 					root = {
@@ -859,7 +876,7 @@ petition_liege.9001 = {
 			NOT = { var:petition_type = flag:title_vassal }
 			NOT = { # Only relevant if revocation is possible
 				# Warcraft
-						liege = { has_realm_law_flag = title_revocation_allowed }
+				liege = { has_realm_law_flag = title_revocation_allowed }
 			}
 			any_claim = { petition_liege_title_vassal_trigger = yes }
 		}
@@ -915,6 +932,22 @@ petition_liege.9001 = {
 			value = flag:development
 		}
 	}
+	option = {
+		name = petition_liege.9001.house_fief
+		trigger = { # House Fief
+			any_in_list = {
+				variable = petitions_to_show
+				this = flag:house_fief
+			}
+			NOT = { var:petition_type = flag:house_fief }
+			has_tgp_dlc_trigger = yes
+			has_government = japan_administrative_government
+		}
+		set_variable = {
+			name = petition_type
+			value = flag:house_fief
+		}
+	}	
 	option = {
 		name = petition_liege.9001.admin_request_court_position
 		trigger = { # Admin
@@ -985,6 +1018,187 @@ petition_liege.9100 = {
 	}
 }
 
+# Event fired on arrival to ceremonial liege's court that checks if your selected petition is still valid
+petition_liege.9020 = {
+	hidden = yes
+	immediate = {
+		save_scope_as = petition_vassal
+		top_liege.primary_title.var:administrative_ui_special_title.holder ?= { save_scope_as = petition_liege }
+		if = {
+			limit = { petition_ceremonial_liege_valid_trigger = no }
+			send_interface_toast = {
+				title = petition_ceremonial_liege_costs_refunded
+				left_icon = root 
+				remove_decision_cooldown = petition_ceremonial_liege_decision
+				# refund prestige and influence cost
+				if = {
+					limit = { petition_liege_admin_valid_trigger = yes }
+					change_influence_no_experience = standard_activity_cost
+				}
+				else = { add_prestige_no_experience = standard_activity_cost }
+			}
+			trigger_event = petition_liege.0621
+		}
+		else_if = { # Double check that the selection made when taking the decision is still valid
+			limit = {
+				trigger_if = {
+					limit = { var:petition_type = flag:regent }
+					government_allows = administrative
+					is_independent_ruler = no
+					top_liege = { tgp_is_ceremonial_regent_trigger = yes }
+				}
+				trigger_else_if = {
+					limit = { var:petition_type = flag:appointment }
+					government_allows = administrative
+				}
+				trigger_else_if = {
+					limit = { var:petition_type = flag:wedding }
+					tgp_is_in_ceremonial_house_trigger = no
+				}
+				trigger_else_if = {
+					limit = { var:petition_type = flag:privilege }
+				}
+				trigger_else = { always = no }
+			}
+			switch = {
+				trigger = scope:petition_vassal.var:petition_type
+				flag:regent = {}
+				flag:appointment = {}
+				flag:wedding = {}
+				flag:privilege = {}
+			}
+			scope:petition_liege = { trigger_event = petition_liege.0021 }
+			scope:petition_vassal = {
+				trigger_event = {
+					on_action = petition_ceremonial_liege_ghosted
+					days = 30
+				}
+			}
+		}
+		else = { trigger_event = petition_liege.9021 } # Notify the vassal that their prev petition is invalidated and that they are moving to a fallback scenario
+		current_travel_plan ?= {
+			delay_travel_plan = { days = 90 }
+		}
+	}
+}
+
+# Fallback event if your selected petition is not longer valid
+petition_liege.9021 = {
+	type = character_event 
+	title = petition_liege.9001.t
+	desc = petition_liege.9001.desc
+	theme = realm
+
+	left_portrait = {
+		character = root 
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:petition_liege
+		animation = personality_honorable
+	}
+
+	immediate = {
+		# Find out which petitions might still be valid
+		if = {
+			limit = { 
+				NOT = { var:petition_type = flag:wedding }
+			}
+			add_to_variable_list = {
+				name = available_petitions
+				target = flag:wedding
+			}
+		}
+		# Cull list to 4 max
+		# Initialize the variable list
+		random_in_list = {
+			variable = available_petitions
+			save_temporary_scope_as = petition_temp
+			root = {
+				add_to_variable_list = {
+					name = petitions_to_show
+					target = scope:petition_temp
+				}
+			}
+		}
+		hidden_effect = { # hidden so it doesn't show in the option tooltips
+			while = { # Add up to 3 additional petitions
+				count = 3
+				random_in_list = {
+					variable = available_petitions
+					save_temporary_scope_as = petition_temp
+					limit = {
+						any_in_list = {
+							variable = petitions_to_show
+							this != scope:petition_temp
+						}
+					}
+					root = {
+						add_to_variable_list = {
+							name = petitions_to_show
+							target = scope:petition_temp
+						}
+					}
+				}
+			}
+		}
+	}
+
+	option = {
+		name = petition_liege.9021.regent
+		trigger = {
+			is_independent_ruler = no
+			government_allows = administrative
+		}
+		set_variable = {
+			name = petition_type
+			value = flag:regent
+		}
+	}
+	option = {
+		name = petition_liege.9021.appointment
+		trigger = {
+			government_allows = administrative
+		}
+		set_variable = {
+			name = petition_type
+			value = flag:appointment
+		}
+	}
+	option = {
+		name = petition_liege.9021.wedding
+		trigger = { tgp_is_in_ceremonial_house_trigger = no }
+		set_variable = {
+			name = petition_type
+			value = flag:wedding
+		}
+	}
+	option = {
+		name = petition_liege.9021.privilege
+		set_variable = {
+			name = petition_type
+			value = flag:privilege
+		}
+	}
+
+	after = {
+		scope:petition_vassal = {
+			trigger_event = petition_liege.9020
+		}
+	}
+}
+
+# Conclusion event that handles all the variables and travel and whatnot
+petition_liege.9120 = {
+	hidden = yes 
+	immediate = {
+		# Resume travel plan so you can go back home
+		current_travel_plan ?= { resume_travel_plan = yes  }
+		# remove variables and flags 
+		petition_ceremonial_liege_variable_cleanup_effect = yes
+	}
+}
+
 scripted_effect petition_liege_0001_refuse_petitioner_effect = {
 	scope:petition_liege = { add_tyranny = petition_liege_refusal_tyranny_value }
 	scope:petition_vassal = {
@@ -1007,7 +1221,15 @@ scripted_effect petition_liege_0001_refuse_petitioner_effect = {
 petition_liege.0001 = {
 	type = letter_event
 	opening = petition_liege.0001.opening
-	desc = petition_liege.0001.desc
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:petition_vassal.capital_province = scope:petition_liege.capital_province }
+				desc = petition_liege.0021.desc.no_travel
+			}
+			desc = petition_liege.0001.desc
+		}
+	}
 	sender = scope:petition_vassal
 
 	trigger = {
@@ -1020,7 +1242,15 @@ petition_liege.0001 = {
 
 	option = { # Hear out
 		name = petition_liege.0001.a
-		custom_tooltip = petition_liege.0001.a.tt
+		if = {
+			limit = {
+				tgp_is_ceremonial_regent_trigger = yes
+			}
+			custom_tooltip = petition_liege.0001.a.tt_non_royal
+		}
+		else = {
+			custom_tooltip = petition_liege.0001.a.tt
+		}
 		trigger_event = {
 			on_action = petition_liege_0101
 		}
@@ -1077,6 +1307,99 @@ petition_liege.0001 = {
 	}
 }
 
+scripted_effect petition_liege_0021_refuse_petitioner_effect = {
+	scope:petition_vassal = {
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				modifier = refusal_opinion
+				target = scope:petition_liege
+				opinion = -20
+			}
+		}
+		progress_towards_rival_effect = {
+			CHARACTER = scope:petition_liege
+			REASON = rival_petition_liege
+			OPINION = 0
+		}
+	}
+}
+
+petition_liege.0021 = {
+	type = letter_event
+	opening = petition_liege.0021.opening
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:petition_vassal.capital_province = scope:petition_liege.capital_province }
+				desc = petition_liege.0021.desc.no_travel
+			}
+			desc = petition_liege.0001.desc
+		}
+	}
+	sender = scope:petition_vassal
+
+	trigger = {
+		scope:petition_vassal = { petition_ceremonial_liege_valid_trigger = yes }
+	}
+
+	option = { # Hear out
+		name = petition_liege.0001.a
+		custom_tooltip = petition_liege.0001.a.tt
+		trigger_event = petition_liege.0121
+		ai_chance = { base = 100 }
+	}
+
+	option = { # Turn away
+		name = {
+			trigger = {
+				NOR = { 
+					has_trait = arrogant
+					has_trait = humble
+				}
+			}
+			text = petition_liege.0001.b
+		}
+		name = {
+			trigger = { has_trait = arrogant }
+			text = petition_liege.0001.b.arrogant
+		}
+		name = {
+			trigger = { has_trait = humble }
+			text = petition_liege.0001.b.humble
+		}
+		custom_tooltip = petition_liege.0001.b.tt
+		petition_liege_0021_refuse_petitioner_effect = yes
+		scope:petition_vassal = { trigger_event = petition_liege.0029 }
+		if = {
+			limit = {
+				NOT = { has_relation_rival = scope:petition_vassal }
+			}
+			stress_impact = {
+				humble = medium_stress_impact_gain
+				just = medium_stress_impact_gain
+			}
+		}
+		else = {
+			stress_impact = { base = medium_stress_impact_loss }
+		}
+		ai_chance = {
+			base = 0
+			modifier = {
+				add = 5
+				opinion = {
+					target = scope:petition_vassal
+					value < 0
+				}
+			}
+			modifier = {
+				add = 45
+				has_relation_rival = scope:petition_vassal
+			}
+		}
+	}
+}
+
 petition_liege.0009 = {
 	type = letter_event
 	opening = petition_liege.0009.opening
@@ -1095,16 +1418,25 @@ petition_liege.0009 = {
 	}
 }
 
-# Court Event: Liege Hears Request
-scripted_trigger needs_more_valid_compensation_options_trigger = {
-	calc_true_if = {
-		amount < 2
-		exists = scope:bribe_gold
-		exists = scope:bribe_factions
-		exists = scope:bribe_favor
-		exists = scope:bribe_contract
+petition_liege.0029 = {
+	type = letter_event
+	opening = petition_liege.0029.opening
+	desc = petition_liege.0009.desc
+	sender = scope:petition_liege
+
+	trigger = { petition_ceremonial_liege_valid_trigger = yes }
+
+	immediate = {
+		show_as_tooltip = { petition_liege_0001_refuse_petitioner_effect = yes }
+	}
+
+	option = {
+		name = petition_liege.0009.a
+		trigger_event = petition_liege.9120
 	}
 }
+
+# Court Event: Liege Hears Request
 
 petition_liege.0101 = {
 	type = court_event
@@ -1204,7 +1536,15 @@ petition_liege.0101 = {
 		}
 	}
 	desc = {
-		desc = petition_liege.0101.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					tgp_is_ceremonial_regent_trigger = yes
+				}
+				desc = petition_liege.0101.desc_non_royal
+			}
+			desc = petition_liege.0101.desc
+		}
 		first_valid = {
 			triggered_desc = {
 				trigger = { scope:petition_vassal.var:petition_type = flag:gold }
@@ -1239,8 +1579,22 @@ petition_liege.0101 = {
 				desc = petition_liege.0101.desc.pay_debt
 			}
 			### Titles
+			triggered_desc = { # Non Royal
+				trigger = {
+					scope:petition_vassal.var:petition_type = flag:title_liege
+					liege = {
+						tgp_is_ceremonial_regent_trigger = yes
+					}
+				}
+				desc = petition_liege.0101.desc.title_liege_non_royal
+			}
 			triggered_desc = {
-				trigger = { scope:petition_vassal.var:petition_type = flag:title_liege }
+				trigger = {
+					scope:petition_vassal.var:petition_type = flag:title_liege
+					liege = {
+						tgp_is_ceremonial_regent_trigger = no
+					}
+				}
 				desc = petition_liege.0101.desc.title_liege
 			}
 			triggered_desc = {
@@ -1290,6 +1644,10 @@ petition_liege.0101 = {
 				trigger = { scope:petition_vassal.var:petition_type = flag:development }
 				desc = petition_liege.0101.desc.development
 			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+				desc = petition_liege.0101.desc.house_fief
+			}			
 			triggered_desc = {
 				trigger = { scope:petition_vassal.var:petition_type = flag:fallback }
 				desc = petition_liege.0101.desc.pay_debt
@@ -1500,6 +1858,10 @@ petition_liege.0101 = {
 			text = petition_liege.0101.accept.development
 		}
 		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+			text = petition_liege.0101.accept.house_fief
+		}		
+		name = {
 			trigger = { scope:petition_vassal.var:petition_type = flag:fallback }
 			text = petition_liege.0101.accept.fallback
 		}
@@ -1644,6 +2006,10 @@ petition_liege.0101 = {
 				scope:petition_vassal.house = { is_dominant_family = yes }
 				add = 50
 			}
+			modifier = { # Petitioning the Thunder King
+				this = title:h_pandaria.holder # Warcraft
+				add = -40
+			}
 			modifier = { # Influence Level
 				government_allows = administrative
 				scope:petition_vassal.influence_level > 0
@@ -1651,6 +2017,21 @@ petition_liege.0101 = {
 					value = scope:petition_vassal.influence_level
 					multiply = 10
 				}
+			}
+			# TGP
+			modifier = { # Merit Level
+				government_allows = merit
+				scope:petition_vassal.merit_level > 0
+				add = {
+					value = scope:petition_vassal.merit_level
+					multiply = 10
+				}
+			}
+			modifier = { # Ritsuryo lieges are more reticent to grant a Soryo fiefdom if the petitioner is strong
+				government_has_flag = government_is_japan_administrative
+				scope:petition_vassal.var:petition_type = flag:house_fief
+				current_military_strength <= scope:petition_vassal.current_military_strength
+				add = -20
 			}
 		}
 	}
@@ -1906,6 +2287,10 @@ petition_liege.0101 = {
 			trigger = { scope:petition_vassal.var:petition_type = flag:development }
 			text = petition_liege.0101.bribe_factions.development
 		}
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+			text = petition_liege.0101.bribe_factions.house_fief
+		}
 		save_scope_value_as = { name = bribe_type value = 1 }
 		scope:petition_vassal = {
 			trigger_event = {
@@ -2006,6 +2391,10 @@ petition_liege.0101 = {
 		name = {
 			trigger = { scope:petition_vassal.var:petition_type = flag:development }
 			text = petition_liege.0101.bribe_gold.development
+		}
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+			text = petition_liege.0101.bribe_gold.house_fief
 		}
 		save_scope_value_as = { name = bribe_type value = 2 }
 		scope:petition_vassal = {
@@ -2111,6 +2500,10 @@ petition_liege.0101 = {
 			trigger = { scope:petition_vassal.var:petition_type = flag:development }
 			text = petition_liege.0101.bribe_favor.development
 		}
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+			text = petition_liege.0101.bribe_favor.house_fief
+		}
 		save_scope_value_as = { name = bribe_type value = 3 }
 		scope:petition_vassal = {
 			trigger_event = {
@@ -2213,6 +2606,11 @@ petition_liege.0101 = {
 		name = {
 			trigger = { scope:petition_vassal.var:petition_type = flag:development }
 			text = petition_liege.0101.bribe_contract.development
+		}
+		### House Fief
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+			text = petition_liege.0101.bribe_contract.house_fief
 		}
 		save_scope_value_as = { name = bribe_type value = 4 }
 		scope:petition_vassal = {
@@ -2317,11 +2715,620 @@ petition_liege.0101 = {
 			text = petition_liege.0101.refusal.development
 		}
 		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+			text = petition_liege.0101.refusal.house_fief
+		}
+		name = {
 			trigger = { scope:petition_vassal.var:petition_type = flag:fallback }
 			# Reusing text for loc budget
 			text = petition_liege.0101.refusal.pay_debt
 		}
 		scope:petition_vassal = { trigger_event = petition_liege.0209 }
+		if = {
+			limit = {
+				scope:petition_vassal = { is_ai = yes }
+			}
+			show_as_tooltip = {
+				reverse_add_opinion = {
+					modifier = refusal_opinion
+					target = scope:petition_vassal
+					opinion = -20
+				}
+			}
+		}
+		if = {
+			limit = {
+				NOR = {
+					petition_liege_medium_cost_trigger = yes
+					petition_liege_high_cost_trigger = yes
+				}
+			}
+			petition_neg_grandeur_renown_effect = yes
+		}
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_greed = 1.5
+				ai_boldness = 1
+				ai_compassion = -1
+				ai_honor = -0.5
+			}
+			compare_modifier = {
+				value = scope:opinion_of_petitioner
+				multiplier = -1
+			}
+			opinion_modifier = {
+				trigger = {
+					exists = scope:second_party
+				}
+				opinion_target = scope:second_party
+				multiplier = 0.5
+			}
+			modifier = {
+				exists = scope:second_party
+				scope:second_party = { is_powerful_vassal = yes }
+				scope:petition_vassal = { is_powerful_vassal = no }
+				add = 10
+			}
+			modifier = {
+				exists = scope:second_party
+				any_targeting_faction = {
+					faction_leader = scope:second_party
+					faction_power >= 60
+				}
+				add = 10
+			}
+			modifier = {
+				exists = scope:second_party
+				max_military_strength <= scope:second_party.max_military_strength
+				add = 10
+			}
+			modifier = {
+				exists = scope:second_party
+				scope:second_party.max_military_strength >= scope:petition_vassal.max_military_strength
+				add = 10
+			}
+		}
+	}
+	
+	after = {
+		close_view = {
+			view = royal_court
+		    player = scope:petition_liege
+		}
+	}
+}
+
+petition_liege.0121 = {
+	type = court_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:regent }
+				desc = petition_liege.0121.t.regent
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:appointment }
+				desc = petition_liege.0121.t.appointment
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:wedding }
+				desc = petition_liege.0121.t.wedding
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:privilege }
+				desc = petition_liege.0121.t.privilege
+			}
+		}
+	}
+	desc = {
+		desc = petition_liege.0121.desc
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:regent }
+				desc = petition_liege.0121.desc.regent
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:appointment }
+				desc = petition_liege.0121.desc.appointment
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:wedding }
+				desc = petition_liege.0121.desc.wedding
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:privilege }
+				desc = petition_liege.0121.desc.privilege
+			}
+		}
+	}
+	theme = realm
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	court_scene = {
+		button_position_character = scope:petition_vassal 
+		court_owner = root
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:petition_vassal = {
+				#group = petition_liege_group
+				role = kneeling
+				animation = throne_room_kneel_1
+		    }
+		}
+	}
+
+	trigger = {
+		scope:petition_vassal = { petition_ceremonial_liege_valid_trigger = yes }
+	}
+	on_trigger_fail = {
+		scope:petition_vassal = { trigger_event = petition_liege.0621 }
+	}
+
+	immediate = {
+		open_view_data = {
+			view = royal_court
+			secondary_actor = scope:petition_vassal
+			player = scope:petition_liege
+		}
+		if = { # Spend favor
+			limit = {
+				scope:petition_vassal = { has_hook = scope:petition_liege }
+			}
+			save_scope_value_as = { name = repay_favor value = yes }
+		}
+		else = {
+			if = { # Join bloc
+				limit = {
+					needs_more_valid_compensation_options_trigger = yes
+					tgp_uses_house_blocs_trigger = yes
+					scope:petition_vassal = { tgp_uses_house_blocs_trigger = yes }
+					trigger_if = {
+						limit = {
+							exists = scope:petition_vassal.confederation
+							exists = scope:petition_liege.confederation
+						}
+						NOT = { scope:petition_liege.confederation = scope:petition_vassal.confederation }
+					}
+					trigger_else = {
+						NOT = { exists = scope:petition_vassal.confederation }
+					}
+				}
+				save_scope_value_as = { name = bribe_bloc value = yes }
+			}
+			if = { # More gold counter
+				limit = {
+					NOR = {
+						scope:petition_vassal.var:petition_type = flag:pay_debt
+						scope:petition_vassal.var:petition_type = flag:gold
+					}
+					needs_more_valid_compensation_options_trigger = yes
+					scope:petition_vassal.gold >= scope:petition_vassal.medium_gold_value
+				}
+				save_scope_value_as = { name = bribe_gold value = yes }
+			}
+			if = { # Favor hook counter
+				limit = {
+					needs_more_valid_compensation_options_trigger = yes
+					can_add_hook = { target = scope:petition_vassal type = favor_hook }
+				}
+				save_scope_value_as = { name = bribe_favor value = yes }
+			}
+			if = { # Vows
+				limit = {
+					needs_more_valid_compensation_options_trigger = yes
+					scope:petition_vassal = {
+						any_close_family_member = { petition_liege_vows_trigger = yes  }
+					}
+				}
+				scope:petition_vassal = {
+					random_close_family_member = {
+						limit = { petition_liege_vows_trigger = yes }
+						weight = {
+							base = 100
+							modifier = {
+								add = {
+									value = learning
+									multiply = 2
+								}
+							}
+							modifier = {
+								add = {
+									value = age
+									multiply = -1
+								}
+							}
+							modifier = {
+								factor = 2
+								is_child_of = scope:petition_vassal
+							}
+						}
+						save_scope_as = monk
+					}
+				}
+				save_scope_value_as = { name = bribe_vows value = yes }
+			}
+			if = { # Knight
+				limit = {
+					needs_more_valid_compensation_options_trigger = yes
+					scope:petition_vassal = {
+						any_close_family_member = { petition_liege_knight_trigger = yes }
+					}
+				}
+				scope:petition_vassal = {
+					random_close_family_member = {
+						limit = { petition_liege_knight_trigger = yes }
+						weight = {
+							base = 100
+							modifier = {
+								add = {
+									value = prowess
+									multiply = 2
+								}
+							}
+							modifier = {
+								add = {
+									value = age
+									multiply = -1
+								}
+							}
+							modifier = {
+								factor = 2
+								is_child_of = scope:petition_vassal
+							}
+						}
+						save_scope_as = knight
+					}
+				}
+				save_scope_value_as = { name = bribe_knight value = yes }
+			}
+		}
+		
+		# Save our opinion of the petitioner to influence ai_chance.
+		save_opinion_value_as = {
+			name = opinion_of_petitioner
+			target = scope:petition_vassal
+		}
+	}
+
+	option = { # Accept
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:regent }
+			text = petition_liege.0121.accept.regent
+		}
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:appointment }
+			text = petition_liege.0121.accept.appointment
+		}
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:wedding }
+			text = petition_liege.0121.accept.wedding
+		}
+		name = {
+			trigger = { scope:petition_vassal.var:petition_type = flag:privilege }
+			text = petition_liege.0121.accept.privilege
+		}
+		scope:petition_vassal = { trigger_event = petition_liege.0221 }
+		show_as_tooltip = {
+			# Effects applied in petition_liege.0221
+			petition_type_outcome_effect = yes
+		}
+		stress_impact = {
+			greedy = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = -1
+				ai_boldness = -0.5
+				ai_compassion = 0.1
+				ai_honor = 0.5
+			}
+			compare_modifier = {
+				value = scope:opinion_of_petitioner
+				multiplier = 1
+			}
+			modifier = {
+				scope:petition_vassal = { petition_liege_relation_favor_trigger = yes }
+				add = 25
+			}
+			modifier = {
+				scope:petition_vassal = {
+					has_any_moderate_good_relationship_with_character_trigger = { CHARACTER = root }
+				}
+				add = 25
+			}
+			modifier = {
+				scope:petition_vassal = {
+					has_any_best_good_relationship_with_character_trigger = { CHARACTER = root }
+				}
+				add = 25
+			}
+			modifier = {
+				scope:petition_vassal = {
+					has_any_moderate_bad_relationship_with_character_trigger = { CHARACTER = root }
+				}
+				add = -25
+			}
+			modifier = {
+				scope:petition_vassal = {
+					has_any_worst_bad_relationship_with_character_trigger = { CHARACTER = root }
+				}
+				add = -25
+			}
+			modifier = {
+				petition_liege_dislikes_trigger = { COMPARE = scope:second_party }
+				add = 20
+			}
+			petition_liege_cost_negative_modifier = yes # less likely if expensive or likes second party
+			# EP3
+			modifier = { # Family Rating
+				government_allows = administrative
+				scope:petition_vassal.house = {
+					is_powerful_family = yes
+					is_dominant_family = no
+				}
+				add = 25
+			}
+			modifier = { # Family Rating
+				government_allows = administrative
+				scope:petition_vassal.house = { is_dominant_family = yes }
+				add = 50
+			}
+			modifier = { # Influence Level
+				government_allows = administrative
+				scope:petition_vassal.influence_level > 0
+				add = {
+					value = scope:petition_vassal.influence_level
+					multiply = 10
+				}
+			}
+		}
+	}
+
+	option = { # Repay existing favor
+		name = petition_liege.0101.repay_favor
+		trigger = { exists = scope:repay_favor }
+		save_scope_value_as = { name = bribe_type value = 0 }
+		scope:petition_vassal = { trigger_event = petition_liege.0225 }
+		custom_tooltip = petition_liege.0101.additional_effects
+		show_as_tooltip = {	
+			# Effects applied in petition_liege.0205
+			random_list = {
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_given
+					# Remove the existing debt
+					scope:petition_vassal = {
+						remove_hook = { target = scope:petition_liege }
+					}
+				}
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_refused
+					show_as_tooltip = {
+						reverse_add_opinion = {
+							modifier = disappointed_opinion
+							target = scope:petition_vassal
+							opinion = -15
+						}
+					}
+				}
+			}
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_rationality = 2
+				ai_boldness = 1
+				ai_compassion = 0.5
+				ai_honor = 1
+			}
+			petition_liege_cost_negative_modifier = yes # less likely if expensive or likes second party
+		}
+	}
+
+	option = { # Bribe blocs
+		name = petition_liege.0121.bribe_bloc
+		trigger = { exists = scope:bribe_bloc }
+		save_scope_value_as = { name = bribe_type value = 6 }
+		scope:petition_vassal = { trigger_event = petition_liege.0225 }
+		custom_tooltip = petition_liege.0101.additional_effects
+		show_as_tooltip = {	
+			# Effects applied in petition_liege.0225
+			random_list = {
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_given
+					petition_liege_0121_petitioner_force_join_bloc_effect = yes
+				}
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_refused
+					show_as_tooltip = {
+						reverse_add_opinion = {
+							modifier = disappointed_opinion
+							target = scope:petition_vassal
+							opinion = -15
+						}
+					}
+				}
+			}
+		}
+
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_rationality = 1
+				ai_boldness = 1
+				ai_compassion = 0.5
+				ai_honor = 0.5
+			}
+			petition_liege_cost_negative_modifier = yes # less likely if expensive or likes second party
+		}
+	}
+
+	option = { # Bribe gold
+		name = petition_liege.0121.bribe_gold
+		trigger = { exists = scope:bribe_gold }
+		save_scope_value_as = { name = bribe_type value = 2 }
+		scope:petition_vassal = { trigger_event = petition_liege.0225 }
+		custom_tooltip = petition_liege.0101.additional_effects
+		show_as_tooltip = {	
+			# Effects applied in petition_liege.0225
+			random_list = {
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_given
+					petition_liege_0101_petitioner_pays_gold_bribe_effect = yes	
+				}
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_refused
+					show_as_tooltip = {
+						reverse_add_opinion = {
+							modifier = disappointed_opinion
+							target = scope:petition_vassal
+							opinion = -15
+						}
+					}
+				}
+			}
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = 1
+				ai_boldness = 1
+				ai_compassion = 0.5
+				ai_honor = -0.5
+			}
+			petition_liege_cost_negative_modifier = yes # less likely if expensive or likes second party
+		}
+	}
+	
+	option = { # Bribe favor
+		name = petition_liege.0121.bribe_favor
+		trigger = { exists = scope:bribe_favor }
+		save_scope_value_as = { name = bribe_type value = 3 }
+		scope:petition_vassal = { trigger_event = petition_liege.0225 }
+		custom_tooltip = petition_liege.0101.additional_effects
+		show_as_tooltip = {	
+			# Effects applied in petition_liege.0225
+			random_list = {
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_given
+					petition_liege_0101_petitioner_gives_favor_hook_effect = yes
+				}
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_refused
+					show_as_tooltip = {
+						reverse_add_opinion = {
+							modifier = disappointed_opinion
+							target = scope:petition_vassal
+							opinion = -15
+						}
+					}
+				}
+			}
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = 1
+				ai_boldness = 1
+				ai_compassion = 0.5
+				ai_honor = 0.5
+			}
+			petition_liege_cost_negative_modifier = yes # less likely if expensive or likes second party
+		}
+	}
+	
+	option = { # Bribe vows
+		name = petition_liege.0121.bribe_vows
+		trigger = { exists = scope:bribe_vows }
+		save_scope_value_as = { name = bribe_type value = 7 }
+		scope:petition_vassal = { trigger_event = petition_liege.0225 }
+		custom_tooltip = petition_liege.0101.additional_effects
+		show_as_tooltip = {	
+			# Effects applied in petition_liege.0225
+			random_list = {
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_given
+					petition_liege_0101_petitioner_vows_effect = yes
+				}
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_refused
+					show_as_tooltip = {
+						reverse_add_opinion = {
+							modifier = disappointed_opinion
+							target = scope:petition_vassal
+							opinion = -15
+						}
+					}
+				}
+			}
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_zeal = 1
+				ai_greed = 0.5
+				ai_boldness = 0.5
+				ai_compassion = 0.5
+				ai_honor = 0.5
+			}
+			petition_liege_cost_negative_modifier = yes # less likely if expensive or likes second party
+		}
+	}
+	
+	option = { # Bribe knight
+		name = petition_liege.0121.bribe_knight
+		trigger = { exists = scope:bribe_knight }
+		save_scope_value_as = { name = bribe_type value = 8 }
+		scope:petition_vassal = { trigger_event = petition_liege.0225 }
+		custom_tooltip = petition_liege.0101.additional_effects
+		show_as_tooltip = {	
+			# Effects applied in petition_liege.0225
+			random_list = {
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_given
+					petition_liege_0101_petitioner_knight_effect = yes
+				}
+				1 = {
+					show_chance = no
+					desc = petition_liege.0101.bribe_refused
+					show_as_tooltip = {
+						reverse_add_opinion = {
+							modifier = disappointed_opinion
+							target = scope:petition_vassal
+							opinion = -15
+						}
+					}
+				}
+			}
+		}
+		ai_chance = {
+			base = 50
+			ai_value_modifier = {
+				ai_greed = 0.5
+				ai_boldness = 1
+				ai_compassion = 0.5
+				ai_honor = 0.5
+			}
+			petition_liege_cost_negative_modifier = yes # less likely if expensive or likes second party
+		}
+	}
+
+	option = { # Refuse
+		name = petition_liege.0121.refusal
+		scope:petition_vassal = { trigger_event = petition_liege.0229 }
 		if = {
 			limit = {
 				scope:petition_vassal = { is_ai = yes }
@@ -2466,6 +3473,10 @@ petition_liege.0201 = {
 				desc = petition_liege.0201.desc.development
 			}
 			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+				desc = petition_liege.0201.desc.house_fief
+			}
+			triggered_desc = {
 				trigger = { scope:petition_vassal.var:petition_type = flag:fallback }
 				desc = petition_liege.0201.desc.pay_debt
 			}
@@ -2505,8 +3516,22 @@ petition_liege.0201 = {
 		}
 	}
 
-	option = { 
-		name = petition_liege.0201.a
+	option = {
+		name = {
+			text = {
+				first_valid = {
+					triggered_desc = {
+						trigger = {
+							liege = {
+								tgp_is_ceremonial_regent_trigger = yes
+							}
+						}
+						desc = petition_liege.0201.a_non_royal
+					}
+					desc = petition_liege.0201.a
+				}
+			}
+		}
 		# Reap the benefits at no cost!
 		petition_type_outcome_effect = yes
 		reverse_add_opinion = {
@@ -2522,6 +3547,88 @@ petition_liege.0201 = {
 		    player = scope:petition_vassal
 		}
 		trigger_event = petition_liege.9100
+	}
+}
+
+petition_liege.0221 = {
+	#type = court_event
+	type = character_event
+	title =	petition_liege.0201.t
+	desc = {
+		desc = petition_liege.0201.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:regent }
+				desc = petition_liege.0221.desc.regent
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:appointment }
+				desc = petition_liege.0221.desc.appointment
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:wedding }
+				desc = petition_liege.0221.desc.wedding
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:privilege }
+				desc = petition_liege.0221.desc.privilege
+			}
+		}
+		desc = petition_liege.0221.desc.bridge
+	}
+	theme = realm
+	left_portrait = {
+		character = scope:petition_vassal
+		animation = throne_room_bow_1
+	}
+	right_portrait = {
+		character = scope:petition_liege
+		animation = holding_hu
+	}
+	override_sound = { reference = event:/SFX/Events/Themes/sfx_event_theme_type_generic }
+	#court_scene = {
+	#	button_position_character = scope:petition_liege
+	#	court_owner = scope:petition_liege
+	#	roles = {
+	#	    scope:petition_vassal = {
+	#			#group = petition_liege_group
+	#			role = kneeling
+	#			animation = throne_room_kneel_1
+	#	    }
+	#	}
+	#}
+	override_background = { reference = throne_room_scope }
+
+	trigger = { petition_ceremonial_liege_valid_trigger = yes }
+	on_trigger_fail = { trigger_event = petition_liege.0621  }
+
+	immediate = {
+		scope:petition_liege = {
+			#open_view_data = {
+			#	view = royal_court
+			#	secondary_actor = scope:petition_vassal
+			#	player = scope:petition_vassal
+			#}
+			save_scope_as = background_throne_room_scope
+		}
+	}
+
+	option = { # Reap the benefits at no cost!
+		name = petition_liege.0221.a
+		petition_type_outcome_effect = yes
+		reverse_add_opinion = {
+			modifier = pleased_opinion
+			target = scope:petition_liege
+			opinion = 10
+		}
+	}
+	
+	after = {
+		#close_view = {
+		#	view = royal_court
+		#    player = scope:petition_vassal
+		#}
+		trigger_event = petition_liege.9120
 	}
 }
 
@@ -2551,6 +3658,18 @@ scripted_effect petition_liege_0205_carry_out_effects_effect = {
 		else_if = {
 			limit = { scope:bribe_type = 4 }
 			scope:petition_vassal = { petition_liege_0101_petitioner_contract_increase_effect = yes }
+		}
+		else_if = {
+			limit = { scope:bribe_type = 6 }
+			petition_liege_0121_petitioner_force_join_bloc_effect = yes
+		}
+		else_if = {
+			limit = { scope:bribe_type = 7 }
+			petition_liege_0101_petitioner_vows_effect = yes
+		}
+		else_if = {
+			limit = { scope:bribe_type = 9 }
+			petition_liege_0101_petitioner_knight_effect = yes
 		}
 	}
 	# ...then reap the benefits.
@@ -2625,6 +3744,10 @@ petition_liege.0205 = {
 				desc = petition_liege.0201.desc.development
 			}
 			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+				desc = petition_liege.0201.desc.house_fief
+			}
+			triggered_desc = {
 				trigger = { scope:petition_vassal.var:petition_type = flag:fallback }
 				desc = petition_liege.0201.desc.pay_debt
 			}
@@ -2675,10 +3798,14 @@ petition_liege.0205 = {
 		trigger_event = {
 			on_action = petition_liege_0401
 		}
-		custom_tooltip = petition_liege_skillcheck_counter_tt
-		ai_chance = {
-			base = 0
+		if = {
+			limit = {
+				liege = { tgp_is_ceremonial_regent_trigger = yes }
+			}
+			custom_tooltip = petition_liege_skillcheck_counter_tt_non_royal
 		}
+		else = { custom_tooltip = petition_liege_skillcheck_counter_tt }
+		ai_chance = { base = 0 }
 	}
 
 	option = { 
@@ -2733,6 +3860,145 @@ petition_liege.0205 = {
 		    player = scope:petition_vassal
 		}
 		trigger_event = petition_liege.9100
+		ai_chance = {
+			base = 25 
+			ai_value_modifier = {
+				ai_greed = -1
+			}
+		}
+	}
+}
+
+petition_liege.0225 = {
+	#type = court_event
+	type = character_event
+	title =	petition_liege.0205.t
+	desc = {
+		desc = petition_liege.0205.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:regent }
+				desc = petition_liege.0221.desc.regent
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:appointment }
+				desc = petition_liege.0221.desc.appointment
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:wedding }
+				desc = petition_liege.0221.desc.wedding
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:privilege }
+				desc = petition_liege.0221.desc.privilege
+			}
+		}
+		desc = petition_liege.0205.desc.bridge
+	}
+	theme = realm
+	override_sound = { reference = event:/SFX/Events/Themes/sfx_event_theme_type_generic }
+	#court_scene = {
+	#	button_position_character = scope:petition_liege
+	#	court_owner = scope:petition_liege
+	#	roles = {
+	#	    scope:petition_vassal = {
+	#			#group = petition_liege_group
+	#			role = kneeling
+	#			animation = throne_room_kneel_1
+	#	    }
+	#	}
+	#}
+	override_background = { reference = throne_room_scope }
+	left_portrait = {
+		character = scope:petition_vassal
+		animation = throne_room_bow_1
+	}
+	right_portrait = {
+		character = scope:petition_liege
+		animation = holding_hu
+	}
+
+	trigger = { petition_ceremonial_liege_valid_trigger = yes }
+	on_trigger_fail = { trigger_event = petition_liege.0621  }
+
+	immediate = {
+		scope:petition_liege = {
+			#open_view_data = {
+			#	view = royal_court
+			#	secondary_actor = scope:petition_vassal
+			#	player = scope:petition_vassal
+			#}
+			save_scope_as = background_throne_room_scope
+		}
+	}
+
+	option = {
+		name = petition_liege.0205.counter
+		trigger = {
+			is_ai = no
+			liege = { is_ai = yes }
+			petition_liege_has_main_skiller_trigger = yes
+		}
+		add_prestige = minor_prestige_loss
+		trigger_event = petition_liege.0421
+		custom_tooltip = petition_ceremonial_liege_skillcheck_counter_tt
+		ai_chance = {
+			base = 0
+		}
+	}
+
+	option = {
+		name = petition_liege.0205.a
+		scope:petition_liege = {
+			# Notification Event for Liege: Vassal Accepts Counter-Offer
+			send_interface_toast = {
+				title = petition_liege.0301.t
+				left_icon = scope:petition_vassal
+				petition_liege_0205_carry_out_effects_effect = yes
+			}
+		}
+		#close_view = {
+		#	view = royal_court
+		#    player = scope:petition_vassal
+		#}
+		trigger_event = petition_liege.9120
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_greed = 0.5
+			}
+			modifier = { # Medium petition cost
+				petition_liege_medium_cost_trigger = yes
+				add = 10
+			}
+			modifier = { # High petition cost
+				petition_liege_high_cost_trigger = yes
+				add = 20
+			}
+		}
+	}
+
+	option = {
+		name = petition_liege.0225.b
+		scope:petition_liege = {
+			# Notification for Liege: Vassal Refuses Counter-Offer
+			send_interface_toast = {
+				title = petition_liege.0309.t
+				left_icon = scope:petition_vassal
+				scope:petition_vassal = {
+					add_opinion = {
+						modifier = disappointed_opinion
+						target = scope:petition_liege
+						opinion = -10
+					}
+				}
+			}
+		}
+		#close_view = {
+		#	view = royal_court
+		#    player = scope:petition_vassal
+		#}
+		trigger_event = petition_liege.9120
 		ai_chance = {
 			base = 25 
 			ai_value_modifier = {
@@ -2811,6 +4077,10 @@ petition_liege.0209 = {
 				desc = petition_liege.0201.desc.development
 			}
 			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:house_fief }
+				desc = petition_liege.0201.desc.house_fief
+			}
+			triggered_desc = {
 				trigger = { scope:petition_vassal.var:petition_type = flag:fallback }
 				desc = petition_liege.0201.desc.pay_debt
 			}
@@ -2826,7 +4096,7 @@ petition_liege.0209 = {
 			triggered_desc = {
 				trigger = {	
 					reverse_opinion = {
- 						target = scope:petition_vassal
+ 						target = scope:petition_liege
  						value <= -20
  					}
 				}
@@ -2874,7 +4144,15 @@ petition_liege.0209 = {
 		}
 		add_prestige = minor_prestige_loss
 		trigger_event = { on_action = petition_liege_0401 }
-		custom_tooltip = petition_liege_skillcheck_counter_tt
+		if = {
+			limit = {
+				liege = { tgp_is_ceremonial_regent_trigger = yes }
+			}
+			custom_tooltip = petition_liege_skillcheck_counter_tt_non_royal
+		}
+		else = {
+			custom_tooltip = petition_liege_skillcheck_counter_tt
+		}
 		ai_chance = {
 			base = 0
 		}
@@ -2928,6 +4206,145 @@ petition_liege.0209 = {
 	}
 }
 
+petition_liege.0229 = {
+	#type = court_event
+	type = character_event
+	title =	petition_liege.0209.t
+	desc = {
+		desc = petition_liege.0209.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:regent }
+				desc = petition_liege.0221.desc.regent
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:appointment }
+				desc = petition_liege.0221.desc.appointment
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:wedding }
+				desc = petition_liege.0221.desc.wedding
+			}
+			triggered_desc = {
+				trigger = { scope:petition_vassal.var:petition_type = flag:privilege }
+				desc = petition_liege.0221.desc.privilege
+			}
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {	
+					reverse_opinion = {
+ 						target = scope:petition_liege
+ 						value <= -25
+ 					}
+				}
+				desc = petition_liege.0209.desc.bridge.unapologetic
+			}
+			triggered_desc = {
+				trigger = { petition_liege_relation_favor_trigger = yes }
+				desc = petition_liege.0209.desc.bridge.favor
+			}
+			desc = petition_liege.0209.desc.bridge.apologetic
+		}
+	}
+	theme = realm
+	left_portrait = {
+		character = scope:petition_vassal
+		animation = throne_room_bow_1
+	}
+	right_portrait = {
+		character = scope:petition_liege
+		animation = holding_hu
+	}
+	override_sound = { reference = event:/SFX/Events/Themes/sfx_event_theme_type_generic }
+	#court_scene = {
+	#	button_position_character = scope:petition_liege
+	#	court_owner = scope:petition_liege
+	#	roles = {
+	#	    scope:petition_vassal = {
+	#			#group = petition_liege_group
+	#			role = kneeling
+	#			animation = throne_room_kneel_1
+	#	    }
+	#	}
+	#}
+	override_background = { reference = throne_room_scope }
+
+	trigger = { petition_ceremonial_liege_valid_trigger = yes }
+
+	immediate = {
+		scope:petition_liege = {
+			#open_view_data = {
+			#	view = royal_court
+			#	secondary_actor = scope:petition_vassal
+			#	player = scope:petition_vassal
+			#}
+			save_scope_as = background_throne_room_scope
+		}
+	}
+
+	option = { 
+		name = petition_liege.0229.counter
+		trigger = {
+			is_ai = no
+			scope:petition_liege = { is_ai = yes }
+			petition_liege_has_main_skiller_trigger = yes
+		}
+		add_prestige = minor_prestige_loss
+		trigger_event = petition_liege.0421
+		custom_tooltip = petition_liege_skillcheck_counter_tt_non_royal
+		ai_chance = {
+			base = 0
+		}
+	}
+
+	option = { 
+		name = {
+			trigger = { petition_liege_relation_favor_trigger = no }
+			text = petition_liege.0209.a
+		}
+		name = {
+			trigger = { petition_liege_relation_favor_trigger = yes }
+			text = petition_liege.0209.favor
+		}
+		if = {
+			limit = {
+				scope:petition_vassal = { is_ai = yes }
+			}
+			add_opinion = {
+				modifier = refusal_opinion
+				target = scope:petition_liege
+				opinion = -20
+			}
+		}
+		if = {
+			limit = { petition_liege_relation_favor_trigger = yes }
+			add_hook = {
+				type = favor_hook
+				target = scope:petition_liege
+			}
+		}
+		show_as_tooltip = {
+			if = {
+				limit = {
+					NOR = {
+						petition_liege_medium_cost_trigger = yes
+						petition_liege_high_cost_trigger = yes
+					}
+				}
+				petition_neg_grandeur_renown_effect = yes
+			}
+		}
+		ai_chance = {
+			base = 25
+		}
+		#close_view = {
+		#	view = royal_court
+		#	player = scope:petition_vassal
+		#}
+		trigger_event = petition_liege.9120
+	}
+}
 
 # Court Event: Vassal Skillcheck Event
 petition_liege.0401 = {
@@ -3282,23 +4699,23 @@ petition_liege.0401 = {
 					OR = {
 						AND = {
 							exists = scope:diplomacy_check
-							NOT = { scope:diplomacy_check = scope:first_portrait }
+							scope:diplomacy_check != scope:first_portrait
 						}
 						AND = {
 							exists = scope:martial_check
-							NOT = { scope:martial_check = scope:first_portrait }
+							scope:martial_check != scope:first_portrait
 						}
 						AND = {
 							exists = scope:stewardship_check
-							NOT = { scope:stewardship_check = scope:first_portrait }
+							scope:stewardship_check != scope:first_portrait
 						}
 						AND = {
 							exists = scope:intrigue_check
-							NOT = { scope:intrigue_check = scope:first_portrait }
+							scope:intrigue_check != scope:first_portrait
 						}
 						AND = {
 							exists = scope:learning_check
-							NOT = { scope:learning_check = scope:first_portrait }
+							scope:learning_check != scope:first_portrait
 						}
 					}
 				}
@@ -3306,35 +4723,35 @@ petition_liege.0401 = {
 					2 = {
 						trigger = {
 							exists = scope:diplomacy_check
-							NOT = { scope:diplomacy_check = scope:first_portrait }
+							scope:diplomacy_check != scope:first_portrait
 						}
 						scope:diplomacy_check = { save_scope_as = second_portrait }
 					}
 					2 = {
 						trigger = {
 							exists = scope:martial_check
-							NOT = { scope:martial_check = scope:first_portrait }
+							scope:martial_check != scope:first_portrait
 						}
 						scope:martial_check = { save_scope_as = second_portrait }
 					}
 					2 = {
 						trigger = {
 							exists = scope:stewardship_check
-							NOT = { scope:stewardship_check = scope:first_portrait }
+							scope:stewardship_check != scope:first_portrait
 						}
 						scope:stewardship_check = { save_scope_as = second_portrait }
 					}
 					2 = {
 						trigger = {
 							exists = scope:intrigue_check
-							NOT = { scope:intrigue_check = scope:first_portrait }
+							scope:intrigue_check != scope:first_portrait
 						}
 						scope:intrigue_check = { save_scope_as = second_portrait }
 					}
 					2 = {
 						trigger = {
 							exists = scope:learning_check
-							NOT = { scope:learning_check = scope:first_portrait }
+							scope:learning_check != scope:first_portrait
 						}
 						scope:learning_check = { save_scope_as = second_portrait }
 					}
@@ -3504,6 +4921,596 @@ petition_liege.0401 = {
 	}
 }
 
+petition_liege.0421 = {
+	#type = court_event
+	type = character_event
+	title =	petition_liege.0401.t
+	desc = {
+		desc = petition_liege.0401.desc.intro
+		# Second Portrait
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:second_portrait
+					exists = scope:diplomacy_check
+					scope:second_portrait = scope:diplomacy_check
+				}
+				desc = petition_liege.0401.desc.second_diplomacy
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:second_portrait
+					exists = scope:martial_check
+					scope:second_portrait = scope:martial_check
+				}
+				desc = petition_liege.0401.desc.second_martial
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:second_portrait
+					exists = scope:stewardship_check
+					scope:second_portrait = scope:stewardship_check
+				}
+				desc = petition_liege.0401.desc.second_stewardship
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:second_portrait
+					exists = scope:intrigue_check
+					scope:second_portrait = scope:intrigue_check
+				}
+				desc = petition_liege.0401.desc.second_intrigue
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:second_portrait
+					exists = scope:learning_check
+					scope:second_portrait = scope:learning_check
+				}
+				desc = petition_liege.0401.desc.second_learning
+			}
+		}
+		# Third Portrait
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					exists = scope:third_portrait
+					scope:third_portrait = { has_relation_soulmate = scope:petition_vassal }
+				}
+				desc = petition_liege.0401.desc.third_soulmate
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:third_portrait
+					scope:third_portrait = { has_relation_lover = scope:petition_vassal }
+				}
+				desc = petition_liege.0401.desc.third_lover
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:third_portrait
+					scope:third_portrait = { has_relation_best_friend = scope:petition_vassal }
+				}
+				desc = petition_liege.0401.desc.third_best_friend
+			}
+			triggered_desc = {
+				trigger = {
+					exists = scope:third_portrait
+					scope:third_portrait = { has_relation_friend = scope:petition_vassal }
+				}
+				desc = petition_liege.0401.desc.third_friend
+			}
+			triggered_desc = {
+				trigger = { exists = scope:third_portrait }
+				desc = petition_liege.0401.desc.third_fallback
+			}
+		}
+		triggered_desc = {
+			trigger = { exists = scope:third_portrait }
+			desc = petition_liege.0401.desc.third
+		}
+		desc = petition_liege.0401.desc.outro
+	}
+	theme = realm
+	override_sound = { reference = event:/SFX/Events/Themes/sfx_event_theme_type_generic }
+	#court_scene = {
+	#	button_position_character = scope:petition_vassal
+	#	court_owner = scope:petition_liege
+	#	roles = {
+	#	    scope:petition_vassal = {
+	#			#group = petition_liege_group
+	#			role = kneeling
+	#			animation = throne_room_conversation_1
+	#	    }
+	#	}
+	#}
+	left_portrait = {
+		character = scope:petition_vassal
+		animation = throne_room_bow_1
+	}
+	right_portrait = {
+		character = scope:petition_liege
+		animation = holding_hu
+	}
+	lower_left_portrait = scope:first_portrait
+	lower_center_portrait = scope:second_portrait
+	lower_right_portrait = scope:third_portrait
+	override_background = { reference = throne_room_scope }
+
+	trigger = { petition_ceremonial_liege_valid_trigger = yes }
+	on_trigger_fail = { trigger_event = petition_liege.0621 }
+
+	immediate = {
+		hidden_effect = {
+			scope:petition_liege = {
+				save_scope_as = background_throne_room_scope
+				every_knight = {
+					limit = { petition_liege_skiller_trigger = yes }
+					add_to_list = wildcard_list
+				}
+				every_court_position_holder = {
+					limit = { petition_liege_skiller_trigger = yes }
+					add_to_list = wildcard_list
+				}
+				every_spouse = {
+					limit = { petition_liege_skiller_trigger = yes }
+					add_to_list = wildcard_list
+				}
+				every_councillor = {
+					limit = { petition_liege_skiller_trigger = yes }
+					add_to_list = wildcard_list
+				}
+				every_courtier = {
+					limit = { petition_liege_skiller_trigger = yes }
+					add_to_list = wildcard_list
+				}
+				while = {
+					count = 3
+					random_list = {
+						10 = { # Diplomacy
+							trigger = {
+								NOT = { exists = scope:diplomacy_check }
+								petition_liege_skillcheck_limit = yes
+							}
+							modifier = {
+								factor = 2
+								exists = cp:councillor_chancellor
+							}
+							if = {
+								limit = {
+									exists = cp:councillor_chancellor
+									cp:councillor_chancellor = { petition_liege_skiller_no_wildcard_trigger = yes }
+								}
+								cp:councillor_chancellor = { save_scope_as = diplomacy_check }
+							}
+							else = {
+								random_courtier = {	
+									limit = { petition_liege_skiller_no_wildcard_trigger = yes }
+									weight = {
+										modifier = {
+											factor = 2
+											has_diplomacy_court_position = yes
+										}
+										modifier = { factor = diplomacy }
+									}
+									save_scope_as = diplomacy_check
+								}
+							}
+						}
+						10 = { # Martial
+							trigger = {
+								NOT = { exists = scope:martial_check }
+								petition_liege_skillcheck_limit = yes
+							}
+							modifier = {
+								factor = 2
+								exists = cp:councillor_marshal
+								cp:councillor_marshal = { petition_liege_skiller_no_wildcard_trigger = yes }
+							}
+							if = {
+								limit = {
+									exists = cp:councillor_marshal
+									cp:councillor_marshal = { petition_liege_skiller_no_wildcard_trigger = yes }
+								}
+								cp:councillor_marshal = { save_scope_as = martial_check }
+							}
+							else_if = {
+								limit = {
+									any_knight = { petition_liege_skiller_no_wildcard_trigger = yes }
+								}
+								random_knight = {	
+									limit = { petition_liege_skiller_no_wildcard_trigger = yes }
+									weight = {
+										modifier = { factor = martial }
+									}
+									save_scope_as = martial_check
+								}
+							}
+							else = {
+								random_courtier = {	
+									limit = { petition_liege_skiller_no_wildcard_trigger = yes }
+									weight = {
+										modifier = {
+											factor = 2
+											has_martial_court_position = yes
+										}
+										modifier = { factor = martial }
+									}
+									save_scope_as = martial_check
+								}
+							}
+						}
+						10 = { # Stewardship
+							trigger = {
+								NOT = { exists = scope:stewardship_check }
+								petition_liege_skillcheck_limit = yes
+							}
+							modifier = {
+								factor = 2
+								exists = cp:councillor_steward
+								cp:councillor_steward = { petition_liege_skiller_no_wildcard_trigger = yes }
+							}
+							if = {
+								limit = {
+									exists = cp:councillor_steward
+									cp:councillor_steward = { petition_liege_skiller_no_wildcard_trigger = yes }
+								}
+								cp:councillor_steward = { save_scope_as = stewardship_check }
+							}
+							else = {
+								random_courtier = {	
+									limit = { petition_liege_skiller_no_wildcard_trigger = yes }
+									weight = {
+										modifier = {
+											factor = 2
+											has_stewardship_court_position = yes
+										}
+										modifier = { factor = stewardship }
+									}
+									save_scope_as = stewardship_check
+								}
+							}
+						}
+						10 = { # Intrigue
+							trigger = {
+								NOT = { exists = scope:intrigue_check }
+								petition_liege_skillcheck_limit = yes
+							}
+							modifier = {
+								factor = 2
+								exists = cp:councillor_spymaster
+								cp:councillor_spymaster = { petition_liege_skiller_no_wildcard_trigger = yes }
+							}
+							if = {
+								limit = {
+									exists = cp:councillor_spymaster
+									cp:councillor_spymaster = { petition_liege_skiller_no_wildcard_trigger = yes }
+								}
+								cp:councillor_spymaster = { save_scope_as = intrigue_check }
+							}
+							else = {
+								random_courtier = {	
+									limit = { petition_liege_skiller_no_wildcard_trigger = yes }
+									weight = {
+										modifier = {
+											factor = 2
+											has_intrigue_court_position = yes
+										}
+										modifier = { factor = intrigue }
+									}
+									save_scope_as = intrigue_check
+								}
+							}
+						}
+						10 = { # Learning
+							trigger = {
+								NOT = { exists = scope:learning_check }
+								petition_liege_skillcheck_limit = yes
+							}
+							modifier = {
+								factor = 2
+								exists = cp:councillor_court_chaplain
+								cp:councillor_court_chaplain = { petition_liege_skiller_no_wildcard_trigger = yes }
+							}
+							if = {
+								limit = {
+									exists = cp:councillor_court_chaplain
+									cp:councillor_court_chaplain = { petition_liege_skiller_no_wildcard_trigger = yes }
+								}
+								cp:councillor_court_chaplain = { save_scope_as = learning_check }
+							}
+							else = {
+								random_courtier = {	
+									limit = { petition_liege_skiller_no_wildcard_trigger = yes }
+									weight = {
+										modifier = {
+											factor = 2
+											has_learning_court_position = yes
+										}
+										modifier = { factor = learning }
+									}
+									save_scope_as = learning_check
+								}
+							}
+						}
+						2 = { # Wildcard
+							trigger = {
+								any_in_list = {
+									list = wildcard_list
+									petition_liege_skiller_trigger = yes
+									petition_liege_wildcard_trigger = yes
+								}
+							}
+							random_in_list = {
+								list = wildcard_list
+								weight = {
+									modifier = {
+										factor = 2
+										is_spouse_of = scope:petition_liege
+									}
+									modifier = {
+										factor = 2
+										is_close_family_of = scope:petition_liege
+									}
+								}
+								save_scope_as = wildcard_check
+								save_scope_as = third_portrait
+							}
+						}
+					}
+				}
+			}
+			# Portrait scopes
+			random_list = {
+				2 = {
+					trigger = { exists = scope:diplomacy_check }
+					scope:diplomacy_check = { save_scope_as = first_portrait }
+				}
+				2 = {
+					trigger = { exists = scope:martial_check }
+					scope:martial_check = { save_scope_as = first_portrait }
+				}
+				2 = {
+					trigger = { exists = scope:stewardship_check }
+					scope:stewardship_check = { save_scope_as = first_portrait }
+				}
+				2 = {
+					trigger = { exists = scope:intrigue_check }
+					scope:intrigue_check = { save_scope_as = first_portrait }
+				}
+				2 = {
+					trigger = { exists = scope:learning_check }
+					scope:learning_check = { save_scope_as = first_portrait }
+				}
+			}
+			if = {
+				limit = {
+					OR = {
+						AND = {
+							exists = scope:diplomacy_check
+							scope:diplomacy_check != scope:first_portrait
+						}
+						AND = {
+							exists = scope:martial_check
+							scope:martial_check != scope:first_portrait
+						}
+						AND = {
+							exists = scope:stewardship_check
+							scope:stewardship_check != scope:first_portrait
+						}
+						AND = {
+							exists = scope:intrigue_check
+							scope:intrigue_check != scope:first_portrait
+						}
+						AND = {
+							exists = scope:learning_check
+							scope:learning_check != scope:first_portrait
+						}
+					}
+				}
+				random_list = {
+					2 = {
+						trigger = {
+							exists = scope:diplomacy_check
+							scope:diplomacy_check != scope:first_portrait
+						}
+						scope:diplomacy_check = { save_scope_as = second_portrait }
+					}
+					2 = {
+						trigger = {
+							exists = scope:martial_check
+							scope:martial_check != scope:first_portrait
+						}
+						scope:martial_check = { save_scope_as = second_portrait }
+					}
+					2 = {
+						trigger = {
+							exists = scope:stewardship_check
+							scope:stewardship_check != scope:first_portrait
+						}
+						scope:stewardship_check = { save_scope_as = second_portrait }
+					}
+					2 = {
+						trigger = {
+							exists = scope:intrigue_check
+							scope:intrigue_check != scope:first_portrait
+						}
+						scope:intrigue_check = { save_scope_as = second_portrait }
+					}
+					2 = {
+						trigger = {
+							exists = scope:learning_check
+							scope:learning_check != scope:first_portrait
+						}
+						scope:learning_check = { save_scope_as = second_portrait }
+					}
+				}
+				scope:second_portrait = { assign_quirk_effect = yes }
+			}
+		}
+	}
+
+	option = { # First diplomacy
+		name = petition_liege.0401.first
+		trigger = {
+			exists = scope:diplomacy_check
+			scope:first_portrait = scope:diplomacy_check
+		}
+		skill = diplomacy
+		petition_skill_duel_effect = {
+			SKILL = diplomacy
+			TARGET = scope:first_portrait
+		}
+	}
+
+	option = { # First martial
+		name = petition_liege.0401.first
+		trigger = {
+			exists = scope:martial_check
+			scope:first_portrait = scope:martial_check
+		}
+		skill = martial
+		petition_skill_duel_effect = {
+			SKILL = martial
+			TARGET = scope:first_portrait
+		}
+	}
+
+	option = { # First stewardship
+		name = petition_liege.0401.first
+		trigger = {
+			exists = scope:stewardship_check
+			scope:first_portrait = scope:stewardship_check
+		}
+		skill = stewardship
+		petition_skill_duel_effect = {
+			SKILL = stewardship
+			TARGET = scope:first_portrait
+		}
+	}
+
+	option = { # First intrigue
+		name = petition_liege.0401.first
+		trigger = {
+			exists = scope:intrigue_check
+			scope:first_portrait = scope:intrigue_check
+		}
+		skill = intrigue
+		petition_skill_duel_effect = {
+			SKILL = intrigue
+			TARGET = scope:first_portrait
+		}
+	}
+
+	option = { # First learning
+		name = petition_liege.0401.first
+		trigger = {
+			exists = scope:learning_check
+			scope:first_portrait = scope:learning_check
+		}
+		skill = learning
+		petition_skill_duel_effect = {
+			SKILL = learning
+			TARGET = scope:first_portrait
+		}
+	}
+
+	option = { # Second diplomacy
+		name = petition_liege.0401.second_diplomacy
+		trigger = {
+			exists = scope:diplomacy_check
+			exists = scope:second_portrait
+			scope:second_portrait = scope:diplomacy_check
+		}
+		skill = diplomacy
+		petition_skill_duel_effect = {
+			SKILL = diplomacy
+			TARGET = scope:second_portrait
+		}
+	}
+
+	option = { # Second martial
+		name = petition_liege.0401.second_martial
+		trigger = {
+			exists = scope:martial_check
+			exists = scope:second_portrait
+			scope:second_portrait = scope:martial_check
+		}
+		skill = martial
+		petition_skill_duel_effect = {
+			SKILL = martial
+			TARGET = scope:second_portrait
+		}
+	}
+
+	option = { # Second stewardship
+		name = petition_liege.0401.second_stewardship
+		trigger = {
+			exists = scope:stewardship_check
+			exists = scope:second_portrait
+			scope:second_portrait = scope:stewardship_check
+		}
+		skill = stewardship
+		petition_skill_duel_effect = {
+			SKILL = stewardship
+			TARGET = scope:second_portrait
+		}
+	}
+
+	option = { # Second intrigue
+		name = petition_liege.0401.second_intrigue
+		trigger = {
+			exists = scope:intrigue_check
+			exists = scope:second_portrait
+			scope:second_portrait = scope:intrigue_check
+		}
+		skill = intrigue
+		petition_skill_duel_effect = {
+			SKILL = intrigue
+			TARGET = scope:second_portrait
+		}
+	}
+
+	option = { # Second learning
+		name = petition_liege.0401.second_learning
+		trigger = {
+			exists = scope:learning_check
+			exists = scope:second_portrait
+			scope:second_portrait = scope:learning_check
+		}
+		skill = learning
+		petition_skill_duel_effect = {
+			SKILL = learning
+			TARGET = scope:second_portrait
+		}
+	}
+
+	option = { # Wildcard
+		name = petition_liege.0401.wildcard
+		trigger = { exists = scope:wildcard_check }
+		highlight_portrait = scope:wildcard_check
+		random_list = {
+			1 = {
+				desc = petition_liege.0401.success
+				hidden_effect = { petition_type_outcome_effect = yes }
+				custom_tooltip = petition_liege_accept_tt
+			}
+			3 = {
+				desc = petition_liege.0401.failure
+				petition_skill_duel_lose_effect = yes
+			}
+		}
+	}
+
+	after = {
+		#close_view = {
+		#	view = royal_court
+		#    player = scope:petition_vassal
+		#}
+		trigger_event = petition_liege.9120
+	}
+}
+
 # Letter Event: Second Vassal Demand Acceptance Event
 petition_liege.0501 = {
 	type = letter_event
@@ -3618,8 +5625,7 @@ petition_liege.0601 = {
 				trigger = {
 					scope:petition_liege = {
 						is_alive = no
-						exists = killer
-						killer = root
+						killer ?= root
 					}
 				}
 				desc = petition_liege.0601.desc.liege_dead_me
@@ -3634,8 +5640,7 @@ petition_liege.0601 = {
 				trigger = {
 					scope:petition_liege = {
 						is_imprisoned = yes
-						exists = imprisoner
-						imprisoner = root
+						imprisoner ?= root
 					}
 				}
 				desc = petition_liege.0601.desc.liege_imprisoned_me
@@ -3651,7 +5656,8 @@ petition_liege.0601 = {
 			trigger = {
 				scope:petition_liege = { is_alive = no }
 				exists = liege
-				NOT = { liege = root }
+				liege != root
+				liege = { tgp_is_ceremonial_regent_trigger = no }
 			}
 			desc = petition_liege.0601.desc.new_liege
 		}
@@ -3659,7 +5665,7 @@ petition_liege.0601 = {
 			trigger = {
 				scope:petition_liege = { is_alive = yes }
 				exists = liege
-				NOT = { liege = root }
+				liege != root
 			}
 			desc = petition_liege.0601.desc
 		}
@@ -3683,7 +5689,7 @@ petition_liege.0601 = {
 	right_portrait = {
 		character = liege
 		trigger = {
-			NOT = { liege = scope:petition_liege }
+			liege != scope:petition_liege
 		}
 	}
 
@@ -3722,6 +5728,121 @@ petition_liege.0601 = {
 	}
 }
 
+#Ceremonial Liege no longer available
+petition_liege.0621 = {
+	type = character_event
+	title = petition_liege.0601.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { is_imprisoned = yes }
+				desc = petition_liege.0601.desc.imprisoned
+			}
+			triggered_desc = {
+				trigger = {
+					scope:petition_liege = {
+						is_alive = no
+						killer ?= root
+					}
+				}
+				desc = petition_liege.0601.desc.liege_dead_me
+			}
+			triggered_desc = {
+				trigger = {
+					scope:petition_liege = { is_alive = no }
+				}
+				desc = petition_liege.0601.desc.liege_dead
+			}
+			triggered_desc = {
+				trigger = {
+					scope:petition_liege = {
+						is_imprisoned = yes
+						imprisoner ?= root
+					}
+				}
+				desc = petition_liege.0601.desc.liege_imprisoned_me
+			}
+			triggered_desc = {
+				trigger = {
+					scope:petition_liege = { is_imprisoned = yes }
+				}
+				desc = petition_liege.0601.desc.liege_imprisoned
+			}
+		}
+		triggered_desc = {
+			trigger = {
+				scope:petition_liege = { is_alive = no }
+				exists = liege
+				liege != root
+				liege = { tgp_is_ceremonial_regent_trigger = no }
+			}
+			desc = petition_liege.0601.desc.new_liege
+		}
+		triggered_desc = {
+			trigger = {
+				scope:petition_liege = { is_alive = yes }
+				exists = liege
+				liege != root
+			}
+			desc = petition_liege.0601.desc
+		}
+	}
+	theme = realm
+	left_portrait = {
+		character = scope:petition_liege
+		triggered_animation = {
+			trigger = { is_imprisoned = yes }
+			animation = prisondungeon
+		}
+		triggered_animation = {
+			trigger = { is_alive = no }
+			animation = idle
+		}
+		triggered_animation = {
+			trigger = { is_available = no }
+			animation = dismissal
+		}
+	}
+	right_portrait = {
+		character = liege
+		trigger = {
+			liege != scope:petition_liege
+		}
+	}
+
+	trigger = {
+		is_alive = yes
+		has_variable = petition_liege_scope
+	}
+
+	option = {
+		name = {
+			text = petition_liege.0601.a_court
+			trigger = { has_royal_court = yes }
+		}
+		name = {
+			text = petition_liege.0601.a_prison
+			trigger = { is_imprisoned = yes }
+		}
+		name = {
+			text = petition_liege.0601.a_liege
+			trigger = {
+				scope:petition_liege = {
+					is_alive = yes
+					is_imprisoned = no
+				}
+			}
+		}
+		name = {
+			text = petition_liege.0601.a
+			trigger = { always = yes }
+		}
+		remove_decision_cooldown = petition_ceremonial_liege_decision
+	}
+
+	after = { trigger_event = petition_liege.9120 }
+}
+
 # Error suppression
 petition_liege.9999 = {
 	hidden = yes
@@ -3747,6 +5868,7 @@ petition_liege.9999 = {
 		var:petition_type ?= flag:construct_city
 		var:petition_type ?= flag:construct_temple
 		var:petition_type ?= flag:development
+		var:petition_type ?= flag:house_fief
 	}
 
 	immediate = {
@@ -3770,5 +5892,6 @@ petition_liege.9999 = {
 		set_variable = { name = petition_type value = flag:construct_city }
 		set_variable = { name = petition_type value = flag:construct_temple }
 		set_variable = { name = petition_type value = flag:development }
+		set_variable = { name = petition_type value = flag:house_fief }
 	}
 }
