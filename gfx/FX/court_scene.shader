@@ -2050,10 +2050,24 @@ Effect portrait_eye
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"
-	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" "DECALS" }
+	Defines = { "PDX_MESH_BLENDSHAPES" "DECALS" }
 }
 
 Effect portrait_eye_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court_selection"
+	Defines = { "PDX_MESH_BLENDSHAPES" "DECALS" }
+}
+
+Effect wc_emissive_portrait_eye
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_eye"
+	Defines = { "PDX_MESH_BLENDSHAPES" "EMISSIVE" "DECALS" }
+}
+
+Effect wc_emissive_portrait_eye_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
