@@ -326,6 +326,8 @@ PixelShader =
 			float3 EmissiveColor = vec3(0.0f);
 			float EmissiveMask =  Properties.r;
 			#ifdef EMISSIVE
+
+				float EmissiveStrength = 1.0f;
 				EmissiveColor = Diffuse.rgb * EmissiveMask * MaterialProps._DiffuseColor * 5.0f;
 				Color += EmissiveColor;
 
