@@ -1,5 +1,5 @@
 name="Warcraft: Guardians of Azeroth Reforged (Release Alpha)"
-version="0.5.7"
+version="0.5.7.1"
 picture="thumbnail.png"
 tags={
 	"Total Conversion"
@@ -29,5 +29,5 @@ replace_path="common/bookmark_portraits"
 replace_path="common/bookmarks"
 replace_path="gfx/interface/illustrations/loading_screens"
 
-supported_version="1.18.2"
+supported_version="1.18.3.1"
 path="mod/Warcraft-Guardians-of-Azeroth-2"
