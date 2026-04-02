@@ -1,5 +1,5 @@
 ﻿name="Warcraft: Guardians of Azeroth Reforged 2"
-version="0.5.7.2"
+version="0.5.8"
 picture="thumbnail.png"
 tags={
 	"Total Conversion"
