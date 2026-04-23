@@ -5163,6 +5163,7 @@ ep3_laamp_apprehend_adventurer_cb = {
 				}
 			}
 			every_character_artifact = {
+				limit = { NOT = { has_variable = artifact_prevent_transfer } }
 				set_owner = {
 					target = scope:defender
 					history = {
@@ -5993,6 +5994,44 @@ ep3_laamp_peasant_war = {
 					}
 					remove_variable = number_rebel_reinforcements
 				}
+				if = {
+					limit = {
+						has_variable = ep3_laamp_peasant_war_remain_laamp
+						variable_list_size = {
+							name = war_met_peasant_leaders_list
+							value <= 0
+						}
+					}
+					ordered_in_list = {
+						variable = war_supported_counties_list
+						order_by = development_level
+						save_scope_as = new_capital
+					}
+					create_character = {
+						location = scope:new_capital.title_province
+						template = peasant_faction_leader_template
+						faith = scope:new_capital.faith
+						culture = scope:new_capital.culture
+						gender_female_chance = {
+							if = {
+								limit = { scope:new_capital.faith = { has_doctrine = doctrine_gender_male_dominated } }
+								add = 0
+							}
+							else_if = {
+								limit = { scope:new_capital.faith = { has_doctrine = doctrine_gender_female_dominated } }
+								add = 100
+							}
+							else = {
+								add = 50
+							}
+						}
+						save_scope_as = peasant_leader
+					}
+					add_to_variable_list = {
+						name = war_met_peasant_leaders_list
+						target = scope:peasant_leader
+					}
+				}
 			}
 		}
 				
@@ -6031,16 +6070,24 @@ ep3_laamp_peasant_war = {
 		first_valid = {
 			triggered_desc = {
 				trigger = {
-					scope:attacker = { is_local_player = yes }
+					scope:attacker = {
+						is_local_player = yes
+						has_variable = ep3_laamp_peasant_war_remain_laamp
+					}
 				}
-				desc = county_conquest_cb_victory_desc_attacker
+				desc = county_conquest_cb_victory_desc_remain_laamp
 			}
-			desc = county_conquest_cb_victory_desc
+			desc = county_conquest_cb_victory_desc_attacker
 		}
 	}
 
 	on_victory = {
 		scope:attacker = {
+			ordered_in_list = {
+				variable = war_supported_counties_list
+				order_by = development_level
+				save_scope_as = new_capital
+			}
 			primary_title = {
 				save_scope_as = old_title
 			}
@@ -6050,6 +6097,46 @@ ep3_laamp_peasant_war = {
 			#swap the peasant trait for the better one 
 			remove_trait = peasant_leader
 			add_trait = populist_leader
+			if = {
+				limit = {
+					has_variable = ep3_laamp_peasant_war_remain_laamp
+				}
+				random_in_list = {
+					variable = war_met_peasant_leaders_list
+					limit = {
+						this != scope:attacker
+					}
+					save_scope_as = peasant_leader
+				}
+				if = {
+					limit = {
+						NOT = { exists = scope:peasant_leader }
+					}
+					create_character = {
+						location = scope:new_capital.title_province
+						template = peasant_faction_leader_template
+						faith = scope:new_capital.faith
+						culture = scope:new_capital.culture
+						gender_female_chance = {
+							if = {
+								limit = { scope:new_capital.faith = { has_doctrine = doctrine_gender_male_dominated } }
+								add = 0
+							}
+							else_if = {
+								limit = { scope:new_capital.faith = { has_doctrine = doctrine_gender_female_dominated } }
+								add = 100
+							}
+							else = {
+								add = 50
+							}
+						}
+						save_scope_as = peasant_leader
+					}
+				}
+			}
+			else = {
+				save_scope_as = peasant_leader
+			}
 		}
 		# Set up titles in the new realm.
 		# Determine potential breakaways
@@ -6077,18 +6164,18 @@ ep3_laamp_peasant_war = {
 					if = {
 						limit = {
 							OR = {
-								scope:attacker.faith = {
+								scope:peasant_leader.faith = {
 									faith_hostility_level_comparison = { prev.holder.faith >= scope:defender.faith }
 								}
 								holder = scope:defender
 								holder.primary_title.tier >= scope:target.tier
-								scope:attacker = { has_claim_on = scope:title_temp }
+								scope:peasant_leader = { has_claim_on = scope:title_temp }
 							}
 						}
-						add_to_temporary_list = titles_taken
+						add_to_list = titles_taken
 					}
 					else = {
-						holder = { add_to_temporary_list = vassals_taken }
+						holder = { add_to_list = vassals_taken }
 					}
 				}
 			}
@@ -6096,7 +6183,7 @@ ep3_laamp_peasant_war = {
 		every_in_list = {
 			list = titles_taken
 			change_title_holder = {
-				holder = scope:attacker
+				holder = scope:peasant_leader
 				change = scope:change
 				take_baronies = yes
 			}
@@ -6105,20 +6192,13 @@ ep3_laamp_peasant_war = {
 			every_in_list = {
 				list = vassals_taken
 				change_liege = {
-					liege = scope:attacker
+					liege = scope:peasant_leader
 					change = scope:change
 				}
 			}
 		}
 		resolve_title_and_vassal_change = scope:change
 		## Grab the best county to be the capital
-		scope:attacker = {
-			ordered_in_list = {
-				variable = war_supported_counties_list
-				order_by = development_level
-				save_scope_as = new_capital
-			}
-		}
 		scope:new_capital = {
 			duchy = {
 				save_scope_as = new_capital_duchy
@@ -6137,7 +6217,7 @@ ep3_laamp_peasant_war = {
 		}
 		scope:new_title = {
 			change_title_holder = {
-				holder = scope:attacker
+				holder = scope:peasant_leader
 				change = scope:change
 			}
 		}
@@ -6145,30 +6225,21 @@ ep3_laamp_peasant_war = {
 		#make the new title look like your landless adventurer title
 		hidden_effect = {
 			scope:new_title = {
-				set_de_jure_liege_title = scope:new_capital.title_province.empire
 				set_coa = scope:old_title
 				set_color_from_title = scope:new_capital
 				set_capital_county = scope:new_capital
 			}
 		}
-		scope:attacker = {
-			#stop being a landless adventurer
-			destroy_laamp_effect = { ADVENTURER = scope:attacker }
-			#set new capital
-			set_realm_capital = scope:new_capital
-			#increase county control and remove all county corruption modifiers
-			every_in_list = {
-				variable = war_supported_counties_list
-				change_county_control = 100
-				remove_every_county_corruption_modifier_effect = yes
-				add_county_modifier = {
-					modifier = ep3_peasant_leader_modifier
-					years = 10
+
+		scope:peasant_leader = {
+			if = {
+				limit = {
+					has_variable = ep3_laamp_peasant_war_remain_laamp
 				}
+				#stop being a landless adventurer
+				destroy_laamp_effect = { ADVENTURER = scope:attacker }
+				return_home = yes
 			}
-			clear_variable_list = war_supported_counties_list
-			clear_variable_list = war_met_peasant_leaders_list
-			return_home = yes
 		}
 		scope:defender = {
 			# Legitimacy effect
@@ -6202,7 +6273,29 @@ ep3_laamp_peasant_war = {
 				}
 			}
 		}
-
+		scope:attacker = {
+			#increase county control and remove all county corruption modifiers
+			every_in_list = {
+				variable = war_supported_counties_list
+				if = {
+					limit = {
+						scope:attacker = {
+							has_variable = ep3_laamp_peasant_war_remain_laamp
+						}
+					}
+					custom_tooltip = taken_county_remain_laamp
+				}
+				change_county_control = 100
+				remove_every_county_corruption_modifier_effect = yes
+				add_county_modifier = {
+					modifier = ep3_peasant_leader_modifier
+					years = 10
+				}
+			}
+			clear_variable_list = war_supported_counties_list
+			clear_variable_list = war_met_peasant_leaders_list
+			remove_variable = ep3_laamp_peasant_war_remain_laamp
+		}
 		# EP3: note gold gained from military assistance/join war contracts and their war contribution threshold
 		laamp_as_mercenary_payout_tooltip_effect = yes
 	}
@@ -6229,6 +6322,7 @@ ep3_laamp_peasant_war = {
 			#clear all variable lists, you only get one chance!
 			clear_variable_list = war_supported_counties_list
 			clear_variable_list = war_met_peasant_leaders_list
+			remove_variable = ep3_laamp_peasant_war_remain_laamp
 			stress_impact = {
 				ambitious = medium_stress_impact_gain
 				arrogant = medium_stress_impact_gain
@@ -6267,6 +6361,7 @@ ep3_laamp_peasant_war = {
 			#clear all variable lists, you only get one chance!
 			clear_variable_list = war_supported_counties_list
 			clear_variable_list = war_met_peasant_leaders_list
+			remove_variable = ep3_laamp_peasant_war_remain_laamp
 			#lose the trait, because you didn't win
 			remove_trait = peasant_leader
 		}
@@ -6361,7 +6456,7 @@ admin_barbarian_conquest_cb = {
 			}
 		}
 	}
-	target_titles = all
+	target_titles = neighbor_land_or_water
 	target_title_tier = duchy
 	target_de_jure_regions_above = yes
 	ignore_effect = change_title_holder
