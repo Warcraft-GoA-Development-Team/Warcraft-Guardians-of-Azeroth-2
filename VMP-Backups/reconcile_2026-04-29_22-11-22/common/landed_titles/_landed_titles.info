@@ -1,0 +1,263 @@
+﻿###############################################################################
+#
+#	HIERARCHY
+#
+###############################################################################
+
+### Brief: Hierarichal note
+# Titles are defined from top to bottom in the hierarchy.
+# Each level is optional. The prefix specifies the title tier.
+e_my_empire = {
+	k_my_kingdom = {
+		d_my_duchy = {
+			c_my_county = {
+				b_my_barony = {
+				}
+			}
+		}
+	}
+	c_my_other_county = {}
+}
+
+############################################################################### 
+#
+#	PROPERTIES
+#
+###############################################################################
+
+### Brief: Landed title database relevant documentation
+#
+# This part will detail the info that is relevantly placed within the landed 
+# titles inside this database. 
+k_my_title = {
+
+	### Brief: color ( jomini color )
+	# Map color of the title.
+	color = { 255 255 255 }
+
+	### Brief: figurehead ( bool )
+	# Does this title have a special figurehead status?
+	#
+	# Default: no
+	figurehead = no
+
+	### Brief: allow_domicile ( bool )
+	# Should this title allow domicile? (despite possibly landless)
+	#
+	# Default: yes
+	allow_domicile = yes
+
+	### Brief: landless ( bool )
+	# Is this title landless? 
+	#
+	# Default: no
+	landless = no
+	
+	### Brief: require_landless ( bool )
+	# Does this title require the character to be landless? This title may be destroyed on succession if the character gets land
+	#
+	# Default: no
+	require_landless = no
+
+	### Brief: destroy_if_invalid_heir ( bool )
+	# Is this title destoyed if the hair is not valid upon succession? 
+	# 
+	# Default: no
+	destroy_if_invalid_heir = no
+
+	### Brief: destroy_on_succession ( bool )
+	# Is this title destroyed upon succession?
+	# 
+	# Default: no	
+	destroy_on_succession = no
+
+	### Brief: delete_on_destroy ( bool )
+	# Should this title be deleted when its destroyed? For example peasant
+	# leaders.
+	# 
+	# Default: no	
+	delete_on_destroy = no
+
+	### Brief: delete_on_gain_same_tier ( bool )
+	# Should this title be deleted if the holder gains another title of the
+	# same tier? 
+	# 
+	# Default: no	
+	delete_on_gain_same_tier = no
+
+	### Brief: no_automatic_claims ( bool )
+	# Are claims given to this title to heirs from parents implicitly or
+	# explicitly through other, automatic means? 
+	# 
+	# Default: no	
+	no_automatic_claims = no
+
+	### Brief: definite_form ( bool )
+	# Whether or not the title should display the difinite form in 
+	# customization windows.
+	# 
+	# Default: no	
+	definite_form = no
+
+	### Brief: always_follows_primary_heir ( bool )
+	# Is this title always inherited by the primary heir?
+	# 
+	# Default: no	
+	always_follows_primary_heir = no
+
+	### Brief: ruler_uses_title_name ( bool )
+	# Is the name of this title used by the holder of it in their name?
+	# 
+	# Default: "yes"	
+	ruler_uses_title_name = yes
+
+	### Brief: can_be_named_after_dynasty ( bool )
+	# Can this title be named after the holder's dynasty? Won't get named after
+	# its holder's dynasty for holders who'd otherwise apply such naming
+	# 
+	# Default: "yes"	
+	can_be_named_after_dynasty = yes
+	
+	### Brief: province ( int32 )
+	# Province ID that this represents. Should only be when defining a barony
+	# title.
+	province = 1337
+	
+	### Brief: capital ( string )
+	# Which county title contains the preferred capital province of this title.
+	capital = c_roma
+
+	### Brief: de_jure_drift_disabled ( bool )
+	# Does this title cause other titles to drift into it?
+	# 
+	# Default: no
+	de_jure_drift_disabled = yes
+
+	### Brief: Add additional entry in personal relation summary (dynamic description)
+	#
+	# If characters primary title, then setting this will add an additional entry in the
+	# holding characters personal relation summary (i.e. "Your step-sister, and champion").
+	#
+	# Scopes
+	# ------
+	# root: Inspected character (who holds this title).
+	# target: Character we are evaluating relationships to (usually local player).
+	# title: This title (held by inspected character).
+	# liege: Inspected characters liege.
+	# vassal: Vassal who matches the trigger below, if any.
+	#
+	# An empty dynamic description will be skipped.
+	# This allows for opting out of the title under more specific conditions.
+	#
+	personal_relation_entry = <dynamic descriptopn>
+
+	### Brief: What vassal do we provide to the scope of the relation entry above (trigger)
+	#
+	# Scopes
+	# ------
+	# root: Vassal character.
+	#
+	# If no match is found, then the vassal scope in the dynamic descrition above
+	# will not be set.
+	#
+	personal_relation_vassal = <trigger>
+
+	### Brief: ignore_titularity_for_title_weighting ( bool )
+	# Will the AI ignore titularity status when weighing if this title should
+	# be primary title? 
+	#
+	# Default: no
+	ignore_titularity_for_title_weighting = no
+
+	### Brief: holding_regnal_male_names ( string array )
+	# List of names being assigned to male holders of this title when they gain it.
+	holding_regnal_male_names = { name1 name2 }
+
+	### Brief: holding_regnal_female_names ( string array )
+	# List of names being assigned to female holders of this title when they gain it.
+	holding_regnal_female_names = { name1 name2 }
+
+	### Brief: posthumous_regnal_male_names ( string array )
+	# List of names being assigned to male holders of this title when they lose it.
+	posthumous_regnal_male_names = { name1 name2 }
+
+	### Brief: posthumous_regnal_female_names ( string array )
+	# List of names being assigned to female holders of this title when they lose it.
+	posthumous_regnal_female_names = { name1 name2 }
+
+	### Brief: disable_regnal_numbers (bool)
+	# Will this title disable regnal numbers when held by people with the same name
+	# throughout its history? Default is no.
+	disable_regnal_numbers = no
+
+	### Brief: ai_primary_priority ( scripted value int32 )
+	# Scipted value determining how highly the AI values this title as a 
+	# primary title.
+	#
+	# root:		the character evaluating the title
+	ai_primary_priority = { }
+
+	### Brief: can_create ( trigger )
+	# Special creation requirements.
+	#
+	# root: 	the character trying to create the title
+	can_create = { }
+
+	### Brief: can_create_on_partition ( trigger )
+	# Used instead of can_create when we consider creating the title during 
+	# partition succession.
+	#
+	# root: 	the character for whom we're executing succession (_not_ the 
+	#			new holder).
+	can_create_on_partition = {}
+
+	### Brief: can_destroy ( trigger )
+	# Special requirements for voluntarily destroying the title (essentially only the player will ever do this).
+	#
+	# root: 	the character trying to destroy the title
+	can_destroy = { }
+
+	### Brief: cultural_names ( string key map )
+	# X is a name of a culture name list (see common/culture/name_lists). If 
+	# the title is held by somebody with that name list X, the title name will
+	# use the Y localization key and the adjective will use Y_adj
+	#
+	# Example: For Norse Kingdom of Norway, use Noregr as name of title. 
+	cultural_names = {
+		X = Y	
+		name_list_norse = cn_noregr
+	}
+
+	### Brief: landed_title_key ( string )
+	# Which other, lower tier titles are dejure contained within this title?  
+	# See Hierarchy section for details. 
+	d_my_other_lower_tier_title = { }
+
+
+	### Brief: key ( string )
+	# Replaces the database key in dynamic template data. 
+	#
+	# Should not be used in database definitions.
+	key = key
+
+	### Brief: tier ( enum )
+	# Used by dynamic template data to determine title tier. 
+	#
+	# Should not be used in database definitions.
+	tier = barony/county/duchy/kingdom/empire
+
+	### Brief: ( string )
+	# Used by dynamic template data to determine who is the dejure liege of 
+	# this title.
+	#
+	# Should not be used in database definitions.
+	de_jure_liege = e_empire_title
+
+	### Brief: dyn ( bool )
+	# Is this entry a dynamic title template? 
+	#
+	# Should not be used in database definitions.
+	# 
+	# Default: no
+	dyn = no
+}
