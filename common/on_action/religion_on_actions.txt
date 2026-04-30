@@ -59,8 +59,17 @@ on_faith_created = {
 				root = {
 					if = {
 						limit = {
+							government_allows = state_faith
+							liege = this
+							primary_title.state_faith = scope:old_faith
+						}
+						primary_title = { set_state_faith = faith }
+					}
+					if = {
+						limit = {
 							NOT = { has_character_flag = reformer_legend }
 							has_dlc_feature = legends
+							# Warcraft
 						}
 						add_character_flag = reformer_legend
 						create_legend_seed = {
@@ -103,6 +112,7 @@ on_faith_created = {
 						limit = {
 							NOT = { has_character_flag = reformer_legend }
 							has_dlc_feature = legends
+							# Warcraft
 						}
 						add_character_flag = reformer_legend
 						create_legend_seed = {
@@ -125,26 +135,9 @@ on_faith_created = {
 		set_variable = {
 			name = has_created_a_faith
 		}
-		# Set original faith this one was based on
-		if = {
-			limit = {
-				exists = scope:old_faith.founder
-				scope:old_faith.founder = { has_variable = foundational_faith }
-			}
-			set_variable = {
-				name = foundational_faith
-				value = scope:old_faith.founder.var:foundational_faith
-			}
-		}
-		else = {
-			set_variable = {
-				name = foundational_faith
-				value = scope:old_faith
-			}
-		}
 		check_for_equal_doctrine_effect = yes
-		
-		# Warcraft
+
+		# Warcraft - This is needed for our Union triggers
 		# Set original faith this one was based on inside of the faith itself
 		if = {
 			limit = {
@@ -166,9 +159,35 @@ on_faith_created = {
 			}
 		}
 
+		# Set up diff-faith HoFs.
+		faith = {
+			# If we have a diff-faith HoF, we want to account for that.
+			## Islamic use-case: we want same-Mohammad's Succession faiths to keep following their appropriate caliphs.
+			# Warcraft - No Islam here
+			## Faiths with the Rite tenet get to keep their old HoF.
+			if = {
+				limit = {
+					# Assuming they exist.
+					exists = scope:old_faith.religious_head
+					# & have the appropriate doctrine parameter.
+					has_doctrine_parameter = maintains_head_of_faith_on_creation
+				}
+				set_religious_head_title = scope:old_faith.religious_head_title
+				# Christian faiths also get to keep ecumenism.
+				if = {
+					limit = {
+						scope:old_faith = { has_doctrine = special_doctrine_ecumenical_christian }
+					}
+					add_doctrine = special_doctrine_ecumenical_christian
+				}
+			}
+			## Otherwise, everyone else should lose their HoF, so we don't need to do anything.
+		}
+		# Achievements.
 		root = {
 			add_achievement_flag_effect = { FLAG = achievement_its_not_a_cult_flag }
 		}
+		# Warcraft - We don't use these achievements
 	}
 
 	events = {
@@ -182,7 +201,7 @@ on_faith_created = {
 }
 
 # Code on-action: character converts faith. Only fired when using the convert window, or the script effect that uses the same logic
-# Root is the converter
+# Root is the converted character
 # scope:old_faith is the faith they used to have
 # scope:actor is the character instigating the conversion
 on_faith_conversion = {
@@ -199,7 +218,7 @@ on_faith_conversion = {
 			limit = {
 				OR = {
 					government_allows = state_faith
-					top_liege ?= { government_allows = state_faith }
+					top_liege = { government_allows = state_faith }
 				}
 			}
 			# Character uses decision to Adopt State Faith
@@ -296,6 +315,9 @@ on_character_faith_change = {
 
 		# Warcraft
 		refresh_corruption_modifiers_all_counties = yes
+
+		#Lose Mandala if you change to a monotheist faith
+		mandala_no_longer_polytheist_effect = yes
 	}
 	events = {
 		# Warcraft
@@ -330,6 +352,242 @@ on_faith_monthly = {
 		great_holy_war.0001
 		great_holy_war.0022 #Pope harasses players for not pledging support to Crusade yet.
 		great_holy_war.0030 #Monthly cleanup for Beneficiaries becoming unfit for various reasons.
+	}
+	effect = {
+		# Religious migrants created by the County Conversion council task move somewhere safe
+		random = {
+			chance = 4 # Roughly once every 2 years
+			save_scope_as = target_faith
+			if = {
+				limit = {
+					exists = var:converted_development
+					var:converted_development >= 1
+					NOT = {
+						has_doctrine_parameter = unreformed
+					}
+				}
+				# Save all suitable rulers
+				random = {
+					chance = var:converted_development
+					save_scope_as = faith_target
+					every_independent_ruler = {
+						limit = {
+							is_landed = yes
+							NOT = { government_has_flag = government_is_herder }
+							# A very large area - enough for a province in north-western india to reach all of Borneo
+							"this.capital_province.squared_distance(root.var:associated_county.title_province)" <= squared_distance_mega
+							any_sub_realm_county = {
+								faith = prev.faith
+							}
+							trigger_if = {
+								limit = {
+									has_variable_list = faiths_converted_in_counties
+								}
+								NOT = {
+									is_target_in_variable_list = {
+										name = faiths_converted_in_counties
+										target = scope:target_faith
+									}
+								}
+							}
+						}
+						add_to_list = migration_targets
+						every_vassal = {
+							limit = {
+								is_landed = yes
+								highest_held_title_tier >= tier_duchy
+								any_sub_realm_county = {
+									faith = prev.faith
+								}
+								trigger_if = {
+									limit = {
+										has_variable_list = faiths_converted_in_counties
+									}
+									NOT = {
+										is_target_in_variable_list = {
+											name = faiths_converted_in_counties
+											target = scope:target_faith
+										}
+									}
+								}
+							}
+							add_to_list = migration_targets
+						}
+					}
+					every_player = {
+						limit = {
+							is_landed = yes
+							NOT = { government_has_flag = government_is_herder }
+							NOT = { is_in_list = migration_targets }
+							# A vary large area - enough for a province in north-western india to reach all of Borneo
+							"this.capital_province.squared_distance(root.var:associated_county.title_province)" <= squared_distance_mega
+							any_sub_realm_county = {
+								faith = prev.faith
+							}
+							trigger_if = {
+								limit = {
+									has_variable_list = faiths_converted_in_counties
+								}
+								NOT = {
+									is_target_in_variable_list = {
+										name = faiths_converted_in_counties
+										target = scope:target_faith
+									}
+								}
+							}
+						}
+						add_to_list = migration_targets
+					}
+					# If the faith is still large, they only want to move to same-faith rulers
+					if = {
+						limit = {
+							num_county_followers >= 40
+						}
+						random_in_list = {
+							list = migration_targets
+							limit = {
+								faith = root
+								any_sub_realm_county = {
+									faith = root
+								}
+								# Do NOT go within the same realm as you were converted from
+								top_liege != scope:target_faith.var:associated_county.holder.top_liege
+							}
+							weight = {
+								base = 1
+								modifier = {
+									add = 3
+									is_ai = no
+								}
+								modifier = {
+									add = 3
+									government_has_flag = government_is_mandala
+								}
+								modifier = {
+									add = 10
+									highest_held_title_tier >= tier_kingdom
+								}
+								modifier = {
+									add = root.var:converted_development
+									NOT = { government_has_flag = government_is_nomadic }
+									any_sub_realm_county = {
+										count >= {
+											value = root.var:converted_development
+											divide = 2
+										}
+										faith = root
+									}
+								}
+								modifier = {
+									add = 0.1
+									government_has_flag = government_is_nomadic
+								}
+								modifier = {
+									add = 0.1
+									highest_held_title_tier <= tier_county
+								}
+							}
+							save_scope_as = ruler_target
+							save_scope_as = seeking_same_faith_counties
+							trigger_event = global_religion.1000
+						}
+					}
+					# Smaller faiths can go wherever
+					else = {
+						random_in_list = {
+							list = migration_targets
+							limit = {
+								NOR = {
+									top_liege = scope:target_faith.var:associated_county.holder.top_liege # Do NOT go within the same realm as you were converted from
+									faith = { has_doctrine = doctrine_pluralism_fundamentalist }
+									culture = { has_cultural_tradition = tradition_zealous_people }
+								}
+								OR = {
+									faith = {
+										faith_hostility_level = {
+											target = root
+											value <= faith_astray_level
+										}
+									}
+									faith = { has_doctrine = tenet_adaptive }
+									faith = { has_doctrine_parameter = unreformed }
+									faith = { has_doctrine = doctrine_pluralism_pluralistic }
+									culture = { has_cultural_tradition = tradition_religion_blending }
+									culture = { has_cultural_parameter = less_likely_to_force_conversion }
+									has_trait = nomadic_philosophy
+									AND = {
+										is_ai = no
+										has_perk = open_minded_perk
+									}
+								}
+								any_held_title = {
+									tier = tier_county
+									faith = prev.faith
+									trigger_if = {
+										limit = {
+											has_variable_list = faiths_converted_in_the_county
+										}
+										NOT = {
+											is_target_in_variable_list = {
+												name = faiths_converted_in_the_county
+												target = scope:target_faith
+											}
+										}
+									}
+									trigger_if = {
+										limit = {
+											holder = {
+												is_ai = yes
+											}
+										}
+										holder = {
+											is_ai = yes
+										}
+									}
+								}
+							}
+							weight = {
+								base = 1
+								modifier = {
+									add = 3
+									is_ai = no
+								}
+								modifier = {
+									add = 3
+									government_has_flag = government_is_mandala
+								}
+								modifier = {
+									add = 10
+									highest_held_title_tier >= tier_kingdom
+								}
+								modifier = {
+									add = root.var:converted_development
+									NOT = { government_has_flag = government_is_nomadic }
+									any_sub_realm_county = {
+										count >= {
+											value = root.var:converted_development
+											divide = 2
+										}
+										faith = prev.faith
+									}
+								}
+								modifier = {
+									add = 0.1
+									government_has_flag = government_is_nomadic
+								}
+								modifier = {
+									add = 0.1
+									highest_held_title_tier <= tier_county
+								}
+							}
+							save_scope_as = ruler_target
+							save_scope_as = seeking_any_counties
+							trigger_event = global_religion.1000
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -411,7 +669,7 @@ faith_fervor_events_pulse = {
 	}
 
 	random_events = {
-		chance_to_happen = 6 # ~53% chance of occuring within a given year. 90% chance within 3 years, 99.8% chance within 5.
+		chance_to_happen = 6 # ~53% chance of occurring within a given year. 90% chance within 3 years, 99.8% chance within 5.
 		100 = fervor.1001
 		100 = fervor.2001
 	}
@@ -426,8 +684,7 @@ pagan_conversion_pulse = {
 		#OR = {
 		#	top_liege = this
 		#	AND = { # Steppe people convert a bit more often & freely
-		#		exists = capital_province
-		#		# capital_province = { geographical_region = world_steppe }
+		#		capital_province ?= { geographical_region = world_steppe }
 		#		primary_title.tier >= tier_duchy
 		#	}
 		#}
@@ -445,8 +702,7 @@ pagan_conversion_pulse = {
 				OR = {
 					current_date <= 950.1.1
 					AND = {
-						exists = capital_province
-						capital_province = { geographical_region = world_steppe }
+						capital_province ?= { geographical_region = world_steppe }
 						primary_title.tier >= tier_duchy
 					}
 				}
