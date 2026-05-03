@@ -63,134 +63,126 @@ death_management.0001 = {
 			remove_variable = battle_death_location
 		}
 
-		#To make heir inherit a loan (make them have a money claim)
+		# Dead character has debtors who their heir should inherit (make them have a money claim)
 		if = {
 			limit = {
-				exists = var:owes_me_money
-				var:owes_me_money = {
+				any_in_list = { variable = owes_me_money }
+			}
+			every_in_list = {
+				variable = owes_me_money
+				limit = {
 					is_alive = yes
 					NOR = {
 						this = scope:dead_character
 						is_player_heir_of = scope:dead_character
+						exists = var:loan_holder # cannot support owing two loans to different people at the same time, so we just wipe this inherited debt for simplicity
 					}
 				}
-				exists = player_heir
-			}
-			player_heir = {
-				save_scope_as = new_loan_holder
-				if = {
-					limit = {
-						NOT = { exists = var:owes_me_money }
-					}
-					set_variable = {
-						name = original_lender
-						value = root
-					}
-					set_variable = {
+				save_temporary_scope_as = loanee_temp
+				scope:dead_character.player_heir ?= {
+					save_scope_as = new_loan_holder
+					add_to_variable_list = {
 						name = owes_me_money
-						value = root.var:owes_me_money
+						target = scope:loanee_temp
 					}
-				}
-			}
-			var:owes_me_money = {
-				remove_variable = loan_holder
-				if = {
-					limit = {
-						exists = scope:new_loan_holder
-						scope:new_loan_holder = {
-							prev = root.var:owes_me_money
-						}
-					}
-					set_variable = {
-						name = loan_holder
-						value = scope:new_loan_holder
-					}
-				}
-			}
-		}
-
-		#Does someone owe my Holy Order money?
-		if = {
-			limit = {
-				exists = var:owes_me_money
-				var:owes_me_money = {
-					is_alive = yes
-					NOR = {
-						this = scope:dead_character
-						is_player_heir_of = scope:dead_character
-					}
-					has_character_flag = borrow_from_holy_order
-				}
-				faith = {
-					any_faith_holy_order = {
-						leader = {
-							this = scope:dead_character
-						}
-					}
-				}
-			}
-			faith = {
-				random_faith_holy_order = {
-					limit = {
-						leader = { this = scope:dead_character }
-					}
-					save_scope_as = order
-				}
-			}
-			
-			var:owes_me_money = {
-				trigger_event = {
-					id = holy_order.0201
-					days = 1
-				}
-			}
-		}
-		if = {
-			limit = {
-				exists = var:owes_me_money
-				var:owes_me_money = { is_alive = yes }
-				NOT = { exists = player_heir }
-				NOT = {
-					var:owes_me_money = {
-						has_character_flag = borrow_from_holy_order
-					}
-				}
-			}
-			var:owes_me_money = {
-				remove_variable = loan_holder
-				remove_variable = loan_amount_owed
-			}
-		}
-
-		#To make the heir inherit a loan (make them owe someone money)
-		if = {
-			limit = {
-				exists = var:loan_holder
-				exists = var:loan_amount_owed
-				var:loan_holder = {
-					is_alive = yes
-					NOR = {
-						this = scope:dead_character
-						is_player_heir_of = scope:dead_character
-					}
-				}
-				exists = player_heir
-			}
-			player_heir = {
-				set_variable = {
-					name = original_loan_holder
-					value = root
 				}
 				set_variable = {
 					name = loan_holder
-					value = this
-				}
-				set_variable = {
-					name = loan_amount_owed
-					value = root.var:loan_amount_owed
+					value = scope:new_loan_holder
 				}
 			}
 		}
+
+		#Dead character has a loan that an heir should inherit (make them owe someone money)
+		if = {
+			limit = {
+				exists = var:loan_amount_owed
+				var:loan_holder ?= {
+					is_alive = yes
+					NOR = {
+						this = scope:dead_character
+						is_player_heir_of = scope:dead_character
+					}
+				}
+				player_heir ?= {
+					NOT = { exists = var:loan_holder } # cannot support owing two loans to different people at the same time, so we just wipe this inherited debt for simplicity
+				}
+			}
+			save_scope_as = loan_passer
+			player_heir = {
+				save_scope_as = loan_inheritor
+				set_variable = {
+					name = loan_holder
+					value = scope:loan_passer.var:loan_holder
+				}
+				set_variable = {
+					name = loan_amount_owed
+					value = scope:loan_passer.var:loan_amount_owed
+				}
+				if = {
+					limit = { exists = scope:loan_passer.var:original_loan_holder }
+					set_variable = {
+						name = original_loan_holder
+						value = scope:loan_passer.var:original_loan_holder
+					}
+				}
+				else = {
+					set_variable = {
+						name = original_loan_holder
+						value = scope:loan_passer
+					}
+				}
+				if = {
+					limit = { exists = scope:loan_passer.var:original_lender }
+					set_variable = {
+						name = original_lender
+						value = scope:loan_passer.var:original_lender
+					}
+				}
+				else = {
+					set_variable = {
+						name = original_lender
+						value = scope:loan_passer.var:loan_holder
+					}
+				}
+				trigger_event = {
+					id = death_management.0003
+					delayed = yes
+				}
+			}
+			var:loan_holder ?= {
+				send_interface_toast = {
+					type = event_toast_effect_neutral
+					title = ho_loan_inherited_title
+					left_icon = scope:loan_passer
+					right_icon = scope:loan_passer.var:loan_holder
+					custom_tooltip = ho_loan_inherited_loaner_tt
+					remove_list_variable = {
+						name = owes_me_money
+						target = scope:loan_passer
+					}
+					add_to_variable_list = {
+						name = owes_me_money
+						target = scope:loan_inheritor
+					}
+				}
+			}
+		}
+		# Wipe invalid loans
+		else_if = {
+			limit = {
+				exists = var:loan_amount_owed
+				exists = var:loan_holder
+			}
+			var:loan_holder = {
+				remove_list_variable = {
+					name = owes_me_money
+					target = scope:dead_character
+				}
+			}
+			clear_loanee_variables_effect = yes
+		}
+
 		# Warcraft - To make the heir inherit a loan (make them owe someone money) from goblins
 		if = {
 			limit = {
@@ -224,7 +216,6 @@ death_management.0001 = {
 				}
 			}
 		}
-
 		
 		#SEND EVENT ABOUT DEATH
 
@@ -269,7 +260,14 @@ death_management.0001 = {
 				exists = betrothed
 				# Grand Weddings and their betrothals have their own invalidation
 				has_been_promised_grand_wedding = no
-				betrothed = { has_been_promised_grand_wedding = no }
+				trigger_if = {
+					limit = {
+						betrothed = {
+							is_alive = yes
+						}
+					}
+					betrothed = { has_been_promised_grand_wedding = no }
+				}
 			}
 			betrothed = {
 				if = {
@@ -544,7 +542,6 @@ death_management.0001 = {
 #Someone you care about (in some capacity) has died
 death_management.0002 = {
 	type = character_event
-
 	hidden = yes
 
 	trigger = {
@@ -1047,6 +1044,21 @@ death_management.0002 = {
 	}
 }
 
+death_management.0003 = {
+	type = character_event
+	hidden = yes
+	
+	immediate = {
+		send_interface_toast = {
+			type = event_toast_effect_neutral
+			title = ho_loan_inherited_title
+			left_icon = scope:loan_passer
+			right_icon = var:loan_holder
+			custom_tooltip = ho_loan_inherited_debtor_tt
+		}
+	}
+}
+
 
 ######################################################
 # NOTIFICATION EVENTS
@@ -1067,11 +1079,7 @@ death_management.1000 = {
 		first_valid = {
 			triggered_desc = {
 				trigger = {
-					OR = {
-						has_variable = bloody_wedding_murder_family_var
-						has_variable = bloody_wedding_murder_solo_var
-						has_variable = bloody_wedding_murder_spouse_var
-					}
+					has_variable = bloody_wedding_murder
 				}
 				desc = death_management.1000.murder_wedding
 			}
@@ -1876,7 +1884,7 @@ death_management.1006 = {
 		house ?= {
 			change_house_relation_effect = {
 				HOUSE = scope:dead_character.house
-				VALUE = 100
+				VALUE = house_relation_improve_major_value
 				REASON = de_escalation
 				CHAR = root
 				TARGET_CHAR = scope:dead_character
@@ -5061,7 +5069,7 @@ death_management.3006 = {
 		house ?= {
 			change_house_relation_effect = {
 				HOUSE = scope:house_feud_rival.house
-				VALUE = 100
+				VALUE = house_relation_improve_major_value
 				REASON = de_escalation
 				CHAR = root
 				TARGET_CHAR = scope:dead_character
