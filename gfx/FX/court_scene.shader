@@ -287,7 +287,7 @@ ConstantBuffer( 5 )
 	float4 vEyesPropertyMult;
 	float4 vHairPropertyMult;
 
-	float4  PatternColorOverrides[16];
+	float4  PatternColorOverrides[64];
 
 	int DecalCount;
 	int PreSkinColorDecalCount
@@ -1214,7 +1214,7 @@ PixelShader =
 					AddDecals( Diffuse.rgb, NormalSample, Properties, UV0, Input.InstanceIndex, PreSkinColorDecalCount, DecalCount );
 				#endif
 
-				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input , HoverMult, PortraitEffect  );
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult, PortraitEffect );
 				Out.Color = float4( Color, 1.0f );
 
 				Out.SSAOColor = PdxTex2D( SSAOColorMap, UV0 );
