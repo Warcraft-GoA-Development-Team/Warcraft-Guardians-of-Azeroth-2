@@ -191,7 +191,7 @@ ConstantBuffer( 5 )
 	int			TotalDecalCount;
 	int 		_; // Alignment
 
-	float4 		PatternColorOverrides[16];
+	float4 		PatternColorOverrides[64];
 	float4		CoaColor1;
 	float4		CoaColor2;
 	float4		CoaColor3;
