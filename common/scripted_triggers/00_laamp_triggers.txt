@@ -15,6 +15,7 @@ maa_regiments_valid_for_cheap_reinforcement_trigger = {
 }
 
 maa_regiments_cost_more_to_reinforce_per_soldier_trigger = {
+	regiment_owner = { government_has_flag = government_is_landless_adventurer }
 	OR = {
 		is_unit_type = elephant_cavalry
 		is_unit_type = siege_weapon
@@ -24,7 +25,10 @@ maa_regiments_cost_more_to_reinforce_per_soldier_trigger = {
 maa_regiments_valid_to_refill_trigger = {
 	maa_current_troops_count < maa_max_troops_count
 	trigger_if = {
-		limit = { is_unit_type = elephant_cavalry }
+		limit = {
+			scope:actor = { government_has_flag = government_is_landless_adventurer }
+			is_unit_type = elephant_cavalry
+		}
 		scope:actor.domicile ?= { has_domicile_parameter = camp_reinforce_elephant_regiments_anywhere }
 	}
 }
@@ -54,7 +58,7 @@ any_laamp_portion_at_sea_trigger = {
 character_is_valid_for_harrying_of_the_north_trigger = {
 	#Warcraft
 	always = no
-	# title:k_england.holder = { owns_story_of_type = story_cycle_harrying_of_the_north }
+	# title:k_england.holder ?= { owns_story_of_type = story_cycle_harrying_of_the_north }
 	# trigger_if = {
 	# 	limit = { is_ruler = yes }
 	# 	OR = {
@@ -141,14 +145,18 @@ disable_interaction_for_hasan_trigger = {
 }
 
 laamp_request_likely_marriable_woman_trigger = {
-	is_female = yes
-	is_adult = yes
+	is_available_quick = {
+		female = yes
+		adult = yes
+	}
 	can_marry_trigger = yes
 }
 
 laamp_request_likely_marriable_man_trigger = {
-	is_male = yes
-	is_adult = yes
+	is_available_quick = {
+		female = no
+		adult = yes
+	}
 	can_marry_trigger = yes
 }
 
@@ -156,14 +164,38 @@ laamp_request_likely_marriable_man_trigger = {
 # Transition Triggers
 
 is_valid_for_laampdom = {
-	custom_tooltip = {
-		text = adventurer_not_nf_head_trigger_tt
-		NOT = {
-			any_held_title = { is_noble_family_title = yes }
+	save_temporary_scope_as = potential_laamp_temp
+	trigger_if = {
+		limit = {
+			NAND = {
+				is_ai = no
+				government_allows = administrative
+				top_liege = this
+				is_landed = no
+			}
+		}
+		custom_tooltip = {
+			text = adventurer_not_nf_head_trigger_tt
+			NOT = {
+				any_held_title = { is_noble_family_title = yes }
+			}
+		}
+		is_landless_ruler = no # Admin gov vassals should not become laamps
+	}
+	trigger_if = {
+		limit = { tgp_realm_has_ceremonial_liege_trigger = yes }
+		custom_tooltip = {
+			text = tgp_japan_imperial_branch_decision_imperial_heir_trigger
+			NOT = {
+				top_liege.primary_title.var:administrative_ui_special_title = {
+					place_in_line_of_succession = {
+						target = scope:potential_laamp_temp
+						value <= 4
+					}
+				}
+			}
 		}
 	}
-	save_temporary_scope_as = potential_laamp_temp
-	is_landless_ruler = no # Admin gov vassals should not become laamps
 	trigger_if = {
 		limit = { is_ai = yes }
 		trigger_if = {
@@ -236,20 +268,24 @@ ep3_laamp_interesting_enough_to_be_a_laamp_trigger = {
 }
 
 playable_relative_trigger = {
-	is_playable_character = yes
-	is_ai = yes
+	is_available_quick = {
+		ai = yes
+		advanced_ruler = yes
+	}
 	house = root.house
 }
 
 ep3_laamp_interesting_sibling_trigger = {
-	is_ai = yes # Not already played
-	is_landed = no # Landless enough to venture forth
+	is_available_quick = {
+		ai = yes
+		landed = no
+		advanced_ruler = no
+	}
 	NOT = {
 		any_consort = {
 			is_ruler = yes
 		}
 	}
-	is_playable_character = no # Not already playable
 	is_valid_for_laampdom = yes # Age, health, personality
 	ep3_laamp_interesting_enough_to_be_a_laamp_trigger = { COMPARISON = $COMPARISON$ }
 }
@@ -308,7 +344,7 @@ ep3_adventurer_landless_allowed_against_character_trigger = {
 	}
 	# Scope:defender cannot be liege of attacker.
 	scope:defender = {
-		NOT = { this = scope:attacker.liege }
+		this != scope:attacker.liege
 	}
 }
 
@@ -324,9 +360,8 @@ ep3_adventurer_landless_should_invalidate_trigger = {
 				list = target_titles
 				any_in_de_jure_hierarchy = {
 					tier = tier_county
-					holder = {
-						target_is_same_character_or_above = scope:defender
-					}
+					is_landless_type_title = no
+					holder = { target_is_same_character_or_above = scope:defender }
 				}
 			}
 		}
@@ -372,6 +407,10 @@ valid_laamp_basic_trigger = {
 		value = $EMPLOYER$.highest_held_title_tier
 		OR = {
 			$EMPLOYER$.highest_held_title_tier <= tier_county
+			AND = {
+				$EMPLOYER$.highest_held_title_tier <= tier_duchy
+				$EMPLOYER$ = { government_has_flag = government_is_nomadic }
+			}
 			$EMPLOYER$.highest_held_title_tier <= $LAAMP$.prestige_level
 			$EMPLOYER$ = { is_contact_of = $LAAMP$ }
 		}
@@ -382,6 +421,7 @@ valid_laamp_basic_trigger = {
 		# Plus some standard stuff.
 		is_alive = yes
 		is_adult = yes
+		NOT = { government_has_flag = government_is_herder }
 	}
 	$EMPLOYER$ = { is_incapable = no }
 	# Laamps shouldn't offer contracts in their local area, ever.
@@ -449,7 +489,16 @@ valid_laamp_basic_accept_only_trigger = {
 employer_has_treasury_to_offer_job_trigger = {
 	trigger_if = {
 		limit = { is_ai = no }
-		scope:employer.gold >= 50
+		scope:employer = {
+			OR = {
+				treasury_or_gold >= 50
+				trigger_if = {
+					limit = { government_allows = barter }
+					# no define:NBarter|BARTER_GOODS_TO_LOOT_MULT here. wanua rulers start as lower than 100 barter goods
+					barter_goods >= 50
+				}
+			}
+		}
 	}
 }
 
@@ -457,9 +506,11 @@ employer_has_treasury_to_offer_job_trigger = {
 ## So we don't penalise you if their circumstances change beyond your control, but _also_ so that there aren't local job listings going up in Middlesex for someone currently pilgrimaging in Jerusalem.
 valid_laamp_sensible_start_trigger = {
 	scope:employer = {
-		is_travelling = no
-		is_in_army = no
-		is_imprisoned = no
+		is_available_quick = {
+			travel = no
+			in_army = no
+			imprisoned = no
+		}
 	}
 	trigger_if = {
 		limit = {
@@ -727,7 +778,7 @@ valid_laamp_contract_foe_trigger = {
 		# Which means making sure that they're not located too far away from our contractor.
 		"squared_distance(root.task_contract_taker.location)" <= squared_distance_large
 		# And that they're not located in the exact same province, else travel logic'll break.
-		NOT = { this = scope:employer_ref.location }
+		this != scope:employer_ref.location
 	}
 }
 
@@ -750,8 +801,8 @@ enable_debug_laamp_event_logging_toggle_trigger = { always = no }
 ai_can_valid_to_create_laamp_trigger = {
 	save_temporary_scope_as = char_temp
 	OR = {
-		# General checking. 
-		NOT = { exists = global_var:laamps_tally }
+		# General checking.
+		NOT = { has_global_variable_list = laamps_tally }
 		AND = {
 			#Warcraft
 			exists = global_var:laamps_tally
@@ -795,7 +846,7 @@ can_access_reject_inheritance_decision_trigger = {
 	OR = {
 		has_trait = content
 		has_perk = carefree_perk
-		is_landless_adventurer = yes
+		has_government = landless_adventurer_government
 	}
 }
 
@@ -893,9 +944,7 @@ butcher_animals_decision_available_elephants_trigger = {
 laamp_youth_cultural_tradition_trigger = {
 	# Warcraft
 	OR = {
-		NOT = {
-			NOT = { exists = global_var:laamps_tally }
-		}
+		NOT = { exists = global_var:laamps_tally }
 		AND = {
 			exists = global_var:laamps_tally
 			# End Warcraft
@@ -944,8 +993,6 @@ laamp_youth_cultural_tradition_trigger = {
 		}
 	}
 	NOT = {
-		any_heir_title = {
-			count >= 1
-		}
+		any_heir_title = { }
 	}
 }

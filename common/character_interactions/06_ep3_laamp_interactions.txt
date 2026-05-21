@@ -18,7 +18,7 @@ purchase_land_interaction = {
 		first_valid = {
 			triggered_desc = {
 				trigger = {
-					scope:recipient = { is_independent_ruler = no }
+					scope:recipient = { top_liege != this }
 					scope:target = {
 						trigger_if = {
 							limit = { tier = tier_duchy }
@@ -62,15 +62,21 @@ purchase_land_interaction = {
 		scope:recipient = {
 			is_landed = yes
 			# Need to own the land/cannot directly buy a governorship (procure estate first)
-			NOT = { government_has_flag = government_is_administrative } 
+			NOR = { 
+				government_has_flag = government_is_administrative
+				government_has_flag = government_is_japan_administrative
+				government_has_flag = government_is_japan_feudal
+				government_has_flag = government_is_celestial
+				government_has_flag = government_is_meritocratic
+			} 
 		}
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 	}
 
 	has_valid_target = {
 		custom_tooltip = { #prevent unwanted trigger tooltip
 			text = blank_line
-			scope:target = {
+			scope:target ?= {
 				is_title_created = yes
 				holder = {
 					is_ai = yes
@@ -138,11 +144,11 @@ purchase_land_interaction = {
 		}
 		custom_tooltip = {
 			text = purchase_land_capital_tt
-			NOT = { scope:target = scope:recipient.capital_county }
+			scope:target != scope:recipient.capital_county
 		}
 		custom_tooltip = {
 			text = purchase_land_primary_tt
-			NOT = { scope:target = scope:recipient.primary_title }
+			scope:target != scope:recipient.primary_title
 		}
 		custom_tooltip = {
 			text = purchase_land_duchy_tt
@@ -155,6 +161,15 @@ purchase_land_interaction = {
 				}
 			}
 		}
+		custom_tooltip = {
+			text = PURCHASE_LAND_COMPLETE_CONTROL_TT
+			trigger_if = {
+				limit = { scope:target = { tier = tier_duchy } }
+				scope:recipient = {
+					completely_controls = scope:target
+				}
+			}
+		}
 		trigger_if = {
 			limit = { exists = scope:target.holder }
 			scope:target.holder = scope:recipient
@@ -162,21 +177,18 @@ purchase_land_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
-		scope:actor = { is_independent_ruler = yes }
 		scope:actor = {
+			top_liege = this
 			prestige_level >= 2
-		}
-		scope:actor = {
-			NOT = {
+			NOR = {
 				has_trait = gallowsbait
-			}
-		}
-		scope:actor = {
-			NOT = {
 				has_trait = gallivanter
 			}
 		}
-		scope:recipient = { is_at_war = no }
+		scope:recipient = {
+			is_at_war = no
+			NOT = { has_strong_hook = scope:actor }
+		}
 		trigger_if = { # Can't purchase Baronies
 			limit = {
 				scope:target ?= { tier = tier_barony }
@@ -234,10 +246,6 @@ purchase_land_interaction = {
 				always = no
 			}
 		}
-		scope:recipient = {
-			is_busy_in_events_localised = yes
-			NOT = { has_strong_hook = scope:actor }
-		}
 		#Has to be used instead of diplo range checks in laamp to landed interactions
 		ep3_laamp_diplo_range_trigger = {
 			TARGET = scope:recipient
@@ -280,31 +288,65 @@ purchase_land_interaction = {
 	on_accept = {
 		scope:actor = { save_scope_as = adventurer }
 		scope:target = {
+			save_scope_as = purchase_land_target
 			add_to_list = purchased_titles
 			if = {
 				limit = { tier = tier_duchy }
 				every_de_jure_county = {
-					limit = { ep3_purchase_land_valid_county_trigger = yes }
-					add_to_list = purchased_titles
+					limit = {
+						holder ?= {
+							OR = {
+								this = scope:recipient
+								target_is_liege_or_above = scope:recipient
+							}
+						}
+					}
+					if = {
+						limit = { holder = scope:recipient }
+						add_to_list = purchased_titles
+					}
+					else_if = {
+						limit = {
+							holder ?= {
+								highest_held_title_tier < scope:purchase_land_target.tier
+								NOT = { government_has_flag = government_is_administrative }
+								target_is_liege_or_above = scope:recipient
+							}
+						}
+						holder = {
+							if = {
+								limit = {
+									NOT = { is_in_list = purchase_land_vassals_taken }
+								}
+								add_to_list = purchase_land_vassals_taken
+							}
+						}
+					}
+					else = {
+						add_to_list = purchased_titles
+					}
 				}
 			}
 		}
 		ordered_in_list = {
 			list = purchased_titles
+			order_by = tier
 			save_scope_as = new_primary_title
 		}
 		save_scope_value_as = {
 			name = purchase_land_cost
 			value = {
-				every_in_list = {
-					list = purchased_titles
-					if = {
-						limit = { tier = tier_county }
-						add = purchase_land_county_cost_value
-					}
-					else_if = {
-						limit = { tier = tier_duchy }
-						add = purchase_land_duchy_cost_value
+				if = {
+					limit = { scope:target.tier = tier_county }
+					add = purchase_land_county_cost_value
+				}
+				else = {
+					add = purchase_land_duchy_cost_value
+					scope:target = {
+						every_de_jure_county = {
+							limit = { ep3_purchase_land_valid_county_trigger = yes }
+							add = purchase_land_county_cost_value
+						}
 					}
 				}
 				if = {
@@ -314,9 +356,7 @@ purchase_land_interaction = {
 					multiply = 0.5
 				}
 				if = {
-					limit = {
-						scope:offer_gold = yes
-					}
+					limit = { scope:offer_gold = yes }
 					multiply = 2
 				}
 			}
@@ -327,9 +367,7 @@ purchase_land_interaction = {
 				value = 0
 				if = {
 					limit = {
-						NOT = {
-							scope:target.holder = scope:recipient
-						}
+						scope:target.holder != scope:recipient
 					}
 					every_in_list = {
 						list = purchased_titles
@@ -342,7 +380,9 @@ purchase_land_interaction = {
 				}	
 			}
 		}
-		show_as_tooltip = { purchase_land_interaction_shortened_effect = yes }
+		show_as_tooltip = { 
+			scope:actor = { purchase_land_interaction_effect = yes }
+		}
 		if = {
 			limit = { always = scope:hook }
 			scope:actor = { use_hook = scope:recipient }
@@ -358,10 +398,24 @@ purchase_land_interaction = {
 	}
 
 	ai_targets = {
-		ai_recipients = neighboring_rulers
+		ai_recipients = domicile_location_top_ruler
 		ai_recipients = contacts
 	}
-	ai_frequency = 120
+
+	ai_targets = {
+		ai_recipients = domicile_location_neighboring_top_realm_vassals
+		ai_recipients = domicile_location_top_realm_vassals
+		ai_recipients = domicile_location_neighboring_top_rulers
+		max = 20
+	}
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 60
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 
 	ai_accept = {
 		base = 0 # Try to make it 0 for most interactions
@@ -698,9 +752,7 @@ purchase_land_interaction = {
 			}
 			scope:actor = {
 				knows_language_of_culture = scope:recipient.culture
-				NOT = {
-					culture = scope:recipient.culture
-				}
+				culture != scope:recipient.culture
 			}
 			desc = PURCHASE_LAND_SPEAKS_LANGUAGE_REASON
 		}
@@ -721,7 +773,10 @@ purchase_land_interaction = {
 			}
 			trigger = {
 				scope:recipient = {
-					debt_level > 0
+					OR = {
+						debt_level > 0
+						treasury_debt_level > 0
+					}
 				}
 			}
 			desc = PURCHASE_LAND_IS_IN_DEBT_REASON
@@ -797,20 +852,20 @@ request_laamp_invasion_sponsorship_interaction = {
 		has_ep3_dlc_trigger = yes
 		scope:actor = { government_has_flag = government_is_landless_adventurer }
 		scope:recipient = { is_landed = yes }
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 		NOT = { scope:actor = { has_realm_law = camp_purpose_legitimists } }
 	}
 
 	is_valid_showing_failures_only = {
 		scope:actor = {
-			is_independent_ruler = yes
+			top_liege = this
 			custom_tooltip = {
 				text = request_laamp_invasion_sponsorship_existing_supporter_tt
 				NOT = { exists = var:adventurer_invasion_supporter }
 			}
 		}
 		scope:recipient = {
-			is_independent_ruler = yes
+			top_liege = this
 			highest_held_title_tier >= tier_kingdom
 			custom_tooltip = {
 				text = request_laamp_invasion_sponsorship_existing_supportee_tt
@@ -1019,7 +1074,7 @@ request_laamp_invasion_sponsorship_interaction = {
 		modifier = { # Nemesis modifier.
 			desc = offer_vassalization_interaction_aibehavior_nemesis_tt
 			scope:recipient = { has_relation_nemesis = scope:actor }
-			add = -30
+			add = -100
 		}
 		modifier = { # Same Dynasty modifier.
 			desc = offer_vassalization_interaction_aibehavior_dynasty_tt
@@ -1131,7 +1186,7 @@ request_laamp_invasion_sponsorship_interaction = {
 		}
 		modifier = {
 			add = -10
-			NOT = { scope:actor.faith = scope:recipient.faith }
+			scope:actor.faith != scope:recipient.faith
 			desc = DIFFERENT_FAITH
 		}
 		modifier = {
@@ -1230,7 +1285,7 @@ negotiate_settlement_interaction = {
 		first_valid = {
 			triggered_desc = {
 				trigger = {
-					scope:actor = { is_independent_ruler = no }
+					scope:actor = { top_liege != this }
 					scope:target = {
 						trigger_if = {
 							limit = { tier = tier_duchy }
@@ -1270,7 +1325,7 @@ negotiate_settlement_interaction = {
 		scope:recipient = {
 			government_has_flag = government_is_landless_adventurer
 		}
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 	}
 
 	can_be_picked_title = {
@@ -1290,7 +1345,7 @@ negotiate_settlement_interaction = {
 		}
 		custom_tooltip = {
 			text = purchase_land_primary_tt
-			NOT = { scope:target = scope:actor.primary_title }
+			scope:target != scope:actor.primary_title
 		}
 		custom_tooltip = {
 			text = negotiate_settlement_title_cant_receive_reason_higher_tier_without_county
@@ -1441,13 +1496,12 @@ negotiate_settlement_interaction = {
 			}
 		}
 		scope:recipient = {
-			is_busy_in_events_localised = yes
 			NOT = { has_strong_hook = scope:actor }
 		}
 		# Adventurers can't be negotiated back into places they're exiled from.
 		trigger_if = {
 			limit = {
-				scope:actor = { is_independent_ruler = no }
+				scope:actor = { top_liege != this }
 			}
 			custom_tooltip = {
 				text = the_wake_1
@@ -1526,17 +1580,29 @@ negotiate_settlement_interaction = {
 		ai_recipients = war_enemies
 		max = 10
 	}
-	ai_frequency = 3 # Must be fairly common as it can happen during war
+
+	# Must be fairly common as it can happen during war
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 3
+		kingdom = 3
+		empire = 3
+		hegemony = 3
+	}
 
 	ai_potential = {
 		OR = {
-			is_independent_ruler = yes
+			top_liege = this
 			highest_held_title_tier >= tier_kingdom
 		}
 		OR = {
 			is_at_war = yes
 			has_trait = craven
 			has_trait = generous
+		}
+		NOT = {
+			government_has_flag = government_is_nomadic
 		}
 	}
 
@@ -1975,15 +2041,12 @@ negotiate_settlement_interaction = {
 		}
 		modifier = {
 			scope:recipient = {
-				is_landless_adventurer = yes
+				has_government = landless_adventurer_government
 				has_realm_law = camp_purpose_legitimists
 				any_claim = {
 					OR = {
 						holder ?= {
-							OR = {
-								this = scope:actor
-								target_is_liege_or_above = scope:actor
-							}
+							target_is_same_character_or_above = scope:actor
 						}
 						target_is_de_jure_liege_or_above = scope:actor.primary_title
 					}
@@ -1997,7 +2060,7 @@ negotiate_settlement_interaction = {
 				primary_defender = scope:actor
 				any_war_attacker = {
 					scope:recipient ?= this
-					is_landless_adventurer = yes
+					has_government = landless_adventurer_government
 					NOT = { has_realm_law = camp_purpose_legitimists }
 					# Attacking laamp's troops at least 10% of defender's total troops
 					current_military_strength > war_defender_total_strength_tenth_value
@@ -2016,7 +2079,7 @@ negotiate_settlement_interaction = {
 						primary_defender = scope:actor
 						any_war_attacker = {
 							scope:recipient ?= this
-							is_landless_adventurer = yes
+							has_government = landless_adventurer_government
 							NOT = { has_realm_law = camp_purpose_legitimists }
 							# Attacking laamp's troops at least 10% of defender's total troops
 							current_military_strength > war_defender_total_strength_tenth_value
@@ -2047,7 +2110,7 @@ negotiate_settlement_interaction = {
 				primary_attacker = scope:actor
 				any_war_defender = {
 					scope:recipient ?= this
-					is_landless_adventurer = yes
+					has_government = landless_adventurer_government
 					# Defending laamp's troops at least 10% of attacker's total troops
 					current_military_strength > war_attacker_total_strength_tenth_value
 				}
@@ -2065,7 +2128,7 @@ negotiate_settlement_interaction = {
 						primary_attacker = scope:actor
 						any_war_defender = {
 							scope:recipient ?= this
-							is_landless_adventurer = yes
+							has_government = landless_adventurer_government
 							# Defending laamp's troops at least 10% of attacker's total troops
 							current_military_strength > war_attacker_total_strength_tenth_value
 						}
@@ -2417,9 +2480,6 @@ trade_oath_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
-		scope:recipient = {
-			is_busy_in_events_localised = yes
-		}
 		scope:actor = {
 			is_at_war = no
 			is_imprisoned = no
@@ -2501,7 +2561,14 @@ trade_oath_interaction = {
 	ai_will_do = { base = 1000 }
 
 	ai_targets = { ai_recipients = courtiers }
-	ai_frequency = 12
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 12
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 	auto_accept = yes
 }
 
@@ -2740,6 +2807,7 @@ complete_task_contract_interaction = {
 					start_travel_plan = {
 						destination = scope:task_contract_destination
 						travel_with_domicile = yes
+						return_trip = no
 						on_arrival_destinations = all
 					}
 					custom_tooltip = ep3_contract_event.0001.with_domicile.tt
@@ -2799,7 +2867,7 @@ contact_list_request_interaction = { # make a request, make_a_request
 					target = scope:actor
 					modifier = eviction_ignored_opinion
 				}
-				existing_feud_against_target_trigger = { TARGET = scope:actor }
+				house_has_feud_relation_with_trigger = { TARGET = scope:actor }
 			}
 		}
 		scope:actor = {
@@ -2816,7 +2884,7 @@ contact_list_request_interaction = { # make a request, make_a_request
 							OR = {
 								capital_province ?= scope:actor.domicile.domicile_location
 								any_held_title = {
-									tier = tier_county
+									title_tier = county
 									any_county_province = {
 										this = scope:actor.domicile.domicile_location
 									}
@@ -3111,7 +3179,7 @@ contact_list_request_interaction = { # make a request, make_a_request
 			}
 			scope:recipient = {
 				is_landed = yes
-				ai_has_conqueror_personality = no
+				NOT = { has_variable = conqueror }
 				capital_province ?= {
 					squared_distance = {
 						target = scope:actor.capital_province
@@ -3955,7 +4023,14 @@ contact_list_request_interaction = { # make a request, make_a_request
 	}
 
 	can_send_despite_rejection = no
-	ai_frequency = 3
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 3
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 	ai_targets = { ai_recipients = contacts }
 	ai_targets = { ai_recipients = hooked_characters }
 	auto_accept = {
@@ -4314,7 +4389,7 @@ seize_realm_interaction = {
 	send_name = START_SCHEME
 
 	is_shown = {
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 		scope:actor = { government_has_flag = government_is_landless_adventurer }
 		scope:recipient = {
 			is_landed = yes
@@ -4491,6 +4566,7 @@ reinforce_soldiers_interaction = {
 		has_ep3_dlc_trigger = yes
 		scope:actor = {
 			government_allows = conditional_maa_refill
+			NOT = { government_has_flag = government_is_nomadic }
 		}
 		scope:recipient = scope:actor
 	}
@@ -4681,7 +4757,14 @@ reinforce_soldiers_interaction = {
 		}
 	}
 
-	ai_frequency = 6
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 6
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 	ai_targets = {
 		ai_recipients = self
 	}
@@ -4741,6 +4824,9 @@ hire_laamp_mercenaries_interaction = {
 	send_options_exclusive = no
 	is_shown = {
 		has_ep3_dlc_trigger = yes
+		scope:recipient = {
+			has_government = landless_adventurer_government
+		}
 		scope:actor != scope:recipient
 		scope:actor = {
 			trigger_if = { # Avoid calling Adventurers without armies
@@ -4748,15 +4834,16 @@ hire_laamp_mercenaries_interaction = {
 					is_ai = yes
 				}
 				scope:recipient.current_military_strength >= 100
+				scope:recipient = {
+					NOT = {
+						has_character_flag = ai_hire_blocker
+					}
+				}
 			}
-		}
-		scope:recipient = {
-			is_landless_adventurer = yes
 		}
 	}
 	is_valid_showing_failures_only = {
 		scope:recipient = {
-			is_busy_in_events_localised = yes
 			is_travelling = no
 			is_at_war = no
 			is_imprisoned = no
@@ -4781,7 +4868,7 @@ hire_laamp_mercenaries_interaction = {
 			NOT = {
 				any_war_ally = {
 					count >= 3
-					is_landless_adventurer = yes
+					has_government = landless_adventurer_government
 				}
 			}
 		}
@@ -4806,7 +4893,7 @@ hire_laamp_mercenaries_interaction = {
 		# Adventurers can't join wars in places they're exiled from.
 		trigger_if = {
 			limit = {
-				scope:actor = { is_independent_ruler = no }
+				scope:actor = { top_liege != this }
 			}
 			custom_tooltip = {
 				text = the_wake_1
@@ -4873,18 +4960,44 @@ hire_laamp_mercenaries_interaction = {
 			}
 		}
 		scope:actor = {
-			pay_short_term_gold = {
-				target = scope:recipient
-				gold = ep3_hire_laamp_mercs_cost_value
+			if = {
+				limit = {
+					has_treasury = no
+				}
+				pay_short_term_gold = {
+					target = scope:recipient
+					gold = ep3_hire_laamp_mercs_cost_value
+				}
+			}
+			else = {
+				pay_short_term_treasury = {
+					target = scope:recipient
+					treasury = ep3_hire_laamp_mercs_cost_value
+				}
 			}
 			add_to_variable_list = {
 				name = hired_mercenaries
 				target = scope:recipient
 			}
 			custom_tooltip = hire_laamp_mercenaries_interaction.contribution_pay
+			if = {
+				limit = {
+					has_title = title:h_pandaria #Warcraft
+					situation:dynastic_cycle ?= {
+						situation_top_has_catalyst = catalyst_hegemon_hired_mercenary
+					}
+				}
+				trigger_situation_catalyst = {
+					catalyst = catalyst_hegemon_hired_mercenary
+					character = scope:actor
+				}
+			}
 		}
 		scope:recipient = {
-			add_character_flag = joined_as_mercenary
+			set_variable = {
+				name = joined_as_mercenary
+				value = scope:actor
+			}
 		}
 		add_clan_unity_interaction_effect = {
 			CHARACTER = scope:actor
@@ -4954,7 +5067,14 @@ hire_laamp_mercenaries_interaction = {
 	}
 	extra_icon = "gfx/interface/icons/character_interactions/hook_icon.dds"
 
-	ai_frequency = 12
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 12
+		duchy = 12
+		kingdom = 6
+		empire = 6
+		hegemony = 6
+	}
 	ai_targets = {
 		ai_recipients = nearby_domicile_owners
 	}
@@ -5129,7 +5249,7 @@ hire_laamp_mercenaries_interaction = {
 			add = -50
 			scope:actor = {
 				any_character_war = {
-					NOT = { primary_defender = scope:actor }
+					primary_defender != scope:actor
 					primary_defender = {
 						is_allied_to = scope:recipient
 					}
@@ -5142,7 +5262,7 @@ hire_laamp_mercenaries_interaction = {
 			add = -25
 			scope:actor = {
 				any_character_war = {
-					NOT = { primary_attacker = scope:actor }
+					primary_attacker != scope:actor
 					primary_attacker = {
 						is_allied_to = scope:recipient
 					}
@@ -5153,7 +5273,7 @@ hire_laamp_mercenaries_interaction = {
 
 		modifier = {  # Reluctant to join wars against religious brethren.
 			add = -50
-			NOT = { scope:recipient.faith = scope:actor.faith }
+			scope:recipient.faith != scope:actor.faith
 			scope:actor = {
 				any_character_war = {
 					OR = {
@@ -5164,11 +5284,11 @@ hire_laamp_mercenaries_interaction = {
 						using_cb = directed_great_holy_war
 						OR = {
 							AND = {
-								NOT = { primary_attacker = scope:actor }
+								primary_attacker != scope:actor
 								primary_attacker.faith = scope:recipient.faith
 							}
 							AND = {
-								NOT = { primary_defender = scope:actor }
+								primary_defender != scope:actor
 								primary_defender.faith = scope:recipient.faith
 							}
 						}
@@ -5184,13 +5304,13 @@ hire_laamp_mercenaries_interaction = {
 				any_character_war = {
 					OR = {
 						AND = {
-							NOT = { primary_attacker = scope:actor }
+							primary_attacker != scope:actor
 							primary_attacker = {
 								has_relation_friend = scope:recipient
 							}
 						}
 						AND = {
-							NOT = { primary_defender = scope:actor }
+							primary_defender != scope:actor
 							primary_defender = {
 								has_relation_friend = scope:recipient
 							}
@@ -5206,13 +5326,13 @@ hire_laamp_mercenaries_interaction = {
 				any_character_war = {
 					OR = {
 						AND = {
-							NOT = { primary_attacker = scope:actor }
+							primary_attacker != scope:actor
 							primary_attacker = {
 								has_relation_best_friend = scope:recipient
 							}
 						}
 						AND = {
-							NOT = { primary_defender = scope:actor }
+							primary_defender != scope:actor
 							primary_defender = {
 								has_relation_best_friend = scope:recipient
 							}
@@ -5227,13 +5347,13 @@ hire_laamp_mercenaries_interaction = {
 				any_character_war = {
 					OR = {
 						AND = {
-							NOT = { primary_attacker = scope:actor }
+							primary_attacker != scope:actor
 							primary_attacker = {
 								has_relation_lover = scope:recipient
 							}
 						}
 						AND = {
-							NOT = { primary_defender = scope:actor }
+							primary_defender != scope:actor
 							primary_defender = {
 								has_relation_lover = scope:recipient
 							}
@@ -5248,13 +5368,13 @@ hire_laamp_mercenaries_interaction = {
 				any_character_war = {
 					OR = {
 						AND = {
-							NOT = { primary_attacker = scope:actor }
+							primary_attacker != scope:actor
 							primary_attacker = {
 								has_relation_soulmate = scope:recipient
 							}
 						}
 						AND = {
-							NOT = { primary_defender = scope:actor }
+							primary_defender != scope:actor
 							primary_defender = {
 								has_relation_soulmate = scope:recipient
 							}
@@ -5430,6 +5550,7 @@ refill_maa_interaction = {
 		has_ep3_dlc_trigger = yes
 		scope:actor = {
 			government_allows = conditional_maa_refill
+			NOT = { government_has_flag = government_is_nomadic }
 		}
 		scope:recipient = scope:actor
 	}
@@ -5528,7 +5649,14 @@ refill_maa_interaction = {
 		}
 	}
 	
-	ai_frequency = 1
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 1
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 	ai_targets = {
 		ai_recipients = self
 	}
@@ -5570,7 +5698,7 @@ evict_adventurer_interaction = {
 	is_shown = {
 		has_ep3_dlc_trigger = yes
 		scope:actor = { is_landed = yes }
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 		scope:recipient = {
 			government_has_flag = government_is_landless_adventurer
 			is_landed = no
@@ -5589,10 +5717,7 @@ evict_adventurer_interaction = {
 		scope:recipient = {
 			# Adventurer must be in the subrealm
 			domicile.domicile_location.county.holder ?= {
-				OR = {
-					this = scope:actor
-					any_liege_or_above = { this ?= scope:actor }
-				}
+				target_is_same_character_or_above = scope:actor
 			}
 		}
 		# AI should not against hired adventurers
@@ -5613,7 +5738,6 @@ evict_adventurer_interaction = {
 			}
 		}
 		scope:recipient = {
-			is_busy_in_events_localised = yes
 			NOT = { has_strong_hook = scope:actor }
 		}
 		# Story blockers.
@@ -5634,10 +5758,7 @@ evict_adventurer_interaction = {
 					every_character_task_contract = {
 						limit = {
 							task_contract_location.county.holder = {
-								OR = {
-									this = scope:actor
-									any_liege_or_above = { this = scope:actor }
-								}
+								target_is_same_character_or_above = scope:actor
 							}
 						}
 						invalidate_contract = yes
@@ -5658,14 +5779,14 @@ evict_adventurer_interaction = {
 				modifier = demanded_eviction_opinion
 			}
 			custom_tooltip = evict_adventurer_contracts_tt
-		}
-		scope:actor = {
 			custom_description_no_bullet = {
 				text = evict_adventurer_consequences_tt
-				object = scope:recipient
-				subject = scope:actor
+				object = scope:actor
+				subject = scope:recipient
 			}
 			custom_tooltip = evict_adventurer_casus_belli_tt
+		}
+		scope:actor = {
 			show_as_tooltip = {
 				add_opinion = {
 					target = scope:recipient
@@ -5701,7 +5822,14 @@ evict_adventurer_interaction = {
 
 	auto_accept = yes
 
-	ai_frequency = 6
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 12
+		duchy = 6
+		kingdom = 6
+		empire = 6
+		hegemony = 6
+	}
 	ai_targets = {
 		ai_recipients = sub_realm_domicile_owners
 		max = 10
@@ -5709,7 +5837,7 @@ evict_adventurer_interaction = {
 	ai_potential = {
 		is_at_war = no
 		is_imprisoned = no
-		NOT = { has_trait = incapable }
+		NOT = { is_incapable_trigger = yes }
 	}
 	ai_will_do = {
 		base = -25
@@ -5722,7 +5850,7 @@ evict_adventurer_interaction = {
 		modifier = {
 			add = 250
 			OR = {
-				is_independent_ruler = yes
+				top_liege = this
 				highest_held_title_tier >= tier_kingdom
 			}
 			scope:recipient = {
@@ -5752,6 +5880,10 @@ evict_adventurer_interaction = {
 				modifier = switched_sides_in_war
 				target = scope:recipient
 			}
+		}
+		modifier = {
+			add = 100
+			has_imprisonment_reason = scope:recipient
 		}
 		modifier = {
 			add = {
@@ -5950,14 +6082,14 @@ procure_estate_interaction = {
 		scope:actor = { government_has_flag = government_is_landless_adventurer }
 		scope:recipient = {
 			is_landed = yes
-			government_allows = administrative
+			government_allows = noble_families
 		}
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 	}
 
 	is_valid_showing_failures_only = {
 		scope:actor = {
-			is_independent_ruler = yes
+			top_liege = this
 			prestige_level >= 2
 			# Only house heads can have Noble Family titles
 			custom_tooltip = {
@@ -5993,7 +6125,6 @@ procure_estate_interaction = {
 			}
 		}
 		scope:recipient = {
-			is_busy_in_events_localised = yes
 			NOT = { has_strong_hook = scope:actor }
 		}
 		#Has to be used instead of diplo range checks in laamp to landed interactions
@@ -6206,6 +6337,7 @@ procure_estate_interaction = {
 				type = procured_estate_memory
 				participants = { benefactor = scope:recipient }
 			}
+			#Warcraft
 			# if = {
 			# 	limit = {
 			# 		is_ai = no
@@ -6216,7 +6348,6 @@ procure_estate_interaction = {
 			# 	}
 			# }
 		}
-		
 		scope:actor = { trigger_event = ep3_interactions_events.0610 }
 	}
 
@@ -6228,10 +6359,16 @@ procure_estate_interaction = {
 	}
 
 	ai_targets = {
-		ai_recipients = neighboring_rulers
 		ai_recipients = contacts
 	}
-	ai_frequency = 120
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 60
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 
 	ai_accept = {
 		base = 0 # Try to make it 0 for most interactions
@@ -6246,10 +6383,9 @@ procure_estate_interaction = {
 		modifier = {
 			add = -20
 			desc = PROCURE_ESTATE_STATE_FAITH_REASON
+			exists = scope:recipient.top_liege.primary_title.state_faith
 			scope:actor.faith = {
-				NOT = {
-					this = scope:recipient.top_liege.primary_title.state_faith
-				}
+				this != scope:recipient.top_liege.primary_title.state_faith
 			}
 			scope:recipient.faith = {
 				this = scope:recipient.top_liege.primary_title.state_faith
@@ -6628,7 +6764,7 @@ request_laamp_legitimist_support = {
 			is_ai = yes
 			primary_title.tier >= tier_kingdom
 		}
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 	}
 	
 	is_valid_showing_failures_only = {
@@ -6672,7 +6808,6 @@ request_laamp_legitimist_support = {
 			}
 		}
 		scope:recipient = {
-			is_busy_in_events_localised = yes
 			is_at_war = no
 			is_available_ai_adult = yes
 		}
@@ -6794,15 +6929,20 @@ request_laamp_legitimist_support = {
 	}
 
 	can_send_despite_rejection = no
-	ai_frequency = 60
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 60
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 	ai_targets = {
-		ai_recipients = neighboring_rulers
-		ai_recipients = liege
+		ai_recipients = domicile_location_neighboring_top_rulers
 		ai_recipients = contacts
 	}
 	ai_potential = {
 		is_at_war = no
-		NOT = { ai_has_economical_boom_personality = yes }
 		ai_greed <= 25
 	}
 	ai_will_do = {
@@ -6820,9 +6960,9 @@ relocate_camp_to_interaction = {
 	icon = icon_contract_escort
 	desc = relocate_camp_to_interaction_desc
 	is_shown = {
-		NOT = { scope:recipient = scope:actor }
+		scope:recipient != scope:actor
 		scope:actor = {
-			is_landless_adventurer = yes
+			has_government = landless_adventurer_government
 		}
 		scope:recipient = { exists = capital_province } #just to make sure proper scopes will be set up
 	}
@@ -6830,7 +6970,7 @@ relocate_camp_to_interaction = {
 	is_valid_showing_failures_only = {
 		custom_tooltip = {
 			text = relocate_camp_to_interaction.here
-			NOT = { scope:actor.domicile.domicile_location = scope:recipient.capital_province }
+			scope:actor.domicile.domicile_location != scope:recipient.capital_province
 		}
 		scope:actor = {
 			is_travelling = no
@@ -6887,7 +7027,7 @@ task_contract_train_knight_interaction = {
 		has_ep3_dlc_trigger = yes
 		scope:actor = {
 			any_character_active_contract = {
-				has_task_contract_type = laamp_help_train_commanders_contract
+				task_contract_type = laamp_help_train_commanders_contract
 				OR = {
 					task_contract_employer ?= scope:recipient
 					task_contract_target ?= scope:recipient
@@ -6908,8 +7048,8 @@ task_contract_train_knight_interaction = {
 	redirect = {
 		scope:actor = {
 			random_character_active_contract = {
+				task_contract_type = laamp_help_train_commanders_contract
 				limit = {
-					has_task_contract_type = laamp_help_train_commanders_contract
 					OR = {
 						task_contract_employer ?= scope:recipient
 						task_contract_target ?= scope:recipient
@@ -6954,8 +7094,8 @@ task_contract_train_knight_interaction = {
 	populate_recipient_list = {
 		scope:actor = {
 			random_character_active_contract = {
+				task_contract_type = laamp_help_train_commanders_contract
 				limit = {
-					has_task_contract_type = laamp_help_train_commanders_contract
 					OR = {
 						task_contract_employer ?= scope:recipient
 						task_contract_target ?= scope:recipient
@@ -6986,8 +7126,8 @@ task_contract_train_knight_interaction = {
 	on_accept = {
 		scope:actor = {
 			random_character_active_contract = {
+				task_contract_type = laamp_help_train_commanders_contract
 				limit = {
-					has_task_contract_type = laamp_help_train_commanders_contract
 					OR = {
 						task_contract_employer ?= scope:recipient
 						task_contract_target ?= scope:recipient
@@ -7017,7 +7157,14 @@ task_contract_train_knight_interaction = {
 		base = 100
 	}
 
-	ai_frequency = 12
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 12
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 	ai_targets = {
 		ai_recipients = neighboring_rulers
 		ai_recipients = liege
@@ -7050,10 +7197,10 @@ laamp_war_change_sides_interaction = {
 	is_shown = {
 		scope:actor = {
 			is_at_war = yes
-			is_landless_adventurer = yes
+			has_government = landless_adventurer_government
 		}
 		scope:recipient = {
-			NOT = { this = scope:actor }
+			this != scope:actor
 			any_war_ally = { this = scope:actor }
 			any_character_war = {
 				#can't switch/leave wars you lead
@@ -7261,7 +7408,7 @@ laamp_war_change_sides_interaction = {
 						primary_attacker = scope:recipient
 						primary_defender = scope:recipient
 					}
-					NOT = { this = scope:war }
+					this != scope:war
 				}
 				remove_participant = scope:actor
 			}
@@ -7389,7 +7536,14 @@ laamp_war_change_sides_interaction = {
 	ai_targets = {
 		ai_recipients = war_allies
 	}
-	ai_frequency = 24
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 24
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 
 	ai_will_do = {
 		base = -25
@@ -7535,10 +7689,10 @@ laamp_leave_war_interaction = {
 	is_shown = {
 		scope:actor = {
 			is_at_war = yes
-			is_landless_adventurer = yes
+			has_government = landless_adventurer_government
 		}
 		scope:recipient = {
-			NOT = { this = scope:actor }
+			this != scope:actor
 			any_war_ally = { this = scope:actor }
 			any_character_war = {
 				is_participant = scope:recipient
@@ -7729,7 +7883,14 @@ laamp_leave_war_interaction = {
 		ai_recipients = war_allies
 	}
 
-	ai_frequency = 24
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 24
+		kingdom = 0
+		empire = 0
+		hegemony = 0
+	}
 
 	ai_will_do = {
 		base = -25

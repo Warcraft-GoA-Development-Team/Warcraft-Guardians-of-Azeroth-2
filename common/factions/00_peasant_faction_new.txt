@@ -13,11 +13,25 @@ peasant_faction = {
 
 	discontent_progress = {
 		base = @base_peasant_discontent_progress
-		# modifier = {
+		# modifier = { # Warcraft
 		# 	faction_target = { ep3_restored_rome_hard_mode_trigger = yes }
 		# 	add = 10
 		# 	desc = ep3_story_cycle_restoring_rome_faction_discontent
 		# }
+		modifier = {
+			faction_target = { can_vassals_be_attacked = yes }
+			add = 2
+			desc = border_war_increased_peasant_discontent
+		}
+		modifier = {
+			faction_target = {
+				top_participant_group:dynastic_cycle ?= {
+					has_participant_group_parameter = dynastic_cycle_more_peasant_factions
+				}
+			}
+			add = 2
+			desc = instability_increased_peasant_discontent
+		}
 	}
 
 	name = FACTION_PEASANT_NAME
@@ -26,23 +40,33 @@ peasant_faction = {
 	requires_character = no
 
 	is_valid = {
-		has_valid_faction_members_trigger = yes
+		always = yes
 	}
 
 	is_county_valid = {
-		# # Peasants can only join a faction against their direct liege. Unless their liege is Byzantium trying to restore the Roman Empire, then they go for the emperor
-		# trigger_if = {
-		# 	limit = { 
-		# 		scope:faction.faction_target = { ep3_restored_rome_hard_mode_trigger = yes }
-		# 	}
-		# 	holder.top_liege = scope:faction.faction_target
-		# }
-		# trigger_else = { holder = scope:faction.faction_target }
-		always = yes
+		# Peasants can only join a faction against their direct liege. Unless their liege is Byzantium trying to restore the Roman Empire, then they go for the emperor
+		trigger_if = {
+			limit = { 
+				scope:faction.faction_target = {
+					#OR = {#Warcraft
+						#ep3_restored_rome_hard_mode_trigger = yes
+						has_variable = peasant_war_escalates
+					#}
+				}
+			}
+			holder.top_liege = scope:faction.faction_target
+		}
+		trigger_else = { holder = scope:faction.faction_target }
+		title_province = {
+			NOR = {
+				has_holding_type = nomad_holding
+				has_holding_type = herder_holding
+			}
+		}
 	}
 
 	is_character_valid = {
-		always = yes
+		has_valid_faction_members_trigger = yes
 	}
 
 	demand = {
@@ -70,6 +94,16 @@ peasant_faction = {
 		modifier = {
 			add = 100
 			any_faction_county_member = {}
+		}
+
+		modifier = {
+			add = -1000
+			faction_target = {
+				involved_activity ?= {
+					has_activity_type = activity_coronation
+					activity_host = prev
+				}
+			}
 		}
 	}
 
@@ -102,6 +136,7 @@ peasant_faction = {
 					limit = {
 						has_variable = peasant_title
 						exists = this.var:peasant_title
+						NOT = { has_variable = peasant_war_escalates }
 					}
 					destroy_title = this.var:peasant_title
 				}
@@ -113,13 +148,13 @@ peasant_faction = {
 						limit = { # To make sure we're not in debt
 							gold > 0
 						}
-						remove_long_term_gold = gold 
+						remove_long_term_gold = gold
 					}
 
 					# The peasant leader mysteriously vanishes on the next game tick.
 					if = {
 						limit = { NOT = { has_character_flag = peasant_revolt_do_not_kill } }
-						trigger_event = { 
+						trigger_event = {
 							id = faction_demand.1102
 							days = 1
 						}
@@ -146,12 +181,22 @@ peasant_faction = {
 				scope:faction.faction_target = {
 					top_liege = {
 						any_targeting_faction = {
-							faction_is_type = populist_faction
+							faction_type = populist_faction
 							any_faction_county_member = {
 								this.title_province.faith = root.title_province.faith
 							}
 						}
 					}
+				}
+			}
+		}
+		# If a suitable Escalated Faction exists, prefer to join it instead.
+		modifier = {
+			desc = "FACTION_REASON_PREFER_ESCALATED_FACTION"
+			add = -10
+			scope:faction.faction_target = {
+				any_targeting_faction = {
+					faction_type = escalated_peasant_faction
 				}
 			}
 		}
@@ -172,12 +217,16 @@ peasant_faction = {
 		modifier = {
 			desc = "FACTION_REASON_RULING_CASTE"
 			add = -25
-			NOT = {
-				culture = scope:faction.faction_target.culture
-			}
-			scope:faction.faction_target.culture = {
-				has_cultural_parameter = peasant_and_populist_factions_less_common
-			}
+			culture != scope:faction.faction_target.culture
+			scope:faction.faction_target.culture = { has_cultural_parameter = peasant_and_populist_factions_less_common }
+		}
+
+		# Defiant Ambushers
+		modifier = {
+			add = 25
+			county_opinion < 0
+			culture != scope:faction.faction_target.culture
+			culture = { has_cultural_parameter = county_peasant_and_populist_factions_more_common }
 		}
 		
 		# Warcraft
@@ -200,7 +249,23 @@ peasant_faction = {
 				is_ai = no
 			}
 		}
-		
+		modifier = { # Hard
+			desc = "FACTION_REASON_DIFFICULTY_HARD"
+			add = -50
+			has_game_rule = hard_difficulty
+			scope:faction.faction_target = {
+				is_ai = yes
+			}
+		}
+		modifier = { # Very Hard
+			desc = "FACTION_REASON_DIFFICULTY_VERY_HARD"
+			add = -150
+			has_game_rule = very_hard_difficulty
+			scope:faction.faction_target = {
+				is_ai = yes
+			}
+		}
+
 		modifier = { # Conquerors
 			desc = "NO_FRIVOLOUS_ACTIVITIES_REASON"
 			add = -85
@@ -208,7 +273,7 @@ peasant_faction = {
 				ai_should_get_conqueror_bonuses = yes
 			}
 		}
-		
+
 		modifier = { # Conquerors
 			desc = "NO_FRIVOLOUS_ACTIVITIES_REASON"
 			add = -150
@@ -233,7 +298,31 @@ peasant_faction = {
 			add = -100
 			has_game_rule = extreme_realm_stability
 		}
-		
+		modifier = {
+			desc = "FACTION_REASON_GAME_RULE_REALM_STABILITY_LESSER"
+			add = 25
+			has_game_rule = lesser_realm_stability_ai_only
+			scope:faction.faction_target = {
+				is_ai = yes
+			}
+		}
+		modifier = {
+			desc = "FACTION_REASON_GAME_RULE_REALM_STABILITY_HIGHER"
+			add = -50
+			has_game_rule = higher_realm_stability_ai_only
+			scope:faction.faction_target = {
+				is_ai = yes
+			}
+		}
+		modifier = {
+			desc = "FACTION_REASON_GAME_RULE_REALM_STABILITY_EXTREME"
+			add = -100
+			has_game_rule = extreme_realm_stability_ai_only
+			scope:faction.faction_target = {
+				is_ai = yes
+			}
+		}
+
 		# Conquerors
 		modifier = {
 			add = -100
@@ -251,6 +340,27 @@ peasant_faction = {
 			exists = joined_faction
 			joined_faction = {
 				faction_is_at_war = yes
+			}
+		}
+		# TGP Dynastic Cycle in Instability phase
+		modifier = {
+			desc = "FACTION_REASON_DYNASTIC_CYCLE_INSTABILITY"
+			add = 25
+			county_opinion < 0
+			scope:faction.faction_target = {
+				top_participant_group:dynastic_cycle ?= {
+					has_participant_group_parameter = dynastic_cycle_more_peasant_factions
+				}
+			}
+		}
+		# Pure Land
+		modifier = {
+			desc = "FACTION_REASON_POPULIST_PEASANT_MORE_LIKELY"
+			add = 25
+			county_opinion < 0
+			faith != scope:faction.faction_target.faith
+			faith = {
+				has_doctrine_parameter = peasant_and_populist_factions_more_common
 			}
 		}
 	}
@@ -275,12 +385,22 @@ peasant_faction = {
 				scope:target = {
 					top_liege = {
 						any_targeting_faction = {
-							faction_is_type = populist_faction
+							faction_type = populist_faction
 							any_faction_county_member = {
 								this.title_province.faith = root.title_province.faith
 							}
 						}
 					}
+				}
+			}
+		}
+		# If a suitable Escalated Faction exists, prefer to join it instead.
+		modifier = {
+			desc = "FACTION_REASON_PREFER_ESCALATED_FACTION"
+			add = -100
+			scope:target = {
+				any_targeting_faction = {
+					faction_type = escalated_peasant_faction
 				}
 			}
 		}
@@ -300,12 +420,18 @@ peasant_faction = {
 		# Ruling Caste
 		modifier = {
 			add = -25
-			NOT = {
-				culture = scope:target.culture
-			}
+			culture != scope:target.culture
 			scope:target.culture = {
 				has_cultural_parameter = peasant_and_populist_factions_less_common
 			}
+		}
+
+		# Defiant Ambushers
+		modifier = {
+			add = 25
+			county_opinion < 0
+			culture != scope:target.culture
+			culture = { has_cultural_parameter = county_peasant_and_populist_factions_more_common }
 		}
 		
 		# Warcraft
@@ -326,14 +452,30 @@ peasant_faction = {
 				is_ai = no
 			}
 		}
-		modifier = { # Very Easy
+		modifier = { # Hard
+			desc = "FACTION_REASON_DIFFICULTY_HARD"
+			add = -50
+			has_game_rule = hard_difficulty
+			scope:target = {
+				is_ai = yes
+			}
+		}
+		modifier = { # Very Hard
+			desc = "FACTION_REASON_DIFFICULTY_VERY_HARD"
+			add = -150
+			has_game_rule = very_hard_difficulty
+			scope:target = {
+				is_ai = yes
+			}
+		}
+		modifier = { # Conquerors
 			add = -150
 			scope:target = {
 				ai_should_get_extreme_conqueror_bonuses = yes
 			}
 		}
 
-		
+
 		# Realm Stability Settings
 		modifier = {
 			add = 25
@@ -347,7 +489,32 @@ peasant_faction = {
 			add = -100
 			has_game_rule = extreme_realm_stability
 		}
-		
+
+		modifier = {
+			desc = "FACTION_REASON_GAME_RULE_REALM_STABILITY_LESSER"
+			add = 25
+			has_game_rule = lesser_realm_stability_ai_only
+			scope:target = {
+				is_ai = yes
+			}
+		}
+		modifier = {
+			desc = "FACTION_REASON_GAME_RULE_REALM_STABILITY_HIGHER"
+			add = -50
+			has_game_rule = higher_realm_stability_ai_only
+			scope:target = {
+				is_ai = yes
+			}
+		}
+		modifier = {
+			desc = "FACTION_REASON_GAME_RULE_REALM_STABILITY_EXTREME"
+			add = -100
+			has_game_rule = extreme_realm_stability_ai_only
+			scope:target = {
+				is_ai = yes
+			}
+		}
+
 		# Conquerors
 		modifier = {
 			add = -100
@@ -357,47 +524,92 @@ peasant_faction = {
 			add = -200
 			scope:target = { ai_should_get_extreme_conqueror_bonuses = yes }
 		}
+		# TGP Dynastic Cycle in Instability phase
+		modifier = {
+			desc = "FACTION_REASON_DYNASTIC_CYCLE_INSTABILITY"
+			add = 25
+			county_opinion < 0
+			scope:target = {
+				top_participant_group:dynastic_cycle ?= {
+					has_participant_group_parameter = dynastic_cycle_more_peasant_factions
+				}
+			}
+		}
+		# Pure Land
+		modifier = {
+			add = 25
+			county_opinion < 0
+			faith != scope:target.faith
+			faith = {
+				has_doctrine_parameter = peasant_and_populist_factions_more_common
+			}
+		}
 	}
 
 	ai_join_score = {
 	}
 
 	can_character_join = {
-		joined_faction = scope:faction
+		custom_tooltip = {
+			text = can_join_escalated_peasant_faction_tt
+			OR = {
+				joined_faction = scope:faction
+				domicile ?= {
+					has_domicile_parameter = can_join_peasant_factions
+				}
+				has_trait = peasant_leader
+			}
+		}
 	}
 
 	can_county_join = {
-		# # Peasants can only join a faction against their direct liege. Unless their liege is Byzantium trying to restore the Roman Empire, then they go for the emperor
-		# trigger_if = {
-		# 	limit = { 
-		# 		scope:faction.faction_target = { ep3_restored_rome_hard_mode_trigger = yes }
-		# 	}
-		# 	holder.top_liege = scope:faction.faction_target
-		# }
-		# trigger_else = { holder = scope:faction.faction_target }
-		always = yes
+		# Peasants can only join a faction against their direct liege. Unless their liege is Byzantium trying to restore the Roman Empire, then they go for the emperor
+		trigger_if = {
+			limit = { 
+				scope:faction.faction_target = {
+					#OR = { #Warcraft
+						#ep3_restored_rome_hard_mode_trigger = yes
+						has_variable = peasant_war_escalates
+					#}
+				}
+			}
+			holder.top_liege = scope:faction.faction_target
+		}
+		trigger_else = { holder = scope:faction.faction_target }
+
+		title_province = {
+			NOR = {
+				has_holding_type = nomad_holding
+				has_holding_type = herder_holding
+			}
+		}
 	}
 
 	can_county_create = {
-		# # Peasants can only join a faction against their direct liege. Unless their liege is Byzantium trying to restore the Roman Empire, then they go for the emperor
-		# trigger_if = {
-		# 	limit = { 
-		# 		scope:target = { ep3_restored_rome_hard_mode_trigger = yes }
-		# 	}
-		# 	holder.top_liege = scope:target
-		# }
-		# trigger_else = { holder = scope:target }
-		
+		# Peasants can only join a faction against their direct liege. Unless their liege is Byzantium trying to restore the Roman Empire, then they go for the emperor
+		trigger_if = {
+			limit = {
+				scope:target = {
+					#OR = {#Warcraft
+						#ep3_restored_rome_hard_mode_trigger = yes
+						has_variable = peasant_war_escalates
+					#}
+				}
+			}
+			holder.top_liege = scope:target
+		}
+		trigger_else = { holder = scope:target }
+
 		scope:target = {
 			NAND = {
 				is_ai = yes
-				OR = {
-					has_trait = greatest_of_khans
-					has_character_modifier = the_great_khan_modifier
-				}
+				#OR = {
+				#	has_trait = greatest_of_khans
+				#	has_character_modifier = the_great_khan_modifier
+				#}
 			}
 		}
-		
+
 		####
 		# BLOCKERS
 		####
@@ -406,6 +618,13 @@ peasant_faction = {
 			text = character_is_immune_to_factions
 			subject = scope:target
 			NOT = { scope:target = { immune_to_factions_trigger = yes } }
+		}
+
+		title_province = {
+			NOR = {
+				has_holding_type = nomad_holding
+				has_holding_type = herder_holding
+			}
 		}
 	}
 
@@ -438,7 +657,7 @@ peasant_faction = {
 			remove_variable = ep3_governor_yearly_8150_ignored
 		}
 
-		# # If the target is Restoring Rome, the faction gets a military boon
+		# If the target is Restoring Rome, the faction gets a military boon
 		# if = {
 		# 	limit = {
 		# 		root.faction_target = { ep3_restored_rome_hard_mode_trigger = yes }
@@ -485,6 +704,40 @@ peasant_faction = {
 		# 		}
 		# 	}
 		# }
+		else = {
+			root.faction_leader = {
+				spawn_army = {
+					name = peasant_leader_army_name
+					men_at_arms = {
+						type = pikemen_militia
+						stacks = {
+						    value = root.faction_leader.location.county.county_levies_to_raise
+						    divide = 100
+						    multiply = {
+						        value = "root.faction_leader.has_trait_xp(peasant_leader)"
+						        multiply = 0.05
+						    }
+							round = yes
+						    min = 1
+						}
+					}
+					men_at_arms = {
+						type = torch_bearers
+						stacks = {
+							value = "root.faction_leader.has_trait_xp(peasant_leader)"
+							multiply = 0.1
+							round = yes
+							min = 1
+						}
+					}
+					war = root.faction_war
+					location = root.faction_leader.location
+					origin = root.faction_leader.location
+					inheritable = no
+					war_keep_on_attacker_victory = yes
+				}
+			}
+		}
 	}
 
 	leader_leaves = {
@@ -502,12 +755,18 @@ peasant_faction = {
 
 	county_power = {
 		value = county_levies_to_raise
-		# if = {
+		# if = { Warcraft
 		# 	limit = {
 		# 		scope:faction.faction_target = { ep3_restored_rome_hard_mode_trigger = yes }
 		# 	}
 		# 	multiply = 2
 		# }
+		if = {
+			limit = {
+				faith = { has_doctrine_parameter = peasant_and_populist_factions_more_common }
+			}
+			multiply = 1.5
+		}
 	}
 
 	character_allow_create = no
