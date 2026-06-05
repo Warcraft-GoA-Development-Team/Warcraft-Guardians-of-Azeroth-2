@@ -30,4 +30,4 @@ replace_path="common/bookmark_portraits"
 replace_path="common/bookmarks"
 replace_path="gfx/interface/illustrations/loading_screens"
 
-supported_version="1.19.0.5"
+supported_version="1.19.0.6"
