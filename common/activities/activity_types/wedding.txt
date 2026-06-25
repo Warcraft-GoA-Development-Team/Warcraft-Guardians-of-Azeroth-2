@@ -42,9 +42,11 @@
 				#That someone and their betrothed are alive and adults and can marry
 				var:promised_grand_wedding_marriage_countdown = {
 					is_valid_grand_wedding_special_guest_trigger = { OTHER_SPOUSE = root.var:promised_grand_wedding_marriage_countdown.betrothed }
+					NOT = { any_invited_activity = {} }
 				}
 				var:promised_grand_wedding_marriage_countdown.betrothed = {
 					is_valid_grand_wedding_special_guest_trigger = { OTHER_SPOUSE = root.var:promised_grand_wedding_marriage_countdown }
+					NOT = { any_invited_activity = {} }
 				}
 			}
 		}
@@ -68,12 +70,7 @@
 					scope:activity.var:spouse_2_var = {
 						is_alive = no
 					}
-					scope:activity = { #you're in a murder wedding
-						has_activity_option = { 
-							category = special_type 
-							option = wedding_type_bloody
-						}
-					}
+					is_bloody_wedding = yes
 				}
 			}
 		}
@@ -129,12 +126,7 @@
 					is_ai = no
 					AND = {
 						is_alive = no
-						scope:activity = { #you're in a murder wedding
-							has_activity_option = { 
-								category = special_type 
-								option = wedding_type_bloody
-							}
-						}
+						is_bloody_wedding = yes
 					}
 				}
 			}
@@ -181,8 +173,7 @@
 				scope:activity = {
 					has_variable = wedding_invalidated_said_no
 				}
-				exists = scope:spouse_1
-				scope:spouse_1 = { is_alive = yes }
+				scope:spouse_1 ?= { is_alive = yes }
 			}		
 			scope:spouse_1 = { trigger_event = ep2_wedding.0152 }
 		}
@@ -251,12 +242,8 @@
 						scope:activity.var:spouse_2_var ?= {
 							is_alive = no
 						}
-						scope:activity = { #you're not in a murder wedding
-							has_activity_option = { 
-								category = special_type 
-								option = wedding_type_normal
-							}
-						}
+						#you're not in a murder wedding
+						is_bloody_wedding = no
 					}
 				}
 			}
@@ -487,6 +474,30 @@
 				}
 			}
 		}
+
+		if = {
+			limit = { var:officiant ?= { is_alive = yes } }
+			var:officiant = {
+				if = {
+					limit = { has_character_flag = need_priest_outfit }
+					remove_character_flag = need_priest_outfit
+				}
+				if = {
+					limit = { has_character_flag = officiant }
+					remove_character_flag = officiant
+				}
+			}
+		}
+		scope:host = { #In case of bloody wedding, run the variable cleanup event
+			trigger_event = { #cleans up the variables with enough delay for the guest events
+				id = ep2_wedding.0958
+				days = 7
+			}
+		}
+
+		scope:host = {
+			clean_grand_wedding_betrothal_variables = yes
+		}
 	}
 
 	on_host_death = {
@@ -495,9 +506,15 @@
 		# Make the player heir the new host if attending (unless it was the host's wedding!)
 		if = {
 			limit = {
-				exists = scope:host.player_heir
-				scope:host.player_heir = {
-					involved_activity = scope:activity
+				scope:host.player_heir ?= {
+					OR = {
+						involved_activity ?= scope:activity
+						AND = {
+							location = scope:activity.activity_location
+							is_available_allow_travelling = yes
+							NOT = { exists = involved_activity }
+						}
+					}
 				}
 				scope:host = {
 					NOR = {
@@ -506,9 +523,27 @@
 					}
 				}
 			}
-			scope:host.player_heir = { save_scope_as = new_host }
+			scope:host.player_heir = {
+				save_scope_as = new_host
+				if = {
+					limit = { NOT = { exists = involved_activity } }
+					add_to_activity = scope:activity
+				}
+			}
 		}
-		# Otherwise, spouse_1 takes over
+		else_if = {
+			limit = {
+				scope:spouse_1 = { is_landed_or_landless_administrative = yes }
+			}
+			scope:spouse_1 = { save_scope_as = new_host }
+		}
+		else_if = {
+			limit = {
+				scope:spouse_2 = { is_landed_or_landless_administrative = yes }
+			}
+			scope:spouse_2 = { save_scope_as = new_host }
+		}
+		# Otherwise, spouse_1 takes over (and invalidate at once)
 		else = {
 			scope:spouse_1 = { save_scope_as = new_host }
 		}
@@ -591,14 +626,14 @@
 				value = 100
 				desc = "Leisure Palace"
 			}
-		}# Warcraft
-		# else_if = {
-		# 	limit = { has_building = pleasure_dome }
-		# 	add = {
-		# 		value = 100
-		# 		desc = "Pleasure Dome"
-		# 	}
-		# }		
+		}
+		else_if = {
+			limit = { has_building = pleasure_dome }
+			add = {
+				value = 100
+				desc = "Pleasure Dome"
+			}
+		}		
 		if = {
 			limit = { barony = { is_holy_site_of = scope:host.faith } }
 			add = {
@@ -606,6 +641,14 @@
 				desc = "Holy Site"
 			}
 		}
+		#Kizuki Taisha
+		#if = {
+		#	limit = { has_building = izumo_taisha_01 }
+		#	add = {
+		#		value = 30
+		#		desc = "Kizuki Taisha"
+		#	}
+		#}
 	}
 
 	max_province_icons = 5
@@ -644,15 +687,20 @@
 			limit = { has_building = leisure_palace_03 }
 			add = 125
 		}
-		#else_if = {
-		#	limit = { has_building = pleasure_dome }
-		#	add = 125
-		#}		
+		else_if = {
+			limit = { has_building = pleasure_dome }
+			add = 125
+		}		
 		# Holy Site
 		if = {
 			limit = { barony = { is_holy_site_of = scope:host.faith } }
 			add = 75
 		}
+		#Kizuki Taisha
+		#if = {
+		#	limit = { has_building = izumo_taisha_01 }
+		#	add = 30
+		#}
 	}
 
 	province_description = {
@@ -684,9 +732,13 @@
 			trigger = { has_building = leisure_palace_03 }
 			desc = province_desc_wedding_palace_3
 		}
+		triggered_desc = {
+			trigger = { has_building = pleasure_dome }
+			desc = province_desc_wedding_pleasure_dome
+		}
 		#triggered_desc = {
-		#	trigger = { has_building = pleasure_dome }
-		#	desc = province_desc_wedding_pleasure_dome
+		#	trigger = { has_building = izumo_taisha_01  }
+		#	desc = province_desc_wedding_izumo_taisha
 		#}
 		triggered_desc = {
 			trigger = { barony = { is_holy_site_of = scope:host.faith } }
@@ -1082,7 +1134,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 20
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1100,7 +1152,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 20
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1183,7 +1235,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 60
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1199,7 +1251,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 60
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1295,7 +1347,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 180
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1311,7 +1363,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 180
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1391,7 +1443,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 20
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1407,7 +1459,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 20
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1490,7 +1542,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 60
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1506,7 +1558,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 60
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1607,7 +1659,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 180
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1623,7 +1675,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 180
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1703,7 +1755,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 40
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1719,7 +1771,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 40
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1802,7 +1854,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 120
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1818,7 +1870,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 120
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1904,7 +1956,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 360
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								multiply = {
 									value = ep2_activities_legacy_2_grand_weddings_discount_value
 									desc = ep2_activities_legacy_track
@@ -1920,7 +1972,7 @@
 							name = gwedding_refund_pot
 							add = {
 								value = 360
-								multiply = activity_cost_scale_by_era
+								multiply = scope:host.activity_cost_scale_by_era
 								desc = wedding_entertainment_normal
 							}
 						}
@@ -1978,105 +2030,32 @@
 					scope:host = { trigger_event = ep2_wedding.0101 }
 				}
 				else = { trigger_event = ep2_wedding.0100 }
-				# Accolade stuff
 				if = {
-					limit = {
-						this = scope:host
-						any_active_accolade = {
-							accolade_parameter = accolade_party_fertility
-						}
-					}
-					add_character_modifier = {
-						modifier = accolade_charmer_party_modifier
-					}
-				}
-				if = {
-					limit = {
-						this = scope:host
-						any_active_accolade = {
-							accolade_parameter = accolade_party_fertility_high
-						}
-					}
-					add_character_modifier = {
-						modifier = accolade_charmer_party_high_modifier
-					}
-				}
-				if = {
-					limit = {
-						exists = scope:host.faith.religious_head
-						scope:host.faith.religious_head = {
-							NOR = {
-								this = scope:activity.special_guest:spouse_1
-								this = scope:activity.special_guest:spouse_2
+					limit = { this = scope:host }
+					# Accolade stuff
+					if = {
+						limit = {
+							any_active_accolade = {
+								accolade_parameter = accolade_party_fertility
 							}
 						}
-						scope:activity = {
-							any_attending_character = {
-								this = scope:host.faith.religious_head
-							}
+						add_character_modifier = {
+							modifier = accolade_charmer_party_modifier
 						}
-					}
-					scope:host.faith.religious_head = { save_scope_as = officiant }
-				}
-				else_if = {
-					limit = {
-						scope:host != scope:activity.special_guest:spouse_1
-					}
-					scope:host = { save_scope_as = officiant }
-				}
-				else_if = {
-					limit = {
-						exists = scope:host.cp:councillor_court_chaplain
-						scope:activity = {
-							any_attending_character = {
-								this = scope:host.cp:councillor_court_chaplain
-							}
-						}
-					}
-					scope:host.cp:councillor_court_chaplain = { save_scope_as = officiant }
-				}
-				else_if = {
-					limit = {
-						NOT = { scope:host.faith = { has_doctrine = doctrine_theocracy_lay_clergy } }
 					}
 					if = {
 						limit = {
-							NOT = {
-								scope:activity = {
-									any_attending_character = {
-										is_ai = no
-									}
-								}
-							}
-							any_pool_character = {
-								province = scope:activity.activity_location
-								is_physically_able_ai_adult = yes
-								faith = scope:host.faith
-								can_be_clergy_due_to_gender_trigger = yes
+							any_active_accolade = {
+								accolade_parameter = accolade_party_fertility_high
 							}
 						}
-						random_pool_character = {
-							province = scope:activity.activity_location
-							limit = {
-								is_physically_able_ai_adult = yes
-								faith = scope:host.faith
-								can_be_clergy_due_to_gender_trigger = yes
-							}
-							save_scope_as = officiant
+						add_character_modifier = {
+							modifier = accolade_charmer_party_high_modifier
 						}
 					}
-					else = {
-						create_character = {
-							template = priest_character_template
-							dynasty = none
-							location = scope:host.location
-							save_scope_as = officiant
-						}
-					}
+					wedding_assign_officiant_effect = yes
 				}
-				scope:officiant ?= {
-					add_character_flag = officiant
-				}
+
 				# Fires the conclusion events for every attendee, and advance to next phase, with a delay of 2 months
 				trigger_event = {
 					on_action = wedding_ceremony_ending_event_pulse
@@ -2118,17 +2097,12 @@
 
 					if = {
 						limit = {
-							scope:activity = {
-								has_activity_option = { 
-									category = special_type 
-									option = wedding_type_bloody
-								}
-							}
+							is_bloody_wedding = yes
 						}
 						
 						if = { #if you have the wedding night kill we progress to that
 							limit = {
-								has_variable = bloody_wedding_murder_spouse_var
+								var:bloody_wedding_murder ?= flag:spouse
 							}
 							scope:activity = { progress_activity_phase_after = { months = 2 } }
 						}
@@ -2183,13 +2157,8 @@
 				if = {
 					limit = {
 						OR = {
-							scope:activity = {
-								has_activity_option = { 
-									category = special_type 
-									option = wedding_type_normal
-								}
-							}
-							scope:host = { has_variable = bloody_wedding_murder_spouse_var }
+							is_bloody_wedding = no
+							scope:host = { var:bloody_wedding_murder ?= flag:spouse }
 						}
 					}
 					trigger_event = ep2_wedding.0300
@@ -2204,57 +2173,34 @@
 				# Bloody Wedding only has a murder event, no regular wnight
 				if = {
 					limit = {
-						scope:activity = {
-							has_activity_option = { 
-								category = special_type 
-								option = wedding_type_bloody
-							}
-						}
+						is_bloody_wedding = yes
 					}
 					if = {
 						limit = {
 							scope:host = scope:activity.special_guest:spouse_1 #if you're the spouse
-							scope:host = { has_variable = bloody_wedding_murder_spouse_var } #and you've chosen to kill them during the wedding night
+							scope:host = { var:bloody_wedding_murder ?= flag:spouse } #and you've chosen to kill them during the wedding night
 						}
 						scope:host = { trigger_event = ep2_wedding.3060 }
 					}
 				}
 				# For a regular wedding
-				# Fires only for the spouses
-				if = {
-					limit = {
-						OR = {
-							scope:activity = {
-								has_activity_option = { 
-									category = special_type 
-									option = wedding_type_normal
-								}
+				else = {
+					# Fires only for the spouses
+					if = {
+						limit = {
+							OR = {
+								root = scope:activity.special_guest:spouse_1
+								root = scope:activity.special_guest:spouse_2
 							}
-							scope:host = { has_variable = bloody_wedding_backed_down_var }
 						}
-						OR = {
-							root = scope:activity.special_guest:spouse_1
-							root = scope:activity.special_guest:spouse_2
+						trigger_event = {
+							on_action = wedding_wnight_spouse_event_pulse
 						}
 					}
-					trigger_event = {
-						on_action = wedding_wnight_spouse_event_pulse
+					# Fires for the guests and host
+					else = {
+						trigger_event = { on_action = wedding_wnight_ongoing_event_pulse }
 					}
-				}
-				# Fires for the guests
-				else_if = {
-					limit = {
-						OR = {
-							scope:activity = {
-								has_activity_option = { 
-									category = special_type 
-									option = wedding_type_normal
-								}
-							}
-							scope:host = { has_variable = bloody_wedding_backed_down_var }
-						}
-					}
-					trigger_event = { on_action = wedding_wnight_ongoing_event_pulse }
 				}
 			}
 
@@ -2702,7 +2648,7 @@
 						scope:host.faith.religious_head = {
 							is_close_or_extended_family_of = scope:activity.special_guest:spouse_2
 							this != scope:host
-							is_close_family_or_spouse_of_root_trigger = no
+							NOT = { is_close_family_or_spouse_trigger = { CHARACTER = scope:host } }
 						}
 					}
 				}
@@ -2786,11 +2732,8 @@
 		# Remove the wedding reward for Bloody Weddings
 		if = {
 			limit = {
+				is_bloody_wedding = yes
 				scope:activity = {
-					has_activity_option = { 
-						category = special_type 
-						option = wedding_type_bloody
-					}
 					activity_location.county = {
 						has_county_modifier = ruler_married_here_county_modifier
 					}
@@ -2803,19 +2746,13 @@
 		# Clean up for murder host / guests
 		if = {
 			limit = {
-				scope:activity = {
-					has_activity_option = { 
-						category = special_type 
-						option = wedding_type_bloody
-					}
-				}
-				scope:host = {
-					#You haven't failed/backed down
-					NOR = {
-						has_variable = bloody_wedding_backed_down_var
-						has_variable = bloody_murder_fail
-					}
-				}
+				is_successful_bloody_wedding = yes
+			}
+			scope:activity.special_guest:spouse_1 = {
+				save_scope_as = spouse_1
+			}
+			scope:activity.special_guest:spouse_2 = {
+				save_scope_as = spouse_2
 			}
 			if = {
 				limit = {
@@ -2855,21 +2792,56 @@
 			}
 			remove_character_modifier = accolade_charmer_party_high_modifier
 		}
-
+		if = {
+			limit = {
+				this = scope:host
+			}
+			random_knight = {
+				limit = {
+					can_unlock_accolade_attribute_trigger = {
+						ATTRIBUTE = politicker
+					}
+				}
+				weight = {
+					base = 1
+					modifier = {
+						add = 50
+						is_acclaimed = yes
+					}
+					modifier = {
+						add = 50
+						involved_activity ?= scope:activity
+					}
+				}
+				save_scope_as = accolade_knight
+				liege = {
+					save_scope_as = accolade_liege
+					set_variable = {
+						name = accolade_progress
+						value = 0
+					}
+					send_interface_message = {
+						type = msg_accolade_eligibility
+						title = accolade_politicker_unlock.t_wedding
+						left_icon = scope:accolade_knight
+						right_icon = scope:accolade_liege
+						custom_tooltip = accolade_politicker_unlock.tt
+						scope:accolade_knight = {
+							set_variable = {
+								name = politicker_attribute_unlock
+								value = yes
+							}
+						}
+					}
+				}
+			}
+		}
 		# Rewards for Bloody Weddings given out in event ep2_wedding.0955
 			
 		# Rewards for Normal Weddings
 		if = {
 			limit = {
-				OR = {
-					scope:activity = {
-						has_activity_option = { 
-							category = special_type 
-							option = wedding_type_normal
-						}
-					}
-					scope:host = { has_variable = bloody_wedding_backed_down_var } #you've backed down from a Red Wedding
-				}
+				is_bloody_wedding = no
 			}
 			if = {
 				limit = {
@@ -2974,16 +2946,7 @@
 					limit = {
 						exists = global_var:started_black_dinner_achievement
 						is_ai = no
-						scope:activity = {
-							has_activity_option = {
-								category = special_type
-								option = wedding_type_bloody
-							}
-						}
-						NOR = {
-							has_variable = bloody_murder_fail
-							has_variable = bloody_wedding_backed_down_var
-						}
+						is_successful_bloody_wedding = yes
 					}
 					set_global_variable = {
 						name = finished_black_dinner_achievement
@@ -2994,22 +2957,16 @@
 		}
 		# Free the officiant!
 		if = {
-			limit = { exists = scope:officiant }
-			scope:officiant = {
-				if = {
-					limit = { has_character_flag = need_priest_outfit }
-					remove_character_flag = need_priest_outfit
-				}
-				if = {
-					limit = { has_character_flag = officiant }
-					remove_character_flag = officiant
-				}
+			limit = { has_character_flag = officiant }
+			if = {
+				limit = { has_character_flag = need_priest_outfit }
+				remove_character_flag = need_priest_outfit
 			}
+			remove_character_flag = officiant
 		}
 	}
 
 	### Graphics
-	activity_group_type = grand
 
 	map_entity = {
 		trigger = {

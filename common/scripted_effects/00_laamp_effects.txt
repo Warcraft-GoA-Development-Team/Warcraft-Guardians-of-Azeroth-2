@@ -49,7 +49,7 @@ populate_location_with_contracts_effect = {
 		limit = {
 			# The AI have their own system for getting contracts.
 			trigger_if = {
-				limit = { is_landless_adventurer = yes }
+				limit = { has_government = landless_adventurer_government }
 				is_ai = no
 			}
 			lock_contracts_from_spawning_in_sahara_trigger = yes
@@ -181,7 +181,7 @@ spawn_join_war_contracts_effect = {
 					task_contract_employer = scope:defender
 					task_contract_type = laamp_join_war_contract
 					task_contract_tier = scope:defender.task_contract_tier_value
-					location = scope:defender.location
+					location = scope:defender.default_location
 					save_scope_as = new_contract_defender
 				}
 			}
@@ -224,7 +224,7 @@ spawn_join_war_contracts_effect = {
 					task_contract_employer = scope:attacker
 					task_contract_type = laamp_join_war_contract
 					task_contract_tier = scope:attacker.task_contract_tier_value
-					location = scope:attacker.location
+					location = scope:attacker.default_location
 					save_scope_as = new_contract_attacker
 				}
 			}
@@ -274,7 +274,7 @@ spawn_join_war_contracts_effect = {
 						task_contract_employer = scope:attacker
 						task_contract_type = laamp_join_war_contract
 						task_contract_tier = scope:attacker.task_contract_tier_value
-						location = scope:attacker.location
+						location = scope:attacker.default_location
 						save_scope_as = new_contract_attacker
 					}
 				}
@@ -314,7 +314,7 @@ spawn_join_war_contracts_effect = {
 						task_contract_employer = scope:defender
 						task_contract_type = laamp_join_war_contract
 						task_contract_tier = scope:defender.task_contract_tier_value
-						location = scope:defender.location
+						location = scope:defender.default_location
 						save_scope_as = new_contract_defender
 					}
 				}
@@ -422,53 +422,90 @@ laamp_rewards_disburse_ordinary_currency_effect = {
 		}
 		if = {
 			limit = { scope:gold != 0 }
-			# We pay players directly.
+			# for wanua we take barter goods first if they donn't have enough gold
 			if = {
 				limit = {
-					scope:taker = { is_ai = no }
+					government_allows = barter
+					barter_goods > 0
+					gold < scope:gold
 				}
-				if = {
-					limit = {
-						scope:task_contract = {
-							is_criminal = yes
-						}
-					}
-					pay_short_term_gold = {
-						target = scope:taker
-						gold = scope:gold
-					}
-				}
-				else = {
-					pay_treasury_or_gold = {
-						target = scope:taker
+				save_scope_value_as = {
+					name = barter
+					value = {
 						value = scope:gold
+						divide = define:NBarter|BARTER_GOODS_TO_LOOT_MULT
+						max = barter_goods
+					}
+				}
+				# pay it at once
+				scope:taker = {
+					add_gold = {
+						value = scope:barter
+						multiply = define:NBarter|BARTER_GOODS_TO_LOOT_MULT
+					}
+				}
+				remove_barter_goods = scope:barter
+				save_scope_value_as = {
+					name = gold
+					value = {
+						value = scope:gold
+						subtract = {
+							value = scope:barter
+							multiply = define:NBarter|BARTER_GOODS_TO_LOOT_MULT
+						}
 					}
 				}
 			}
-			# Otherwise only deduct gold if the AI can afford it.
-			else_if = {
-				limit = { short_term_treasury_or_gold >= $GOLD$ }
+			if = {
+				limit = { scope:gold > 0 }
+				# We pay players directly.
 				if = {
 					limit = {
-						scope:task_contract = {
-							is_criminal = yes
+						scope:taker = { is_ai = no }
+					}
+					if = {
+						limit = {
+							scope:task_contract = {
+								is_criminal = yes
+							}
+						}
+						pay_short_term_gold = {
+							target = scope:taker
+							gold = scope:gold
 						}
 					}
-					pay_short_term_gold = {
-						target = scope:taker
-						gold = scope:gold
+					else = {
+						pay_treasury_or_gold = {
+							target = scope:taker
+							value = scope:gold
+						}
 					}
 				}
+				# Otherwise only deduct gold if the AI can afford it.
+				else_if = {
+					limit = { short_term_treasury_or_gold >= $GOLD$ }
+					if = {
+						limit = {
+							scope:task_contract = {
+								is_criminal = yes
+							}
+						}
+						pay_short_term_gold = {
+							target = scope:taker
+							gold = scope:gold
+						}
+					}
+					else = {
+						pay_treasury_or_gold = {
+							target = scope:taker
+							value = scope:gold
+						}
+					}
+				}
+				# Else we magic the gold up so we don't bankrupt people foolishly.
 				else = {
-					pay_treasury_or_gold = {
-						target = scope:taker
-						value = scope:gold
-					}
+					scope:taker = { add_gold = scope:gold }
 				}
-			}
-			# Else we magic the gold up so we don't bankrupt people foolishly.
-			else = {
-				scope:taker = { add_gold = scope:gold }
 			}
 		}
 	}
@@ -1190,6 +1227,446 @@ laamp_clear_domicile_buildings_effect = {
 			remove_domicile_building = camp_perimeter_01
 		}
 	}
+}
+
+laamp_clear_domicile_buildings_liquidator_effect = {
+	save_scope_as = liquidator
+	set_variable = {
+		name = liquidation_proceeds
+		value = 0
+	}
+	domicile ?= {
+		if = {
+			limit = { has_domicile_building = camp_main_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_main_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_main_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_main_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_main_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_main_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_main_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_main_value_1 } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_sutler }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_mender }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_smithy }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_arsenal }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_reserve_provisions }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_reserve_water }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_climbing_gear }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_subdued_gear }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_06 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_6 } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_05 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_5 } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = supply_tent_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_1 } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_surgeons_tools }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_dentists_tools }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_torturers_tools }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_reference_corpus }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_morticians_tools }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_06 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_6 } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_05 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_5 } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = barber_tent_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_1 } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_ample_steeds }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_porters }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_trackers }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_kennel }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_siege_engineers }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_shrine }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_scribes }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_bartering_grounds }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_proof_of_claims }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_ransom_cages }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_negotiators }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_ascetics }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_pleasure_tents }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_06 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_6 } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_05 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_5 } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = baggage_train_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_1 } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_herbalists }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_brewers }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_curers }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_bakers }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_cooks }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_06 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_6 } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_05 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_5 } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = mess_tent_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_1 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_trailing_musicians }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_wandering_poets }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_capering_fools }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_libations_for_the_lost }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_local_hangers_on }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_future_dreams }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_nightly_debates }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_juicy_rumors }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_06 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_6 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_05 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_5 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_fire_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_1 } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_horse_run }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_camel_run }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_elephantry_reserve }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_nightly_barding_drills }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_life_in_the_saddle }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_the_stump }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_personal_bouts }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_training_circle }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_mock_battle_drills }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_lockwagon }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_martial_study }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_the_stick_game }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_bodyguard_drills }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_06 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_6 } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_05 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_5 } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = proving_grounds_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_1 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_good_siting }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_fixed_layout }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_extra_watch }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_palisade }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_ditch }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_camp_hygiene }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_internal_value } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_06 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_6 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_05 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_5 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_04 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_4 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_03 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_3 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_02 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_2 } }
+		}
+		if = {
+			limit = { has_domicile_building = camp_perimeter_01 }
+			scope:liquidator = { change_variable = { name = liquidation_proceeds add = liquidate_camp_external_value_1 } }
+		}
+	}
+	hidden_effect = {
+		if = {
+			limit = {
+				exists = var:liquidation_proceeds
+				var:liquidation_proceeds != 0
+			}
+			send_interface_toast = {
+				type = event_toast_effect_neutral
+				title = destroy_laamp_effect.tt.domicile_liquidated_title
+				add_gold = var:liquidation_proceeds
+			}
+		}
+	}
+	remove_variable = liquidation_proceeds
 }
 
 ##################################################

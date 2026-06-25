@@ -191,7 +191,7 @@ ConstantBuffer( 5 )
 	int			TotalDecalCount;
 	int 		_; // Alignment
 
-	float4 		PatternColorOverrides[16];
+	float4 		PatternColorOverrides[64];
 	float4		CoaColor1;
 	float4		CoaColor2;
 	float4		CoaColor3;
@@ -326,6 +326,8 @@ PixelShader =
 			float3 EmissiveColor = vec3(0.0f);
 			float EmissiveMask =  Properties.r;
 			#ifdef EMISSIVE
+
+				float EmissiveStrength = 1.0f;
 				EmissiveColor = Diffuse.rgb * EmissiveMask * MaterialProps._DiffuseColor * 5.0f;
 				Color += EmissiveColor;
 
@@ -894,6 +896,13 @@ Effect portrait_skin_faceShadow
 }
 
 Effect portrait_eye
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_eye"
+	Defines = { "DECALS" }
+}
+
+Effect wc_emissive_portrait_eye
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_eye"

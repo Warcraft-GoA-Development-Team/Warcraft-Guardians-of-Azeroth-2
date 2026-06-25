@@ -76,7 +76,7 @@ on_declared_war = {
 				}
 				remove_list_variable = {
 					name = bought_truce_list
-					target = scope:recipient
+					target = scope:defender
 				}
 			}
 
@@ -198,7 +198,7 @@ on_declared_war = {
 						has_dlc_feature = friends_and_foes
 						exists = scope:attacker.house.house_head
 						exists = scope:defender.house.house_head
-						NOT = { scope:attacker.house = scope:defender.house}
+						scope:attacker.house != scope:defender.house
 					}
 					house_feud_start_effect = {
 						#Feuding House Head
@@ -214,7 +214,7 @@ on_declared_war = {
 					}
 				}
 				#Then remove promise
-				remove_variable = promised_grand_wedding_marriage_countdown
+				clean_grand_wedding_betrothal_variables = yes
 			}
 			every_close_family_member = {
 				limit = {
@@ -401,6 +401,24 @@ on_declared_war = {
 			}
 		}
 	}
+	if = {
+		limit = {
+			scope:defender = {
+				this = top_liege
+				government_has_flag = government_is_celestial
+				highest_held_title_tier >= tier_empire
+			}
+			scope:attacker = {
+				government_has_flag = government_is_celestial
+			}
+		}
+		scope:defender = {
+			add_opinion = {
+				target = scope:attacker
+				modifier = impugned_my_sovereignty
+			}
+		}
+	}
 	
 	scope:attacker = {
 		if = {
@@ -568,7 +586,7 @@ conquest_cb_title_transfer = {
 			# Flag this character to be vassalized instead of usurped.
 			add_to_list = vassals_taken
 
-			# Remove the counties this vassal holds from the siezed title list (the vassal gets to keep their land when switching allegiance!)
+			# Remove the counties this vassal holds from the seized title list (the vassal gets to keep their land when switching allegiance!)
 			every_sub_realm_county = {
 				remove_from_list = titles_taken
 			}
@@ -668,7 +686,7 @@ expansion_cb_title_transfer = {
 			# Flag this character to be vassalized instead of usurped.
 			add_to_list = vassals_taken
 
-			# Remove the counties this vassal holds from the siezed title list (the vassal gets to keep their land when switching allegiance!)
+			# Remove the counties this vassal holds from the seized title list (the vassal gets to keep their land when switching allegiance!)
 			every_sub_realm_county = {
 				remove_from_list = titles_taken
 			}
@@ -744,7 +762,7 @@ expedition_cb_title_transfer = {
 			# Flag this character to be vassalized instead of usurped.
 			add_to_list = vassals_taken
 
-			# Remove the counties this vassal holds from the siezed title list (the vassal gets to keep their land when switching allegiance!)
+			# Remove the counties this vassal holds from the seized title list (the vassal gets to keep their land when switching allegiance!)
 			every_sub_realm_county = {
 				remove_from_list = titles_taken
 			}
@@ -820,7 +838,7 @@ struggle_cb_title_transfer = {
 			# Flag this character to be vassalized instead of usurped.
 			add_to_list = vassals_taken
 
-			# Remove the counties this vassal holds from the siezed title list (the vassal gets to keep their land when switching allegiance!)
+			# Remove the counties this vassal holds from the seized title list (the vassal gets to keep their land when switching allegiance!)
 			every_held_county = {
 				remove_from_list = titles_taken
 			}
@@ -2195,7 +2213,12 @@ add_prestige_war_defender_effect = {
 
 pay_short_term_gold_reparations_effect = {
 	if = {
-		limit = { has_government = landless_adventurer_government }
+		limit = { 
+			OR = {
+				has_government = landless_adventurer_government
+				monthly_character_income <= 0 # accommodate for reparations by characters without income, like viking conquerors
+			}
+		}
 		pay_short_term_gold = {
 			gold = {
 				value = medium_gold_value
@@ -2285,30 +2308,25 @@ allies_progress_towards_friendship_effect = {
 					name = joined_as_ally
 					target = scope:war
 				}
+				save_temporary_scope_as = ally_temp
+				scope:war = {
+					war_contribution = {
+						target = scope:ally_temp
+						value > 0
+					}	
+				}
 			}
 			if = {
-				limit = {
-					is_defender_in_war = scope:war						
-				}
-				scope:defender = {
-					save_scope_as = actor
-				}
+				limit = { is_defender_in_war = scope:war }
+				scope:defender = { save_scope_as = actor }
 			}
 			else = {
-				scope:attacker = {
-					save_scope_as = actor
-				}
+				scope:attacker = { save_scope_as = actor }
 			}
 			save_scope_as = ally
-			if = {
+			if = { # if war leader is AI, directly increase friendship
 				limit = {
-					is_ai = yes
-					scope:war = {
-						war_contribution = {
-							target = scope:ally
-							value > 0
-						}	
-					}
+					scope:actor = { is_ai = yes } 
 				}
 				scope:actor = {
 					progress_towards_friend_effect = {
@@ -2318,7 +2336,7 @@ allies_progress_towards_friendship_effect = {
 					}
 				}
 			}
-			else = {
+			else = { # otherwise create potential  friendship
 				hidden_effect = { #To nudge friendship
 					scope:actor = {
 						if = {
@@ -2627,7 +2645,7 @@ commander_trait_leveling_leveling_effect = {
 	if = { # Peasant Leader fighting non peasants
 		limit = {
 			has_trait = peasant_leader
-			root.enemy_side.side_commander = {
+			root.enemy_side.side_commander ?= {
 				is_lowborn = no
 			}
 		}
@@ -2659,50 +2677,64 @@ on_ceremonial_claimant_faction_war_win_common = {
 		}
 	}
 
-	# Add mutual opinion bonuses between claimant and faction members, as well as a hook on the claimant if possible.
-	$ATTACKER$.joined_faction = {
-		every_faction_member = {
-			custom = FACTION_CLAIMANT_EVERY_FACTION_MEMBER
-			limit = {
-				NOT = { this = $ATTACKER$.joined_faction.special_character }
-			}
-			hidden_effect = {
-				add_opinion = {
-					modifier = ceremonial_claimant_faction_member_opinion
-					target = $ATTACKER$.joined_faction.special_character
-				}
-				reverse_add_opinion = {
-					modifier = ceremonial_claimant_faction_claimant_opinion
-					target = $ATTACKER$.joined_faction.special_character
-				}
-			}
-			if = {
+	if = { # Demand
+		limit = { exists = $ATTACKER$.joined_faction }
+		$ATTACKER$.joined_faction = {
+			every_faction_member = {
 				limit = {
-					can_add_hook = {
-						type = favor_hook
-						target = $ATTACKER$.joined_faction.special_character
-					}
+					NOT = { this = scope:the_claimant }
 				}
-				add_hook = {
+				add_to_list = supporters
+			}
+		}
+	}
+	else = { # War
+		every_in_list = {
+			list = defenders
+			add_to_list = supporters
+		}
+	}
+
+	# Add mutual opinion bonuses between claimant and faction members, as well as a hook on the claimant if possible.
+	every_in_list = {
+		custom = FACTION_CLAIMANT_EVERY_FACTION_MEMBER
+		list = supporters
+		limit = {
+			NOT = { this = scope:the_claimant }
+		}
+		hidden_effect = {
+			add_opinion = {
+				modifier = ceremonial_claimant_faction_member_opinion
+				target = scope:the_claimant
+			}
+			reverse_add_opinion = {
+				modifier = ceremonial_claimant_faction_claimant_opinion
+				target = scope:the_claimant
+			}
+		}
+		if = {
+			limit = {
+				can_add_hook = {
 					type = favor_hook
-					target = $ATTACKER$.joined_faction.special_character
+					target = scope:the_claimant
 				}
 			}
-			# Warcraft - remove Struggle boost
-			# if = {
-			# 	limit = {
-			# 		culture = $ATTACKER$.joined_faction.special_character.culture
-			# 		any_character_struggle = {
-			# 			involvement = involved
-			# 			has_struggle_phase_parameter = struggle_prestige_install_same_culture_claimant
-			# 		}
-			# 	}
-			# 	add_prestige = major_prestige_gain
-			# }
-			
-			# Save the number of faction members for use further down
-			add_to_list = num_faction_members
+			add_hook = {
+				type = favor_hook
+				target = scope:the_claimant
+			}
 		}
+		# Warcraft - remove Struggle boost
+		#if = {
+		#	limit = {
+		#		culture = scope:the_claimant.culture
+		#		any_character_struggle = {
+		#			involvement = involved
+		#			has_struggle_phase_parameter = struggle_prestige_install_same_culture_claimant
+		#		}
+		#	}
+		#	add_prestige = major_prestige_gain
+		#}
 	}
 
 	scope:the_claimant = {
@@ -2753,6 +2785,27 @@ on_ceremonial_claimant_faction_war_win_common = {
 	}
 
 	resolve_title_and_vassal_change = scope:change
+
+	if = {
+		limit = {
+			scope:the_claimant = {
+				top_liege != $ATTACKER$.top_liege
+				primary_title.tier < $ATTACKER$.primary_title.tier
+			}
+		}
+		create_title_and_vassal_change = {
+			type = conquest_claim
+			save_scope_as = change_two
+			add_claim_on_loss = no
+		}
+		scope:the_claimant = {
+			change_liege = {
+				liege = $ATTACKER$.top_liege
+				change = scope:change_two
+			}
+		}
+		resolve_title_and_vassal_change = scope:change_two
+	}
 
 	scope:previous_emperor = {
 		add_trait = former_emperor
@@ -2811,14 +2864,14 @@ on_ceremonial_claimant_faction_war_win_common = {
 		# Per number of faction members
 		if = {
 			limit = {
-				list_size:num_faction_members > 0
+				list_size:supporters > 0
 				scope:the_claimant = {
 					is_valid_for_legitimacy_change = yes
 				}
 			}
 			scope:the_claimant = {
 				add_legitimacy = {
-					value = list_size:num_faction_members
+					value = list_size:supporters
 					multiply = 50
 				}
 			}
