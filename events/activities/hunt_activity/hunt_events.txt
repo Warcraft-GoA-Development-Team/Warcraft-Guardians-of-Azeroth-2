@@ -2058,6 +2058,20 @@ hunt.0510 = {
 	option = { # We'll chase it!
 		name = hunt.0510.a
 		custom_tooltip = hunt_seek_current_legendary_tt
+		if = {
+			limit = {
+				this = scope:host
+				is_ai = no
+				NOT = { has_character_flag = had_mystical_animal_story }
+				NOT = { any_owned_story = { type = story_cycle_hunt_mystical_animal } }
+				exists = scope:activity.var:animal_type
+			}
+			set_variable = {
+				name = animal_type
+				value = scope:activity.var:animal_type
+			}
+			start_hunt_mystical_animal_story_cycle_effect = yes
+		}
 		ai_chance = {
 			base = 10
 		}
@@ -10161,7 +10175,6 @@ hunt.1202 = {
 				scope:host ?= this
 				scope:hunt_summary_scope ?= this
 				scope:animal_slayer ?= this
-				exists = scope:group_kill
 			}
 		}
 	}
@@ -10199,7 +10212,7 @@ hunt.1202 = {
 			}
 			switch = {
 				trigger = exists
-				scope:group_kill = {
+				scope:group_success = {
 					every_in_list = {
 						list = animal_slayers
 						custom = hunt_every_hunter_tt
@@ -10225,8 +10238,13 @@ hunt.1202 = {
 					}
 				}
 				scope:group_critical = {
-					scope:animal_slayer = {
-						hunt_animal_death_effect = { VAR = var:animal_type }
+					every_in_list = {
+						list = animal_slayers
+						custom = hunt_every_hunter_tt
+						add_prestige = hunt_prestige_melee_group_value
+					}
+					scope:injury_target = {
+						hunt_animal_death_effect = { VAR = scope:activity.var:animal_type }
 					}
 				}
 			}
@@ -10606,51 +10624,44 @@ hunt.2001 = {
 
 	immediate = {
 		hidden_effect = {
-			random_list = {
-				10 = {
-					add_to_list = realm_list
-					every_neighboring_and_across_water_top_liege_realm_owner = { add_to_list = realm_list }
-					random_in_list = {
-						list = realm_list
-						random_realm_county = {
-							culture = { save_scope_as = merchant_culture }
-							faith = { save_scope_as = merchant_faith }
+			random_pool_guest = {
+				limit = {
+					is_lowborn = yes
+					has_trait = lifestyle_hunter
+				}
+				weight = {
+					base = 1
+					modifier = {
+						factor = 2
+						has_trait_xp = {
+							trait = lifestyle_hunter
+							track = falconer
+							value >= 25
 						}
-					}
-					create_character = {
-						template = falconer_template
-						location = root.capital_province
-						dynasty = none
-						culture = scope:merchant_culture
-						faith = scope:merchant_faith
-						save_scope_as = falcon_salesman
 					}
 				}
-				10 = {
-					trigger = {
-						any_pool_guest = {
-							is_lowborn = yes
-							has_trait = lifestyle_hunter
+				save_scope_as = falcon_salesman
+			}
+			if = {
+				limit = {
+					NOT = { exists = scope:falcon_salesman }
+				}
+				location.empire = {
+					random_in_de_jure_hierarchy = {
+						limit = {
+							tier = tier_county
 						}
+						culture = { save_scope_as = merchant_culture }
+						faith = { save_scope_as = merchant_faith }
 					}
-					random_pool_guest = {
-						limit = { 
-							is_lowborn = yes
-							has_trait = lifestyle_hunter
-						}
-						weight = {
-							base = 1
-							modifier = {
-								factor = 2
-								has_trait_xp = {
-									trait = lifestyle_hunter
-									track = falconer
-									value >= 25
-								}
-							}
-						}
-						save_scope_as = falcon_salesman
-					}
+				}
+				create_character = {
+					template = falconer_template
+					location = root.capital_province
+					dynasty = none
+					culture = scope:merchant_culture
+					faith = scope:merchant_faith
+					save_scope_as = falcon_salesman
 				}
 			}
 		}
@@ -10672,7 +10683,12 @@ hunt.2001 = {
 			modifier = peregrine_falcon
 			years = 7
 		}		
-		remove_courtier_or_guest = scope:falcon_salesman
+		show_as_tooltip = {
+			remove_courtier_or_guest = scope:falcon_salesman
+		}
+		scope:falcon_salesman = {
+			silent_disappearance_effect = yes
+		}
 		ai_chance = {
 			base = 50
 			modifier = {
@@ -10720,7 +10736,12 @@ hunt.2001 = {
 
 	option = { # Send away
 		name = hunt.2001.d
-		remove_courtier_or_guest = scope:falcon_salesman
+		show_as_tooltip = {
+			remove_courtier_or_guest = scope:falcon_salesman
+		}
+		scope:falcon_salesman = {
+			silent_disappearance_effect = yes
+		}
 		ai_chance = {
 			base = 50
 			modifier = {
@@ -10743,13 +10764,14 @@ hunt.2001 = {
 scripted_effect hunt_sighting_county_province_effect = {
 	if = {
 		limit = { is_landed = no }
+		save_scope_as = sighting_char
 		domicile.domicile_location.county ?= {
 			if = {
 				limit = { hunt_activity_recent_hunt_sighting_trigger = no }
 				add_to_list = sighting_counties
 			}
 			if = { # Estate owners cannot move to hunt
-				limit = { root = { has_government = landless_adventurer_government } }
+				limit = { scope:sighting_char = { has_government = landless_adventurer_government } }
 				every_neighboring_county = {
 					limit = { hunt_activity_recent_hunt_sighting_trigger = no }
 					add_to_list = sighting_counties
@@ -10870,7 +10892,7 @@ hunt.2500 = {
 			# Create new sighting
 			hunt_create_sighting_effect = {
 				TYPE = standard
-				ANIMAL = flag:deer
+				ANIMAL = scope:sighting_county.var:animal_type
 				OWNER = root
 			}
 		}
@@ -11074,7 +11096,18 @@ hunt.2510 = {
 		# Save sighting county
 		if = {
 			limit = { exists = scope:story.var:legendary_county }
-			scope:story.var:legendary_county = { save_scope_as = sighting_county }
+			scope:story.var:legendary_county = {
+				save_scope_as = sighting_county
+				random_county_province = {
+					weight = {
+						base = 1
+						hunt_activity_sighting_terrain_modifier = yes
+						hunt_activity_sighting_building_modifier = { PROVINCE = this }
+						hunt_activity_game_building_modifier = { PROVINCE = this }
+					}
+					save_scope_as = sighting_province
+				}
+			}
 		}
 		else = { hunt_sighting_county_province_effect = yes }
 		# Save sighting
@@ -11122,6 +11155,34 @@ hunt.2510 = {
 		}		
 		ai_chance = {
 			base = 25
+		}
+	}
+
+	option = { # Move Camp
+		name = hunt.2510.c
+		trigger = {
+			is_landless_adventurer = yes
+			is_travelling = no
+			domicile.domicile_location != scope:sighting_province
+		}
+		show_as_unavailable = {
+			is_travelling = yes
+		}
+		show_as_tooltip = {
+			domicile = {
+				move_domicile = scope:sighting_province
+			}
+		}
+		start_travel_plan = {
+			destination = scope:sighting_province
+			on_start_on_action = on_travel_relocation_start
+			on_arrival_on_action = on_travel_relocation_end
+			on_arrival_destinations = last
+			return_trip = no # One way
+			travel_with_domicile = yes
+		}
+		ai_chance = {
+			base = 0
 		}
 	}
 
@@ -24301,8 +24362,11 @@ hunt.7100 = {
 		}
 		else = {
 			random_scheme = {
-				type = seduce
 				limit = {
+					OR = {
+						scheme_type = seduce
+						scheme_type = courting
+					}
 					scheme_target_character = {
 						is_alive = yes
 						is_participant_in_activity = scope:activity
@@ -24461,8 +24525,7 @@ hunt.7100 = {
 									ai_energy > medium_positive_energy
 								}
 								hunt_dharmic_pacificist_trigger = no
-								exists = scope:woo_approach
-								scope:woo_approach = flag:hunter
+								scope:woo_approach ?= flag:hunter
 							}
 							AND = {
 								OR = {
@@ -24477,32 +24540,28 @@ hunt.7100 = {
 									ai_sociability > medium_positive_compassion # socialbility doesn't exist
 								}
 								hunt_dharmic_pacificist_trigger = no
-								exists = scope:woo_approach
-								scope:woo_approach = flag:falconer
+								scope:woo_approach ?= flag:falconer
 							}
 							AND = {
 								OR = {
 									has_personality_benevolent_trigger = yes
 									ai_compassion > medium_positive_compassion
 								}
-								exists = scope:woo_approach
-								scope:woo_approach = flag:pity
+								scope:woo_approach ?= flag:pity
 							}
 							AND = {
 								OR = {
 									has_trait = ambitious
 									ai_boldness > medium_positive_boldness
 								}
-								exists = scope:woo_approach
-								scope:woo_approach = flag:wastrel
+								scope:woo_approach ?= flag:wastrel
 							}
 							AND = {
 								OR = {
 									has_trait = education_stewardship
 									ai_rationality > medium_positive_rationality
 								}
-								exists = scope:woo_approach
-								scope:woo_approach = flag:steward
+								scope:woo_approach ?= flag:steward
 							}
 						}
 					}
@@ -24515,32 +24574,27 @@ hunt.7100 = {
 					100 = { #Success
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:hunter
+							scope:woo_approach ?= flag:hunter
 							has_trait = brave
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:falconer
+							scope:woo_approach ?= flag:falconer
 							has_trait = gregarious
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:pity
+							scope:woo_approach ?= flag:pity
 							has_trait = compassionate
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:wastrel
+							scope:woo_approach ?= flag:wastrel
 							has_trait = diligent
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:steward
+							scope:woo_approach ?= flag:steward
 							has_trait = architect
 						}
 						trigger_event = {
@@ -24569,20 +24623,17 @@ hunt.7100 = {
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:hunter
+							scope:woo_approach ?= flag:hunter
 							has_trait = craven
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:falconer
+							scope:woo_approach ?= flag:falconer
 							has_trait = shy
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:pity
+							scope:woo_approach ?= flag:pity
 							OR = {
 								has_trait = callous
 								has_trait = sadistic
@@ -24590,14 +24641,12 @@ hunt.7100 = {
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:wastrel
+							scope:woo_approach ?= flag:wastrel
 							has_trait = content
 						}
 						modifier = {
 							add = 100
-							exists = scope:woo_approach
-							scope:woo_approach = flag:steward
+							scope:woo_approach ?= flag:steward
 							has_trait = lazy
 						}
 						trigger_event = {
@@ -27151,6 +27200,7 @@ hunt.7412 = { # Target
 #######################
 
 scripted_trigger hunt_7800_murder_attempt_trigger = {
+	this != root
 	can_be_combatant_based_on_gender_trigger = { ARMY_OWNER = root }
 	OR = {
 		is_scheming_against = {
@@ -27163,6 +27213,7 @@ scripted_trigger hunt_7800_murder_attempt_trigger = {
 		}
 		has_relation_rival = root
 		house ?= {
+			this != root.house
 			any_house_relation = {
 				any_relation_house = { this = root.house }
 				has_house_relation_level = feud

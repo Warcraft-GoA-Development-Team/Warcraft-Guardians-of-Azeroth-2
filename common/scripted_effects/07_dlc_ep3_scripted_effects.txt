@@ -575,7 +575,11 @@ destroy_landless_title_no_dlc_effect = {
 			NOT = { has_dlc_feature = roads_to_power }
 			game_start_date = $DATE$
 		}
-		holder = { destroy_title = prev }
+		holder ?= {
+			# Clears liquid treasury whenever balance > 0
+			empty_treasury_when_abandoning_landed_life_effect = yes
+			destroy_title = prev
+		}
 	}
 }
 
@@ -852,11 +856,36 @@ ep3_become_landed_transfer_effect = {
 			government_is_administrative = {
 				save_scope_value_as = { name = old_government value = flag:admin }
 			}
+			government_is_feudal = {
+				save_scope_value_as = { name = old_government value = flag:feudal }
+			}
 			government_is_clan = {
 				save_scope_value_as = { name = old_government value = flag:clan }
 			}
 			government_is_tribal = {
 				save_scope_value_as = { name = old_government value = flag:tribal }
+			}
+			government_is_republic = {
+				if = {
+					limit = {
+						scope:government_giver ?= { ep3_is_clan_inclined_trigger = yes }
+					}
+					save_scope_value_as = { name = old_government value = flag:clan }
+				}
+				else = {
+					save_scope_value_as = { name = old_government value = flag:feudal }
+				}
+			}
+			government_is_theocracy = {
+				if = {
+					limit = {
+						scope:government_giver ?= { ep3_is_clan_inclined_trigger = yes }
+					}
+					save_scope_value_as = { name = old_government value = flag:clan }
+				}
+				else = {
+					save_scope_value_as = { name = old_government value = flag:feudal }
+				}
 			}
 			government_is_wanua = {
 				save_scope_value_as = { name = old_government value = flag:wanua }
@@ -904,12 +933,8 @@ ep3_become_landed_transfer_effect = {
 		}
 		scope:new_primary_title ?= {
 			ordered_de_jure_county = {
-				limit = {
-					holder = scope:defender
-				}
-				alternative_limit = {
-					holder.top_liege = scope:defender.top_liege
-				}
+				limit = { holder = scope:defender }
+				alternative_limit = { holder.top_liege = scope:defender.top_liege }
 				order_by = development_level
 				save_scope_as = new_capital
 			}
@@ -939,23 +964,28 @@ ep3_become_landed_transfer_effect = {
 			}
 		}
 	}
-	scope:new_primary_title ?= {
-		every_de_jure_county = {
-			limit = {
-				NOT = { is_in_list = $TITLE_LIST$ }
-				trigger_if = {
-					limit = { exists = scope:defender }
-					holder.top_liege ?= scope:defender.top_liege
+	if = {
+		limit = {
+			NOT = { scope:ascended_throne_value = flag:purchased }
+		}
+		scope:new_primary_title ?= {
+			every_de_jure_county = {
+				limit = {
+					NOT = { is_in_list = $TITLE_LIST$ }
+					trigger_if = {
+						limit = { exists = scope:defender }
+						holder.top_liege ?= scope:defender.top_liege
+					}
+					trigger_if = {
+						limit = { exists = scope:new_liege }
+						holder.top_liege ?= scope:new_liege.top_liege
+					}
 				}
-				trigger_if = {
-					limit = { exists = scope:new_liege }
-					holder.top_liege ?= scope:new_liege.top_liege
+				change_title_holder_include_vassals = {
+					holder = $TITLE_RECEIVER$
+					change = scope:title_change
+					take_baronies = no
 				}
-			}
-			change_title_holder_include_vassals = {
-				holder = $TITLE_RECEIVER$
-				change = scope:title_change
-				take_baronies = no
 			}
 		}
 	}
@@ -1020,20 +1050,36 @@ ep3_become_landed_transfer_effect = {
 		becomes_independent = { change = scope:title_change }
 	}
 	resolve_title_and_vassal_change = scope:title_change
-	# Because target may be either a title or a character, we check if a scope value has been set up in advance if this is being called from the Seize Realm scheme specifically
 	if = {
 		limit = {
-			exists = scope:old_government_type
+			$REASON$ = flag:purchased
+			any_in_list = {
+				list = purchase_land_vassals_taken
+				always = yes
+			}
 		}
-		scope:old_government_type = {
-			save_scope_as = old_government
+		create_title_and_vassal_change = {
+			type = $TYPE$
+			add_claim_on_loss = yes
+			save_scope_as = purchase_land_vassal_change
 		}
+		every_in_list = {
+			list = purchase_land_vassals_taken
+			change_liege = {
+				liege = $TITLE_RECEIVER$
+				change = scope:purchase_land_vassal_change
+			}
+		}
+		resolve_title_and_vassal_change = scope:purchase_land_vassal_change
+	}
+	# Because target may be either a title or a character, we check if a scope value has been set up in advance if this is being called from the Seize Realm scheme specifically
+	if = {
+		limit = { exists = scope:old_government_type }
+		scope:old_government_type = { save_scope_as = old_government }
 	}
 	# Set government type
 	if = {
-		limit = {
-			exists = scope:old_government
-		}
+		limit = { exists = scope:old_government }
 		# We don't expect to actually trigger most of the below, as most are not valid targets to begin with, but all are included for completeness and mod support
 		switch = {
 			trigger = scope:old_government
@@ -1062,6 +1108,16 @@ ep3_become_landed_transfer_effect = {
 				change_government = administrative_government
 			}
 			flag:nomad = {
+				#Did you demand a herder's pastureland?
+				if = {
+					limit = {
+						scope:new_capital.title_province = {
+							has_holding = yes
+							NOT = { has_holding_type = nomad_holding }
+						}
+					}
+					scope:new_capital.title_province = { set_holding_type = nomad_holding }
+				}
 				change_government = nomad_government
 			}
 			flag:herder = {
@@ -1192,6 +1248,19 @@ ep3_become_landed_transfer_effect = {
 					}
 				}
 				change_government = clan_government
+			}
+			## Republic.
+			else_if = {
+				limit = {
+					scope:new_liege ?= { government_has_flag = government_is_republic }
+				}
+				if = {
+					limit = {
+						scope:new_liege ?= { ep3_is_clan_inclined_trigger = yes }
+					}
+					change_government = clan_government
+				}
+				else = { change_government = feudal_government }
 			}
 			## Tribal.
 			else_if = {
@@ -1326,7 +1395,7 @@ ep3_become_landed_transfer_effect = {
 	destroy_laamp_effect = { ADVENTURER = $TITLE_RECEIVER$ }
 	# Setup NF if valid
 	if = {
-		limit = { government_allows = administrative }
+		limit = { government_allows = noble_families }
 		give_new_noble_family_title_effect = yes
 	}
 }
@@ -1468,33 +1537,32 @@ purchase_land_interaction_effect = {
 			faith = { has_doctrine = doctrine_polytheist }
 		}
 		#Sort out the House shenanigans
-		if = {
-			limit = { is_house_head = no }
-			house = { 
-				if = {
-					limit = {
-						house_head = { 
-							is_landed = no
-							is_courtier_of = root
+		hidden_effect = {
+			if = {
+				limit = { is_house_head = no }
+				house ?= {
+					if = {
+						limit = {
+							house_head = {
+								is_landed = no
+								is_courtier_of = root
+							}
 						}
+						set_house_head = root
 					}
-					set_house_head = root
+				}
+			}
+			else = {
+				house ?= {
+					if = {
+						limit = {
+							NOT = { has_house_aspiration_parameter = no_aspect }
+						}
+						set_house_aspiration = { type = no_aspect }
+					}
 				}
 			}
 		}
-		else = {
-			house ?= {
-				set_house_aspiration = { type = no_aspect }
-			}
-		}	
-	}
-	#Otherwise go vanilla
-	else = {
-		if = {
-			limit = { ep3_is_clan_inclined_trigger = yes }
-			change_government = clan_government
-		}
-		else = { change_government = feudal_government }
 	}
 }
 
@@ -3919,8 +3987,8 @@ admin_change_government_effect = {
 			top_liege != this
 			OR = {
 				#Warcraft
-				culture = { has_cultural_pillar = heritage_orcish }
-				culture = { has_cultural_pillar = heritage_zulite }
+				#culture = { has_cultural_pillar = heritage_orcish }
+				culture = { has_cultural_pillar = heritage_zulian }
 				culture = { has_cultural_pillar = heritage_tauren }
 				faith.religion = { is_in_family = rf_elemental }
 			}
@@ -4085,70 +4153,70 @@ remove_a_criminal_trait_in_faith_effect = {
 		if = {
 			limit = {
 				has_trait = adulterer
-				trait_is_criminal_in_faith_trigger = { TRAIT = adulterer FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:adulterer FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = adulterer
 		}
 		else_if = {
 			limit = {
 				has_trait = fornicator
-				trait_is_criminal_in_faith_trigger = { TRAIT = fornicator FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:fornicator FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = fornicator
 		}
 		else_if = {
 			limit = {
 				has_trait = sodomite
-				trait_is_criminal_in_faith_trigger = { TRAIT = sodomite FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:sodomite FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = sodomite
 		}
 		else_if = {
 			limit = {
 				has_trait = deviant
-				trait_is_criminal_in_faith_trigger = { TRAIT = deviant FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:deviant FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = deviant
 		}
 		else_if = {
 			limit = {
 				has_trait = kinslayer_3
-				trait_is_criminal_in_faith_trigger = { TRAIT = kinslayer_3 FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:kinslayer_3 FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = kinslayer_3
 		}
 		else_if = {
 			limit = {
 				has_trait = kinslayer_2
-				trait_is_criminal_in_faith_trigger = { TRAIT = kinslayer_2 FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:kinslayer_2 FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = kinslayer_2
 		}
 		else_if = {
 			limit = {
 				has_trait = kinslayer_1
-				trait_is_criminal_in_faith_trigger = { TRAIT = kinslayer_1 FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:kinslayer_1 FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = kinslayer_1
 		}
 		else_if = {
 			limit = {
 				has_trait = witch
-				trait_is_criminal_in_faith_trigger = { TRAIT = witch FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:witch FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = witch
 		}
 		else_if = {
 			limit = {
 				has_trait = cannibal
-				trait_is_criminal_in_faith_trigger = { TRAIT = cannibal FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:cannibal FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = cannibal
 		}
 		else_if = {
 			limit = {
 				has_trait = incestuous
-				trait_is_criminal_in_faith_trigger = { TRAIT = incestuous FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
+				trait_is_criminal_in_faith_trigger = { TRAIT = trait:incestuous FAITH = $FAITH$ GENDER_CHARACTER = $CHARACTER$ }
 			}
 			remove_trait = incestuous
 		}
@@ -8004,7 +8072,7 @@ ep3_pick_random_maa_regiment_effect = {
 			#Warcraft
 			1 = {
 				trigger = {
-					culture = { has_innovation = innovation_archmage }
+					culture = { has_innovation = innovation_archmagi }
 				}
 				save_scope_value_as = {
 					name = maa_to_create
@@ -8488,35 +8556,35 @@ ep3_missionary_effect = {
 			set_county_faith = $PREACHER$.faith
 		}
 	}
-	# Preacher is Gnostic, convert the locals to a regionally appropriate form of Gnosticism
-	else_if = {
-		limit = {
-			$PREACHER$.faith = {
-				OR = {
-					has_doctrine = tenet_gnosticism
-					has_doctrine = special_doctrine_is_gnostic_faith
-				}
-			}
-			$LOCATION$.religion = {
-				any_faith = {
-					has_doctrine = tenet_gnosticism
-				}
-			}
-		}
-		$LOCATION$ = {
-			religion = {
-				random_faith = {
-					limit = {
-						OR = {
-							has_doctrine = tenet_gnosticism
-							has_doctrine = special_doctrine_is_gnostic_faith
-						}
-					}
-					$LOCATION$ = { set_county_faith = prev }
-				}
-			}
-		}
-	}
+	# Warcraft - Remove: Preacher is Gnostic, convert the locals to a regionally appropriate form of Gnosticism
+	# else_if = {
+	# 	limit = {
+	# 		$PREACHER$.faith = {
+	# 			OR = {
+	# 				has_doctrine = tenet_gnosticism
+	# 				has_doctrine = special_doctrine_is_gnostic_faith
+	# 			}
+	# 		}
+	# 		$LOCATION$.religion = {
+	# 			any_faith = {
+	# 				has_doctrine = tenet_gnosticism
+	# 			}
+	# 		}
+	# 	}
+	# 	$LOCATION$ = {
+	# 		religion = {
+	# 			random_faith = {
+	# 				limit = {
+	# 					OR = {
+	# 						has_doctrine = tenet_gnosticism
+	# 						has_doctrine = special_doctrine_is_gnostic_faith
+	# 					}
+	# 				}
+	# 				$LOCATION$ = { set_county_faith = prev }
+	# 			}
+	# 		}
+	# 	}
+	# }
 	# Otherwise, reduce popular opinion
 	else = {
 		$LOCATION$ = {
@@ -9152,10 +9220,10 @@ admin_government_reset_effect = {
 							like_heritage_arabic_trigger = yes
 							like_heritage_iranian_trigger = yes
 							like_heritage_turkic_trigger = yes
-							has_cultural_pillar = heritage_orcish
+							#has_cultural_pillar = heritage_orcish
 							has_cultural_pillar = heritage_tauren
-							has_cultural_pillar = heritage_gorian
-							has_cultural_pillar = heritage_zulite
+							#has_cultural_pillar = heritage_gorian
+							has_cultural_pillar = heritage_zulian
 						}
 					}
 				}
@@ -9591,71 +9659,71 @@ ep3_war_loss_adventurer_tt_effect = {
 		custom_tooltip = laamp_may_become_adventurer_tt
 	}
 }
-
-add_randomised_double_moon_modifier_effect = {
-	# hidden_effect = {
-	# 	scope:double_moon_book = {
-	# 		random_list = {
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_prowess_2_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_1
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_knight_effectiveness_4_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_2
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_stewardship_1_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_3
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_diplomacy_1_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_4
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_health_gain_1_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_5
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_monthly_minor_prestige_3_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_6
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_monthly_prestige_3_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_7
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_dynasty_opinion_2_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_8
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_learn_language_scheme_phase_duration_add_2_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_9
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_diplomacy_per_prestige_level_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_10
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_mercenary_hire_cost_mult_2_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_11
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_general_opinion_1_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_12
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_independent_ruler_opinion_2_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_13
-	# 			}
-	# 			1 = { 
-	# 				add_artifact_modifier = artifact_clergy_opinion_2_modifier 
-	# 				set_artifact_description = double_moon_tome_desc_14
-	# 			}
-	# 		}
-	# 	}
-	# }
-}
+# Warcraft
+# add_randomised_double_moon_modifier_effect = {
+# 	hidden_effect = { 
+# 		scope:double_moon_book = {
+# 			random_list = {
+# 				1 = { 
+# 					add_artifact_modifier = artifact_prowess_2_modifier 
+# 					set_artifact_description = double_moon_tome_desc_1
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_knight_effectiveness_4_modifier 
+# 					set_artifact_description = double_moon_tome_desc_2
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_stewardship_1_modifier 
+# 					set_artifact_description = double_moon_tome_desc_3
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_diplomacy_1_modifier 
+# 					set_artifact_description = double_moon_tome_desc_4
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_health_gain_1_modifier 
+# 					set_artifact_description = double_moon_tome_desc_5
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_monthly_minor_prestige_3_modifier 
+# 					set_artifact_description = double_moon_tome_desc_6
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_monthly_prestige_3_modifier 
+# 					set_artifact_description = double_moon_tome_desc_7
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_dynasty_opinion_2_modifier 
+# 					set_artifact_description = double_moon_tome_desc_8
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_learn_language_scheme_phase_duration_add_2_modifier 
+# 					set_artifact_description = double_moon_tome_desc_9
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_diplomacy_per_prestige_level_modifier 
+# 					set_artifact_description = double_moon_tome_desc_10
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_mercenary_hire_cost_mult_2_modifier 
+# 					set_artifact_description = double_moon_tome_desc_11
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_general_opinion_1_modifier 
+# 					set_artifact_description = double_moon_tome_desc_12
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_independent_ruler_opinion_2_modifier 
+# 					set_artifact_description = double_moon_tome_desc_13
+# 				}
+# 				1 = { 
+# 					add_artifact_modifier = artifact_clergy_opinion_2_modifier 
+# 					set_artifact_description = double_moon_tome_desc_14
+# 				}
+# 			}
+# 		}
+# 	}
+# }
 
 random_rain_snow_chance_effect = {
 	random_list = {
@@ -10515,106 +10583,53 @@ war_task_contracts_completion_effect = {
 #If a landless adventurer was hired as a mercenary and contributed in a war they get paid, used in war_on_actions, relevant flag set by hire_laamp_mercenaries_interaction or ep3_interactions_events.0112
 laamp_as_mercenary_payout_effect = {
 	scope:war = {
-		if = {
+		every_war_participant = {
 			limit = {
-				any_war_participant = {
-					has_character_flag = joined_as_mercenary
-					is_attacker_in_war = scope:war
-					NOT = { is_leader_in_war = scope:war }
-					OR = {
-						has_raised_armies = yes
-						scope:war = {
-							war_contribution = {
-								target = prev
-								value > 0
-							}
-						}
-					}
-				}
+				laamp_as_mercenary_payout_trigger = { WAR = scope:war }
 			}
-			every_war_participant = {
+			if = {
 				limit = {
-					has_character_flag = joined_as_mercenary
-					is_attacker_in_war = scope:war
-					NOT = { is_leader_in_war = scope:war }
-					OR = {
-						has_raised_armies = yes
-						scope:war = {
-							war_contribution = {
-								target = prev
-								value > 0
-							}
-						}
-					}
+					laamp_as_mercenary_payout_last_war_trigger = { WAR = scope:war }
 				}
+				save_scope_as = laamp_temp
 				add_to_list = laamp_mercenaries
-				remove_character_flag = joined_as_mercenary
-			}
-			primary_attacker = {
-				save_scope_as = employer
-				trigger_event = {
-					id = ep3_interactions_events.0121
-					days = { 3 7 }
-				}
-			}
-			every_in_list = {
-				list = laamp_mercenaries
-				scope:employer = {
-					remove_list_variable = {
-					 	name = hired_mercenaries
-					 	target = prev
+				var:joined_as_mercenary = {
+					save_scope_as = employer
+					trigger_event = {
+						id = ep3_interactions_events.0121
+						days = { 3 7 }
 					}
 				}
-			}
-		}
-		if = {
-			limit = {
-				any_war_participant = {
-					has_character_flag = joined_as_mercenary
-					is_defender_in_war = scope:war
-					NOT = { is_leader_in_war = scope:war }
-					OR = {
-						has_raised_armies = yes
-						scope:war = {
-							war_contribution = {
-								target = prev
-								value > 0
-							}
+				every_in_list = {
+					list = laamp_mercenaries
+					scope:employer = {
+						remove_list_variable = {
+						 	name = hired_mercenaries
+						 	target = scope:laamp_temp
 						}
 					}
 				}
+				remove_variable = joined_as_mercenary
 			}
-			every_war_participant = {
-				limit = {
-					has_character_flag = joined_as_mercenary
-					is_defender_in_war = scope:war
-					NOT = { is_leader_in_war = scope:war }
-					OR = {
-						has_raised_armies = yes
-						scope:war = {
-							war_contribution = {
-								target = prev
-								value > 0
-							}
-						}
+			else = {
+				save_scope_as = laamp_temp
+				var:joined_as_mercenary = { save_scope_as = employer }
+				if = {
+					limit = { exists = var:aggregate_war_contribution_value }
+					change_variable = {
+						name = aggregate_war_contribution_value
+						add = scope:laamp_temp.ep3_hire_laamp_mercs_payment_value
+					}
+					# Average
+					change_variable = {
+						name = aggregate_war_contribution_value
+						divide = 2
 					}
 				}
-				add_to_list = laamp_mercenaries
-				remove_character_flag = joined_as_mercenary
-			}
-			primary_defender = {
-				save_scope_as = employer
-				trigger_event = {
-					id = ep3_interactions_events.0121
-					days = { 3 7 }
-				}
-			}
-			every_in_list = {
-				list = laamp_mercenaries
-				scope:employer = {
-					remove_list_variable = {
-					 	name = hired_mercenaries
-					 	target = prev
+				else = {
+					set_variable = {
+						name = aggregate_war_contribution_value
+						value = scope:laamp_temp.ep3_hire_laamp_mercs_payment_value
 					}
 				}
 			}
@@ -10628,184 +10643,66 @@ laamp_as_mercenary_payout_effect = {
 # defender - primary defender from the casus_belli
 laamp_as_mercenary_payout_tooltip_effect = {
 	show_as_tooltip = {
-		scope:defender = {
-			if = {
-				limit = {
-					exists = scope:war
-					any_war_ally = {
-						has_government = landless_adventurer_government
-						OR = {
-							any_character_active_contract = {
-								has_task_contract_type = laamp_join_war_contract
-								var:task_contract_war ?= scope:war
+		scope:war ?= {
+			every_war_participant = {
+				limit = { has_government = landless_adventurer_government }
+				save_scope_as = laamp_temp
+				save_scope_as = actor
+				save_scope_value_as = {
+					name = war_contribution_value
+					value = "scope:war.war_contribution(scope:laamp_temp)"
+				}
+				every_character_active_contract = {
+					limit = {
+						has_task_contract_type = laamp_join_war_contract
+						var:task_contract_war = scope:war
+					}
+					show_as_tooltip = {
+						task_contract_employer = {
+							save_scope_as = employer
+							custom_tooltip = ep3_join_war_payment_tt
+							pay_short_term_gold = {
+								target = scope:laamp_temp
+								gold = scope:laamp_temp.ep3_hire_laamp_mercs_payment_value
 							}
-							AND = {
-								has_variable = owed_contract_assistance_gold
-								var:owed_contract_assistance_war ?= scope:war
-							}
-							has_variable = joined_as_mercenary
 						}
 					}
 				}
-				every_war_ally = {
+				if = {
+					limit = {
+						laamp_as_mercenary_payout_trigger = { WAR = scope:war }
+					}
 					if = {
 						limit = {
-							has_government = landless_adventurer_government
+							laamp_as_mercenary_payout_last_war_trigger = { WAR = scope:war }
 						}
-						save_scope_as = laamp_temp
-						save_scope_as = actor
-						save_scope_value_as = {
-							name = war_contribution_value
-							value = "scope:war.war_contribution(scope:laamp_temp)"
-						}
-						if = {
-							limit = {
-								any_character_active_contract = {
-									has_task_contract_type = laamp_join_war_contract
-									var:task_contract_war = scope:war
-								}
+						var:joined_as_mercenary ?= {
+							save_scope_as = employer
+							custom_description_no_bullet = {
+								text = ep3_hire_laamp_mercs_payment_tt
+								object = scope:laamp_temp
+								subject = scope:employer
 							}
-							every_character_active_contract = {
-								limit = {
-									has_task_contract_type = laamp_join_war_contract
-									var:task_contract_war = scope:war
-								}
-								show_as_tooltip = {
-									task_contract_employer = {
-										save_scope_as = employer
-										custom_tooltip = ep3_join_war_payment_tt
-										pay_short_term_gold = {
-											target = scope:laamp_temp
-											gold = ep3_hire_laamp_mercs_payment_value
-										}
-									}
-								}
-							}
-						}
-						if = {
-							limit = {
-								has_variable = joined_as_mercenary
-								scope:defender = {
-									is_target_in_variable_list = {
-										name = hired_mercenaries
-										target = scope:laamp_temp
-									}
-								}
-							}
-							scope:defender = {
-								save_scope_as = employer
-								custom_tooltip = ep3_hire_laamp_mercs_payment_tt
-								pay_short_term_gold = {
-									target = scope:laamp_temp
-									gold = ep3_hire_laamp_mercs_payment_value
-								}
-							}
-						}
-						if = {
-							limit = {
-								has_variable = owed_contract_assistance_gold
-								var:owed_contract_assistance_war ?= scope:war
-							}
-							save_scope_as = contract_assistance_helper
-							scope:defender = {
-								save_scope_as = recipient
-								custom_tooltip = contract_assistance_interaction_condition_tt
-								pay_short_term_gold = {
-									target = scope:actor
-									gold = scope:actor.var:owed_contract_assistance_gold
-								}
+							pay_short_term_gold = {
+								target = scope:laamp_temp
+								gold = scope:laamp_temp.ep3_hire_laamp_mercs_payment_value
 							}
 						}
 					}
+					else = { custom_tooltip = ep3_hire_laamp_mercs_payment_later_tt }
 				}
-			}
-		}
-		scope:attacker = {
-			if = {
-				limit = {
-					exists = scope:war
-					any_war_ally = {
-						has_government = landless_adventurer_government
-						OR = {
-							any_character_active_contract = {
-								has_task_contract_type = laamp_join_war_contract
-								var:task_contract_war = scope:war
-							}
-							AND = {
-								has_variable = owed_contract_assistance_gold
-								var:owed_contract_assistance_war ?= scope:war
-							}
-							has_variable = joined_as_mercenary
-						}
+				if = {
+					limit = {
+						has_variable = owed_contract_assistance_gold
+						var:owed_contract_assistance_war ?= scope:war
 					}
-				}
-				every_war_ally = {
-					if = {
-						limit = {
-							has_government = landless_adventurer_government
-						}
-						save_scope_as = laamp_temp
-						save_scope_as = actor
-						save_scope_value_as = {
-							name = war_contribution_value
-							value = "scope:war.war_contribution(scope:laamp_temp)"
-						}
-						if = {
-							limit = {
-								any_character_active_contract = {
-									has_task_contract_type = laamp_join_war_contract
-									var:task_contract_war = scope:war
-								}
-							}
-							every_character_active_contract = {
-								limit = {
-									has_task_contract_type = laamp_join_war_contract
-									var:task_contract_war = scope:war
-								}
-								show_as_tooltip = {
-									task_contract_employer = {
-										save_scope_as = employer
-										custom_tooltip = ep3_hire_laamp_mercs_payment_tt
-										pay_short_term_gold = {
-											target = scope:laamp_temp
-											gold = ep3_hire_laamp_mercs_payment_value
-										}
-									}
-								}
-							}
-						}
-						if = {
-							limit = {
-								has_variable = joined_as_mercenary
-								scope:attacker = {
-									is_target_in_variable_list = {
-										name = hired_mercenaries
-										target = scope:laamp_temp
-									}
-								}
-							}
-							scope:attacker = {
-								save_scope_as = employer
-								custom_tooltip = ep3_hire_laamp_mercs_payment_tt
-								pay_short_term_gold = {
-									target = scope:laamp_temp
-									gold = ep3_hire_laamp_mercs_payment_value
-								}
-							}
-						}
-						if = {
-							limit = {
-								has_variable = owed_contract_assistance_gold
-								var:owed_contract_assistance_war ?= scope:war
-							}
-							save_scope_as = contract_assistance_helper
-							scope:attacker = {
-								custom_tooltip = contract_assistance_interaction_condition_tt
-								pay_short_term_gold = {
-									target = scope:actor
-									gold = scope:actor.var:owed_contract_assistance_gold
-								}
-							}
+					save_scope_as = contract_assistance_helper
+					scope:defender = {
+						save_scope_as = recipient
+						custom_description_no_bullet = { text = contract_assistance_interaction_condition_tt }
+						pay_short_term_gold = {
+							target = scope:actor
+							gold = scope:actor.var:owed_contract_assistance_gold
 						}
 					}
 				}
@@ -11062,110 +10959,318 @@ disburse_camp_party_reward_effect = {
 
 			#Host effects
 			scope:host = {
-				hidden_effect = {
-					domicile = {
-						random_list = {
-							1 = {
-								trigger = {
-									has_domicile_building_or_higher = camp_main_01
-									NOT = { has_domicile_building = camp_main_04 }
+				if = {
+					limit = {
+						NOT = {
+							exists = scope:domicile_building #already saved
+						}
+					}
+					hidden_effect = {
+						domicile = {
+							random_list = {
+								1 = {
+									trigger = {
+										has_domicile_building_or_higher = camp_main_01
+										NOT = { has_domicile_building = camp_main_04 }
+									}
+									switch = {
+										trigger = has_domicile_building
+										camp_main_01 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_main_01
+											}
+										}
+										camp_main_02 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_main_02
+											}
+										}
+										camp_main_03 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_main_03
+											}
+										}
+									}
 								}
-								switch = {
-									trigger = has_domicile_building
-									camp_main_01 = { add_domicile_building = camp_main_02 }
-									camp_main_02 = { add_domicile_building = camp_main_03 }
-									camp_main_03 = { add_domicile_building = camp_main_04 }
+								1 = {
+									trigger = {
+										has_domicile_building_or_higher = supply_tent_01
+										NOT = { has_domicile_building = supply_tent_06 }
+									}
+									switch = {
+										trigger = has_domicile_building
+										supply_tent_01 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:supply_tent_01
+											}
+										}
+										supply_tent_02 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:supply_tent_02
+											}
+										}
+										supply_tent_03 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:supply_tent_03
+											}
+										}
+										supply_tent_04 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:supply_tent_04
+											}
+										}
+										supply_tent_05 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:supply_tent_05
+											}
+										}
+									}
 								}
-							}
-							1 = {
-								trigger = {
-									has_domicile_building_or_higher = supply_tent_01
-									NOT = { has_domicile_building = supply_tent_06 }
+								1 = {
+									trigger = {
+										has_domicile_building_or_higher = barber_tent_01
+										NOT = { has_domicile_building = barber_tent_06 }
+									}
+									switch = {
+										trigger = has_domicile_building
+										barber_tent_01 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:barber_tent_01
+											}
+										}
+										barber_tent_02 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:barber_tent_02
+											}
+										}
+										barber_tent_03 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:barber_tent_03
+											}
+										}
+										barber_tent_04 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:barber_tent_04
+											}
+										}
+										barber_tent_05 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:barber_tent_05
+											}
+										}
+									}
 								}
-								switch = {
-									trigger = has_domicile_building
-									supply_tent_01 = { add_domicile_building = supply_tent_02 }
-									supply_tent_02 = { add_domicile_building = supply_tent_03 }
-									supply_tent_03 = { add_domicile_building = supply_tent_04 }
-									supply_tent_04 = { add_domicile_building = supply_tent_05 }
-									supply_tent_05 = { add_domicile_building = supply_tent_06 }
+								1 = {
+									trigger = {
+										has_domicile_building_or_higher = baggage_train_01
+										NOT = { has_domicile_building = baggage_train_06 }
+									}
+									switch = {
+										trigger = has_domicile_building
+										baggage_train_01 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:baggage_train_01
+											}
+										}
+										baggage_train_02 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:baggage_train_02
+											}
+										}
+										baggage_train_03 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:baggage_train_03
+											}
+										}
+										baggage_train_04 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:baggage_train_04
+											}
+										}
+										baggage_train_05 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:baggage_train_05
+											}
+										}
+									}
 								}
-							}
-							1 = {
-								trigger = {
-									has_domicile_building_or_higher = barber_tent_01
-									NOT = { has_domicile_building = barber_tent_06 }
+								1 = {
+									trigger = {
+										has_domicile_building_or_higher = camp_fire_01
+										NOT = { has_domicile_building = camp_fire_06 }
+									}
+									switch = {
+										trigger = has_domicile_building
+										camp_fire_01 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_fire_01
+											}
+										}
+										camp_fire_02 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_fire_02
+											}
+										}
+										camp_fire_03 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_fire_03
+											}
+										}
+										camp_fire_04 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_fire_04
+											}
+										}
+										camp_fire_05 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_fire_05
+											}
+										}
+									}
 								}
-								switch = {
-									trigger = has_domicile_building
-									barber_tent_01 = { add_domicile_building = barber_tent_02 }
-									barber_tent_02 = { add_domicile_building = barber_tent_03 }
-									barber_tent_03 = { add_domicile_building = barber_tent_04 }
-									barber_tent_04 = { add_domicile_building = barber_tent_05 }
-									barber_tent_05 = { add_domicile_building = barber_tent_06 }
+								1 = {
+									trigger = {
+										has_domicile_building_or_higher = proving_grounds_01
+										NOT = { has_domicile_building = proving_grounds_06 }
+									}
+									switch = {
+										trigger = has_domicile_building
+										proving_grounds_01 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:proving_grounds_01
+											}
+										}
+										proving_grounds_02 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:proving_grounds_02
+											}
+										}
+										proving_grounds_03 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:proving_grounds_03
+											}
+										}
+										proving_grounds_04 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:proving_grounds_04
+											}
+										}
+										proving_grounds_05 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:proving_grounds_05
+											}
+										}
+									}
 								}
-							}
-							1 = {
-								trigger = {
-									has_domicile_building_or_higher = baggage_train_01
-									NOT = { has_domicile_building = baggage_train_06 }
-								}
-								switch = {
-									trigger = has_domicile_building
-									baggage_train_01 = { add_domicile_building = baggage_train_02 }
-									baggage_train_02 = { add_domicile_building = baggage_train_03 }
-									baggage_train_03 = { add_domicile_building = baggage_train_04 }
-									baggage_train_04 = { add_domicile_building = baggage_train_05 }
-									baggage_train_05 = { add_domicile_building = baggage_train_06 }
-								}
-							}
-							1 = {
-								trigger = {
-									has_domicile_building_or_higher = camp_fire_01
-									NOT = { has_domicile_building = camp_fire_06 }
-								}
-								switch = {
-									trigger = has_domicile_building
-									camp_fire_01 = { add_domicile_building = camp_fire_02 }
-									camp_fire_02 = { add_domicile_building = camp_fire_03 }
-									camp_fire_03 = { add_domicile_building = camp_fire_04 }
-									camp_fire_04 = { add_domicile_building = camp_fire_05 }
-									camp_fire_05 = { add_domicile_building = camp_fire_06 }
-								}
-							}
-							1 = {
-								trigger = {
-									has_domicile_building_or_higher = proving_grounds_01
-									NOT = { has_domicile_building = proving_grounds_06 }
-								}
-								switch = {
-									trigger = has_domicile_building
-									proving_grounds_01 = { add_domicile_building = proving_grounds_02 }
-									proving_grounds_02 = { add_domicile_building = proving_grounds_03 }
-									proving_grounds_03 = { add_domicile_building = proving_grounds_04 }
-									proving_grounds_04 = { add_domicile_building = proving_grounds_05 }
-									proving_grounds_05 = { add_domicile_building = proving_grounds_06 }
-								}
-							}
-							1 = {
-								trigger = {
-									has_domicile_building_or_higher = camp_perimeter_01
-									NOT = { has_domicile_building = camp_perimeter_06 }
-								}
-								switch = {
-									trigger = has_domicile_building
-									camp_perimeter_01 = { add_domicile_building = camp_perimeter_02 }
-									camp_perimeter_02 = { add_domicile_building = camp_perimeter_03 }
-									camp_perimeter_03 = { add_domicile_building = camp_perimeter_04 }
-									camp_perimeter_04 = { add_domicile_building = camp_perimeter_05 }
-									camp_perimeter_05 = { add_domicile_building = camp_perimeter_06 }
+								1 = {
+									trigger = {
+										has_domicile_building_or_higher = camp_perimeter_01
+										NOT = { has_domicile_building = camp_perimeter_06 }
+									}
+									switch = {
+										trigger = has_domicile_building
+										camp_perimeter_01 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_perimeter_01
+											}
+										}
+										camp_perimeter_02 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_perimeter_02
+											}
+										}
+										camp_perimeter_03 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_perimeter_03
+											}
+										}
+										camp_perimeter_04 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_perimeter_04
+											}
+										}
+										camp_perimeter_05 = {
+											save_scope_value_as = {
+												name = domicile_building
+												value = flag:camp_perimeter_05
+											}
+										}
+									}
 								}
 							}
 						}
 					}
 				}
-
-				custom_tooltip = activity_camp_party_reward_upgrade_building
+				domicile = {
+					switch = {
+						trigger = scope:domicile_building
+						flag:camp_main_01 = { add_domicile_building = camp_main_02 }
+						flag:camp_main_02 = { add_domicile_building = camp_main_03 }
+						flag:camp_main_03 = { add_domicile_building = camp_main_04 }
+						flag:supply_tent_01 = { add_domicile_building = supply_tent_02 }
+						flag:supply_tent_02 = { add_domicile_building = supply_tent_03 }
+						flag:supply_tent_03 = { add_domicile_building = supply_tent_04 }
+						flag:supply_tent_04 = { add_domicile_building = supply_tent_05 }
+						flag:supply_tent_05 = { add_domicile_building = supply_tent_06 }
+						flag:barber_tent_01 = { add_domicile_building = barber_tent_02 }
+						flag:barber_tent_02 = { add_domicile_building = barber_tent_03 }
+						flag:barber_tent_03 = { add_domicile_building = barber_tent_04 }
+						flag:barber_tent_04 = { add_domicile_building = barber_tent_05 }
+						flag:barber_tent_05 = { add_domicile_building = barber_tent_06 }
+						flag:baggage_train_01 = { add_domicile_building = baggage_train_02 }
+						flag:baggage_train_02 = { add_domicile_building = baggage_train_03 }
+						flag:baggage_train_03 = { add_domicile_building = baggage_train_04 }
+						flag:baggage_train_04 = { add_domicile_building = baggage_train_05 }
+						flag:baggage_train_05 = { add_domicile_building = baggage_train_06 }
+						flag:camp_fire_01 = { add_domicile_building = camp_fire_02 }
+						flag:camp_fire_02 = { add_domicile_building = camp_fire_03 }
+						flag:camp_fire_03 = { add_domicile_building = camp_fire_04 }
+						flag:camp_fire_04 = { add_domicile_building = camp_fire_05 }
+						flag:camp_fire_05 = { add_domicile_building = camp_fire_06 }
+						flag:proving_grounds_01 = { add_domicile_building = proving_grounds_02 }
+						flag:proving_grounds_02 = { add_domicile_building = proving_grounds_03 }
+						flag:proving_grounds_03 = { add_domicile_building = proving_grounds_04 }
+						flag:proving_grounds_04 = { add_domicile_building = proving_grounds_05 }
+						flag:proving_grounds_05 = { add_domicile_building = proving_grounds_06 }
+						flag:camp_perimeter_01 = { add_domicile_building = camp_perimeter_02 }
+						flag:camp_perimeter_02 = { add_domicile_building = camp_perimeter_03 }
+						flag:camp_perimeter_03 = { add_domicile_building = camp_perimeter_04 }
+						flag:camp_perimeter_04 = { add_domicile_building = camp_perimeter_05 }
+						flag:camp_perimeter_05 = { add_domicile_building = camp_perimeter_06 }
+					}
+				}
 
 				custom_tooltip = camp_party_100_contracts_get
 
@@ -11911,7 +12016,7 @@ banish_effect = {
 	show_as_tooltip = { banish = yes }
 	save_scope_as = allow_imprisoned_landless
 	if = {
-		limit = { is_valid_for_laampdom = yes }
+		limit = { scope:allow_imprisoned_landless = { is_valid_for_laampdom = yes } }
 		custom_tooltip = laamp_may_become_adventurer_tt
 	}
 	$BANISHER$ = { save_scope_as = banisher }
@@ -12405,11 +12510,11 @@ add_random_external_estate_building = {
 			}
 			10 = {
 				trigger = {
-					NOR = { 
+					NOT = { 
 						has_domicile_building_or_higher = vineyard_01 
-						owner.culture ?= {
-							has_innovation = innovation_champa_rice
-						}
+						#owner.culture ?= {
+						#	has_innovation = innovation_champa_rice
+						#}
 					}
 				}
 				add_domicile_building = vineyard_01
@@ -12450,11 +12555,11 @@ add_random_external_estate_building = {
 			}
 			10 = {
 				trigger = {
-					NOR = { 
+					NOT = { 
 						has_domicile_building_or_higher = grain_field_01
-						owner.culture ?= {
-							has_innovation = innovation_champa_rice
-						}
+						#owner.culture ?= {
+						#	has_innovation = innovation_champa_rice
+						#}
 					}
 				}
 				add_domicile_building = grain_field_01
@@ -12468,9 +12573,9 @@ add_random_external_estate_building = {
 					NOT = { 
 						has_domicile_building_or_higher = rice_field_01
 					}
-					owner.culture ?= {
-						has_innovation = innovation_champa_rice
-					}
+					#owner.culture ?= {
+					#	has_innovation = innovation_champa_rice
+					#}
 				}
 				add_domicile_building = rice_field_01
 				if = {
@@ -12520,11 +12625,11 @@ add_random_external_estate_building = {
 			}
 			10 = {
 				trigger = {
-					NOR = { 
+					NOT = { 
 						has_domicile_building_or_higher = olive_01 
-						owner.culture ?= {
-							has_innovation = innovation_champa_rice
-						}
+						#owner.culture ?= {
+						#	has_innovation = innovation_champa_rice
+						#}
 					}
 				}
 				add_domicile_building = olive_01
