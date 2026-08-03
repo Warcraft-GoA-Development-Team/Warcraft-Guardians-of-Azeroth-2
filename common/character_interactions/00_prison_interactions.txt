@@ -4,7 +4,25 @@
 	icon = prison
 
 	category = interaction_category_hostile
-	highlighted_reason = HIGHLIGHTED_HAS_IMPRISONMENT_REASON
+	highlighted_reason = {
+		triggered_desc = {
+			trigger = {
+				scope:actor = {
+					has_title = title:e_minister_of_justice
+					NOT = { has_imprisonment_reason = scope:recipient }
+				}
+			}
+			desc = HIGHLIGHTED_MINISTER_IMPRISONMENT_REASON
+		}
+		triggered_desc = {
+			trigger = {
+				scope:actor = {
+					has_imprisonment_reason = scope:recipient
+				}
+			}
+			desc = HIGHLIGHTED_HAS_IMPRISONMENT_REASON
+		}
+	}
 	ai_maybe = yes
 	ai_min_reply_days = 4
 	ai_max_reply_days = 9
@@ -25,11 +43,22 @@
 		triggered_desc = {
 			trigger = {
 				scope:recipient = {
-					NAND = {
-						is_landless_adventurer = yes
-						reverse_has_opinion_modifier = {
-							target = scope:actor
-							modifier = eviction_ignored_opinion
+					NOR = {
+						AND = {
+							has_government = landless_adventurer_government
+							reverse_has_opinion_modifier = {
+								target = scope:actor
+								modifier = eviction_ignored_opinion
+							}
+						}
+						scope:actor = {
+							has_title = title:e_minister_of_justice
+						}
+						scope:recipient = {
+							is_landed = no
+							any_held_title = {
+								is_noble_family_title = yes
+							}
 						}
 					}
 				}
@@ -39,15 +68,31 @@
 	}
 
 	ai_potential = {
-		NOT = { has_realm_law_flag = cannot_imprison }
+		trigger_if = {
+			limit = { has_realm_law_flag = imprisonment_toggle_enable }
+			has_realm_law_flag = imprisonment_toggle_on
+		}
 		is_imprisoned = no
 	}
 
 	is_shown = {
-		NOT = { scope:actor = scope:recipient }
+		scope:actor != scope:recipient
 		scope:actor = {
-			basic_allowed_to_imprison_character_trigger = {
-				CHARACTER = scope:recipient
+			OR = {
+				AND = {
+					has_title = title:e_minister_of_justice
+					scope:recipient = {
+						tgp_is_any_minister = no
+						liege = {
+							basic_allowed_to_imprison_character_trigger = {
+								CHARACTER = scope:recipient
+							}
+						}
+					}
+				}
+				basic_allowed_to_imprison_character_trigger = {
+					CHARACTER = scope:recipient
+				}
 			}
 		}
 		# Scope:recipient can't be visiting elsewhere.
@@ -65,7 +110,39 @@
 
 	is_valid_showing_failures_only = {
 		scope:actor = {
-			allowed_to_imprison_character_trigger = { CHARACTER = scope:recipient }
+			trigger_if = {
+				limit = {
+					has_title = title:e_minister_of_justice
+					scope:recipient = {
+						tgp_is_any_minister = no
+					}
+					NOT = {
+						allowed_to_imprison_character_trigger = { CHARACTER = scope:recipient }
+					}
+				}
+				top_liege = {
+					allowed_to_imprison_character_trigger = { CHARACTER = scope:recipient }
+				}
+			}
+			trigger_else = {
+				allowed_to_imprison_character_trigger = { CHARACTER = scope:recipient }
+			}
+			trigger_if = {
+				limit = {
+					government_has_flag = government_is_nomadic
+				}
+				NOT = { has_realm_law = nomadic_authority_1 }
+			}
+			trigger_if = {
+				limit = {
+					has_title = title:e_minister_of_justice
+				}
+				scope:recipient = {
+					NOT = {
+						is_close_or_extended_family_of = scope:actor.top_liege
+					}
+				}
+			}
 		}
 		imprison_neutral_is_valid_showing_failures_only_triggers_trigger = yes
 		custom_tooltip = {
@@ -81,17 +158,30 @@
 				text = "character_interactions_hostile_actions_disabled_delay"
 				NOT = { has_character_flag = flag_hostile_actions_disabled_delay }
 			}
-		}
-		scope:recipient = {
 			trigger_if = {
 				limit = {
-					is_landless_adventurer = yes
-					reverse_has_opinion_modifier = {
-						target = scope:actor
-						modifier = eviction_ignored_opinion
+					is_ai = no
+				}
+				scope:recipient = {
+					trigger_if = {
+						limit = {
+							has_government = landless_adventurer_government
+							reverse_has_opinion_modifier = {
+								target = scope:actor
+								modifier = eviction_ignored_opinion
+							}
+						}
+						is_travelling = no
 					}
 				}
-				is_travelling = no
+			}
+			trigger_else = {
+				OR = {
+					has_imprisonment_reason = scope:recipient
+					any_character_struggle = {
+						involvement = involved
+					}
+				}
 			}
 		}
 	}
@@ -101,7 +191,10 @@
 			is_imprisoned = no
 		}
 		scope:actor = {
-			has_imprisonment_reason = scope:recipient
+			OR = {
+				has_imprisonment_reason = scope:recipient
+				has_title = title:e_minister_of_justice
+			}
 		}
 	}
 
@@ -126,6 +219,26 @@
 	cost = {
 		# Usually, this action is free, but during certain diarchies, we want it to cost.
 		prestige = liege_diarchy_surcharge_interaction_imprison_interaction_value
+		treasury = {
+			if = {
+				limit = {
+					scope:actor = {
+						has_title = title:e_minister_of_justice
+					}
+					scope:recipient = {
+						NOT = { is_courtier_of = scope:actor }
+					} 
+				}
+				value = {
+					value = 0
+					desc = BASE
+				}
+				add = {
+					value = scope:actor.major_treasury_value
+					desc = IMPRISON_MINISTER_OF_JUSTICE_TREASURY_COST
+				}
+			}
+		}
 	}
 
 	on_send = {
@@ -138,54 +251,9 @@
 	}
 
 	on_auto_accept = {
-		illegal_imprisonment_dread_effect = yes
-		imprison_court_chaplain_consequences_effect = yes
-		imprison_HoF_consequences_effect = yes
-		scope:recipient = {
-			if = {
-				limit = {
-					is_a_faction_member = yes
-					liege = scope:actor
-				}
-				joined_faction = { save_scope_as = retaliating_faction }
-			}
-		}
-		imprison_character_effect = {
-			TARGET = scope:recipient
-			IMPRISONER = scope:actor
-		}
+		# the rest of the necessary logic is covered by auto_accept also triggering on_accept below
 		scope:recipient = {
 			trigger_event = char_interaction.0233
-		}
-		scope:actor = {
-			trigger_event = char_interaction.0231
-			if = {
-				limit = {
-					has_imprisonment_reason = scope:recipient
-				}
-				stress_impact = {
-					compassionate = minor_stress_impact_gain
-					forgiving = minor_stress_impact_gain
-				}
-			}
-			else = {
-				stress_impact = {
-					just = medium_stress_impact_gain
-					compassionate = medium_stress_impact_gain
-				}
-				if = {
-					limit = { exists = scope:retaliating_faction}
-					scope:retaliating_faction = {
-						imprisonment_retribution_start_faction_war_if_valid = yes
-					}
-				}
-			}
-		}
-		if = {
-			limit = {
-				scope:actor = { has_character_flag = flag_hostile_actions_disabled_delay }
-			}
-			scope:actor = { remove_character_flag = flag_hostile_actions_disabled_delay }
 		}
 	}
 
@@ -193,6 +261,62 @@
 		# Warcraft
 		hurt_scourge_jailor_consequences_effect = { HURT_JAILOR = scope:recipient SCOURGE = scope:actor }
 		
+		scope:actor = {
+			if = {
+				limit = {	
+					has_title = title:e_minister_of_justice
+				}
+				if = {
+					limit = {
+						NOR = {
+							has_imprisonment_reason = scope:recipient
+							scope:recipient.liege = {
+								has_imprisonment_reason = scope:recipient
+							}
+							scope:hook = yes
+						}
+						any_character_situation = {
+							situation_type = dynastic_cycle
+							situation_top_has_catalyst = catalyst_minister_imprison
+						}
+					}
+					save_scope_value_as = {
+						name = use_strife_not_tyranny
+						value = yes
+					}
+					situation:dynastic_cycle = {
+						trigger_situation_catalyst = {
+							catalyst = catalyst_minister_imprison
+							character = scope:recipient
+						}
+					}
+				}
+				if = {
+					limit = {
+						government_allows = merit
+					}
+					change_merit = {
+						value = minor_merit_gain
+						multiply = scope:recipient.highest_held_title_tier
+					}
+				}
+				if = {
+					limit = {
+						government_has_flag = government_has_influence
+					}
+					change_influence = {
+						value = minor_influence_gain
+						multiply = scope:recipient.highest_held_title_tier
+					}
+				}
+				scope:recipient.liege = {
+					if = {
+						limit = { has_imprisonment_reason = scope:recipient }
+						consume_imprisonment_reasons = scope:recipient
+					}
+				}
+			}
+		}
 		if = {
 			limit = { scope:hook = yes }
 			scope:actor = { use_hook = scope:recipient }
@@ -282,297 +406,341 @@
 				REVERSE_NON_HOUSE_TARGET = no
 			}
 		}
+
+		# Warcraft - remove Harrying logic.
 	}
 
 	on_decline = {
 		if = {
 			limit = {
-				scope:recipient = {
-					is_landless_adventurer = yes
-					reverse_has_opinion_modifier = {
-						target = scope:actor
-						modifier = eviction_ignored_opinion
-					}
-				}
-			}
-			scope:recipient = {
-				if = {
-					limit = { current_military_strength >= ep3_interactions_events_0500_troops_count_value }
-					start_war = {
-						cb = ep3_laamp_apprehend_adventurer_cb
-						target = scope:actor
-					}
-				}
-				else = {
-					# Remove them immediately.
-					remove_laamp_from_exiled_county_automatically_effect = {
-						PROVINCE = scope:recipient.location
-						LAAMP = scope:recipient
-					}
-				}
-			}
-		}
-		else = {
-			scope:actor = {
-				imprison_HoF_consequences_effect = yes
-				imprison_tyranny_effect = yes
-				
-				# Warcraft
-				hurt_scourge_jailor_consequences_effect = { HURT_JAILOR = scope:recipient SCOURGE = scope:actor }
-			}
-			scope:recipient = {
-				#If target is count or higher, start war.
-				if = {
-					limit = {
-						is_playable_character = yes
-						primary_title.tier > tier_barony
-					}
-					if = {
-						limit = {
-							is_a_faction_member = yes
-							liege = scope:actor
-							joined_faction = {
-								faction_target = scope:actor
-								NOT = { faction_is_type = populist_faction }
-							}
-						}
-						joined_faction = {
-							save_scope_as = retaliating_faction # For loc
-							imprisonment_retribution_start_faction_war_if_valid = yes
-						}
-						hidden_effect = {
-							if = {
-								limit = { NOT = { exists = joined_faction.faction_war } }
-								war_for_imprison_effect = yes
-							}
-						}
-					}
-					else = {
-						war_for_imprison_effect = yes
-					}
-				}
-				#If target is a baron or unlanded, have them escape.
-				else = {
-					if = { #To block them from being instantly rehired
-						limit = {
-							is_councillor_of = scope:actor
-							can_be_fired_from_council_trigger = { COURT_OWNER = scope:actor }
-						}
-						set_variable = {
-							name = escaped_imprisonment_from
-							value = scope:actor
-							years = 20
-						}
-					}
-					imprison_court_chaplain_consequences_effect = yes
-					if = {
-						limit = {
-							is_landed_or_landless_administrative = yes
-						}
-						depose_effect = { DEPOSER = scope:actor }
-					}
-					else_if  = {
-						limit = {
-							is_hostage = yes
-							warden = scope:actor
-						}
-						save_scope_as = imprison_failure
-						save_scope_as = hostage
-						warden = { save_scope_as = warden }
-						home_court = { save_scope_as = home_court }
-						scope:warden = { trigger_event = bp2_hostage_system.0400 }
-						scope:home_court = { trigger_event = bp2_hostage_system.0401 }
-						return_hostage = yes
-					}
-					else_if = {
-						limit = {
-							is_landed_or_landless_administrative = no
-							trigger_if = {
-								limit = {
-									is_councillor = yes
-								}
-								can_be_fired_from_council_trigger = { COURT_OWNER = scope:recipient.liege }
-							}
-							trigger_if = {
-								limit = {
-									exists = scope:actor.faith.religious_head
-								}
-								NOT = { scope:actor.faith.religious_head = scope:recipient }
-							}
-						}
-						select_and_move_to_pool_effect = yes
-					}
-					add_opinion = {
-						target = scope:actor
-						modifier = attempted_imprisonment_opinion
-					}
-				}
-			}
-
-			if = {
-				limit = {
-					scope:actor = { has_realm_law_flag = vassal_refusal_is_treason }
-				}
 				scope:actor = {
-					add_opinion = {
-						target = scope:recipient
-						modifier = treasonous_imprison_refusal
-					}
+					NOT = { has_title = title:e_minister_of_justice }
 				}
 			}
-		}
-
-		#Remove them as guardian/ward for any courtier (feedback given in char_interaction.0230)
-		scope:actor = {
-			if = {
-				limit = {
-					any_courtier = {
-						has_relation_guardian = scope:recipient
-					}
-				}
-				every_courtier = {
-					limit = {
-						has_relation_guardian = scope:recipient
-					}
-					save_scope_as = ward
-					scope:recipient = { remove_relation_ward = scope:ward }
-
-					scope:ward = {
-						if = {
-							limit = {
-								NOT = { host = liege }
-							}
-							return_to_court = yes
-						}
-						guardian_remove_opinion_effect = {
-							GUARDIAN = scope:recipient
-							WARD = this
-							WARD_LIEGE = scope:actor
-						}
-					}
-
-					add_to_list = ward_children
-				}
-			}
-			if = {
-				limit = {
-					any_courtier = {
-						has_relation_ward = scope:recipient
-					}
-				}
-				random_courtier = {
-					limit = {
-						has_relation_ward = scope:recipient
-					}
-					save_scope_as = guardian
-					scope:guardian = { remove_relation_ward = scope:recipient }
-
-					scope:guardian = {
-						if = {
-							limit = {
-								NOT = { host = liege }
-							}
-							return_to_court = yes
-						}
-						guardian_remove_opinion_effect = {
-							GUARDIAN = this
-							WARD = scope:recipient
-							WARD_LIEGE = scope:actor
-						}
-					}
-
-					add_to_list = guardian_list
-				}
-
-				hidden_effect = {
-					scope:guardian = {
-						send_interface_message = {
-							type = event_childhood_neutral
-							title = remove_guardian_interaction_notification
-							left_icon = scope:recipient
-							right_icon = scope:guardian
-							remove_guardian_effect = {
-								GUARDIAN = scope:guardian
-								WARD = scope:recipient
-								RETURN_WARD = yes
-								HIDE_OPINION = no
-							}
-						}
-					}
-				}
-			}
-		}
-
-		scope:actor = {
 			if = {
 				limit = {
 					scope:recipient = {
-						OR = {
-							is_playable_character = no
-							AND = {
-								is_playable_character = yes
-								primary_title.tier = tier_barony
+						has_government = landless_adventurer_government
+					}
+				}
+				scope:recipient = {
+					if = {
+						limit = { current_military_strength >= ep3_interactions_events_0500_troops_count_value }
+						start_war = {
+							cb = ep3_laamp_apprehend_adventurer_cb
+							target = scope:actor
+						}
+					}
+					else = {
+						# Remove them immediately.
+						remove_laamp_from_exiled_county_automatically_effect = {
+							PROVINCE = scope:recipient.location
+							LAAMP = scope:recipient
+						}
+					}
+				}
+			}
+			else = {
+				scope:actor = {
+					imprison_HoF_consequences_effect = yes
+					imprison_tyranny_effect = yes
+					
+					# Warcraft
+					hurt_scourge_jailor_consequences_effect = { HURT_JAILOR = scope:recipient SCOURGE = scope:actor }
+				}
+				scope:recipient = {
+					#If target is count or higher, start war.
+					if = {
+						limit = {
+							is_playable_character = yes
+							primary_title.tier > tier_barony
+						}
+						if = {
+							limit = {
+								is_a_faction_member = yes
+								liege = scope:actor
+								joined_faction = {
+									faction_target = scope:actor
+									NOT = { faction_is_type = populist_faction }
+								}
+							}
+							joined_faction = {
+								save_scope_as = retaliating_faction # For loc
+								imprisonment_retribution_start_faction_war_if_valid = yes
+							}
+							hidden_effect = {
+								if = {
+									limit = { NOT = { exists = joined_faction.faction_war } }
+									war_for_imprison_effect = yes
+								}
+							}
+						}
+						else = {
+							war_for_imprison_effect = yes
+						}
+					}
+					#If target is a baron or unlanded, have them escape.
+					else = {
+						if = { #To block them from being instantly rehired
+							limit = {
+								is_councillor_of = scope:actor
+								can_be_fired_from_council_trigger = { COURT_OWNER = scope:actor }
+							}
+							set_variable = {
+								name = escaped_imprisonment_from
+								value = scope:actor
+								years = 20
+							}
+						}
+						imprison_court_chaplain_consequences_effect = yes
+						if = {
+							limit = {
+								is_landed_or_landless_administrative = yes
+							}
+							depose_effect = { DEPOSER = scope:actor }
+						}
+						else_if  = {
+							limit = {
+								is_hostage = yes
+								warden = scope:actor
+							}
+							save_scope_as = imprison_failure
+							save_scope_as = hostage
+							warden = { save_scope_as = warden }
+							home_court = { save_scope_as = home_court }
+							scope:warden = { trigger_event = bp2_hostage_system.0400 }
+							scope:home_court = { trigger_event = bp2_hostage_system.0401 }
+							return_hostage = yes
+						}
+						else_if = {
+							limit = {
+								is_landed_or_landless_administrative = no
+								trigger_if = {
+									limit = {
+										is_councillor = yes
+									}
+									can_be_fired_from_council_trigger = { COURT_OWNER = scope:recipient.liege }
+								}
+								trigger_if = {
+									limit = {
+										exists = scope:actor.faith.religious_head
+									}
+									scope:actor.faith.religious_head != scope:recipient
+								}
+							}
+							select_and_move_to_pool_effect = yes
+						}
+						add_opinion = {
+							target = scope:actor
+							modifier = attempted_imprisonment_opinion
+						}
+					}
+				}
+
+				if = {
+					limit = {
+						scope:actor = { has_realm_law_flag = vassal_refusal_is_treason }
+					}
+					scope:actor = {
+						add_opinion = {
+							target = scope:recipient
+							modifier = treasonous_imprison_refusal
+						}
+					}
+				}
+			}
+
+			#Remove them as guardian/ward for any courtier (feedback given in char_interaction.0230)
+			scope:actor = {
+				if = {
+					limit = {
+						any_courtier = {
+							has_relation_guardian = scope:recipient
+						}
+					}
+					every_courtier = {
+						limit = {
+							has_relation_guardian = scope:recipient
+						}
+						save_scope_as = ward
+						scope:recipient = { remove_relation_ward = scope:ward }
+
+						scope:ward = {
+							if = {
+								limit = {
+									host != liege
+								}
+								return_to_court = yes
+							}
+							guardian_remove_opinion_effect = {
+								GUARDIAN = scope:recipient
+								WARD = this
+								WARD_LIEGE = scope:actor
+							}
+						}
+
+						add_to_list = ward_children
+					}
+				}
+				if = {
+					limit = {
+						any_courtier = {
+							has_relation_ward = scope:recipient
+						}
+					}
+					random_courtier = {
+						limit = {
+							has_relation_ward = scope:recipient
+						}
+						save_scope_as = guardian
+						scope:guardian = { remove_relation_ward = scope:recipient }
+
+						scope:guardian = {
+							if = {
+								limit = {
+									host != liege
+								}
+								return_to_court = yes
+							}
+							guardian_remove_opinion_effect = {
+								GUARDIAN = this
+								WARD = scope:recipient
+								WARD_LIEGE = scope:actor
+							}
+						}
+
+						add_to_list = guardian_list
+					}
+
+					hidden_effect = {
+						scope:guardian = {
+							send_interface_message = {
+								type = event_childhood_neutral
+								title = remove_guardian_interaction_notification
+								left_icon = scope:recipient
+								right_icon = scope:guardian
+								remove_guardian_effect = {
+									GUARDIAN = scope:guardian
+									WARD = scope:recipient
+									RETURN_WARD = yes
+									HIDE_OPINION = no
+								}
 							}
 						}
 					}
 				}
-				trigger_event = char_interaction.0230
-			}
-		}
-
-		if = {
-			limit = {
-				scope:actor = { has_character_flag = flag_hostile_actions_disabled_delay }
-			}
-			scope:actor = { remove_character_flag = flag_hostile_actions_disabled_delay }
-		}
-
-		# If we're a clan this interaction affects unity
-		if = { # If you don't have an imprisonment reason, and the target is landed, you lose more unity
-			limit = {
-				NOT = {
-					scope:actor = { has_imprisonment_reason = scope:recipient }
+				if = {
+					limit = {
+						scope:recipient = {
+							OR = {
+								is_playable_character = no
+								AND = {
+									is_playable_character = yes
+									primary_title.tier = tier_barony
+								}
+							}
+						}
+					}
+					trigger_event = char_interaction.0230
 				}
-				scope:recipient = { is_landed_or_landless_administrative  = yes }
-			}
-			add_clan_unity_interaction_effect = {
-				CHARACTER = scope:actor
-				TARGET = scope:recipient
-				VALUE = major_unity_loss
-				DESC = clan_unity_imprison.desc
-				REVERSE_NON_HOUSE_TARGET = no
-			}
-		}
-		else_if = { # If you don't have an imprisonment reason, and the target is unlanded, you lose slightly less unity
-			limit = {
-				NOT = {
-					scope:actor = { has_imprisonment_reason = scope:recipient }
+
+				if = {
+					limit = {
+						has_character_flag = flag_hostile_actions_disabled_delay
+					}
+					remove_character_flag = flag_hostile_actions_disabled_delay
 				}
-				scope:recipient = { is_landed_or_landless_administrative  = no }
 			}
-			add_clan_unity_interaction_effect = {
-				CHARACTER = scope:actor
-				TARGET = scope:recipient
-				VALUE = medium_unity_loss
-				DESC = clan_unity_imprison.desc
-				REVERSE_NON_HOUSE_TARGET = no
+
+			# If we're a clan this interaction affects unity
+			if = { # If you don't have an imprisonment reason, and the target is landed, you lose more unity
+				limit = {
+					NOT = {
+						scope:actor = { has_imprisonment_reason = scope:recipient }
+					}
+					scope:recipient = { is_landed_or_landless_administrative  = yes }
+				}
+				add_clan_unity_interaction_effect = {
+					CHARACTER = scope:actor
+					TARGET = scope:recipient
+					VALUE = major_unity_loss
+					DESC = clan_unity_imprison.desc
+					REVERSE_NON_HOUSE_TARGET = no
+				}
 			}
-		}
-		else = { # If you have a valid reason, you lose only a tiny bit of unity (criminal or not, they are still family)
-			add_clan_unity_interaction_effect = {
-				CHARACTER = scope:actor
-				TARGET = scope:recipient
-				VALUE = miniscule_unity_loss
-				DESC = clan_unity_imprison.desc
-				REVERSE_NON_HOUSE_TARGET = no
+			else_if = { # If you don't have an imprisonment reason, and the target is unlanded, you lose slightly less unity
+				limit = {
+					NOT = {
+						scope:actor = { has_imprisonment_reason = scope:recipient }
+					}
+					scope:recipient = { is_landed_or_landless_administrative  = no }
+				}
+				add_clan_unity_interaction_effect = {
+					CHARACTER = scope:actor
+					TARGET = scope:recipient
+					VALUE = medium_unity_loss
+					DESC = clan_unity_imprison.desc
+					REVERSE_NON_HOUSE_TARGET = no
+				}
+			}
+			else = { # If you have a valid reason, you lose only a tiny bit of unity (criminal or not, they are still family)
+				add_clan_unity_interaction_effect = {
+					CHARACTER = scope:actor
+					TARGET = scope:recipient
+					VALUE = miniscule_unity_loss
+					DESC = clan_unity_imprison.desc
+					REVERSE_NON_HOUSE_TARGET = no
+				}
 			}
 		}
 	}
 
-	auto_accept = no
+	auto_accept = {
+		# OR does not display properly here
+		trigger_if = {
+			limit = {
+				scope:actor = {
+					has_title = title:e_minister_of_justice
+				}
+			}
+			custom_description = {
+				text = you_are_the_minister_of_justice
+				scope:actor = {
+					has_title = title:e_minister_of_justice
+				}
+			}
+		}
+		trigger_else_if = {
+			limit = {
+				scope:recipient = {
+					is_landed = no
+					any_held_title = {
+						is_noble_family_title = yes
+					}
+				}				
+			}
+			custom_description = {
+				text = noble_family_head_cannot_refuse_your_power
+				scope:recipient = {
+					is_landed = no
+					any_held_title = {
+						is_noble_family_title = yes
+					}
+				}
+			}
+		}
+		trigger_else = {
+			always = no
+		}
+	}
 
 	ai_accept = {
 		base = 0 # Try to make it 0 for most interactions
+
+		# Warcraft
+		master_thrall_modifier = yes
+		# End Warcraft
+
 
 		modifier = {
 			add = {
@@ -641,7 +809,7 @@
 			desc = AI_PRISON_FEUDAL_COMPLEX_PERK
 		}
 		modifier = { #I am a King!
-			desc = offer_vassalization_interaction_aibehavior_amkingtier_tt
+			desc = offer_vassalization_interaction_aibehavior_hightier_tt
 			scope:recipient = { highest_held_title_tier = tier_kingdom }
 			add = -40
 		}
@@ -664,10 +832,9 @@
 			scope:actor = {
 				OR = {
 					any_targeting_faction = {
-						faction_is_type = claimant_faction
+						faction_type = claimant_faction
 						faction_is_at_war = yes
-						exists = special_character
-						special_character = scope:recipient
+						special_character ?= scope:recipient
 					}
 					AND = {
 						exists = var:claimant_faction_sent_demand
@@ -832,12 +999,12 @@
 			}
 			add = legalistic_vassal_punishment_acceptance
 		}
-		# Warcraft - remove Mongol exeption
+		# Warcraft - remove Mongol exception
 		# Thug accolade increases imprison chance because they scary
 		modifier = {
 			scope:actor = {
 				any_active_accolade = {
-					has_accolade_parameter = accolade_imprisonment_chance
+					accolade_parameter = accolade_imprisonment_chance
 				}
 			}
 			desc = THUG_REASON
@@ -846,7 +1013,7 @@
 		modifier = {
 			scope:actor = {
 				any_active_accolade = {
-					has_accolade_parameter = accolade_imprisonment_chance_high
+					accolade_parameter = accolade_imprisonment_chance_high
 				}
 			}
 			desc = THUG_REASON_HIGH
@@ -862,9 +1029,19 @@
 			}
 			desc = VASSALS_REFUSAL_indomitable_azatani
 		}
+		modifier = {
+			add = 10
+			scope:recipient = { has_character_modifier = ach_intent_imprisonment_modifier }
+			desc = ach_host_intent_imprison_reason
+		}
 		
 		# Warcraft
 		scourge_interaction_modifiers = yes
+		modifier = {
+			add = -1000
+			desc = MAGIC_VOID_LEADER_REASON
+			scope:recipient = { has_character_flag = is_void_leader }
+		}
 	}
 
 	# AI
@@ -876,7 +1053,15 @@
 		ai_recipients = courtiers
 		chance = 0.25
 	}
-	ai_frequency = 10
+	
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 36
+		duchy = 10
+		kingdom = 10
+		empire = 10
+		hegemony = 10
+	}
 
 	ai_will_do = {
 		base = -100
@@ -886,12 +1071,35 @@
 			add = 1
 		}
 
-		modifier = {
+		modifier = { # Default imprisonment reason weight
 			add = 200
 			scope:actor = {
 				has_imprisonment_reason = scope:recipient
 			}
 		}
+		
+		modifier = { # More likely to imprison criminal Soryo's if Ritsuryo
+			add = 200
+			scope:actor = {
+				has_imprisonment_reason = scope:recipient
+				government_has_flag = government_is_japan_administrative
+			}
+			scope:recipient = {
+				government_has_flag = government_is_japan_feudal
+			}
+		}
+		
+		#modifier = { # Even more imprisonment reason if you are a danger to the Kampaku
+		#	add = 400
+		#	scope:actor = {
+		#		primary_title = title:e_japan
+		#		has_imprisonment_reason = scope:recipient
+		#	}
+		#	scope:recipient = {
+		#		exists = house.house_confederation
+		#		house.house_confederation.combined_military_strength > scope:actor.current_military_strength
+		#	}
+		#}
 
 		modifier = { # Avoid Tyranny wars at inopportune times
 			add = -190
@@ -1024,7 +1232,7 @@
 					}
 					AND = { # Zealots will imprison characters of other faiths
 						scope:actor.ai_zeal >= medium_positive_ai_value
-						NOT = { scope:actor.faith = scope:recipient.faith }
+						scope:actor.faith != scope:recipient.faith
 					}
 					scope:actor = {
 						has_opinion_modifier = {
@@ -1146,6 +1354,8 @@
 
 		# Warcraft - remove Agenda impact
 
+		# TGP Be more careful with blocs generally
+		house_bloc_tyranny_war_modifiers = yes
 
 		modifier = { # Avoid triggering Tyranny wars mid-grand activity
 			factor = 0
@@ -1155,6 +1365,19 @@
 			scope:recipient = {
 				highest_held_title_tier >= tier_county
 			}
+		}
+
+		modifier = { # Expel first, even if they criminals
+			factor = 0
+			scope:actor = {
+				NOT = {
+					has_opinion_modifier = {
+						target = scope:recipient
+						modifier = eviction_ignored_opinion
+					}
+				}
+			}
+			scope:recipient = { government_has_flag = government_is_landless_adventurer }
 		}
 
 		evaluate_action_decreasing_house_unity = {
@@ -1180,14 +1403,25 @@ move_to_dungeon_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
-		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:recipient = {
 			custom_description = {
 				text = "currently_being_tortured"
 				NOT = { has_character_flag = is_being_tortured }
 			}
 		}
+		# tgp_blocked_action_against_tenno_trigger = {
+		# 	ACTOR = scope:actor
+		# 	TARGET = scope:recipient
+		# }
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
+		}
 	}
 
 	on_accept = {
@@ -1201,16 +1435,14 @@ move_to_dungeon_interaction = {
 			}
 			trigger_event = prison_notification.1001
 			custom_tooltip = MOVE_PRISONER_TO_DUNGEON
-			scope:recipient = {
-				every_close_or_extended_family_member = {
-					custom = all_family_members
-					limit = {
-						NOT = { scope:actor = this }
-					}
-					add_opinion = {
-						modifier = family_moved_to_dungeon_opinion
-						target = scope:actor
-					}
+			every_close_or_extended_family_member = {
+				custom = all_family_members
+				limit = {
+					scope:actor != this
+				}
+				add_opinion = {
+					modifier = family_moved_to_dungeon_opinion
+					target = scope:actor
 				}
 			}
 		}
@@ -1245,7 +1477,14 @@ move_to_dungeon_interaction = {
 	ai_targets = {
 		ai_recipients = prisoners
 	}
-	ai_frequency = 12
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 48
+		duchy = 12
+		kingdom = 12
+		empire = 12
+		hegemony = 12
+	}
 
 	ai_potential = {
 		always = yes
@@ -1267,20 +1506,9 @@ move_to_dungeon_interaction = {
 		modifier = { # Family Feud
 			add = 25
 			trigger = {
-				exists = scope:actor.house
-				exists = scope:recipient.house
 				scope:actor = {
-					house.house_head = {
-						any_owned_story = {
-							story_type = story_cycle_house_feud
-							has_variable = house_feud_house
-							var:house_feud_house = scope:recipient.house
-						}
-					}
-					has_opinion_modifier = {
-						modifier = house_feud_opinion
-						target = scope:recipient.house.house_head
-					}
+					house_has_feud_relation_with_trigger = { TARGET = scope:recipient }
+
 				}
 			}
 			desc = INTERACTION_FAMILY_FEUD_REASON
@@ -1313,7 +1541,6 @@ move_to_house_arrest_interaction = {
 	}
 
 	is_valid_showing_failures_only = {
-		scope:recipient = { is_busy_in_events_localised = yes }
 		scope:recipient = {
 			custom_description = {
 				text = "currently_being_tortured"
@@ -1321,6 +1548,14 @@ move_to_house_arrest_interaction = {
 			}
 		}
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
+		}
 	}
 
 	on_accept = {
@@ -1338,16 +1573,14 @@ move_to_house_arrest_interaction = {
 				trigger_event = prison_notification.1002
 			}
 			custom_tooltip = MOVE_PRISONER_TO_HOUSE_ARREST
-			scope:recipient = {
-				every_close_or_extended_family_member = {
-					custom = all_family_members
-					limit = {
-						NOT = { scope:actor = this }
-					}
-					add_opinion = {
-						modifier = moved_to_house_arrest_opinion
-						target = scope:actor
-					}
+			every_close_or_extended_family_member = {
+				custom = all_family_members
+				limit = {
+					scope:actor != this
+				}
+				add_opinion = {
+					modifier = moved_to_house_arrest_opinion
+					target = scope:actor
 				}
 			}
 		}
@@ -1372,7 +1605,7 @@ move_to_house_arrest_interaction = {
 
 ransom_interaction = {
 	interface_priority = 50
-	common_interaction = yes
+	common_interaction = no
 	use_diplomatic_range = no
 	category = interaction_category_prison
 	special_interaction = ransom_interaction
@@ -1411,22 +1644,16 @@ ransom_interaction = {
 			#exists = liege
 			is_imprisoned_by = scope:actor
 		}
-		NOT = {
-			scope:actor = scope:recipient
-		}
+		scope:actor != scope:recipient
 	}
 
 	is_valid_showing_failures_only = {
 		trigger_if = {
-			limit = {
-				scope:invalid = yes
-			}
+			limit = { scope:invalid = yes }
 			always = no
 		}
 
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
-		scope:recipient = { is_busy_in_events_localised = yes } #Payer
-		scope:secondary_recipient = { is_busy_in_events_localised = yes } #Prisoner
 		scope:secondary_recipient = {
 			custom_description = {
 				text = "currently_being_tortured"
@@ -1437,15 +1664,10 @@ ransom_interaction = {
 			PRISONER = scope:recipient
 			REGENT = scope:recipient.var:imprisoned_by_diarch
 		}
-	}
-
-	cost = {
-		influence = {
-			value = 0
-			if = {
-				limit = { scope:influence_send_option = yes }
-				add = scope:actor.medium_influence_value
-				desc = INFLUENCE_INTERACTION_ACCEPTANCE_SEND_OPTION
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:secondary_recipient = {
+				NOT = { has_character_flag = is_currently_being_purged }
 			}
 		}
 	}
@@ -1524,9 +1746,9 @@ ransom_interaction = {
 				scope:recipient = { save_scope_as = portrait_first }
 				if = {
 					limit = {
-						NOT = { scope:portrait_first = scope:prisoner }
+						scope:portrait_first != scope:prisoner
 					}
-					scope:prisoner = { save_scope_as = portrait_second}
+					scope:prisoner = { save_scope_as = portrait_second }
 					# Must come after we save the payment value, or the payer won't know how much they need to pay.
 					send_interface_message = {
 						type = event_prison_good
@@ -1574,8 +1796,7 @@ ransom_interaction = {
 	send_option = {
 		is_shown = {
 			scope:actor = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -1591,8 +1812,7 @@ ransom_interaction = {
 	send_option = {
 		is_shown = {
 			scope:actor = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -1680,6 +1900,8 @@ ransom_interaction = {
 		is_valid = {
 			# Actor has enough influence
 			scope:actor = { influence >= medium_influence_value }
+			# Recipient wants your influence
+			scope:recipient = { government_has_flag = government_has_influence }
 			# Both characters are within the same top realm
 			custom_tooltip = {
 				text = not_same_realm_tt
@@ -1687,17 +1909,45 @@ ransom_interaction = {
 			}
 		}
 		flag = influence_send_option
-		localization = TRADE_INFLUENCE_FOR_BETTER_AI_ACCEPTANCE
+		localization = DEMAND_INFLUENCE_AI_ACCEPTANCE
+	}
+	
+	# MPO Herd
+	send_option = {
+		is_shown = { # Actor must have a government that uses Herd 
+			scope:actor = {
+				government_has_flag = government_is_nomadic
+				exists = domicile
+				is_ai = no
+			}
+			# Recipient must care about Herd
+			scope:recipient ?= {
+				government_has_flag = government_is_nomadic
+				exists = domicile
+			}
+		}
+		is_valid = {
+			# Recipient has enough Herd
+			scope:recipient = { domicile.herd >= scope:recipient.ransom_herd_value }
+		}
+		flag = herd_send_option
+		localization = RANSOM_HERD_OPTION
 	}
 
 	localization_values = {
 		EXTORTIONATE_RANSOM_COST = scope:secondary_recipient.increased_ransom_cost_value
 		RANSOM_COST = scope:secondary_recipient.ransom_cost_value
 		CURRENT_GOLD = scope:recipient.gold
+		RANSOM_HERD_COST = scope:recipient.ransom_herd_value
 	}
 
 	ai_accept = {
 		base = 0
+
+		# Warcraft
+		master_thrall_modifier = yes
+		# End Warcraft
+
 		modifier = { # Greedy characters can have their greed get the better of them...
 			add = {
 				value = scope:recipient.ai_greed
@@ -1708,9 +1958,7 @@ ransom_interaction = {
 				scope:gold = yes
 				scope:extortionate_gold = yes
 			}
-			NOT = {
-				scope:recipient = scope:secondary_recipient
-			}
+			scope:recipient != scope:secondary_recipient
 			desc = AI_VALUE_MODIFIER_GREED
 		}
 		modifier = { # Generous characters are more willing to pay
@@ -1722,15 +1970,13 @@ ransom_interaction = {
 				scope:gold = yes
 				scope:extortionate_gold = yes
 			}
-			NOT = {
-				scope:recipient = scope:secondary_recipient
-			}
+			scope:recipient != scope:secondary_recipient
 			scope:recipient.ai_greed <= medium_negative_ai_value
 			desc = AI_VALUE_MODIFIER_GENEROUS
 		}
 		modifier = {
 			add = -10
-			NOT = { scope:recipient = scope:secondary_recipient }
+			scope:recipient != scope:secondary_recipient
 			scope:recipient = {
 				NOR = {
 					is_spouse_of = scope:secondary_recipient
@@ -1752,7 +1998,7 @@ ransom_interaction = {
 		}
 		modifier = { # Acceptance boon for lovers, friends, etc
 			add = 25
-			NOT = { scope:recipient = scope:secondary_recipient }
+			scope:recipient != scope:secondary_recipient
 			scope:recipient = {
 				OR = {
 					is_spouse_of = scope:secondary_recipient
@@ -1861,7 +2107,14 @@ ransom_interaction = {
 	ai_targets = {
 		ai_recipients = prisoners
 	}
-	ai_frequency = 6
+	ai_frequency_by_tier = {
+		barony = 36
+		county = 6
+		duchy = 6
+		kingdom = 6
+		empire = 6
+		hegemony = 6
+	}
 
 	ai_potential = {
 		always = yes
@@ -1914,10 +2167,7 @@ ransom_interaction = {
 			scope:recipient = {
 				OR = {
 					is_vassal_of = scope:actor
-					AND = {
-						exists = liege
-						liege = scope:actor
-					}
+					liege ?= scope:actor
 				}
 			}
 		}
@@ -1959,10 +2209,10 @@ ransom_interaction = {
 		#		}
 		#	}
 		#}
-		
-		modifier = {
+
+		modifier = { # Do not ransom at war
 			factor = 0
-			is_at_war = yes
+			scope:actor = { is_at_war = yes }
 		}
 
 		modifier = { # Don't annoy players
@@ -2005,7 +2255,7 @@ ransom_interaction = {
 #For lieges to ransom their courtiers
 pay_ransom_interaction = {
 	interface_priority = 50
-	common_interaction = yes
+	common_interaction = no
 	use_diplomatic_range = no
 	category = interaction_category_prison
 	icon = icon_gold
@@ -2014,9 +2264,7 @@ pay_ransom_interaction = {
 		scope:recipient = {
 			save_scope_as = secondary_recipient
 			if = {
-				limit = {
-					exists = imprisoner
-				}
+				limit = { exists = imprisoner }
 				imprisoner = { save_scope_as = recipient }
 			}
 		}
@@ -2024,26 +2272,13 @@ pay_ransom_interaction = {
 
 	desc = pay_ransom_interaction_desc
 
-	cost = {
-		influence = {
-			value = 0
-			if = {
-				limit = { scope:influence_send_option = yes }
-				add = scope:actor.medium_influence_value
-				desc = INFLUENCE_INTERACTION_ACCEPTANCE_SEND_OPTION
-			}
-		}
-	}
-
 	greeting = positive
 	notification_text = PAY_RANSOM_PROPOSAL
 
 	is_shown = {
 		exists = scope:recipient
 		scope:secondary_recipient = {
-			NOT = {
-				this = scope:actor
-			}
+			this != scope:actor
 			is_imprisoned_by = scope:recipient
 			OR = {
 				liege ?= scope:actor # You can ransom anyone you have in your court
@@ -2063,16 +2298,12 @@ pay_ransom_interaction = {
 				has_relation_friend = scope:actor # And Friends
 			}
 		}
-		NOT = {
-			scope:actor = scope:recipient
-		}
+		scope:actor != scope:recipient
 	}
 
 	is_valid_showing_failures_only = {
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
-		scope:recipient = { is_busy_in_events_localised = yes } #Imprisoner
-		scope:secondary_recipient = { is_busy_in_events_localised = yes } #Prisoner
-		scope:recipient = {
+		scope:secondary_recipient = {
 			custom_description = {
 				text = "currently_being_tortured"
 				NOT = { has_character_flag = is_being_tortured }
@@ -2332,8 +2563,7 @@ pay_ransom_interaction = {
 		is_shown = {
 			exists = scope:recipient
 			scope:recipient = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -2347,8 +2577,7 @@ pay_ransom_interaction = {
 		starts_enabled = {
 			exists = scope:recipient
 			scope:recipient = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -2365,8 +2594,7 @@ pay_ransom_interaction = {
 		is_shown = {
 			exists = scope:recipient
 			scope:recipient = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -2378,8 +2606,7 @@ pay_ransom_interaction = {
 		starts_enabled = {
 			exists = scope:recipient
 			scope:recipient = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -2495,6 +2722,8 @@ pay_ransom_interaction = {
 		is_valid = {
 			# Actor has enough influence
 			scope:actor = { influence >= medium_influence_value }
+			# Recipient has enough influence
+			scope:recipient = { government_has_flag = government_has_influence }
 			# Both characters are within the same top realm
 			custom_tooltip = {
 				text = not_same_realm_tt
@@ -2502,7 +2731,28 @@ pay_ransom_interaction = {
 			}
 		}
 		flag = influence_send_option
-		localization = TRADE_INFLUENCE_FOR_BETTER_AI_ACCEPTANCE
+		localization = DEMAND_INFLUENCE_AI_ACCEPTANCE
+	}
+	
+	send_option = { # MPO Herd
+		is_shown = { # Actor must have a government that uses Herd 
+			scope:actor = {
+				government_has_flag = government_is_nomadic
+				exists = domicile
+				is_ai = no
+			}
+			# Recipient must care about Herd
+			scope:recipient = {
+				government_has_flag = government_is_nomadic
+				exists = domicile
+			}
+		}
+		is_valid = {
+			# Actor has enough Herd
+			scope:actor = { domicile.herd >= scope:actor.ransom_herd_value }
+		}
+		flag = herd_send_option
+		localization = PAY_FOR_BETTER_AI_ACCEPTANCE
 	}
 
 	#Use hook
@@ -2527,10 +2777,16 @@ pay_ransom_interaction = {
 		EXTORTIONATE_RANSOM_COST = scope:secondary_recipient.increased_ransom_cost_value
 		RANSOM_COST = scope:secondary_recipient.ransom_cost_value
 		CURRENT_GOLD = scope:actor.gold
+		RANSOM_HERD_COST = scope:actor.ransom_herd_value
 	}
 
 	ai_accept = {
 		base = 0
+
+		# Warcraft
+		master_thrall_modifier = yes
+		# End Warcraft
+
 		modifier = {
 			add = 50
 			OR = {
@@ -2566,7 +2822,7 @@ pay_ransom_interaction = {
 		modifier = {
 			add = 0
 			scope:favor = yes
-			NOT = { scope:recipient.top_liege = scope:actor.top_liege }
+			scope:recipient.top_liege != scope:actor.top_liege
 			desc = "NO_USE_FOR_A_FAVOR_REASON"
 		}
 		modifier = { # For clarification
@@ -2672,6 +2928,12 @@ pay_ransom_interaction = {
 			desc = INFLUENCE_INTERACTION_ACCEPTANCE_SEND_OPTION
 		}
 		
+		modifier = {
+			add = 25
+			scope:herd_send_option = yes
+			desc = HERD_INTERACTION_ACCEPTANCE_SEND_OPTION
+		}
+		
 		# Warcraft
 		scourge_interaction_modifiers = yes
 	}
@@ -2690,14 +2952,8 @@ pay_ransom_interaction = {
 	# AI
 	ai_targets = {
 		ai_recipients = family
-	}
-	ai_targets = {
 		ai_recipients = spouses
-	}
-	ai_targets = {
 		ai_recipients = scripted_relations
-	}
-	ai_targets = {
 		ai_recipients = liege
 	}
 	ai_targets = {
@@ -2706,7 +2962,14 @@ pay_ransom_interaction = {
 		ai_recipients = top_realm_domicile_owners
 		max = 5
 	}
-	ai_frequency = 6
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 6
+		duchy = 6
+		kingdom = 6
+		empire = 6
+		hegemony = 6
+	}
 
 	ai_potential = {
 		gold >= 25
@@ -2755,10 +3018,7 @@ pay_ransom_interaction = {
 			scope:recipient = {
 				OR = {
 					is_vassal_of = scope:actor
-					AND = {
-						exists = liege
-						liege = scope:actor
-					}
+					liege ?= scope:actor
 				}
 			}
 		}
@@ -2785,10 +3045,7 @@ pay_ransom_interaction = {
 					scope:recipient = {
 						OR = {
 							is_vassal_of = scope:actor
-							AND = {
-								exists = liege
-								liege = scope:actor
-							}
+							liege ?= scope:actor
 						}
 					}
 				}
@@ -2958,10 +3215,7 @@ pay_ransom_interaction = {
 			scope:recipient = {
 				NOR = {
 					is_vassal_of = scope:actor
-					AND = {
-						exists = liege
-						liege = scope:actor
-					}
+					liege ?= scope:actor
 				}
 			}
 		}
@@ -2978,7 +3232,7 @@ pay_ransom_interaction = {
 		}
 
 		#Warcraft -  remove Struggle Agenda
-		
+
 		evaluate_action_increasing_house_unity = {
 			VALUE = 100
 		}
@@ -3042,16 +3296,12 @@ ransom_me_interaction = {
 	}
 
 	is_shown = {
-		scope:actor = {
-			is_imprisoned_by = scope:recipient
-		}
+		scope:actor = { is_imprisoned_by = scope:recipient }
 	}
 
 	is_valid_showing_failures_only = {
-		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
-		scope:recipient = { is_busy_in_events_localised = yes } #Imprisoner
-		scope:actor = { is_busy_in_events_localised = yes } #Prisoner
-		scope:recipient = {
+		scope:actor = {
+			NOT = { is_isolated_from_trigger = { target = scope:recipient } } # Warcraft
 			custom_description = {
 				text = "currently_being_tortured"
 				NOT = { has_character_flag = is_being_tortured }
@@ -3060,6 +3310,14 @@ ransom_me_interaction = {
 		cannot_release_former_regent_whilst_old_regent_holds_power_trigger = {
 			PRISONER = scope:recipient
 			REGENT = scope:recipient.var:imprisoned_by_diarch
+		}
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
 		}
 	}
 
@@ -3182,23 +3440,11 @@ ransom_me_interaction = {
 		}
 	}
 
-	cost = {
-		influence = {
-			value = 0
-			if = {
-				limit = { scope:influence_send_option = yes }
-				add = scope:actor.medium_influence_value
-				desc = INFLUENCE_INTERACTION_ACCEPTANCE_SEND_OPTION
-			}
-		}
-	}
-
 	send_option = {
 		is_shown = {
 			exists = scope:recipient
 			scope:recipient = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -3217,8 +3463,7 @@ ransom_me_interaction = {
 		is_shown = {
 			exists = scope:recipient
 			scope:recipient = {
-				exists = dynasty
-				dynasty = {
+				dynasty ?= {
 					has_dynasty_perk = fp1_pillage_legacy_3
 				}
 			}
@@ -3246,9 +3491,7 @@ ransom_me_interaction = {
 			}
 		}
 		is_valid = {
-			scope:actor = {
-				gold >= ransom_cost
-			}
+			scope:actor = { gold >= ransom_cost }
 		}
 		flag = gold
 		localization = "RANSOM_GOLD_OPTION"
@@ -3257,14 +3500,11 @@ ransom_me_interaction = {
 	# If you don't have what they're worth, pay me what you have!
 	send_option = {
 		is_shown = {
-			exists = scope:recipient
-			scope:recipient = {
+			scope:recipient ?= {
 				OR = {
 					is_lowborn = yes
 					NOT = {
-						dynasty = {
-							has_dynasty_perk = fp1_pillage_legacy_3
-						}
+						dynasty = { has_dynasty_perk = fp1_pillage_legacy_3 }
 					}
 				}
 			}
@@ -3299,6 +3539,8 @@ ransom_me_interaction = {
 		is_valid = {
 			# Actor has enough influence
 			scope:actor = { influence >= medium_influence_value }
+			# Recipient wants your influence
+			scope:recipient = { government_has_flag = government_has_influence }
 			# Both characters are within the same top realm
 			custom_tooltip = {
 				text = not_same_realm_tt
@@ -3306,7 +3548,27 @@ ransom_me_interaction = {
 			}
 		}
 		flag = influence_send_option
-		localization = TRADE_INFLUENCE_FOR_BETTER_AI_ACCEPTANCE
+		localization = DEMAND_INFLUENCE_AI_ACCEPTANCE
+	}
+	
+	send_option = { # MPO Herd
+		is_shown = { # Actor must have a government that uses Herd 
+			scope:actor = {
+				government_has_flag = government_is_nomadic
+				exists = domicile
+			}
+			# Recipient must care about Herd
+			scope:recipient = {
+				government_has_flag = government_is_nomadic
+				exists = domicile
+			}
+		}
+		is_valid = {
+			# Actor has enough Herd
+			scope:actor = { domicile.herd >= ransom_herd_value }
+		}
+		flag = herd_send_option
+		localization = PAY_FOR_BETTER_AI_ACCEPTANCE
 	}
 
 	#Use hook
@@ -3330,10 +3592,16 @@ ransom_me_interaction = {
 		EXTORTIONATE_RANSOM_COST = scope:actor.increased_ransom_cost_value
 		RANSOM_COST = scope:actor.ransom_cost_value
 		CURRENT_GOLD = scope:actor.gold
+		RANSOM_HERD_COST = scope:actor.ransom_herd_value
 	}
 
 	ai_accept = {
 		base = 0
+
+		# Warcraft
+		master_thrall_modifier = yes
+		# End Warcraft
+
 		modifier = {
 			add = 50
 			OR = {
@@ -3378,7 +3646,7 @@ ransom_me_interaction = {
 				scope:extortionate_gold = yes
 			}
 			OR = {
-				NOT = { scope:recipient.top_liege = scope:actor.top_liege }
+				scope:recipient.top_liege != scope:actor.top_liege
 				scope:recipient.ai_greed >= medium_positive_ai_value
 			}
 			desc = "NO_USE_FOR_A_FAVOR_REASON"
@@ -3464,20 +3732,9 @@ ransom_me_interaction = {
 		modifier = { # Family Feud
 			add = -50
 			trigger = {
-				exists = scope:actor.house
-				exists = scope:recipient.house
 				scope:recipient = {
-					house.house_head = {
-						any_owned_story = {
-							story_type = story_cycle_house_feud
-							has_variable = house_feud_house
-							var:house_feud_house = scope:actor.house
-						}
-					}
-					has_opinion_modifier = {
-						modifier = house_feud_opinion
-						target = scope:actor.house.house_head
-					}
+					house_has_feud_relation_with_trigger = { TARGET = scope:actor }
+
 				}
 			}
 			desc = INTERACTION_FAMILY_FEUD_REVERSE_REASON
@@ -3487,6 +3744,12 @@ ransom_me_interaction = {
 			add = 25
 			scope:influence_send_option = yes
 			desc = INFLUENCE_INTERACTION_ACCEPTANCE_SEND_OPTION
+		}
+		
+		modifier = {
+			add = 25
+			scope:herd_send_option = yes
+			desc = HERD_INTERACTION_ACCEPTANCE_SEND_OPTION
 		}
 		
 		# Warcraft
@@ -3504,7 +3767,14 @@ ransom_me_interaction = {
 	}
 
 	# AI
-	ai_frequency = 24
+	ai_frequency_by_tier = {
+		barony = 72
+		county = 24
+		duchy = 24
+		kingdom = 12
+		empire = 12
+		hegemony = 12
+	}
 
 	ai_targets = {
 		ai_recipients = self
@@ -3535,6 +3805,7 @@ ransom_me_interaction = {
 						scope:extortionate_current_gold = yes
 					}
 				}
+				scope:herd_send_option = yes
 			}
 		}
 
@@ -3544,10 +3815,7 @@ ransom_me_interaction = {
 			scope:recipient = {
 				OR = {
 					is_vassal_of = scope:actor
-					AND = {
-						exists = liege
-						liege = scope:actor
-					}
+					liege ?= scope:actor
 				}
 			}
 		}
@@ -3558,10 +3826,7 @@ ransom_me_interaction = {
 			scope:recipient = {
 				NOR = {
 					is_vassal_of = scope:actor
-					AND = {
-						exists = liege
-						liege = scope:actor
-					}
+					liege ?= scope:actor
 				}
 			}
 		}
@@ -3611,6 +3876,7 @@ ransom_me_interaction = {
 				scope:gold = yes
 				scope:extortionate_gold = yes
 				scope:current_gold = yes
+				scope:herd_send_option = yes
 				AND = {
 					scope:actor = {
 						gold >= 25
@@ -3660,6 +3926,8 @@ release_from_prison_interaction = {
 					scope:disfigure = no
 					scope:blind = no
 					scope:castrate = no
+					scope:demand_admin = no
+					scope:gain_hook = no
 				}
 				desc = RELEASE_PRISONER_OFFER
 			}
@@ -3675,7 +3943,6 @@ release_from_prison_interaction = {
 
 	is_valid_showing_failures_only = {
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
-		scope:recipient = { is_busy_in_events_localised = yes } #Prisoner
 		scope:recipient = {
 			custom_description = {
 				text = "currently_being_tortured"
@@ -3685,6 +3952,14 @@ release_from_prison_interaction = {
 		cannot_release_former_regent_whilst_old_regent_holds_power_trigger = {
 			PRISONER = scope:recipient
 			REGENT = scope:recipient.var:imprisoned_by_diarch
+		}
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
 		}
 	}
 
@@ -3701,6 +3976,16 @@ release_from_prison_interaction = {
 			limit = { scope:recipient = { is_imprisoned_by = scope:actor } }
 
 			scope:recipient = {
+				if = {
+					limit = {
+						is_imprisoned = yes
+						# Release is handled in follow-up events
+						scope:disfigure = no
+						scope:blind = no
+						scope:castrate = no
+					}
+					release_from_prison = yes
+				}
 				# Demand Conversion
 				if = {
 					limit = { scope:demand_conversion = yes }
@@ -3757,8 +4042,9 @@ release_from_prison_interaction = {
 					if = {
 						limit = {
 							this.gold > 0
-							NOT = {
+							NOR = {
 								has_character_flag = realm_priest
+								has_character_flag = was_bookmaker
 							}
 						}
 						pay_short_term_gold = { target = scope:actor gold = this.gold }
@@ -3768,6 +4054,7 @@ release_from_prison_interaction = {
 							has_any_artifact = yes
 						}
 						every_character_artifact = {
+							limit = { NOT = { has_variable = artifact_prevent_transfer } }
 							set_owner = {
 								target = scope:actor
 								history = {
@@ -3952,7 +4239,7 @@ release_from_prison_interaction = {
 						limit = {
 							scope:actor = {
 								is_ai = yes
-								culture = { like_byzantine_group_trigger = yes }
+								culture = { like_heritage_byzantine_trigger = yes } # Warcraft
 							}
 						}
 						debug_log = debug_ai_byzan_forced_vows_on_prison_release
@@ -3968,7 +4255,7 @@ release_from_prison_interaction = {
 					}
 				}
 
-				# Take Vows
+				# Become Executioner
 				if = {
 					limit = { scope:become_executioner = yes }
 					release_as_executioner_effect = yes
@@ -4111,6 +4398,78 @@ release_from_prison_interaction = {
 					}
 				}
 
+				# Demand Admin
+				if = {
+					limit = { scope:demand_admin = yes }
+					scope:recipient = {
+						change_to_administrative_effect = yes
+					}
+				}
+
+				# Shared Torture effects
+				if = {
+					limit = {
+						OR = {
+							scope:disfigure = yes
+							scope:blind = yes
+							scope:castrate = yes
+						}
+					}
+					scope:recipient.house ?= {
+						change_house_relation_effect = {
+							HOUSE = scope:actor.house
+							VALUE = house_relation_damage_medium_value
+							REASON = torture
+							CHAR = scope:actor
+							TARGET_CHAR = scope:recipient
+							TITLE = scope:dummy_gender
+						}
+					}
+				}
+
+				# Lobotomize
+				if = {
+					limit = { scope:lobotomize = yes }
+					scope:recipient = {
+						add_character_flag = {
+							flag = is_being_tortured
+							months = 6 # Players in MP can keep the event window open...
+						}
+					}
+
+					blind_castrate_and_disfigure_effect = yes #Stress & dread
+
+					scope:recipient = {
+						add_trait = incapable
+						trigger_event = {
+							id = wc_magic_spell_events.9000
+							months = { 3 12 }
+						}
+					}
+
+					custom_tooltip = {
+						text = lobotomized_tooltip
+					}
+
+					torture_blind_castrate_disfigure_opinion_effect = { VERB = lobotomized }
+
+					scope:actor = {
+						trigger_event = {
+							id = prison.1050
+							days = 1
+						}
+					}
+
+					# If we're a clan this interaction affects unity
+					add_clan_unity_interaction_effect = {
+						CHARACTER = scope:actor
+						TARGET = scope:recipient
+						VALUE = major_unity_loss
+						DESC = clan_unity_abelarding.desc
+						REVERSE_NON_HOUSE_TARGET = no
+					}
+				}
+
 				# No Demands Added
 				if = {
 					limit = {
@@ -4124,6 +4483,7 @@ release_from_prison_interaction = {
 						scope:disfigure = no
 						scope:blind = no
 						scope:castrate = no
+						scope:demand_admin = no
 					}
 					# Notification to the imprisoner
 					scope:actor = {
@@ -4137,20 +4497,88 @@ release_from_prison_interaction = {
 									target = scope:actor
 								}
 							}
-						}
-						scope:actor = {
-							add_dread = minor_dread_loss
-							stress_impact = {
-								sadistic = medium_stress_impact_gain
-								callous = minor_stress_impact_gain
+							hidden_effect = {
+								random = { # chance of inspiring a knight to become eligible for idealist accolade
+									chance = 2
+									modifier = {
+										factor = accolade_progress # scales with accolade progress
+									}
+									modifier = { # must have an eligible knight
+										NOT = {
+											any_knight = {
+												can_unlock_accolade_attribute_trigger = {
+													ATTRIBUTE = idealist
+												}
+											}
+										}
+										factor = 0
+									}
+									set_variable = {
+										name = accolade_progress
+										value = 0
+									}
+									random_knight = {
+										limit = {
+											can_unlock_accolade_attribute_trigger = {
+												ATTRIBUTE = idealist
+											}
+										}
+										weight = {
+											base = 1
+											modifier = {
+												add = 50
+												is_acclaimed = yes
+											}
+											modifier = {
+												add = 50
+												has_trait = compassionate
+											}
+											modifier = {
+												add = 30
+												has_trait = just
+											}
+											modifier = {
+												add = 30
+												has_trait = zealous
+											}
+										}
+										save_scope_as = idealist
+									}
+									send_interface_message = {
+										type = msg_accolade_eligibility
+										title = accolade_idealist_unlock.t
+										left_icon = scope:idealist
+										right_icon = scope:recipient
+										custom_tooltip = accolade_idealist_unlock.tt
+										scope:idealist = {
+											set_variable = {
+												name = idealist_attribute_unlock
+												value = yes
+											}
+										}
+									}
+								}
 							}
+						}
+						house ?= {
+							change_house_relation_effect = {
+								HOUSE = scope:recipient.house
+								VALUE = house_relation_improve_medium_value
+								REASON = prison_released
+								CHAR = scope:actor
+								TARGET_CHAR = scope:recipient
+								TITLE = scope:dummy_gender
+							}
+						}
+						add_dread = minor_dread_loss
+						stress_impact = {
+							sadistic = medium_stress_impact_gain
+							callous = minor_stress_impact_gain
 						}
 						# Warcraft - remove Struggle Impact and Catalyst
 						# Struggle impact
-						
 
 						# Struggle Catalyst
-						
 					}
 
 					# If we're a clan (and not making any demands) this interaction affects unity
@@ -4192,10 +4620,17 @@ release_from_prison_interaction = {
 						}
 					}
 				}
-				else = {
+				else_if = {
+					limit = {
+						scope:disfigure = no
+						scope:blind = no
+						scope:castrate = no
+					}
 					scope:actor = {
 						trigger_event = char_interaction.0160
 					}
+				}
+				else = { #do nothing as rest is handled in follow-up events
 				}
 
 				# If a child was imprisoned due to yearly_4021 they'll come back to say hi
@@ -4231,17 +4666,6 @@ release_from_prison_interaction = {
 						}
 						remove_variable = marked_for_revenge_in_event_yearly_4021
 					}
-				}
-
-				if = {
-					limit = {
-						is_imprisoned = yes
-						# Release is handled in follow-up events
-						scope:disfigure = no
-						scope:blind = no
-						scope:castrate = no
-					}
-					release_from_prison = yes
 				}
 			}
 
@@ -4296,7 +4720,7 @@ release_from_prison_interaction = {
 		flag = demand_conversion
 		localization = "RELEASE_DEMAND_CONVERSION"
 		is_shown = {
-			NOT = { scope:recipient.faith = scope:actor.faith }
+			scope:recipient.faith != scope:actor.faith
 		}
 		is_valid = {
 			trigger_if = {
@@ -4327,11 +4751,9 @@ release_from_prison_interaction = {
 			# Cannot ask Religious Heads to convert
 			custom_description = {
 				text = cannot_demand_religious_head_conversion
-				NOT = {
-					AND = {
-						exists = scope:recipient.faith.religious_head
-						scope:recipient.faith.religious_head = scope:recipient
-					}
+				NAND = {
+					exists = scope:recipient.faith.religious_head
+					scope:recipient.faith.religious_head = scope:recipient
 				}
 			}
 			# Cannot ask Holy Order Master to convert
@@ -4475,10 +4897,7 @@ release_from_prison_interaction = {
 				scope:recipient = {
 					OR = {
 						is_vassal_of = scope:actor
-						AND = {
-							exists = liege
-							liege = scope:actor
-						}
+						liege ?= scope:actor
 					}
 				}
 			}
@@ -4497,9 +4916,7 @@ release_from_prison_interaction = {
 		flag = take_vows
 		localization = "RELEASE_TAKE_VOWS"
 		is_shown = {
-			scope:actor.faith = {
-				has_doctrine_parameter = take_vows_active
-			}
+			scope:actor = { take_vows_available_trigger = yes }
 		}
 		is_valid = {
 			#Handle AI
@@ -4511,7 +4928,7 @@ release_from_prison_interaction = {
 				trigger_if = {
 					limit = {
 						scope:actor = {
-							culture = { like_byzantine_group_trigger = yes }
+							culture = { like_heritage_byzantine_trigger = yes } # Warcraft
 						}
 					}
 					scope:recipient = {
@@ -4573,7 +4990,7 @@ release_from_prison_interaction = {
 			trigger_else_if = {
 				limit = {
 					scope:actor = {
-						culture = { like_byzantine_group_trigger = yes }
+						culture = { like_heritage_byzantine_trigger = yes } # Warcraft
 					}
 				}
 				scope:recipient = {
@@ -4614,7 +5031,7 @@ release_from_prison_interaction = {
 				subject = scope:actor
 				trigger_if = {
 					limit = {
-						NOT = { scope:recipient.faith = scope:actor.faith }
+						scope:recipient.faith != scope:actor.faith
 					}
 					scope:demand_conversion = yes
 				}
@@ -4636,7 +5053,7 @@ release_from_prison_interaction = {
 				NOR = {
 					has_trait = excommunicated
 					has_trait = devoted
-					is_incapable_trigger = yes
+					is_incapable_trigger = yes  # Warcraft
 				}
 				#Do they have the "wrong" marriage type?
 				NOR = {
@@ -4659,8 +5076,7 @@ release_from_prison_interaction = {
 					custom_description = {
 						text = matrilinear_betrothal
 						subject = scope:recipient
-						exists = betrothed
-						betrothed = {
+						betrothed ?= {
 							is_female = yes
 							matrilinear_betrothal = yes
 						}
@@ -4668,8 +5084,7 @@ release_from_prison_interaction = {
 					custom_description = {
 						text = patrilinear_betrothal
 						subject = scope:recipient
-						exists = betrothed
-						betrothed = {
+						betrothed ?= {
 							is_male = yes
 							patrilinear_betrothal = yes
 						}
@@ -4692,6 +5107,7 @@ release_from_prison_interaction = {
 		}
 		is_valid = {
 			scope:actor = {
+				can_employ_court_position_type = executioner_court_position
 				NOT = { employs_court_position = executioner_court_position }
 			}
 			scope:recipient = {
@@ -4778,7 +5194,7 @@ release_from_prison_interaction = {
 			trigger_if = {
 				limit = {
 					scope:actor = {
-						culture = { like_byzantine_group_trigger = yes }
+						culture = { like_heritage_byzantine_trigger = yes } # Warcraft
 					}
 				}
 				scope:recipient = {
@@ -4800,6 +5216,8 @@ release_from_prison_interaction = {
 				object = scope:recipient
 				scope:blind = no
 				scope:castrate = no
+				# Warcraft
+				scope:lobotomize = no
 			}
 		}
 	}
@@ -4827,6 +5245,8 @@ release_from_prison_interaction = {
 				object = scope:recipient
 				scope:disfigure = no
 				scope:castrate = no
+				# Warcraft
+				scope:lobotomize = no
 			}
 		}
 	}
@@ -4858,6 +5278,61 @@ release_from_prison_interaction = {
 				object = scope:recipient
 				scope:disfigure = no
 				scope:blind = no
+				# Warcraft
+				scope:lobotomize = no
+			}
+		}
+	}
+
+
+	# Warcraft 
+	send_option = {
+		flag = lobotomize
+		localization = "RELEASE_LOBOTOMY"
+		is_shown = {
+			scope:actor = {
+				is_adult = yes
+				has_perk = shadow_magic_tree_2_perk_7
+			}
+			scope:recipient = {
+				is_adult = yes
+			}
+		}
+		is_valid = {
+			scope:recipient = {
+				is_incapable_trigger = no 
+			}
+			custom_description = {
+				text = "release_prisoner_disfigure_blind_castrate_condition"
+				object = scope:recipient
+				scope:disfigure = no
+				scope:blind = no
+				scope:castrate = no
+			}
+		}
+	}
+
+	send_option = {
+		flag = demand_admin
+		localization = "RELEASE_DEMAND_ADMIN"
+		is_shown = {
+			scope:actor = { government_allows = administrative }
+			scope:actor = scope:recipient.liege
+			scope:recipient = { #Requirements match demand admin interaction
+				highest_held_title_tier >= tier_county
+				is_landed = yes
+				is_ruler = yes
+				NOT = { government_allows = administrative }
+				NOT = {
+					scope:recipient = { government_has_flag = government_is_tribal }
+				}
+				NOT = { scope:recipient ?= scope:recipient.faith.religious_head }
+				NOT = { scope:recipient ?= scope:actor.diarch }
+			}
+		}
+		is_valid = {
+			scope:recipient = {
+				NOT = { government_allows = administrative }
 			}
 		}
 	}
@@ -4871,14 +5346,33 @@ release_from_prison_interaction = {
 		scope:gain_hook = no
 		scope:take_vows = no
 		scope:recruit = no
+		scope:disfigure = no
+		scope:blind = no
+		scope:castrate = no
+		scope:demand_admin = no
 	}
 
 	ai_accept = {
 		base = 0
+
+		# Warcraft
+		master_thrall_modifier = yes
+		# End Warcraft
+
 		modifier = {
 			add = 100
 			desc = "WANTS_FREEDOM_REASON"
 		}
+		# Basic modifiers
+		modifier = {
+			trigger = {
+				has_trait = ambitious
+			}
+			add = -20
+			desc = "RECIPIENT_IS_AMBITIOUS"
+		}
+		
+		# Demand conversion
 		modifier = {
 			trigger = {
 				scope:recipient = { ai_zeal <= 20 }
@@ -4911,6 +5405,7 @@ release_from_prison_interaction = {
 			}
 			desc = "CONVERSION_NEGATIVE_REASON"
 		}
+		# Renounce claims
 		modifier = {
 			add = -25
 			trigger = {
@@ -4929,18 +5424,6 @@ release_from_prison_interaction = {
 			desc = "RENOUNCE_CLAIMS_REASON"
 		}
 		modifier = {
-			add = -50
-			trigger = {
-				scope:become_executioner = yes
-				# Sadists don't care about becoming an executioner
-				NOR = {
-					has_trait = sadistic
-					has_trait = callous
-				}
-			}
-			desc = "BECOME_EXECUTIONER_REASON"
-		}
-		modifier = {
 			add = -75
 			trigger = {
 				scope:renounce_claims = yes
@@ -4957,6 +5440,20 @@ release_from_prison_interaction = {
 			}
 			desc = "RENOUNCE_CLAIMS_REASON"
 		}
+		# Employ executioner
+		modifier = {
+			add = -50
+			trigger = {
+				scope:become_executioner = yes
+				# Sadists don't care about becoming an executioner
+				NOR = {
+					has_trait = sadistic
+					has_trait = callous
+				}
+			}
+			desc = "BECOME_EXECUTIONER_REASON"
+		}
+		# Banish
 		modifier = {
 			add = -50
 			trigger = {
@@ -4981,6 +5478,7 @@ release_from_prison_interaction = {
 			}
 			desc = tradition_legalistic_name
 		}
+		# Gain hook
 		modifier = {
 			add = {
 				value = -50
@@ -4998,6 +5496,7 @@ release_from_prison_interaction = {
 			}
 			desc = "GAIN_HOOK_NEGATIVE_REASON"
 		}
+		# Take vows
 		modifier = {
 			add = -30
 			trigger = {
@@ -5064,6 +5563,7 @@ release_from_prison_interaction = {
 			}
 			desc = "TAKE_VOWS_CYNICAL_REASON"
 		}
+		# Recruitment
 		modifier = {
 			add = -10
 			trigger = {
@@ -5077,6 +5577,194 @@ release_from_prison_interaction = {
 				}
 			}
 			desc = "RECRUITMET_NEGATIVE_REASON"
+		}
+		# Disfigure
+		modifier = {
+			add = {
+				value = -100
+				if = {
+					limit = {
+						has_trait = beauty_good
+					}
+					multiply = 2
+				}
+			}
+			trigger = {
+				scope:disfigure = yes
+				OR = {
+					NOR = {
+						has_trait = maimed
+						has_trait = beauty_bad
+						ai_sociability < -75
+					}
+					has_trait = beauty_good
+				}
+			}
+			desc = "DISFIGURE_NEGATIVE_REASON"
+		}
+		modifier = {
+			add = -75
+			trigger = {
+				scope:disfigure = yes
+				OR = {
+					has_trait = maimed
+					has_trait = beauty_bad
+					ai_sociability < -75
+				}
+				NOT = { has_trait = beauty_good }
+			}
+			desc = "DISFIGURE_NEGATIVE_REASON"
+		}
+		# Blind
+		modifier = {
+			add = -100
+			trigger = {
+				scope:blind = yes
+				NOR = {
+					has_trait = one_eyed
+					has_trait = infirm
+					has_trait = clouded_eyes
+				}
+			}
+			desc = "BLIND_NEGATIVE_REASON"
+		}
+		modifier = {
+			add = -75
+			trigger = {
+				scope:blind = yes
+				OR = {
+					has_trait = one_eyed
+					has_trait = infirm
+					has_trait = clouded_eyes
+				}
+			}
+			desc = "BLIND_NEGATIVE_REASON"
+		}
+		# Castrate
+		modifier = {
+			add = -75
+			trigger = {
+				scope:castrate = yes
+				any_child = { count > 0 }
+				ai_boldness < -50
+			}
+			desc = "CASTRATE_NEGATIVE_REASON"
+		}
+		modifier = {
+			add = -100
+			trigger = {
+				scope:castrate = yes
+				any_child = { count > 0 }
+				ai_boldness >= -50
+			}
+			desc = "CASTRATE_NEGATIVE_REASON"
+		}
+		modifier = {
+			add = -100
+			trigger = {
+				scope:castrate = yes
+				any_child = { count <= 0 }
+			}
+			desc = "CASTRATE_NO_CHILDREN_NEGATIVE_REASON"
+		}
+		modifier = {
+			add = -100
+			trigger = {
+				scope:castrate = yes
+				has_trait = lustful
+			}
+			desc = "TAKE_VOWS_LUSTFUL_REASON"
+		}
+		# Demand admin
+		modifier = {
+			add = -20
+			trigger = {
+				scope:demand_admin = yes
+				OR = {
+					culture = {
+						OR = {
+							# Historical cultures
+							like_greek_culture_trigger = yes
+							any_parent_culture_or_above = {
+								like_greek_culture_trigger = yes
+							}
+							like_han_culture_trigger = yes
+							any_parent_culture_or_above = {
+								like_han_culture_trigger = yes
+							}
+							# Bureaucratic culture
+							has_cultural_pillar = ethos_bureaucratic
+						}
+					}
+					# Another admin government
+					government_allows = administrative
+				}
+			}
+			desc = "DEMAND_ADMIN_NEGATIVE_REASON"
+		}
+		modifier = {
+			add = -50
+			trigger = {
+				scope:demand_admin = yes
+				NOR = {
+					culture = {
+						OR = {
+							# Historical cultures
+							like_greek_culture_trigger = yes
+							any_parent_culture_or_above = {
+								like_greek_culture_trigger = yes
+							}
+							like_han_culture_trigger = yes
+							any_parent_culture_or_above = {
+								like_han_culture_trigger = yes
+							}
+							# Bureaucratic culture
+							has_cultural_pillar = ethos_bureaucratic
+						}
+					}
+					# Another admin government
+					government_allows = administrative
+				}
+				culture = {
+					NOR = {
+						has_cultural_tradition = tradition_hereditary_hierarchy
+						has_cultural_tradition = tradition_staunch_traditionalists
+					}
+				}
+			}
+			desc = "DEMAND_ADMIN_NEGATIVE_REASON"
+		}
+		modifier = {
+			add = -100
+			trigger = {
+				scope:demand_admin = yes
+				NOR = {
+					culture = {
+						OR = {
+							# Historical cultures
+							like_greek_culture_trigger = yes
+							any_parent_culture_or_above = {
+								like_greek_culture_trigger = yes
+							}
+							like_han_culture_trigger = yes
+							any_parent_culture_or_above = {
+								like_han_culture_trigger = yes
+							}
+							# Bureaucratic culture
+							has_cultural_pillar = ethos_bureaucratic
+						}
+					}
+					# Another admin government
+					government_allows = administrative
+				}
+				culture = {
+					OR = {
+						has_cultural_tradition = tradition_hereditary_hierarchy
+						has_cultural_tradition = tradition_staunch_traditionalists
+					}
+				}
+			}
+			desc = "DEMAND_ADMIN_NEGATIVE_REASON"
 		}
 		# Struggle
 		#modifier = {
@@ -5351,20 +6039,9 @@ release_from_prison_interaction = {
 		#}
 		modifier = { # Family Feud
 			add = -50
-			exists = scope:actor.house
-			exists = scope:recipient.house
 			scope:actor = {
-				house.house_head = {
-					any_owned_story = {
-						story_type = story_cycle_house_feud
-						has_variable = house_feud_house
-						var:house_feud_house = scope:recipient.house
-					}
-				}
-				has_opinion_modifier = {
-					modifier = house_feud_opinion
-					target = scope:recipient.house.house_head
-				}
+				house_has_feud_relation_with_trigger = { TARGET = scope:recipient }
+
 			}
 		}
 		#Byz AI can shove vassals off to remote monasteries - weigh that here
@@ -5372,7 +6049,7 @@ release_from_prison_interaction = {
 			add = -10
 			scope:take_vows = yes
 			scope:actor = {
-				culture = { like_byzantine_group_trigger = yes }
+				culture = { like_heritage_byzantine_trigger = yes } # Warcraft
 			}
 			scope:recipient = { is_vassal_or_below_of = scope:actor }
 		}
@@ -5411,7 +6088,14 @@ execute_prisoner_interaction = {
 		ai_recipients = prisoners
 	}
 
-	ai_frequency = 12
+	ai_frequency_by_tier = {
+		barony = 72
+		county = 12
+		duchy = 12
+		kingdom = 12
+		empire = 12
+		hegemony = 12
+	}
 
 	ai_potential = {
 		is_at_war = no
@@ -5422,7 +6106,7 @@ execute_prisoner_interaction = {
 
 		opinion_modifier = {
 			trigger = {
-				NOT = { scope:actor = scope:recipient }
+				scope:actor != scope:recipient
 			}
 			opinion_target = scope:recipient
 			multiplier = -1
@@ -5466,8 +6150,7 @@ execute_prisoner_interaction = {
 				has_execute_reason = scope:recipient
 				ai_greed > 0
 				any_heir_title = { # Execute rulers you can inherit land from
-					exists = holder
-					holder = scope:recipient
+					holder ?= scope:recipient
 				}
 			}
 		}
@@ -5491,8 +6174,7 @@ execute_prisoner_interaction = {
 			scope:actor = {
 				ai_greed >= very_high_positive_ai_value
 				any_heir_title = { # Execute rulers you can inherit land from
-					exists = holder
-					holder = scope:recipient
+					holder ?= scope:recipient
 				}
 			}
 		}
@@ -5528,8 +6210,7 @@ execute_prisoner_interaction = {
 						exposed_cheating_on_spouse_trigger = { SPOUSE = scope:actor }
 					}
 					any_heir_title = { # Execute rulers you can inherit land from
-						exists = holder
-						holder = scope:recipient
+						holder ?= scope:recipient
 					}
 					has_trait = lunatic # Self explanatory
 					
@@ -5605,39 +6286,81 @@ execute_prisoner_interaction = {
 		# 		}
 		# 	}
 		# }
-		# 
-		# modifier = {
-		# 	scope:recipient = {
-		# 		any_character_struggle = {
-		# 			involvement = involved
-		# 		}
-		# 		has_trait = fp3_struggle_detractor
-		# 	}
-		# 	add = {
-		# 		value = 0
-		# 		if = {
-		# 			limit = {
-		# 				scope:actor = {
-		# 					any_character_struggle = {
-		# 						phase_has_catalyst = catalyst_execute_detractor
-		# 					}
-		# 					has_trait = fp3_struggle_supporter
-		# 				}
-		# 			}
-		# 			add = 200
-		# 		}
-		# 		else_if = {
-		# 			limit = {
-		# 				scope:actor = {
-		# 					any_character_struggle = {
-		# 						phase_has_catalyst = catalyst_execute_detractor
-		# 					}
-		# 				}
-		# 			}
-		# 			add = -100
-		# 		}
-		# 	}
-		# }
+
+		#Nomads get the special beheading stuff
+		modifier = {
+			scope:actor = {
+				mpo_keep_prisoners_heads_trigger = yes
+				scope:recipient = {
+					is_ruler = yes
+					highest_held_title_tier >= tier_county
+					is_adult = yes
+				}
+				NOT = {
+					scope:recipient.top_liege ?= {
+						current_military_strength > scope:actor.current_military_strength
+						tier_difference = {
+							target = scope:actor
+							value >= -1
+						}
+					}
+				}
+			}
+			NOT = {
+				scope:actor.faith = { has_doctrine_parameter = human_sacrifice_active }
+			}
+			add = 10
+		}
+		#Boost further if actor if want to keep head
+		modifier = {
+			#want to keep head
+			scope:actor = {
+				mpo_keep_prisoners_heads_trigger = yes
+			}
+			scope:recipient = {
+				highest_held_title_tier >= tier_kingdom
+				is_adult = yes
+			}
+			NOT = {
+				scope:actor.faith = { has_doctrine_parameter = human_sacrifice_active }
+			}
+			add = 20
+		}
+		#Boost further if actor wants to be scary
+		modifier = {
+			#want to keep head
+			scope:actor = {
+				mpo_keep_prisoners_heads_trigger = yes
+				scope:recipient = {
+					is_ruler = yes
+					highest_held_title_tier >= tier_county
+					is_adult = yes
+				}
+				OR = {
+					has_trait = conqueror
+					#has_trait = greatest_of_khans
+					is_gurkhan = yes
+				}
+			}
+			NOT = {
+				scope:actor.faith = { has_doctrine_parameter = human_sacrifice_active }
+			}
+			add = 30
+		}
+
+		# Warcraft - remove Struggle
+		modifier = {
+			add = 200
+			scope:actor.faith = {
+				has_doctrine = tenet_extinction_of_dharma
+			}
+			scope:recipient.faith = {
+				religion = root.faith.religion
+				NOT = {
+					has_doctrine = tenet_extinction_of_dharma
+				}
+			}
+		}
 		#don't kill prisoners that are tied with a prison break contract, we don't want it invalidating all the time
 		modifier = {
 			factor = 0
@@ -5647,28 +6370,28 @@ execute_prisoner_interaction = {
 		}
 		
 		
-		modifier = { # Warcraft -  Maiev will not execute Illidan
+		modifier = { # Warcraft - Maiev will not execute Illidan
 			factor = 0
 			scope:actor = character:340021
 			scope:recipient = character:340009
+		}
+
+		modifier = { # Warcraft - If a lore character is imprisoned they shouldnt be executed by AI, players are free to do so though
+			factor = 0
+			scope:recipient = { 
+				has_character_modifier = important_lore_character
+			}
 		}
 	}
 
 	is_shown = {
 		scope:recipient = {
-			OR = {
-				is_imprisoned_by = scope:actor
-				AND = {
-					is_diarch_of_target = scope:actor
-					scope:actor = { has_diarchy_active_parameter = diarchy_is_co_rulership }
-				}
-			}
+			is_imprisoned_by = scope:actor
 		}
 	}
 
 	is_valid_showing_failures_only = {
 		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
-		scope:recipient = { is_busy_in_events_localised = yes } #Prisoner
 		scope:recipient = { NOT = { has_strong_hook = scope:actor } }
 		scope:recipient = {
 			custom_description = {
@@ -5676,9 +6399,24 @@ execute_prisoner_interaction = {
 				NOT = { has_character_flag = is_being_tortured }
 			}
 		}
+		scope:recipient = {
+			NOT = { has_trait = in_twisting_nether }
+		}
 
 		# Blocked by current struggle phase
-		
+		# Warcraft - Removed
+
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
+		}
+
+		# For use with co-ruler diarchs.
+		scope:recipient = { is_imprisoned_by = scope:actor }
 	}
 
 	cost = {
@@ -5817,9 +6555,7 @@ execute_prisoner_interaction = {
 						custom_tooltip = public_execution_control_effect
 						hidden_effect = {
 							every_held_title = {
-								limit = {
-									tier = tier_county
-								}
+								title_tier = county
 								change_county_control = executioner_control_value
 							}
 						}
@@ -5903,7 +6639,7 @@ execute_prisoner_interaction = {
 			scope:actor = {
 				if = {
 					limit = {
-						is_landless_adventurer = yes
+						has_government = landless_adventurer_government
 						scope:recipient = {
 							is_landless_adventurer = no
 							is_ruler = yes
@@ -6000,6 +6736,92 @@ execute_prisoner_interaction = {
 				}
 			}
 
+			if = {
+				limit = {
+					scope:actor.faith = {
+						has_doctrine = tenet_extinction_of_dharma
+					}
+					scope:recipient.faith = {
+						religion = scope:actor.faith.religion
+						NOT = {
+							has_doctrine = tenet_extinction_of_dharma
+						}
+					}
+				}
+				if = {
+					limit = {
+						scope:recipient = {
+							is_ruler = yes
+							highest_held_title_tier = tier_county
+						}
+					}
+					scope:actor = {
+						add_piety = minor_piety_value
+					}
+				}
+				else_if = {
+					limit = {
+						scope:recipient = {
+							highest_held_title_tier = tier_duchy
+						}
+					}
+					scope:actor = {
+						add_piety = medium_piety_value
+					}
+				}
+				else_if = {
+					limit = {
+						scope:recipient = {
+							highest_held_title_tier = tier_kingdom
+						}
+					}
+					scope:actor = {
+						add_piety = major_piety_value
+					}
+				}
+				else_if = {
+					limit = {
+						scope:recipient = {
+							highest_held_title_tier = tier_empire
+						}
+					}
+					scope:actor = {
+						add_piety = massive_piety_value
+					}
+				}
+				else_if = {
+					limit = {
+						scope:recipient = {
+							highest_held_title_tier = tier_hegemony
+						}
+					}
+					scope:actor = {
+						add_piety = monumental_piety_value
+					}
+				}
+				else = {
+					scope:actor = {
+						add_piety = miniscule_piety_value
+					}
+				}
+			}
+			if = {
+				limit = {
+					scope:actor = {
+						faith = {
+							has_doctrine = tenet_cranial_trophies
+						}
+					}
+					scope:recipient = {
+						is_adult = yes
+						is_faith_dominant_gender = yes
+					}
+				}
+				tgp_cranial_trophies_beheading_effect = {
+					KILLER = scope:actor
+					DEAD = scope:recipient
+				}
+			}
 			# Kill the target
 			if = {
 				limit = {
@@ -6064,9 +6886,9 @@ execute_prisoner_interaction = {
 				limit = {
 					always = scope:execution_burned
 					scope:actor.faith = {
-						OR = {
-							has_doctrine = doctrine_pluralism_fundamentalist
-							has_doctrine = doctrine_pluralism_dark
+						has_doctrine = doctrine_pluralism_fundamentalist
+						NOT = {
+							has_doctrine = tenet_extinction_of_dharma
 						}
 					}
 				}
@@ -6092,9 +6914,18 @@ execute_prisoner_interaction = {
 
 	send_option = {
 		is_shown = {
-			scope:actor.faith = scope:recipient.faith
-			NOT = {
-				scope:actor.faith = { has_doctrine_parameter = human_sacrifice_active }
+			scope:actor = {
+				OR = {
+					mpo_keep_prisoners_heads_trigger = yes
+					faith = scope:recipient.faith
+					faith = {
+						has_doctrine = tenet_cranial_trophies
+					}
+					culture_has_asian_heritage_pillar_trigger = yes
+				}
+				NOT = {
+					faith = { has_doctrine_parameter = human_sacrifice_active }
+				}
 			}
 		}
 		flag = execution_beheaded
@@ -6108,7 +6939,7 @@ execute_prisoner_interaction = {
 				OR = {
 					scope:actor.faith = { has_doctrine_parameter = cannibalism_legal }
 					has_trait = cannibal
-					any_secret = { secret_type = secret_cannibal }
+					any_secret = { type = secret_cannibal }
 				}
 			}
 		}
@@ -6118,9 +6949,15 @@ execute_prisoner_interaction = {
 
 	send_option = {
 		is_shown = {
-			NOT = {
-				scope:actor.faith = scope:recipient.faith
-				scope:actor.faith = { has_doctrine_parameter = human_sacrifice_active }
+			scope:actor = {
+				NOR = {
+					AND = {
+						faith = scope:recipient.faith
+						faith = { has_doctrine_parameter = human_sacrifice_active }
+					}
+					mpo_keep_prisoners_heads_trigger = yes
+					culture_has_asian_heritage_pillar_trigger = yes
+				}
 			}
 		}
 		flag = execution_burned
@@ -6176,7 +7013,7 @@ execute_prisoner_interaction = {
 	send_option = {
 		is_shown = {
 			scope:actor = {
-				is_landless_adventurer = yes
+				has_government = landless_adventurer_government
 				has_perk = fear_tax_perk
 			}
 		}
@@ -6201,9 +7038,7 @@ debug_imprison_simple_interaction = {
 		scope:recipient = {
 			is_imprisoned = no
 		}
-		NOT = {
-			scope:recipient = scope:actor
-		}
+		scope:recipient != scope:actor
 	}
 
 	on_accept = {
@@ -6220,7 +7055,7 @@ debug_imprison_simple_interaction = {
 
 torture_interaction = {
 	interface_priority = 30
-	common_interaction = yes
+	common_interaction = no
 	icon = torture_interaction
 
 	category = interaction_category_prison
@@ -6263,6 +7098,18 @@ torture_interaction = {
 		cannot_release_former_regent_whilst_old_regent_holds_power_trigger = {
 			PRISONER = scope:recipient
 			REGENT = scope:recipient.var:imprisoned_by_diarch
+		}
+		# tgp_blocked_action_against_tenno_trigger = {
+		# 	ACTOR = scope:actor
+		# 	TARGET = scope:recipient
+		# }
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
 		}
 	}
 
@@ -6310,13 +7157,24 @@ torture_interaction = {
 				1 = { save_scope_value_as = { name = torture_method value = flag:rats } }
 				8 = {
 					trigger = {
-						scope:actor = { has_trait = poet }
+						scope:actor = { has_trait = lifestyle_poet }
 					}
 					save_scope_value_as = {
 						name = torture_method
 						value = flag:poetry
 					}
 				}
+				# Warcraft
+				14 = {
+					trigger = {
+						scope:actor = { has_perk = death_magic_tree_1_perk_6 }
+					}
+					save_scope_value_as = {
+						name = torture_method
+						value = flag:magic
+					}
+				}
+				# End Warcraft
 			}
 
 			#They have a secret I want to know about
@@ -6360,6 +7218,18 @@ torture_interaction = {
 				dark_insights_skill_gain_roll_effect = yes
 			}
 		}
+
+		# House Relation
+		scope:recipient.house ?= {
+			change_house_relation_effect = {
+				HOUSE = scope:actor.house
+				VALUE = house_relation_damage_medium_value
+				REASON = torture
+				CHAR = scope:actor
+				TARGET_CHAR = scope:recipient
+				TITLE = scope:dummy_gender
+			}
+		}
 	}
 
 	auto_accept = yes
@@ -6369,7 +7239,14 @@ torture_interaction = {
 		ai_recipients = prisoners
 	}
 
-	ai_frequency = 24
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 36
+		duchy = 24
+		kingdom = 24
+		empire = 12
+		hegemony = 12
+	}
 
 	ai_potential = {
 		always = yes
@@ -6395,20 +7272,8 @@ torture_interaction = {
 		#Scope:target has caused internal strife in the realm
 		character_hates_scope_due_to_strife_modifier = { TARGET = scope:recipient }
 		modifier = { # Family Feud
-			exists = scope:actor.house
-			exists = scope:recipient.house
 			scope:actor = {
-				house.house_head = {
-					any_owned_story = {
-						story_type = story_cycle_house_feud
-						has_variable = house_feud_house
-						var:house_feud_house = scope:recipient.house
-					}
-				}
-				has_opinion_modifier = {
-					modifier = house_feud_opinion
-					target = scope:recipient.house.house_head
-				}
+				house_has_feud_relation_with_trigger = { TARGET = scope:recipient }
 			}
 			add = 30
 		}
@@ -6472,6 +7337,14 @@ castrate_interaction = {
 			PRISONER = scope:recipient
 			REGENT = scope:recipient.var:imprisoned_by_diarch
 		}
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
+		}
 	}
 
 	is_highlighted = {
@@ -6529,6 +7402,18 @@ castrate_interaction = {
 			DESC = clan_unity_abelarding.desc
 			REVERSE_NON_HOUSE_TARGET = no
 		}
+
+		# House Relation
+		scope:recipient.house ?= {
+			change_house_relation_effect = {
+				HOUSE = scope:actor.house
+				VALUE = house_relation_damage_medium_value
+				REASON = torture
+				CHAR = scope:actor
+				TARGET_CHAR = scope:recipient
+				TITLE = scope:dummy_gender
+			}
+		}
 	}
 
 	auto_accept = yes
@@ -6558,20 +7443,8 @@ castrate_interaction = {
 		#Scope:target has caused internal strife in the realm
 		character_hates_scope_due_to_strife_modifier = { TARGET = scope:recipient }
 		modifier = { # Family Feud
-			exists = scope:actor.house
-			exists = scope:recipient.house
 			scope:actor = {
-				house.house_head = {
-					any_owned_story = {
-						story_type = story_cycle_house_feud
-						has_variable = house_feud_house
-						var:house_feud_house = scope:recipient.house
-					}
-				}
-				has_opinion_modifier = {
-					modifier = house_feud_opinion
-					target = scope:recipient.house.house_head
-				}
+				house_has_feud_relation_with_trigger = { TARGET = scope:recipient }
 			}
 			add = 30
 		}
@@ -6591,9 +7464,23 @@ castrate_interaction = {
 		# 	}
 		# 	add = 30
 		# }
+		# Warcraft
+		# Maiev will not castrate Illidan
+		modifier = { 
+			factor = 0
+			scope:actor = character:340021
+			scope:recipient = character:340009
+		}
 	}
 
-	ai_frequency = 36
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 144
+		duchy = 48
+		kingdom = 36
+		empire = 12
+		hegemony = 12
+	}
 }
 
 blind_interaction = {
@@ -6633,6 +7520,14 @@ blind_interaction = {
 		cannot_release_former_regent_whilst_old_regent_holds_power_trigger = {
 			PRISONER = scope:recipient
 			REGENT = scope:recipient.var:imprisoned_by_diarch
+		}
+		custom_tooltip = {
+			text = is_currently_being_purged_tt
+			scope:recipient = {
+				NOT = {
+					has_character_flag = is_currently_being_purged
+				}
+			}
 		}
 	}
 
@@ -6716,6 +7611,18 @@ blind_interaction = {
 				REVERSE_NON_HOUSE_TARGET = no
 			}
 		}
+
+		# House Relation
+		scope:recipient.house ?= {
+			change_house_relation_effect = {
+				HOUSE = scope:actor.house
+				VALUE = house_relation_damage_medium_value
+				REASON = torture
+				CHAR = scope:actor
+				TARGET_CHAR = scope:recipient
+				TITLE = scope:dummy_gender
+			}
+		}
 	}
 
 	auto_accept = yes
@@ -6745,20 +7652,8 @@ blind_interaction = {
 		#Scope:target has caused internal strife in the realm
 		character_hates_scope_due_to_strife_modifier = { TARGET = scope:recipient }
 		modifier = { # Family Feud
-			exists = scope:actor.house
-			exists = scope:recipient.house
 			scope:actor = {
-				house.house_head = {
-					any_owned_story = {
-						story_type = story_cycle_house_feud
-						has_variable = house_feud_house
-						var:house_feud_house = scope:recipient.house
-					}
-				}
-				has_opinion_modifier = {
-					modifier = house_feud_opinion
-					target = scope:recipient.house.house_head
-				}
+				house_has_feud_relation_with_trigger = { TARGET = scope:recipient }
 			}
 			add = 30
 		}
@@ -6778,9 +7673,23 @@ blind_interaction = {
 		# 	}
 		# 	add = 30
 		# }
+		# Warcraft
+		# Maiev will not blind Illidan
+		modifier = { 
+			factor = 0
+			scope:actor = character:340021
+			scope:recipient = character:340009
+		}
 	}
 
-	ai_frequency = 36
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 144
+		duchy = 48
+		kingdom = 36
+		empire = 12
+		hegemony = 12
+	}
 }
 
 prison_break_contract_interaction = {
@@ -6797,7 +7706,7 @@ prison_break_contract_interaction = {
 	is_shown = {
 		scope:actor = {
 			any_character_active_contract = {
-				has_task_contract_type = laamp_prison_break_contract
+				task_contract_type = laamp_prison_break_contract
 				OR = {
 					var:task_contract_target = scope:recipient
 					var:task_contract_object = scope:recipient
@@ -6810,8 +7719,8 @@ prison_break_contract_interaction = {
 	redirect = {
 		scope:actor = {
 			random_character_active_contract = {
+				task_contract_type = laamp_prison_break_contract
 				limit = {
-					has_task_contract_type = laamp_prison_break_contract
 					OR = {
 						var:task_contract_target = scope:recipient
 						var:task_contract_object = scope:recipient
@@ -6842,8 +7751,8 @@ prison_break_contract_interaction = {
 				target_character = scope:recipient
 			}
 			random_scheme = {
+				type = laamp_prison_break_scheme
 				limit = {
-					scheme_type = laamp_prison_break_scheme
 					scheme_target_character = scope:recipient
 				}
 				save_scope_as = scheme
@@ -6869,7 +7778,7 @@ systematically_maim_character_interaction = {
 	interface_priority = 30
 	icon = torture_interaction
 	category = interaction_category_diarch
-	common_interaction = yes
+	common_interaction = no
 	desc = systematically_maim_character_interaction_desc
 
 	is_shown = {
@@ -6902,6 +7811,11 @@ systematically_maim_character_interaction = {
 
 	send_option = {
 		flag = maim_castrate
+		is_shown = {
+			scope:actor.culture = {
+				has_cultural_parameter = can_castrate_prisoners
+			}
+		}
 		is_valid = {
 			scope:recipient = {
 				NOR = {
@@ -6915,6 +7829,11 @@ systematically_maim_character_interaction = {
 	}
 	send_option = {
 		flag = maim_blind
+		is_shown = {
+			scope:actor.culture = {
+				has_cultural_parameter = can_blind_prisoners
+			}
+		}
 		is_valid = {
 			scope:recipient = {
 				NOT = { has_trait = blind }
@@ -6926,6 +7845,11 @@ systematically_maim_character_interaction = {
 	}
 	send_option = {
 		flag = maim_face
+		is_shown = {
+			scope:actor.culture = {
+				has_cultural_parameter = can_blind_prisoners
+			}
+		}
 		is_valid = {
 			scope:recipient = {
 				NOT = { has_trait = disfigured }
@@ -6954,6 +7878,263 @@ systematically_maim_character_interaction = {
 		localization = maim_arm_name
 		current_description = maim_arm
 	}
+	send_option = {
+		flag = renounce_claims
+		localization = RELEASE_RENOUNCE_CLAIMS
+		is_shown = {
+			custom_description = {
+				text = "release_renounce_claims"
+				subject = scope:recipient
+				scope:recipient = {
+					any_claim = {
+						explicit = yes
+						save_temporary_scope_as = temp_claim
+						OR = {
+							holder = scope:actor
+							AND = {
+								NOT = { prev = { target_is_liege_or_above = scope:actor } }
+								trigger_if = {
+									limit = {
+										exists = holder
+									}
+									holder = { target_is_liege_or_above = scope:actor }
+								}
+							}
+							scope:actor = {
+								any_held_title = {
+									is_de_jure_liege_or_above_target = scope:temp_claim
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		current_description = {
+			desc = RELEASE_RENOUNCE_CLAIMS_DESC
+		}
+	}
+
+	send_option = {
+		flag = banish
+		localization = "RELEASE_BANISH"
+		is_shown = {
+			trigger_if = {
+				limit = {
+					scope:actor = { is_ai = yes }
+				}
+				scope:recipient = {
+					OR = {
+						AND = {
+							is_playable_character = no
+							is_ruler = no
+							gold > scope:actor.gold
+							gold > scope:actor.medium_gold_value
+							scope:actor.ai_greed > low_negative_ai_value
+						}
+						AND = {
+							is_playable_character = no
+							is_ruler = no
+							gold > 0
+							scope:actor = {
+								has_banish_reason = scope:recipient
+							}
+						}
+						AND = {
+							is_playable_character = no
+							is_ruler = no
+							gold > 100
+							scope:actor.ai_greed >= high_positive_ai_value
+						}
+						AND = {
+							scope:actor = {
+								has_banish_reason = scope:recipient
+							}
+							scope:actor = {
+								opinion = {
+									target = scope:recipient
+									value <= medium_negative_opinion
+								}
+							}
+						}
+					}
+				}
+			}
+			trigger_if = {
+				limit = {
+					scope:recipient = {
+						is_playable_character = yes
+					}
+				}
+				scope:recipient = {
+					is_vassal_of = scope:actor
+				}
+			}
+			trigger_else = {
+				scope:recipient = {
+					is_courtier_of = scope:actor
+				}
+			}
+			NOT = {
+				scope:recipient = {
+					is_spouse_of = scope:actor
+				}
+			}
+		}
+	}
+
+	send_option = {
+		flag = take_vows
+		localization = "RELEASE_TAKE_VOWS"
+		is_shown = {
+			scope:actor = { take_vows_available_trigger = yes }
+		}
+		is_valid = {
+			#Handle AI
+			trigger_if = {
+				limit = {
+					scope:actor = { is_ai = yes }
+				}
+				#We're AI and Byzantium
+				trigger_if = {
+					limit = {
+						scope:actor = {
+							culture = { like_heritage_byzantine_trigger = yes } # Warcraft
+						}
+					}
+					scope:recipient = {
+						is_ai = yes #Not gonna depose player characters, for now
+						OR = {
+							is_close_or_extended_family_of = scope:actor
+							is_vassal_or_below_of = scope:actor #Weigh this for Byz AI in the modifiers below
+							has_relation_rival = scope:actor
+							is_courtier_of = scope:actor
+						}
+						NOT = {
+							is_heir_of = scope:actor
+						}
+					}
+					#Get rid of rivals despite potentially liking them
+					trigger_if = {
+						limit = {
+							scope:recipient = { has_relation_rival = scope:actor }
+						}
+						always = yes
+					}
+					#Only get rid of family members if we dislike them
+					trigger_else = {
+						scope:actor = {
+							opinion = {
+								target = scope:recipient
+								value <= medium_negative_opinion
+							}
+						}
+					}
+				}
+				#We're not Byzantium but plain AI
+				trigger_else = {
+					scope:recipient = {
+						is_ai = yes #Not gonna depose player characters, for now
+						is_close_or_extended_family_of = scope:actor
+						NOT = {
+							is_heir_of = scope:actor
+						}
+					}
+					scope:actor = {
+						opinion = {
+							target = scope:recipient
+							value <= medium_negative_opinion
+						}
+					}
+					custom_description = {
+						text = "release_vows_invalid_not_your_court"
+						object = scope:recipient
+						subject = scope:actor
+						scope:recipient = { is_courtier_of = scope:actor }
+					}
+				}
+			}
+			#Enhanced Take the Vows for Byzantium players -- who do we want to boot to a monastery far, far away?
+			trigger_else_if = {
+				limit = {
+					scope:actor = {
+						culture = { like_heritage_byzantine_trigger = yes } # Warcraft
+					}
+				}
+				scope:recipient = {
+					is_ai = yes #Not gonna depose player characters, for now
+					custom_description = {
+						text = "release_byz_vows_invalid"
+						object = scope:recipient
+						subject = scope:actor
+						OR = {
+							is_close_or_extended_family_of = scope:actor
+							is_vassal_or_below_of = scope:actor
+							has_relation_rival = scope:actor
+							is_courtier_of = scope:actor
+						}
+					}
+				}
+			}
+			#Otherwise standard procedure Take the Vows requirements
+			trigger_else = {
+				scope:recipient = {
+					is_ai = yes #Not gonna depose player characters, for now
+				}
+				scope:actor = { is_close_or_extended_family_of = scope:recipient } #Triggering I_AM_NOT instead of CHARACTER_IS_NOT makes the tooltip look less cursed
+				custom_description = {
+					text = "release_vows_invalid_not_your_court"
+					object = scope:recipient
+					subject = scope:actor
+					scope:recipient = { is_courtier_of = scope:actor }
+				}
+
+			}
+			scope:recipient = {
+				age >= 10
+				NOR = {
+					has_trait = excommunicated
+					has_trait = devoted
+					has_trait = incapable
+				}
+				#Do they have the "wrong" marriage type?
+				NOR = {
+					custom_description = {
+						text = is_married_matrilineally
+						subject = scope:recipient
+						any_spouse = {
+							is_female = yes
+							matrilinear_marriage = yes
+						}
+					}
+					custom_description = {
+						text = is_married_patrilineally
+						subject = scope:recipient
+						any_spouse = {
+							is_male = yes
+							patrilinear_marriage = yes
+						}
+					}
+					custom_description = {
+						text = matrilinear_betrothal
+						subject = scope:recipient
+						betrothed ?= {
+							is_female = yes
+							matrilinear_betrothal = yes
+						}
+					}
+					custom_description = {
+						text = patrilinear_betrothal
+						subject = scope:recipient
+						betrothed ?= {
+							is_male = yes
+							patrilinear_betrothal = yes
+						}
+					}
+				}
+			}
+		}
+	}
 
 	on_accept = {
 		scope:recipient = {
@@ -6974,174 +8155,317 @@ systematically_maim_character_interaction = {
 			scope:actor = { maiming_destroy_diarchy_effect = yes }
 		}
 
-		#TODO_CD_EP3_POLISH; the copy in the below events could _really_ use some polishing up. It's okay but it's a bit meh, and it'd be nice if it reacted more to who you're maiming and why.
-
 		# Let the enchoppening begin.
-		## Castrate.
-		if = {
-			limit = { scope:maim_castrate = yes }
-			show_as_tooltip = {
+		switch = {
+			trigger = yes
+			## Castrate.
+			scope:maim_castrate = {
+				show_as_tooltip = {
+					scope:recipient = {
+						if = {
+							limit = {
+								age < 12
+							}
+							ep3_child_castration_effect = yes
+						}
+						else = {
+							ep3_youth_castration_effect = yes
+						}
+						release_from_prison = yes
+					}
+				}
+				torture_blind_castrate_disfigure_opinion_effect = { VERB = castrated }
+				scope:actor = {
+					clear_designated_heir = yes
+					trigger_event = {
+						id = prison.1025
+						days = 1
+					}
+				}
+				add_clan_unity_interaction_effect = {
+					CHARACTER = scope:actor
+					TARGET = scope:recipient
+					VALUE = major_unity_loss
+					DESC = clan_unity_abelarding.desc
+					REVERSE_NON_HOUSE_TARGET = no
+				}
+			}
+			## Blind.
+			scope:maim_blind = {
+				show_as_tooltip = {
+					scope:recipient = {
+						add_trait = blind
+						release_from_prison = yes
+					}
+				}
+				torture_blind_castrate_disfigure_opinion_effect = { VERB = blinded }
+				scope:actor = {
+					clear_designated_heir = yes
+					# Merciful Blindings
+					if = {
+						limit = {
+							culture = { has_cultural_parameter = merciful_blinding }
+							OR = {
+								has_execute_reason = scope:recipient
+								has_banish_reason = scope:recipient
+							}
+						}
+						add_piety = medium_piety_gain
+					}
+					trigger_event = {
+						id = prison.1020
+						days = 1
+					}
+				}
+				# If actor's culture has Merciful Blindings, they lose less unity.
+				if = {
+					limit = {
+						scope:actor.culture = { has_cultural_parameter = merciful_blinding }
+					}
+					add_clan_unity_interaction_effect = {
+						CHARACTER = scope:actor
+						TARGET = scope:recipient
+						VALUE = minor_unity_loss
+						DESC = clan_unity_blinding.desc
+						REVERSE_NON_HOUSE_TARGET = no
+					}
+				}
+				else = {
+					add_clan_unity_interaction_effect = {
+						CHARACTER = scope:actor
+						TARGET = scope:recipient
+						VALUE = medium_unity_loss
+						DESC = clan_unity_blinding.desc
+						REVERSE_NON_HOUSE_TARGET = no
+					}
+				}
+			}
+			## Disfigure.
+			scope:maim_face = {
+				show_as_tooltip = {
+					scope:recipient = {
+						add_trait = disfigured
+						release_from_prison = yes
+					}
+				}
+				torture_blind_castrate_disfigure_opinion_effect = { VERB = disfigured }
+				scope:actor = {
+					clear_designated_heir = yes
+					trigger_event = {
+						id = prison.1030
+						days = 1
+					}
+				}
+				add_clan_unity_interaction_effect = {
+					CHARACTER = scope:actor
+					TARGET = scope:recipient
+					VALUE = major_unity_loss
+					DESC = clan_unity_maimed.desc
+					REVERSE_NON_HOUSE_TARGET = no
+				}
+			}
+			## Take off an arm.
+			scope:maim_arm = {
+				show_as_tooltip = {
+					scope:recipient = {
+						apply_maimed_trait_and_modifier_effect = yes
+						release_from_prison = yes
+					}
+				}
+				torture_blind_castrate_disfigure_opinion_effect = { VERB = maimed }
+				scope:actor = {
+					clear_designated_heir = yes
+					save_scope_value_as = {
+						name = maim_type
+						value = flag:arm
+					}
+					trigger_event = {
+						id = prison.1041
+						days = 1
+					}
+				}
+				add_clan_unity_interaction_effect = {
+					CHARACTER = scope:actor
+					TARGET = scope:recipient
+					VALUE = major_unity_loss
+					DESC = clan_unity_maimed.desc
+					REVERSE_NON_HOUSE_TARGET = no
+				}
+			}
+			## Take off a leg.
+			scope:maim_leg = {
+				show_as_tooltip = {
+					scope:recipient = {
+						add_trait = one_legged
+						release_from_prison = yes
+					}
+				}
+				torture_blind_castrate_disfigure_opinion_effect = { VERB = maimed }
+				scope:actor = {
+					clear_designated_heir = yes
+					save_scope_value_as = {
+						name = maim_type
+						value = flag:leg
+					}
+					trigger_event = {
+						id = prison.1041
+						days = 1
+					}
+				}
+				add_clan_unity_interaction_effect = {
+					CHARACTER = scope:actor
+					TARGET = scope:recipient
+					VALUE = major_unity_loss
+					DESC = clan_unity_maimed.desc
+					REVERSE_NON_HOUSE_TARGET = no
+				}
+			}
+			# Banish Landed Character
+			scope:banish = {
 				scope:recipient = {
 					if = {
 						limit = {
-							age < 12
+							is_landed_or_landless_administrative = yes
 						}
-						ep3_child_castration_effect = yes
+						banish_effect = { BANISHER = scope:actor }
+						if = {
+							limit = {
+								NOT = {
+									scope:actor = {
+										has_banish_reason = scope:recipient
+									}
+								}
+							}
+							scope:actor = { add_tyranny = banishment_tyranny_gain }
+						}
 					}
-					else = {
-						ep3_youth_castration_effect = yes
+					# Banish Unlanded Character
+					else_if = {
+						limit = {
+							is_landless_adventurer = no
+							is_pool_character = no # It is possible for them to end up in the pool between the interaction being sent, and it being accepted
+						}
+						if = {
+							limit = {
+								gold > 0
+								NOR = {
+									has_character_flag = realm_priest
+									has_character_flag = was_bookmaker
+								}
+							}
+							pay_short_term_gold = { target = scope:actor gold = scope:recipient.gold }
+						}
+						if = {
+							limit = {
+								has_any_artifact = yes
+							}
+							every_character_artifact = {
+								limit = { NOT = { has_variable = artifact_prevent_transfer } }
+								set_owner = {
+									target = scope:actor
+									history = {
+										location = scope:recipient.location
+										actor = scope:recipient
+										recipient = scope:actor
+										type = stolen
+									}
+								}
+								scope:actor = {
+									if = {
+										limit = {
+											NOT = { has_variable = stolen_artifact }
+										}
+										set_variable = {
+											name = stolen_artifact
+											value = 1
+										}
+									}
+									else = {
+										change_variable = {
+											name = stolen_artifact
+											add = 1
+										}
+									}
+								}
+							}
+						}
+						banish = yes
+					}
+					# 'Banish' Pool Character
+					else_if = {
+						limit = {
+							is_playable_character = no
+							is_pool_character = yes # They'll just leave for the pool
+						}
+						if = {
+							limit = {
+								gold > 0
+							}
+							pay_short_term_gold = { target = scope:actor gold = scope:recipient.gold }
+						}
+					}
+					add_opinion = {
+						modifier = banished_me
+						target = scope:actor
 					}
 					release_from_prison = yes
 				}
 			}
-			torture_blind_castrate_disfigure_opinion_effect = { VERB = castrated }
-			scope:actor = {
-				clear_designated_heir = yes
-				trigger_event = {
-					id = prison.1025
-					days = 1
-				}
-			}
-			add_clan_unity_interaction_effect = {
-				CHARACTER = scope:actor
-				TARGET = scope:recipient
-				VALUE = major_unity_loss
-				DESC = clan_unity_abelarding.desc
-				REVERSE_NON_HOUSE_TARGET = no
-			}
-		}
-		## Blind.
-		if = {
-			limit = { scope:maim_blind = yes }
-			show_as_tooltip = {
+			# Renounce Claims
+			scope:renounce_claims = {
 				scope:recipient = {
-					add_trait = blind
+					add_opinion = {
+						modifier = demanded_claim_renouncement
+						target = scope:actor
+					}
 					release_from_prison = yes
+					every_claim = {
+						explicit = yes
+						limit = {
+							save_temporary_scope_as = temp_claim
+							OR = {
+								holder = scope:actor
+								AND = {
+									exists = holder
+									NOT = { prev = { target_is_liege_or_above = scope:actor } }
+									holder = { target_is_liege_or_above = scope:actor }
+								}
+								scope:actor = {
+									any_held_title = {
+										is_de_jure_liege_or_above_target = scope:temp_claim
+									}
+								}
+							}
+						}
+						scope:recipient = { remove_claim = prev }
+					}
 				}
 			}
-			torture_blind_castrate_disfigure_opinion_effect = { VERB = blinded }
-			scope:actor = {
-				clear_designated_heir = yes
-				# Merciful Blindings
+			# Take Vows
+			scope:take_vows = {
+				send_child_to_clergy_effect = yes
+				#Does Byzan go hay-wire with deposing vassals?
 				if = {
 					limit = {
-						culture = { has_cultural_parameter = merciful_blinding }
-						OR = {
-							has_execute_reason = scope:recipient
-							has_banish_reason = scope:recipient
+						scope:actor = {
+							is_ai = yes
+							culture = { like_heritage_byzantine_trigger = yes } # Warcraft
 						}
 					}
-					add_piety = medium_piety_gain
+					debug_log = debug_ai_byzan_forced_vows_on_prison_release
+					debug_log_scopes = yes
 				}
-				trigger_event = {
-					id = prison.1020
-					days = 1
+				#Does the AI in general go haywire with deposing prisoners?
+				else_if = {
+					limit = {
+						scope:actor = { is_ai = yes }
+					}
+					debug_log = debug_ai_forced_vows_on_prison_release
+					debug_log_scopes = yes
 				}
-			}
-			# If actor's culture has Merciful Blindings, they lose less unity.
-			if = {
-				limit = {
-					scope:actor.culture = { has_cultural_parameter = merciful_blinding }
-				}
-				add_clan_unity_interaction_effect = {
-					CHARACTER = scope:actor
-					TARGET = scope:recipient
-					VALUE = minor_unity_loss
-					DESC = clan_unity_blinding.desc
-					REVERSE_NON_HOUSE_TARGET = no
-				}
-			}
-			else = {
-				add_clan_unity_interaction_effect = {
-					CHARACTER = scope:actor
-					TARGET = scope:recipient
-					VALUE = medium_unity_loss
-					DESC = clan_unity_blinding.desc
-					REVERSE_NON_HOUSE_TARGET = no
-				}
-			}
-		}
-		## Disfigure.
-		if = {
-			limit = { scope:maim_face = yes }
-			show_as_tooltip = {
 				scope:recipient = {
-					add_trait = disfigured
 					release_from_prison = yes
 				}
-			}
-			torture_blind_castrate_disfigure_opinion_effect = { VERB = disfigured }
-			scope:actor = {
-				clear_designated_heir = yes
-				trigger_event = {
-					id = prison.1030
-					days = 1
-				}
-			}
-			add_clan_unity_interaction_effect = {
-				CHARACTER = scope:actor
-				TARGET = scope:recipient
-				VALUE = major_unity_loss
-				DESC = clan_unity_maimed.desc
-				REVERSE_NON_HOUSE_TARGET = no
-			}
-		}
-		## Take off an arm.
-		if = {
-			limit = { scope:maim_arm = yes }
-			show_as_tooltip = {
-				scope:recipient = {
-					apply_maimed_trait_and_modifier_effect = yes
-					release_from_prison = yes
-				}
-			}
-			torture_blind_castrate_disfigure_opinion_effect = { VERB = maimed }
-			scope:actor = {
-				clear_designated_heir = yes
-				save_scope_value_as = {
-					name = maim_type
-					value = flag:arm
-				}
-				trigger_event = {
-					id = prison.1041
-					days = 1
-				}
-			}
-			add_clan_unity_interaction_effect = {
-				CHARACTER = scope:actor
-				TARGET = scope:recipient
-				VALUE = major_unity_loss
-				DESC = clan_unity_maimed.desc
-				REVERSE_NON_HOUSE_TARGET = no
-			}
-		}
-		## Take off a leg.
-		if = {
-			limit = { scope:maim_leg = yes }
-			show_as_tooltip = {
-				scope:recipient = {
-					add_trait = one_legged
-					release_from_prison = yes
-				}
-			}
-			torture_blind_castrate_disfigure_opinion_effect = { VERB = maimed }
-			scope:actor = {
-				clear_designated_heir = yes
-				save_scope_value_as = {
-					name = maim_type
-					value = flag:leg
-				}
-				trigger_event = {
-					id = prison.1041
-					days = 1
-				}
-			}
-			add_clan_unity_interaction_effect = {
-				CHARACTER = scope:actor
-				TARGET = scope:recipient
-				VALUE = major_unity_loss
-				DESC = clan_unity_maimed.desc
-				REVERSE_NON_HOUSE_TARGET = no
 			}
 		}
 	}
@@ -7176,20 +8500,8 @@ systematically_maim_character_interaction = {
 		#Scope:target has caused internal strife in the realm
 		character_hates_scope_due_to_strife_modifier = { TARGET = scope:recipient }
 		modifier = { # Family Feud
-			exists = scope:actor.house
-			exists = scope:recipient.house
 			scope:actor = {
-				house.house_head = {
-					any_owned_story = {
-						story_type = story_cycle_house_feud
-						has_variable = house_feud_house
-						var:house_feud_house = scope:recipient.house
-					}
-				}
-				has_opinion_modifier = {
-					modifier = house_feud_opinion
-					target = scope:recipient.house.house_head
-				}
+				house_has_feud_relation_with_trigger = { TARGET = scope:recipient }
 			}
 			add = 30
 		}
@@ -7202,7 +8514,21 @@ systematically_maim_character_interaction = {
 			}
 			add = 25
 		}
+		# Warcraft
+		# Maiev will not maim Illidan
+		modifier = { 
+			factor = 0
+			scope:actor = character:340021
+			scope:recipient = character:340009
+		}
 	}
 
-	ai_frequency = 60
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 0
+		kingdom = 60
+		empire = 60
+		hegemony = 60
+	}
 }

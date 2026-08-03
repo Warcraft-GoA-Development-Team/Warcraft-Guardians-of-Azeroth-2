@@ -78,6 +78,8 @@ courtier_allowed_to_leave_trigger = {
 	NOR = {
 		# Warcraft
 		has_relation_scourge_damned = scope:liege
+		has_character_flag = kel_thuzad_lich # Don't let kelthuzad leave your court randomly
+		has_character_flag = mannoroth_flag # Don't let Mannoroth leave your court randomly
 		
 		# Not blocked by script
 		has_character_flag = blocked_from_leaving
@@ -89,10 +91,7 @@ courtier_allowed_to_leave_trigger = {
 				value <= 2 #Not 1st, 2nd or 3rd player heir (0,1,2)
 			}
 		}
-		AND = {
-			has_any_court_position = yes
-			any_court_position_employer = { this = scope:liege }
-		}
+		has_any_court_position = yes
 		has_relation_lover = scope:liege
 		is_knight_of = scope:liege
 		is_tax_collector_of = scope:liege
@@ -148,7 +147,6 @@ courtier_allowed_to_leave_trigger = {
 				}
 			}
 		}
-		has_epidemic_disease_trigger = yes
 		#Keep daughters/sons for marriages
 		AND = {
 			OR = {
@@ -205,10 +203,8 @@ courtier_allowed_to_leave_trigger = {
 			is_married = yes
 			any_spouse = {
 				OR = {
-					AND = {
-						exists = liege
-						liege = scope:leaving_courtier.liege
-					}
+					liege ?= scope:leaving_courtier.liege
+
 					AND = {
 						exists = host
 						exists = scope:leaving_courtier.host
@@ -247,12 +243,19 @@ courtier_allowed_to_leave_trigger = {
 		has_character_modifier = mellowed_spirit
 
 		# Courtiers with sponsored inspirations won't leave on their own.
-		AND = {
-			exists = inspiration
-			inspiration = {	exists = inspiration_sponsor }
-		}
+		inspiration ?= { exists = inspiration_sponsor }
 		
 		scope:liege = { government_has_flag = government_is_landless_adventurer }
+		is_obedient_to = scope:liege
+		
+		AND = {
+			scope:liege.primary_title = title:h_pandaria #Warcraft
+			OR = {
+				is_child_of = scope:liege
+				is_grandchild_of = scope:liege
+				is_great_grandchild_of = scope:liege
+			}
+		}
 	}
 }
 
@@ -288,8 +291,6 @@ guest_allowed_to_leave_trigger = {
 		# Diarchs don't leave their court.
 		is_diarch = yes
 		is_designated_diarch = yes
-		#Too sick to travel
-		has_epidemic_disease_trigger = yes
 		#Would be leaving without spouse or underage child
 		any_child_not_in_traveling_family_trigger = yes
 		any_consort_not_in_traveling_family_trigger = yes
@@ -307,7 +308,7 @@ guest_allowed_to_arrive_trigger = {
 		limit = { exists = host }
 		NOT = { host = $HOST$ }
 	}
-	has_epidemic_disease_trigger = no
+	NOT = { has_trait_with_flag = epidemic_disease }
 	NOT = { has_relation_rival = $HOST$ }
 	#Compatible faiths
 	faith = {
@@ -341,24 +342,52 @@ can_recruit_character_to_court_trigger = {
 	$RECRUITEE$ = { save_temporary_scope_as = recruitee }
 	scope:recruitee = {
 		bp2_valid_for_standard_interactions_trigger = yes
-		NOR = {
+		trigger_if = {
+			limit = { is_adult = no }
 			custom_description = {
 				text = is_not_wandering_child
 				subject = scope:recruitee
-				AND = {
-					is_adult = no
-					NOT = { is_close_or_extended_family_of = scope:recruiter }
+				OR = {
+					is_close_or_extended_family_of = scope:recruiter
+					scope:recruiter = {
+						any_spouse = {
+							any_child = { this = scope:recruitee }
+						}
+					}
+					trigger_if = {
+						limit = {
+							scope:recruiter.culture = { has_cultural_parameter = wider_adoption }
+							scope:recruitee.culture = { has_cultural_parameter = wider_adoption }
+						}
+						NOT = {
+							any_parent = {
+								is_alive = yes
+								can_be_combatant_based_on_gender_trigger = { ARMY_OWNER = liege }
+							}
+						}
+					}
 				}
 			}
+		}
+		NOR = {
 			is_imprisoned = yes
 			is_theocratic_lessee = yes
 			is_diarch = yes
 			trigger_if = {
 				limit = {
 					exists = host
+					host = { is_ai = no }
 					NOT = { is_player_heir_of = scope:recruiter }
 				}
 				is_player_heir_of = host
+			}
+			trigger_if = {
+				limit = {
+					exists = host
+					host = { is_ai = yes }
+					NOT = { is_player_heir_of = scope:recruiter }
+				}
+				is_primary_heir_of = host
 			}
 			trigger_if = {
 				limit = { exists = host }
@@ -407,7 +436,7 @@ can_recruit_character_to_court_trigger = {
 			}
 			trigger_if = {
 				limit = {
-					scope:recruiter = { is_landless_adventurer = yes }
+					scope:recruiter = { has_government = landless_adventurer_government }
 				}
 				custom_tooltip = {
 					text = can_recruit_character_to_court_trigger.tt.laamps_invitation_restrictions
@@ -435,8 +464,7 @@ can_recruit_character_to_court_trigger = {
 				any_spouse = {
 					is_female = yes
 					matrilinear_marriage = yes
-					exists = host
-					host = scope:recruitee.host
+					host ?= scope:recruitee.host
 					save_temporary_scope_as = spouse
 					OR = { #Is employed in some way
 						is_councillor_of = scope:recruitee.host
@@ -481,8 +509,7 @@ can_recruit_character_to_court_trigger = {
 				any_spouse = {
 					is_male = yes
 					patrilinear_marriage = yes
-					exists = host
-					host = scope:recruitee.host
+					host ?= scope:recruitee.host
 					save_temporary_scope_as = spouse
 					OR = { #Is employed in some way
 						is_councillor_of = scope:recruitee.host
@@ -745,16 +772,14 @@ guest_marriage_candidate_trigger = {
 
 ###POOL TRIGGERS###
 is_visitable_relation_trigger = {
-	exists = capital_province
-	capital_province = { local_pool_is_full_trigger = no }
+	capital_province ?= { local_pool_is_full_trigger = no }
 	NOR = {
 		this = $CHARACTER$.host
 		has_relation_rival = $CHARACTER$
 	}
 	$CHARACTER$ = {
-		NAND = {
-			exists = var:last_visited_ruler
-			var:last_visited_ruler = prev
+		NOT = {
+			var:last_visited_ruler ?= prev
 		}
 	}
 }
@@ -768,8 +793,6 @@ pool_character_is_pruneable_trigger = {
 	save_temporary_scope_as = pool_prune_check
 	is_adult = yes
 	NOR = {
-		has_trait = peasant_leader
-		has_trait = gallowsbait
 		has_trait = heresiarch
 		has_trait = populist_leader
 		has_trait = adventurer_follower
@@ -777,9 +800,8 @@ pool_character_is_pruneable_trigger = {
 		has_trait = historical_character
 		has_character_flag = ai_will_not_convert
 		is_married = yes
-		any_claim = { always = yes }
+		any_claim = { }
 		any_child = { is_adult = no }
-		num_of_good_genetic_traits >= 1
 		any_relation = {
 			type = lover
 			is_ruler = yes
@@ -789,10 +811,7 @@ pool_character_is_pruneable_trigger = {
 			is_ruler = yes
 		}
 		any_close_or_extended_family_member = { is_ruler = yes }
-		AND = { #Belongs to a dynasty with more than 1 member
-			exists = dynasty
-			dynasty = { any_dynasty_member = { NOT = { this = scope:pool_prune_check } } }
-		}
+		#Belongs to a dynasty with more than 1 member
 		any_relation = {
 			type = rival
 			is_ai = no
@@ -810,6 +829,7 @@ pool_character_is_pruneable_trigger = {
 			intrigue >= high_skill_rating
 			learning >= high_skill_rating
 			prowess >= high_skill_rating
+			dynasty ?= { any_dynasty_member = { this != scope:pool_prune_check } }
 			any_relation = {
 				type = rival
 				is_ruler = yes
@@ -830,4 +850,26 @@ guest_poet_candidate_trigger = {
 	age < age_80_value
 	age >= age_16_value
 	diplomacy > medium_skill_rating
+}
+
+is_courtier_or_knight_of_root = {
+	OR = {
+		is_courtier_of = root
+		is_knight_of = root
+	}
+}
+
+guest_herder_candidate_trigger = {
+	government_has_flag = government_is_herder
+	has_trait = lifestyle_seasoned_pastor
+	trigger_if = {
+		limit = { root.faith = { has_doctrine = doctrine_gender_male_dominated } }
+		is_male = yes
+	}
+	trigger_if = {
+		limit = { root.faith = { has_doctrine = doctrine_gender_female_dominated } }
+		is_female = yes
+	}
+	age < age_45_value
+	age >= age_25_value
 }

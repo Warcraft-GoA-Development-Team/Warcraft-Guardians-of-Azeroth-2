@@ -5,13 +5,16 @@ ransom_interaction_effect = {
 		limit = {
 			NOR = {
 				scope:influence_send_option = yes
+				scope:herd_send_option = yes
 				scope:extortionate_current_gold = yes
 				scope:extortionate_gold = yes
 				scope:gold = yes
 				scope:current_gold = yes
 				scope:favor = yes
-				scope:hook = yes
+				scope:hook ?= yes
 			}
+			#This should not trigger if you're manually ransoming yourself
+			exists = scope:payer
 		}
 		save_scope_value_as = {
 			name = ransom_saved_gold_value
@@ -22,7 +25,7 @@ ransom_interaction_effect = {
 				scope:imprisoner.dynasty ?= { has_dynasty_perk = fp1_pillage_legacy_3 }
 				scope:payer.gold >= scope:prisoner.increased_ransom_cost_value
 			}
-			save_scope_value_as = { name = extortionate_current_gold value = yes }
+			save_scope_value_as = { name = extortionate_gold value = yes }
 		}
 		else_if = {
 			limit = {
@@ -30,7 +33,7 @@ ransom_interaction_effect = {
 				scope:payer.gold < scope:prisoner.increased_ransom_cost_value
 				scope:payer.gold >= 1
 			}
-			save_scope_value_as = { name = extortionate_gold value = yes }
+			save_scope_value_as = { name = extortionate_current_gold value = yes }
 		}
 		else_if = {
 			limit = { scope:payer.gold >= scope:prisoner.ransom_cost_value }
@@ -53,7 +56,7 @@ ransom_interaction_effect = {
 			days = 1
 		}
 		if = { # no opinion if you ransomed yourself
-			limit = { NOT = { this = scope:payer } }
+			limit = { this != scope:payer }
 			if = { #Only visible if a player is involved
 				limit = {
 					OR = {
@@ -141,7 +144,10 @@ ransom_interaction_effect = {
 					gold = scope:prisoner.increased_ransom_cost_value
 					target = scope:imprisoner
 				}
-				scope:imprisoner = { add_prestige = scope:prisoner.increased_ransom_cost_value }
+				scope:imprisoner = { 
+					add_prestige = scope:prisoner.increased_ransom_cost_value
+					mandala_trickster_increment_gold_ransomed_effect = { GOLD_AMOUNT = scope:prisoner.increased_ransom_cost_value }
+				}
 			}
 			# Perk: whatever they can pay + bonus prestige
 			scope:extortionate_current_gold = {
@@ -149,7 +155,10 @@ ransom_interaction_effect = {
 					gold = scope:ransom_saved_gold_value # Calculated earlier in the ransom interaction.
 					target = scope:imprisoner
 				}
-				scope:imprisoner = { add_prestige = scope:ransom_saved_gold_value }
+				scope:imprisoner = { 
+					add_prestige = scope:ransom_saved_gold_value
+					mandala_trickster_increment_gold_ransomed_effect = { GOLD_AMOUNT = scope:ransom_saved_gold_value }
+				}
 			}
 			# Full ransom
 			scope:gold = {
@@ -157,12 +166,18 @@ ransom_interaction_effect = {
 					gold = scope:prisoner.ransom_cost_value
 					target = scope:imprisoner
 				}
+				scope:imprisoner = { 
+					mandala_trickster_increment_gold_ransomed_effect = { GOLD_AMOUNT = scope:prisoner.ransom_cost_value }
+				}
 			}
 			# Whatever they can pay
 			scope:current_gold = {
 				pay_short_term_gold = {
 					gold = scope:ransom_saved_gold_value # Calculated earlier in the ransom interaction.
 					target = scope:imprisoner
+				}
+				scope:imprisoner = { 
+					mandala_trickster_increment_gold_ransomed_effect = { GOLD_AMOUNT = scope:ransom_saved_gold_value }
 				}
 			}
 		}
@@ -183,11 +198,34 @@ ransom_interaction_effect = {
 				}
 			}
 		}
+		# Influence
+		if = {
+			limit = { scope:influence_send_option = yes }
+			scope:payer = {
+				change_influence = {
+					value = {
+						value = medium_influence_value
+						multiply = -1
+					}
+				}
+			}
+			scope:imprisoner = { change_influence = scope:payer.medium_influence_value }
+		}
+		# Herd
+		if = {
+			limit = { scope:herd_send_option = yes }
+			scope:payer = {
+				pay_herd = {
+					target = scope:imprisoner
+					value = scope:payer.ransom_herd_value
+				}
+			}
+		}
 	}
 	scope:prisoner = { release_from_prison = yes }
 }
 
-#Used for all executions
+#Used for all executions, except Extinguish Noble Family in China, which uses family_purge_execute_prisoner_effect
 execute_prisoner_effect = {
 
 	$VICTIM$ = {
@@ -201,33 +239,9 @@ execute_prisoner_effect = {
 
 	show_as_tooltip = {
 		$VICTIM$ = {
-			if = {
-				limit = {
-					scope:executioner.faith = {
-						# Warcraft
-						has_doctrine_tenet_human_sacrifice_trigger = yes
-					}
-				}
-				$VICTIM$ = {
-					override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
-				}
-			}
-			else_if = {
-				limit = {
-					exists = scope:execution_kennel
-					scope:execution_kennel = yes
-				}
-				$VICTIM$ = {
-					death = {
-						death_reason = death_kennel
-						killer = $EXECUTIONER$
-					}
-				}
-			}
-			else = {
-				$VICTIM$ = {
-					override_death_killer_effect = { death_reason = death_execution killer = $EXECUTIONER$ }
-				}
+			override_death_killer_effect = {
+				death_reason = death_execution
+				killer = $EXECUTIONER$
 			}
 		}
 	}
@@ -251,7 +265,29 @@ execute_prisoner_effect = {
 					}
 				}
 			}
-			add_dread = execute_interaction_massive_dread_gain
+			
+			# Warcraft
+			if = {
+				limit = { government_has_flag = government_dark_frenzy_from_executions }
+				if = {
+					limit = {
+						has_focus = disorder_magic_focus_2
+					}
+					change_dark_frenzy_effect = { VALUE = massive_dark_frenzy_gain }
+				}
+				else = {
+					change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+				}
+			}
+			if = {
+				limit = {
+					has_focus = disorder_magic_focus_2
+				}
+				add_dread = execute_interaction_monumental_dread_gain
+			}
+			else = {
+				add_dread = execute_interaction_massive_dread_gain
+			}
 		}
 		else_if = {
 			limit = {
@@ -265,12 +301,27 @@ execute_prisoner_effect = {
 					}
 				}
 			}
-			add_dread = execute_interaction_major_dread_gain
-			
 			# Warcraft
 			if = {
 				limit = { government_has_flag = government_dark_frenzy_from_executions }
-				change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+				if = {
+					limit = {
+						has_focus = disorder_magic_focus_2
+					}
+					change_dark_frenzy_effect = { VALUE = massive_dark_frenzy_gain }
+				}
+				else = {
+					change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+				}
+			}
+			if = {
+				limit = {
+					has_focus = disorder_magic_focus_2
+				}
+				add_dread = execute_interaction_massive_dread_gain
+			}
+			else = {
+				add_dread = execute_interaction_major_dread_gain
 			}
 		}
 		else_if = {
@@ -286,19 +337,33 @@ execute_prisoner_effect = {
 						AND = { # Peer Vassals
 							exists = primary_title
 							primary_title.tier > tier_barony
-							exists = liege
-							liege = scope:executioner.liege
+							liege ?= scope:executioner.liege
 						}
 						has_trait = peasant_leader
 					}
 				}
 			}
-			add_dread = execute_interaction_medium_dread_gain
-			
 			# Warcraft
 			if = {
 				limit = { government_has_flag = government_dark_frenzy_from_executions }
-				change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain }
+				if = {
+					limit = {
+						has_focus = disorder_magic_focus_2
+					}
+					change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+				}
+				else = {
+					change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain  }
+				}
+			}
+			if = {
+				limit = {
+					has_focus = disorder_magic_focus_2
+				}
+				add_dread = execute_interaction_major_dread_gain
+			}
+			else = {
+				add_dread = execute_interaction_medium_dread_gain
 			}
 		}
 		else_if = {
@@ -322,16 +387,38 @@ execute_prisoner_effect = {
 						}
 					}
 				}
-			}
-			add_dread = execute_interaction_minor_dread_gain
-			
+			}		
 			# Warcraft
 			if = {
 				limit = { government_has_flag = government_dark_frenzy_from_executions }
-				change_dark_frenzy_effect = { VALUE = minor_dark_frenzy_gain }
+				if = {
+					limit = {
+						has_focus = disorder_magic_focus_2
+					}
+					change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain }
+				}
+				else = {
+					change_dark_frenzy_effect = { VALUE = minor_dark_frenzy_gain  }
+				}
+			}
+			if = {
+				limit = {
+					has_focus = disorder_magic_focus_2
+				}
+				add_dread = execute_interaction_medium_dread_gain
+			}
+			else = {
+				add_dread = execute_interaction_minor_dread_gain
 			}
 		}
-		
+		if = {
+			limit = {
+				location.county = {
+					has_county_modifier = wc_vernal_solstice_modifier
+				}
+			}
+			add_dread = execute_interaction_minor_dread_gain
+		}
 		# Piety loss (or gain) from executions
 		if = {
 			limit = {
@@ -388,6 +475,14 @@ execute_prisoner_effect = {
 				else = {
 					scope:executioner = { add_piety = miniscule_piety_gain }
 				}
+				if = {
+					limit = {
+						location.county = {
+							has_county_modifier = wc_vernal_solstice_modifier
+						}
+					}
+					scope:executioner = { add_piety = minor_piety_gain }
+				}
 			}
 		}
 		else_if = {
@@ -435,7 +530,7 @@ execute_prisoner_effect = {
 		else_if = { #Killing infidels is relaxing
 			limit = {
 				has_trait = zealous
-				NOT = { scope:executioner.faith = scope:victim.faith }
+				scope:executioner.faith != scope:victim.faith
 			}
 
 			if = {
@@ -631,7 +726,7 @@ execute_prisoner_effect = {
 					NOT = { exists = liege }
 					exists = host
 				}
-				any_pool_guest = { count > 0 }
+				any_pool_guest = { }
 			}
 			every_pool_guest = {
 				limit = {
@@ -646,7 +741,7 @@ execute_prisoner_effect = {
 				list = guest_list
 				custom = all_your_guests
                 limit = {
-                    NOT = { this = scope:executioner }
+                    this != scope:executioner
                 }
 				add_opinion = {
 					target = scope:executioner
@@ -658,7 +753,11 @@ execute_prisoner_effect = {
 			if = {
 				limit = {
 					exists = scope:victim.liege
-					NOT = { scope:victim.liege = scope:victim }
+					NOR = {
+						scope:victim.liege = scope:victim
+						scope:victim.liege = scope:executioner
+						scope:victim.liege = scope:imprisoner
+					}
 				}
 				scope:victim.liege = {
 					add_opinion = {
@@ -705,6 +804,208 @@ execute_prisoner_effect = {
 				REVERSE_NON_HOUSE_TARGET = no
 			}
 		}
+		#If you're a nomadic ruler, you can keep the head or send it for intimidation
+		if = {
+			limit = {
+				mpo_keep_prisoners_heads_trigger = yes
+				#execution by beheading, but that only gets tracked for players for some reason
+				OR = {
+					AND = {
+						is_ai = no
+						exists = scope:execution_beheaded
+						scope:execution_beheaded = yes
+					}
+					AND = {
+						is_ai = yes
+						NOT = {
+							scope:executioner.faith = { has_doctrine_parameter = human_sacrifice_active }
+						}
+					}
+				}
+				scope:victim = {
+					is_ruler = yes
+					is_adult = yes
+					highest_held_title_tier >= tier_county
+					#Need to be valid either for artifact or heir intimidation
+					OR = {
+						AND = {
+							exists = primary_heir
+							NOT = {
+								primary_heir = scope:executioner
+							}
+						}
+						highest_held_title_tier >= tier_kingdom
+					}
+				}
+			}
+			if = {
+				limit = {
+					scope:victim = {
+						highest_held_title_tier >= tier_empire
+					}
+				}
+				custom_tooltip = gain_illustrious_victim_head_artifact_tt
+				add_character_flag = {
+					flag = execution_head_illustrious_flag
+					days = 30
+				}
+			}
+			else_if = {
+				limit = {
+					scope:victim = {
+						highest_held_title_tier >= tier_kingdom
+					}
+				}
+				custom_tooltip = gain_famed_victim_head_artifact_tt
+				add_character_flag = {
+					flag = execution_head_famed_flag
+					days = 30
+				}
+			}
+			#Send head to heir
+			if = {
+				limit = {
+					scope:victim = {
+						AND = {
+							exists = primary_heir
+							NOT = {
+								primary_heir = scope:executioner
+							}
+						}
+						NOT = {
+							government_has_flag = government_is_theocracy
+						}
+					}
+				}
+				#Can send head for warscore
+				if = {
+					limit = {
+						is_at_war_with = scope:victim
+						any_character_war = {
+							primary_attacker = scope:executioner
+							primary_defender = scope:victim
+							casus_belli = {
+								any_target_title = {
+									this = scope:victim.primary_title
+								}
+							}
+						}
+						scope:victim = { is_ai = yes }
+						scope:victim.primary_heir = {
+							is_ai = yes
+						}
+						NAND = {
+							has_variable = peace_acceptance_head_scare
+							var:peace_acceptance_head_scare = {
+								this = scope:victim.primary_heir
+							}
+						}
+					}
+					custom_tooltip = send_head_for_warscore_tt
+					add_character_flag = {
+						flag = execution_head_warscore_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				#Can send head for vassalization acceptance
+				else_if = {
+					limit = {
+						scope:victim = {
+							is_independent_ruler = yes
+							highest_held_title_tier <= scope:executioner.highest_held_title_tier
+							primary_heir = {
+								highest_held_title_tier <= scope:executioner.highest_held_title_tier
+								NOR = {
+									is_vassal_or_below_of = scope:executioner
+									is_tributary_of_suzerain_or_above = scope:executioner
+								}
+							}
+							is_ai = yes
+							primary_heir = { is_ai = yes }
+						}
+					}
+					custom_tooltip = send_head_for_vassalization_tt
+					add_character_flag = {
+						flag = execution_head_vassalization_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				else_if = {
+					limit = {
+						OR = {
+							scope:victim = {
+								highest_held_title_tier > scope:executioner.highest_held_title_tier
+							}
+							scope:victim.primary_heir = {
+								highest_held_title_tier > scope:executioner.highest_held_title_tier
+							}
+						}
+					}
+					custom_tooltip = send_head_for_prestige_tt
+					add_character_flag = {
+						flag = execution_head_prestige_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				#Send head for obedient trait
+				else_if = {
+					limit = {
+						scope:victim = {
+							is_vassal_of = scope:executioner
+						}
+						scope:victim.primary_heir = {
+							obedience_target = root
+							is_obedient = no
+						}
+					}
+					custom_tooltip = send_head_for_obedience_tt
+					add_character_flag = {
+						flag = execution_head_obedience_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+				#Can send head for fear hook
+				else_if = {
+					limit = {
+						scope:victim = {
+							highest_held_title_tier <= scope:executioner.highest_held_title_tier
+						}
+						scope:victim.primary_heir = {
+							highest_held_title_tier <= scope:executioner.highest_held_title_tier
+						}
+						can_add_hook = {
+							target = scope:victim.primary_heir
+							type = threat_hook
+						}
+					}
+					custom_tooltip = send_head_for_hook_tt
+					add_character_flag = {
+						flag = execution_head_hook_flag
+						days = 30
+					}
+					scope:victim.primary_heir = {
+						save_scope_as = headless_heir
+					}
+				}
+			}
+			
+			trigger_event = {
+				id = mpo_nomad_events.1010
+				days = 1
+			}
+		}
 	}
 
 	execute_opinion_effect = { VICTIM = scope:victim EXECUTIONER = scope:executioner }
@@ -734,7 +1035,10 @@ execute_prisoner_effect = {
 				}
 			}
 			$VICTIM$ = {
-				override_death_killer_effect = { death_reason = death_sacrificed_to_gods killer = $EXECUTIONER$ }
+				override_death_killer_effect = {
+					death_reason = death_sacrificed_to_gods
+					killer = $EXECUTIONER$
+				}
 			}
 		}
 		else_if = {
@@ -743,7 +1047,7 @@ execute_prisoner_effect = {
 				scope:execution_kennel = yes
 			}
 			$VICTIM$ = {
-				death = {
+				override_death_killer_effect = {
 					death_reason = death_kennel
 					killer = $EXECUTIONER$
 				}
@@ -882,6 +1186,18 @@ execute_opinion_effect = {
 				}
 			}
 		}
+
+		# House Relation
+		house ?= {
+			change_house_relation_effect = {
+				HOUSE = $EXECUTIONER$.house
+				VALUE = house_relation_damage_medium_value
+				REASON = execution
+				CHAR = $EXECUTIONER$
+				TARGET_CHAR = $VICTIM$
+				TITLE = scope:dummy_gender
+			}
+		}
 	}
 }
 
@@ -906,12 +1222,27 @@ sacrifice_prisoner_effect = {
 					scope:victim = { tier_or_related_liege_tier_greater_or_equal_trigger = { TIER = tier_kingdom } } #Kingdom & empire
 				}
 			}
-			add_dread = major_dread_gain
-			
 			# Warcraft
 			if = {
 				limit = { government_has_flag = government_dark_frenzy_from_executions }
-				change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+				if = {
+					limit = {
+						has_focus = disorder_magic_focus_2
+					}
+					change_dark_frenzy_effect = { VALUE = massive_dark_frenzy_gain }
+				}
+				else = {
+					change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain  }
+				}
+			}
+			if = {
+				limit = {
+					has_focus = disorder_magic_focus_2
+				}
+				add_dread = massive_dread_gain
+			}
+			else = {
+				add_dread = major_dread_gain
 			}
 		}
 		else_if = {
@@ -921,21 +1252,51 @@ sacrifice_prisoner_effect = {
 					scope:victim = { tier_or_related_liege_tier_equal_trigger = { TIER = tier_county } }
 				}
 			}
-			add_dread = medium_dread_gain
-			
 			# Warcraft
 			if = {
 				limit = { government_has_flag = government_dark_frenzy_from_executions }
-				change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain }
+				if = {
+					limit = {
+						has_focus = disorder_magic_focus_2
+					}
+					change_dark_frenzy_effect = { VALUE = major_dark_frenzy_gain }
+				}
+				else = {
+					change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain  }
+				}
+			}
+			if = {
+				limit = {
+					has_focus = disorder_magic_focus_2
+				}
+				add_dread = major_dread_gain
+			}
+			else = {
+				add_dread = medium_dread_gain
 			}
 		}
 		else = {
-			add_dread = minor_dread_gain
-			
 			# Warcraft
 			if = {
 				limit = { government_has_flag = government_dark_frenzy_from_executions }
-				change_dark_frenzy_effect = { VALUE = minor_dark_frenzy_gain }
+				if = {
+					limit = {
+						has_focus = disorder_magic_focus_2
+					}
+					change_dark_frenzy_effect = { VALUE = medium_dark_frenzy_gain }
+				}
+				else = {
+					change_dark_frenzy_effect = { VALUE = minor_dark_frenzy_gain }
+				}
+			}
+			if = {
+				limit = {
+					has_focus = disorder_magic_focus_2
+				}
+				add_dread = medium_dread_gain
+			}
+			else = {
+				add_dread = minor_dread_gain
 			}
 		}
 		if = {
@@ -1008,7 +1369,7 @@ sacrifice_prisoner_effect = {
 		if = {
 			limit = { #Killing infidels is relaxing
 				has_trait = zealous
-				NOT = { scope:executioner.faith = scope:victim.faith }
+				scope:executioner.faith != scope:victim.faith
 				NOT = {
 					scope:executioner.faith = {
 						has_doctrine_parameter = human_sacrifice_active
@@ -1022,7 +1383,7 @@ sacrifice_prisoner_effect = {
 		if = {
 			limit = { #Even more so if the religion is in favor of doing it.
 				has_trait = zealous
-				NOT = { scope:executioner.faith = scope:victim.faith }
+				scope:executioner.faith != scope:victim.faith
 				scope:executioner.faith = {
 					has_doctrine_parameter = human_sacrifice_active
 				}
@@ -1159,7 +1520,7 @@ imprison_character_effect = {
 					hidden_effect = {
 						every_close_or_extended_family_member = {
 							limit = {
-								NOT = { scope:imprisoner = this }
+								scope:imprisoner != this
 							}
 							add_opinion = {
 								modifier = imprisoned_family_member_dungeon
@@ -2061,7 +2422,10 @@ imprison_tyranny_effect = {
 			}
 			scope:actor = {
 				if = {
-					limit = { has_legitimacy = yes }
+					limit = {
+						has_legitimacy = yes
+						this = top_liege
+					}
 					add_legitimacy = miniscule_legitimacy_loss
 				}
 			}
@@ -2198,6 +2562,10 @@ diarch_imprison_general_accept_effect = {
 				compassionate = medium_stress_impact_gain
 			}
 		}
+		tgp_activate_catalyst_against_hegemon_effect = {
+			HEGEMON = scope:actor.top_liege
+			CATALYST = catalyst_diarch_mandate
+		}
 	}
 	# Imprison the actual character.
 	imprison_character_effect = {
@@ -2212,5 +2580,128 @@ diarch_imprison_general_accept_effect = {
 			scope:actor = { has_character_flag = flag_hostile_actions_disabled_delay }
 		}
 		scope:actor = { remove_character_flag = flag_hostile_actions_disabled_delay }
+	}
+}
+
+family_purge_execute_prisoner_effect = {
+	$VICTIM$ = {
+		save_scope_as = victim
+	}
+
+	$EXECUTIONER$ = {
+		save_scope_as = executioner
+		save_scope_as = imprisoner #Save this scope to show correct tyranny tooltip
+	}
+
+	family_purge_execute_opinion_effect = { VICTIM = scope:victim EXECUTIONER = scope:executioner }
+
+	$VICTIM$ = {
+		death = {
+			death_reason = death_execution
+			killer = $EXECUTIONER$
+		}
+	}
+}
+
+# Because the entire family is being collectively purged, the original effect will try to add opinion modifiers to people who may be killed in the course of the parent effect, and so we need a separate instance with an is_alive sanity check to avoid errors
+family_purge_execute_opinion_effect = {
+	$VICTIM$ = {
+		# Victim's family & spouse hates executioner
+		every_close_family_member = {
+			limit = { NOT = { this = $EXECUTIONER$ } }
+			add_to_temporary_list = victim_family_list
+		}
+		every_spouse = {
+			limit = {
+				NOR = {
+					this = $EXECUTIONER$
+					is_in_list = victim_family_list
+				}
+			}
+			add_to_temporary_list = victim_family_list
+		}
+		every_in_list = {
+			list = victim_family_list
+			custom = all_close_family_and_spouses
+			limit = {
+				is_alive = yes
+			}
+			if = {
+				limit = {
+					$EXECUTIONER$ = {
+						has_execute_reason = $VICTIM$
+					}
+				}
+				add_opinion = {
+					target = $EXECUTIONER$
+					modifier = executed_close_family
+				}
+			}
+			else = {
+				add_opinion = {
+					target = $EXECUTIONER$
+					modifier = executed_close_family_crime
+				}
+			}
+		}
+		# Victim's dynasty hates executioner
+		if = {
+			limit = {
+				exists = dynasty
+				exists = $EXECUTIONER$.dynasty
+				NOT = { dynasty = $EXECUTIONER$.dynasty }
+				NOT = {
+					$EXECUTIONER$ = {
+						has_execute_reason = $VICTIM$
+					}
+				}
+			}
+			dynasty = {
+				every_dynasty_member = {
+					limit = {
+						NOR = {
+							this = $VICTIM$
+							is_in_list = victim_family_list
+						}
+						is_alive = yes
+					}
+					custom = all_dynasty_members
+					add_to_temporary_list = victim_dynasty_list
+					add_opinion = {
+						target = $EXECUTIONER$
+						modifier = executed_dynasty_member
+					}
+				}
+			}
+		}
+		
+		# Victim's friends and lovers
+		every_relation = {
+			type = friend
+			type = lover
+			limit = {
+				NOT = {
+					this = $EXECUTIONER$ 
+				}
+				is_alive = yes
+			}
+			custom = all_friends_and_lovers
+			add_opinion = {
+				target = $EXECUTIONER$
+				modifier = executed_close_relation_opinion
+			}
+		}
+
+		# House Relation
+		house ?= {
+			change_house_relation_effect = {
+				HOUSE = $EXECUTIONER$.house
+				VALUE = house_relation_damage_medium_value
+				REASON = execution
+				CHAR = $EXECUTIONER$
+				TARGET_CHAR = $VICTIM$
+				TITLE = scope:dummy_gender
+			}
+		}
 	}
 }
