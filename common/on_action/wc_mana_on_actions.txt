@@ -1,0 +1,2359 @@
+﻿wc_on_mana_regeneration = {
+    effect = {
+        if = {
+            limit = { has_variable = wc_current_mana_variable }
+
+            wc_change_mana_by_value_effect = {
+                CHANGE = add
+                VALUE = wc_mana_regeneration_value
+            }
+        }
+        else = {
+            set_variable = { name = wc_current_mana_variable value = wc_max_mana_value }
+            wc_recalculate_prowess_from_mana_effect = yes
+        }
+        magic_buff_maintenance_effect = yes
+        trigger_event = { on_action = wc_on_mana_regeneration months = 1 }
+    }
+}
+
+wc_on_health_regeneration = {
+    effect = {
+        if = {
+            limit = { has_variable = wc_current_hp_variable }
+            wc_change_hp_by_value_effect = {
+                CHANGE = add
+                VALUE = wc_hp_replenishment_value
+            }
+        }
+
+        else = {
+            set_variable = { name = wc_current_hp_variable value = wc_hp_capacity_value }
+        }
+
+        trigger_event = { on_action = wc_on_health_regeneration months = 1 }
+    }
+}
+
+wc_on_spell_progression = {
+    effect = {
+        every_in_list = {
+            variable = current_spells_casting
+            save_scope_as = casting_spell
+            root = {
+                execute_scoped_spell_effect = {
+                    SPELL = scope:casting_spell
+                    EFFECT = add_spell_progression_effect
+                }
+            }
+        }
+        every_in_list = {
+            variable = spells_cd
+            save_scope_as = cd_spell
+            root = {
+                execute_scoped_spell_effect = {
+                    SPELL = scope:cd_spell
+                    EFFECT = update_spell_cooldown_effect
+                }
+            }
+        }
+        if = { # so it doesnt double count spells
+            limit = {
+                NOT = { exists = var:spell_loop_on }
+            }
+            set_variable = { name = spell_loop_on value = yes }
+        }
+        trigger_event = { on_action = wc_on_spell_progression days = 1 }
+    }
+}
+
+## root is the caster
+### before removing the mana of the spell cast and doing anything
+### Variable prefix: current_
+### Variables: spell_name, rank, targets_list (variable list), recipient, elemental_type (for elemental type), class (spell class), target_type
+### e.g. var:current_spell_type = flag:decay
+wc_on_spell_cast_started = {
+    effect = {
+        if = {
+            limit = {
+                has_variable = current_target_type
+                var:current_target_type = flag:character
+                has_variable = spell_recipient
+            }
+            var:spell_recipient = {
+                save_scope_as = current_target_character
+                root = {
+                    trigger_event = {
+                        on_action = wc_on_spell_cast_started_character
+                    }
+                }
+            }
+        }
+        else_if = {
+            limit = {
+                has_variable = current_target_type
+                var:current_target_type = flag:character_list
+                has_variable = spell_targets_list
+            }
+
+            every_in_list = {
+                variable = spell_targets_list
+                save_scope_as = current_target_character
+                root = {
+                    trigger_event = {
+                        on_action = wc_on_spell_cast_started_character
+                    }
+                }
+            }
+        }
+        else_if = {
+            limit = {
+                has_variable = current_target_type
+                var:current_target_type = flag:title
+                has_variable = spell_recipient
+            }
+            var:spell_recipient = {
+                save_scope_as = current_target_title
+                root = {
+                    trigger_event = {
+                        on_action = wc_on_spell_cast_started_title
+                    }
+                }
+            }
+        }
+        else_if = {
+            limit = {
+                has_variable = current_target_type
+                var:current_target_type = flag:title_list
+                has_variable = spell_targets_list
+            }
+
+            every_in_list = {
+                variable = spell_targets_list
+                save_scope_as = current_target_title
+                root = {
+                    trigger_event = {
+                        on_action = wc_on_spell_cast_started_title
+                    }
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                var:current_spell_name = flag:conjure_refreshment
+                var:current_spell_rank < 3
+            }
+            trigger_event = wc_magic_spell_events.0200
+        }
+
+        # Flame and Frost synergy
+        if = {
+            limit = {
+                spell_is_arcane_frost = {
+                    SPELL = var:current_spell_name
+                }
+            }
+            remove_variable = freeze_time_mult
+
+            set_variable = {
+                name = freeze_time_mult
+                value = {
+                    value = 0.01
+                    multiply = var:current_cost
+                }
+            }
+        }
+        else_if = {
+            limit = {
+                spell_is_arcane_fire = {
+                    SPELL = var:current_spell_name
+                }
+            }
+            remove_character_flag = frost_synergy
+        }
+
+        if = {
+            limit = {
+                var:current_spell_name = flag:give_disease
+            }
+
+            set_variable = give_disease_interaction
+            set_variable = { 
+                name = curse_or_disease
+                value = flag:give_disease
+            }
+        }
+
+        if = {
+            limit = {
+                var:current_spell_name = flag:curse
+            }
+
+            set_variable = give_disease_interaction
+            set_variable = { 
+                name = curse_or_disease
+                value = flag:curse
+            }
+        }
+
+        if = {
+            limit = {
+                var:current_spell_name = flag:epidemic
+            }
+
+            set_variable = epidemic_interaction
+        }
+
+        if = {
+            limit = {
+                var:current_spell_name = flag:summon_demon
+            }
+
+            set_variable = summon_demon_interaction
+        }
+    }
+}
+
+## root is the caster
+### before removing the mana of the spell cast and doing anything
+### Is called for every target character of a spell
+### Scope current_target_character, is the current target character
+### Variable prefix: current_
+### Variables: spell_name, rank, targets_list (variable list), recipient, elemental_type (for elemental type), class (spell class), target_type
+### e.g. var:current_spell_type = flag:decay
+wc_on_spell_cast_started_character = {
+    effect = {
+        if = {
+            limit = {
+                OR = {
+                    root.var:current_target_type = flag:character_list
+                    root.var:current_target_type = flag:character
+                }
+                spell_is_harmful_trigger = {
+                    SPELL = root.var:current_spell_name
+                }
+                scope:current_target_character = {
+                    has_perk = disorder_magic_tree_3_perk_3
+                    OR = {
+                        any_relation = { 
+                            type = summoned 
+                            NOT = { target_has_max_stacks_trigger = { SPELL = root.var:current_spell_name } } 
+                            satisfy_spell_triggers_character = { SPELL = root.var:current_spell_name TARGET = this }
+                        }
+                        any_relation = { 
+                            type = thrall 
+                            NOT = { target_has_max_stacks_trigger = { SPELL = root.var:current_spell_name } } 
+                            satisfy_spell_triggers_character = { SPELL = root.var:current_spell_name TARGET = this }
+                        }
+                    }
+                }
+            }
+            random = {
+                chance = 25
+                save_scope_as = caster
+                scope:current_target_character = {
+                    random_relation = {
+                        type = summoned
+                        limit = {
+                            NOT = { target_has_max_stacks_trigger = { SPELL = root.var:current_spell_name } }
+                            satisfy_spell_triggers_character = { SPELL = root.var:current_spell_name TARGET = this }
+                        }
+                        save_scope_as = new_target
+                    }
+                    # Prioritize thralls over summons
+                    random_relation = {
+                        type = thrall
+                        limit = {
+                            NOT = { target_has_max_stacks_trigger = { SPELL = root.var:current_spell_name } }
+                            satisfy_spell_triggers_character = { SPELL = root.var:current_spell_name TARGET = this }
+                        }
+                        save_scope_as = new_target
+                    }
+                }
+                if = {
+                    limit = {
+                        root.var:current_target_type = flag:character
+                    }
+                    send_interface_toast = {
+                        title = soul_link_title
+                        left_icon = scope:current_target_character
+                        right_icon = scope:new_target
+                        custom_tooltip = soul_link_tt
+                    }
+                    scope:current_target_character = {
+                        send_interface_toast = {
+                            title = soul_link_title
+                            left_icon = scope:current_target_character
+                            right_icon = scope:new_target
+                            custom_tooltip = soul_link_reverse_tt
+                        }
+                    }
+                    execute_scoped_spell_effect = { SPELL = root.var:current_spell_name EFFECT = change_spell_target_effect }
+                    scope:new_target = { save_scope_as = current_target_character }
+                    set_variable = {
+                        name = casted_recipient
+                        value = scope:new_target
+                    }
+                }
+                else_if = {
+                    limit = {
+                        root.var:current_target_type = flag:character_list
+                    }
+                    send_interface_toast = {
+                        title = soul_link_title
+                        left_icon = scope:current_target_character
+                        right_icon = scope:new_target
+                        custom_tooltip = soul_link_tt
+                    }
+                    scope:current_target_character = {
+                        send_interface_toast = {
+                            title = soul_link_title
+                            left_icon = scope:current_target_character
+                            right_icon = scope:new_target
+                            custom_tooltip = soul_link_reverse_tt
+                        }
+                    }
+                    execute_scoped_spell_effect = { SPELL = root.var:current_spell_name EFFECT = change_spell_target_effect_list }
+                    remove_list_variable = {
+						name = casted_targets_list
+						target = scope:current_target_character 
+					}
+                    add_to_variable_list = {
+						name = casted_targets_list
+						target = scope:new_target 
+					}
+                }
+            }
+            
+        }
+    }
+}
+
+## root is the caster
+### before removing the mana of the spell cast and doing anything
+### Is called for every target title of a spell
+### Scope current_target_title, is the current target title
+### Variable prefix: current_
+### Variables: spell_name, rank, targets_list (variable list), recipient, elemental_type (for elemental type), class (spell class), target_type
+### e.g. var:current_spell_type = flag:decay
+wc_on_spell_cast_started_title = {
+    effect = {
+
+    }
+}
+
+## root is the caster
+### upon finishing the spell cast, before the spell is executed ###
+### Setting the var should_cast to no will stop the actual execution of the spell effect
+### Setting the var should_reflect to yes will execute the spell effects on the caster instead
+### Setting the var should_include to no on a spell target will stop it from being included in the effects
+### Variable prefix: casted_
+### Variables: spell, recipient, targets_list (variable list), rank, type (for elemental type), class (spell class), target_type, cost
+### e.g. var:casted_spell = flag:lava_lash
+wc_on_spell_cast_before_cast = {
+    effect = {
+        if = {
+            limit = {
+                has_variable = casted_target_type
+                var:casted_target_type = flag:character
+                has_variable = casted_recipient
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            if = {
+                limit = {
+                    spell_is_harmful_trigger = {
+                        SPELL = var:casted_spell
+                    }
+                    NOT = {
+                        var:casted_spell = flag:spellsteal
+                    }
+                    var:casted_recipient = {
+                        has_character_modifier = wc_counterspell_modifier
+                    }
+                }
+                var:casted_recipient = {
+                    remove_character_modifier = wc_counterspell_modifier
+                }
+                set_variable = {
+                    name = should_reflect
+                    value = yes
+                }
+            }
+            else_if = {
+                limit = {
+                    var:casted_recipient = {
+                        has_character_modifier = wc_frost_armor_modifier
+                        NOT = { is_immune_to_cc_trigger = yes }
+                    }
+                }
+                root = {
+                    save_scope_as = ice_caster
+                }
+                var:casted_recipient = {
+                    save_scope_as = blocker
+                    trigger_event = wc_magic_spell_events.0001
+                }
+                root = {
+                    send_interface_toast = {
+                        title = wc_ice_block
+                        left_icon = var:$SPELL$_recipient
+                        right_icon = root
+                        custom_tooltip = wc_iceblock_tt
+                    }
+                }
+                set_variable = {
+                    name = should_cast
+                    value = no
+                }
+            }
+            else_if = {
+                limit = {
+                    var:casted_recipient = {
+                        has_character_modifier = wc_divine_shield_modifier
+                    }
+                    NOT = { var:casted_class = flag:light }
+                }
+                var:casted_recipient = {
+                    save_scope_as = blocker
+                    send_interface_toast = {
+                        title = wc_spell_blocked
+                        left_icon = scope:blocker
+                        right_icon = root
+                        custom_tooltip = wc_divine_shield_tt_self
+                        remove_character_modifier = wc_divine_shield_modifier
+                    }
+                }
+                root = {
+                    send_interface_toast = {
+                        title = wc_spell_blocked
+                        left_icon = scope:blocker
+                        right_icon = root
+                        custom_tooltip = wc_divine_shield_tt
+                        show_as_tooltip = {
+                            var:casted_recipient = {
+                                remove_character_modifier = wc_divine_shield_modifier
+                            }
+                        }
+                    }
+                }
+                set_variable = {
+                    name = should_cast
+                    value = no
+                }
+            }
+        }
+        else_if = {
+            limit = {
+                has_variable = casted_target_type
+                var:casted_target_type = flag:character_list
+                has_variable = casted_targets_list
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            if = {
+                limit = {
+                    any_in_list = {
+                        variable = casted_targets_list
+                        has_character_modifier = wc_counterspell_modifier
+                    }
+                    NOT = {
+                        var:casted_spell = flag:spellsteal
+                    }
+                }
+                every_in_list = {
+                    variable = casted_targets_list
+                    limit = {
+                        has_character_modifier = wc_counterspell_modifier
+                    }
+                    remove_character_modifier = wc_counterspell_modifier
+                    set_variable = {
+                        name = should_include
+                        value = no
+                    }
+                    root = {
+                        set_variable = {
+                            name = should_reflect
+                            value = yes
+                        }
+                    }
+                }
+            }
+            else_if = {
+                limit = {
+                    any_in_list = {
+                        variable = casted_targets_list
+                        has_character_modifier = wc_frost_armor_modifier
+                    }
+                }
+                every_in_list = {
+                    variable = casted_targets_list
+                    limit = {
+                        has_character_modifier = wc_frost_armor_modifier
+                    }
+                    root = {
+                        save_scope_as = ice_caster
+                    }
+                    save_scope_as = blocker
+                    trigger_event = wc_magic_spell_events.0001
+                    root = {
+                        send_interface_toast = {
+                            title = wc_ice_block
+                            left_icon = var:$SPELL$_recipient
+                            right_icon = root
+                            custom_tooltip = wc_iceblock_tt
+                        }
+                    }
+                    set_variable = {
+                        name = should_include
+                        value = no
+                    }
+                }
+            }
+            else_if = {
+                limit = {
+                    any_in_list = {
+                        variable = casted_targets_list
+                        has_character_modifier = wc_divine_shield_modifier
+                    }
+                    NOT = { var:casted_class = flag:light }
+                }
+                every_in_list = {
+                    variable = casted_targets_list
+                    save_scope_as = blocker
+                    send_interface_toast = {
+                        title = wc_spell_blocked
+                        left_icon = scope:blocker
+                        right_icon = root
+                        custom_tooltip = wc_divine_shield_tt_self
+                        remove_character_modifier = wc_divine_shield_modifier
+                    }
+                    root = {
+                        send_interface_toast = {
+                            title = wc_spell_blocked
+                            left_icon = scope:blocker
+                            right_icon = root
+                            custom_tooltip = wc_divine_shield_tt
+                            show_as_tooltip = {
+                                scope:blocker = {
+                                    remove_character_modifier = wc_divine_shield_modifier
+                                }
+                            }
+                        }
+                    }
+                }
+                set_variable = {
+                    name = should_cast
+                    value = no
+                }
+            }
+        }
+   
+        if = {
+            limit = {
+                has_perk = life_magic_tree_3_perk_8
+                var:casted_spell = flag:starfire
+                var:casted_recipient = { is_crisis_trigger = yes }
+            }
+            add_character_flag = halved_cd
+        }
+    }
+}
+
+## root is the caster
+### upon finishing the spell cast, after setting cd and everything ###
+### Variable prefix: casted_
+### Variables: spell, recipient, targets_list (variable list), rank, type (for elemental type), class (spell class), target_type, cost
+### e.g. var:casted_spell = flag:lava_lash
+wc_on_spell_cast_finish = {
+    effect = {
+        # MOVED EVERYTHING INTO SCRIPTED EFFECTS BECAUSE ON_ACTIONS DONT HOT UPDATE ANYMORE
+        record_magic_stats_effect = yes
+
+        wc_on_spell_cast_finish_effect = yes
+        ascension_checker_effect = { SOURCE = spell }
+
+        if = {
+            limit = {
+                var:casted_class = flag:death
+            }
+
+            if = {
+                limit = {
+                    has_focus = death_magic_focus_3
+                }
+                add_dread = 2
+            }
+        }
+
+        if = { 
+            limit = {
+                has_character_flag = biome_attunement_increase
+            }
+            remove_character_flag = biome_attunement_increase
+        }
+
+        if = { 
+            limit = {
+                has_character_flag = halved_cd
+            }
+            remove_character_flag = halved_cd
+        }
+
+                
+        if = {
+            limit = {
+                var:casted_class = flag:life
+            }
+            # Predator's instinct
+            if = {
+                limit = {
+                    has_perk = life_magic_tree_1_perk_2
+                }
+                random = {
+                    chance = 10
+                    send_interface_message = {
+                        title = wc_predators_instinct_modifier
+                        left_icon = root
+                        add_character_modifier = {
+                            modifier = wc_predators_instinct_modifier
+                            months = 3
+                        }
+                    }
+                }
+            }
+
+            # Relentless
+            if = {
+                limit = {
+                    has_perk = life_magic_tree_2_perk_6
+                    var:casted_spell = flag:hotw
+                }
+                random = {
+                    chance = 10
+                    send_interface_message = {
+                        title = wc_relentless_title
+                        left_icon = root
+                        add_character_flag = relentless_proc
+                        custom_tooltip = wc_relentless_desc
+                    }
+                }
+            }
+        }
+
+        # If spell is hostile
+        if = {
+            limit = {
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+                has_character_flag = relentless_proc
+            }
+            remove_character_flag = relentless_proc
+        }
+
+        # Clear casting
+        if = {
+            limit = {
+                OR = {
+                    var:casted_class = flag:life
+                    var:casted_class = flag:light
+                }
+                has_perk = life_magic_tree_2_perk_9
+            }
+            random = {
+                chance = 10
+                send_interface_message = {
+                    title = wc_clearcasting_title
+                    left_icon = root
+                    add_character_flag = wc_clearcasting
+                    custom_tooltip = wc_clearcasting_desc
+                }
+            }
+        }
+
+        if = { # automatically used
+            limit = {
+                has_character_flag = wc_clearcasting
+            }
+            remove_character_flag = wc_clearcasting
+        }
+    }
+}
+
+## root is the caster
+### Is called for every target character of a spell
+### Scope current_target_character, is the current target character
+### upon finishing the spell cast, before setting cd or anything ###
+### Variable prefix: casted_
+### Variables: spell, recipient, targets_list (variable list), rank, type (for elemental type), class (spell class), target_type, cost
+### e.g. var:casted_spell = flag:lava_lash
+wc_on_spell_cast_finish_character = {
+    effect = {
+        # Send interface message to target
+        if = {
+            limit = {
+                NOT = { scope:current_target_character = root }
+            }
+            scope:current_target_character = {
+                save_temporary_scope_as = castee_2
+            }
+            scope:castee_2 = {
+                root = {
+                    save_scope_as = caster_2
+                }
+                set_variable = {
+                    name = on_casted_spell
+                    value = root.var:casted_spell
+                }
+                if = {
+                    limit = {
+                        spell_is_harmful_trigger = { SPELL = root.var:casted_spell }
+                    }
+                    send_interface_message = {
+                        title = spell_cast_on_you_title
+                        type = msg_casted_on_me_bad
+                        desc = wc_spell_casted_on_name
+                        left_icon = scope:caster_2
+                    }
+                }
+                else_if = {
+                    limit = {
+                        spell_is_helpful_trigger = { SPELL = root.var:casted_spell }
+                    }
+                    send_interface_message = {
+                        title = spell_cast_on_you_title
+                        type = msg_casted_on_me_good
+                        desc = wc_spell_casted_on_name
+                        left_icon = scope:caster_2
+                    }
+                }
+                else = {
+                    send_interface_message = {
+                        title = spell_cast_on_you_title
+                        type = msg_casted_on_me
+                        desc = wc_spell_casted_on_name
+                        left_icon = scope:caster_2
+                    }
+                }
+            }
+
+            if = {
+                limit = {
+                    NOT = {
+                        root = scope:current_target_character
+                    }
+                    scope:current_target_character = {
+                        has_perk = order_magic_tree_2_perk_1
+                    }
+                }
+
+                random = {
+                    chance = 25
+                    scope:current_target_character = {
+                        send_interface_toast = {
+                            title = wc_aether_tap_title
+                            left_icon = scope:current_target_character
+                            wc_change_mana_by_value_effect = {
+                                CHANGE = add
+                                VALUE = 3
+                            }
+                        }
+                    }
+                }
+            }
+
+            if = {
+                limit = {
+                    scope:current_target_character = {
+                        is_courtier = yes
+                        NOT = {
+                            root = court_owner
+                        }
+                        court_owner = {
+                            has_perk = order_magic_tree_2_perk_1
+                        }
+                    }
+                }
+                scope:current_target_character = {
+                    court_owner = {
+                        save_scope_as = aether_tapper
+                    }
+                }
+            }
+            else_if = {
+                limit = {
+                    scope:current_target_character = {
+                        is_councillor = yes
+                        is_ruler = no
+                        NOT = {
+                            root = employer
+                        }
+                        employer = {
+                            has_perk = order_magic_tree_2_perk_1
+                        }
+                    }
+                }
+                scope:current_target_character = {
+                    employer = {
+                        save_scope_as = aether_tapper
+                    }
+                }
+            }
+
+            scope:aether_tapper ?= {
+                send_interface_toast = {
+                    title = wc_aether_tap_title
+                    left_icon = this
+                    wc_change_mana_by_value_effect = {
+                        CHANGE = add
+                        VALUE = 5
+                    }
+                }
+            }
+        }
+
+        # Clear Scorch cooldown when hit with elemental or fel hostile magic
+        if = {
+            limit = {
+                NOT = { scope:current_target_character = root }
+                OR = {
+                    var:casted_class = flag:elemental_fire
+                    var:casted_spell = flag:starfire
+                    var:casted_class = flag:elemental_earth
+                    var:casted_class = flag:elemental_water
+                    var:casted_class = flag:elemental_air
+                    var:casted_class = flag:disorder
+                }
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+
+            scope:current_target_character = {
+                execute_scoped_spell_effect = { SPELL = flag:scorch EFFECT = remove_spell_cooldown_effect }
+            }
+        }
+
+        # Burn caster when target has Fire Shield
+        if = {
+            limit = {
+                scope:current_target_character = {
+                    has_character_modifier = wc_fire_shield_modifier
+                }
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+
+            # TODO: Maybe remove Fire Shield modifier?
+
+            root = {
+                add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+
+                send_interface_toast = {
+                    title = wc_spell_reflected
+                    left_icon = root
+                    right_icon = scope:current_target_character
+                    custom_tooltip = wc_fire_shield_reflect_tt
+                }
+            }
+        }
+
+        # Netherburn
+        if = {
+            limit = {
+                NOT = {
+                    has_character_flag = netherburn_triggered
+                }
+                OR = {
+                    var:casted_class = flag:order
+                    var:casted_spell = flag:starfire
+                }
+                has_perk = order_magic_tree_4_perk_2
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            scope:current_target_character = {
+                save_scope_value_as = {
+                    name = spell_dodge_chance
+                    value = wc_order_magic_resistance_dodge_value
+                }
+            }
+            random_list = {
+                25 = {
+                    burned_target_frostbite_modifier = { TARGET = var:casted_recipient CHANGE = add }
+                    scope:current_target_character = {
+                        add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                        add_opinion = {
+                            modifier = wc_burned_me
+                            target = scope:current_target_character
+                        }
+                    }
+
+                    send_interface_toast = {
+                        title = wc_netherburn_triggered
+                        left_icon = root
+                        right_icon = scope:current_target_character
+                        custom_tooltip = wc_netherburn_tt
+                    }
+
+                    add_character_flag = {
+                        flag = netherburn_triggered
+                        years = 1
+                    }
+                }
+                75 = {
+                    modifier = {
+                        is_alive = yes
+                        add = scope:spell_dodge_chance
+                    }
+                    burned_target_frostbite_modifier = { TARGET = var:casted_recipient CHANGE = subtract }
+                }
+            }
+        }
+
+        # If spell is hostile
+        if = {
+            limit = {
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            if = {
+                limit = {
+                    has_character_modifier = wc_vengeance_aura_modifier
+                    scope:current_target_character = {
+                        NOT = { has_character_modifier = wc_vengeance_aura_modifier_negative }
+                    }
+                }
+                scope:current_target_character = {
+                    send_interface_message = {
+                        title = wc_vengeance_aura_title
+                        add_character_modifier = {
+                            modifier = wc_vengeance_aura_modifier_negative
+                            months = 6
+                        }
+                    }
+                }
+            }
+            if = {
+                limit = {
+                    scope:current_target_character = { 
+                        has_character_flag = wc_retribution_aura_flag 
+                        NOT = { has_character_modifier = wc_retribution_aura_modifier }
+                    }
+                }
+                scope:current_target_character = {
+                    send_interface_message = {
+                        title = wc_retribution_aura_title
+                        add_character_modifier = {
+                            modifier = wc_retribution_aura_modifier
+                            months = 6
+                        }
+                    }
+                }
+            }
+            if = {
+                limit = {
+                    scope:current_target_character = { has_trait = holy_wrath }
+                }
+                random_list = {
+                    90 = {}
+                    10 = {
+                        if = {
+                            limit = {
+                                NOT = {
+                                    scope:current_target_character = root
+                                }
+                            }
+                            root = {
+                                send_interface_message = {
+                                    title = trait_holy_wrath
+                                    show_as_tooltip = {
+                                        scope:current_target_character = {
+                                            add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        scope:current_target_character = {
+                            send_interface_message = {
+                                title = trait_holy_wrath
+                                add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                            }
+                        }
+                    }
+                }
+            }
+            if = {
+                limit = {
+                    scope:current_target_character = { has_perk = shadow_magic_tree_3_perk_3 }
+                }
+                random = {
+                    chance = 25
+                    send_interface_message = {
+                        title = wc_void_shield_title
+                        custom_tooltip = wc_void_shield_tt
+                        add_character_flag = void_shield_flag
+                    }
+                }
+            }
+            if = {
+                limit = {
+                    has_perk = life_magic_tree_1_perk_5
+                }
+                if = {
+                    limit = {
+                        is_scheming_against = { target = scope:current_target_character }
+                    }
+                    random = {
+                        chance = 15
+                        send_interface_message = {
+                            title = life_magic_tree_1_perk_5_title
+                            random_scheme = {
+                                limit = {
+                                    scheme_target_character = scope:current_target_character 
+                                }
+                                change_opportunities = 5
+                            }
+                        }
+                    }
+                }
+            }
+            if = {
+                limit = {
+                    scope:current_target_character = { has_perk = life_magic_tree_2_perk_2 }
+                }
+                scope:current_target_character = {
+                    random = {
+                        chance = 15
+                        send_interface_message = {
+                            title = life_magic_tree_2_perk_2_title
+                            add_character_modifier = {
+                                modifier = wc_survival_instinct_modifier
+                                months = 6
+                            }
+                        }
+                    }
+                }
+            }
+            if = {
+                limit = {
+                    OR = {
+                        has_character_modifier = wc_voidwalker_summon_modifier
+                        AND = {
+                            has_trait = creature_voidwalker
+                            any_relation = { type = summoner }
+                        }
+                    }
+                }
+                scope:current_target_character = {
+                    random = {
+                        chance = 10
+                        send_interface_message = {
+                            title = summon_voidwalker_ability_1_title
+                            add_character_modifier = {
+                                modifier = wc_voidwalker_touch_modifier
+                                months = 6
+                            }
+                        }
+                        root = {
+                            show_as_tooltip = {
+                                send_interface_message = {
+                                    title = summon_voidwalker_ability_1_title
+                                    scope:current_target_character = {
+                                        add_character_modifier = {
+                                            modifier = wc_voidwalker_touch_modifier
+                                            months = 6
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+            }
+            if = {
+                limit = {
+                    has_character_modifier = wc_nether_portal_boon_of_destruction
+                }
+                scope:current_target_character = {
+                    random = {
+                        chance = 15
+                        send_interface_message = {
+                            title = boon_of_destruction_title
+                            add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                        }
+                        root = {
+                            show_as_tooltip = {
+                                send_interface_message = {
+                                    title = boon_of_destruction_title
+                                    scope:current_target_character = {
+                                        add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if = {
+                limit = {
+                    OR = {
+                        has_character_modifier = wc_malevolence_modifier
+                        any_relation = { type = summoner has_character_modifier = wc_malevolence_modifier }
+                    }
+                }
+                scope:current_target_character = {
+                    random = {
+                        chance = 50
+                        send_interface_message = {
+                            title = wc_malevolence_title
+                            add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                        }
+                        root = {
+                            show_as_tooltip = {
+                                send_interface_message = {
+                                    title = wc_malevolence_title
+                                    scope:current_target_character = {
+                                        add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    random = {
+                        chance = 5
+                        root = {
+                            send_interface_message = {
+                                title = wc_malevolence_title
+                                scope:current_target_character = {
+                                    override_death_killer_effect = {
+                                        death_reason = death_burned_magic
+                                        killer = root
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if = {
+                limit = {
+                    has_perk = disorder_magic_tree_1_perk_2
+                    OR = {
+                        var:casted_class = flag:death
+                        var:casted_class = flag:disorder
+                        var:casted_class = flag:shadow
+                    }
+                }
+                random = {
+                    chance = 25
+                    root = {
+                        send_interface_message = {
+                            type = event_generic_good
+                            title = seed_of_corruption_add_title
+                            scope:current_target_character = {
+                                add_seed_of_corruption_effect = {
+                                    CASTER = root
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if = {
+                limit = {
+                    scope:current_target_character = { has_perk = disorder_magic_tree_1_perk_5 }
+                }
+                random = {
+                    chance = 5
+                    scope:current_target_character = {
+                        send_interface_message = {
+                            type = event_generic_good
+                            title = seed_of_corruption_add_title
+                            root = {
+                                add_seed_of_corruption_effect = {
+                                    CASTER = scope:current_target_character
+                                }
+                                add_trait_force_tooltip = lunatic_1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        # Echo of Light
+        if = {
+            limit = {
+                var:casted_class = flag:light
+                has_perk = light_magic_tree_1_perk_7
+                OR = {
+                    spell_is_helpful_trigger = {
+                        SPELL = var:casted_spell
+                    }
+                    spell_is_dispel_type_trigger = {
+                        SPELL = var:casted_spell
+                    }
+                    var:casted_spell = flag:salvation 
+                }
+            }
+            scope:current_target_character = {
+                random_list = {
+                    75 = {
+                        send_interface_message = {
+                            title = wc_echo_of_light_modifier
+                            add_character_modifier = {
+                                modifier = wc_echo_of_light_modifier
+                                months = 3
+                            }
+                        }
+                        if = {
+                            limit = {
+                                NOT = {
+                                    scope:current_target_character = root
+                                }
+                            }
+                            root = {
+                                send_interface_message = {
+                                    title = wc_echo_of_light_modifier
+                                    left_icon = root
+                                    show_as_tooltip = {
+                                        scope:current_target_character = {
+                                            add_character_modifier = {
+                                                modifier = wc_echo_of_light_modifier
+                                                months = 3
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    25 = {}
+                }
+            }
+        }
+
+        # cc
+        if = {
+            limit = {
+                spell_is_cc_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            scope:current_target_character = {
+                add_character_flag = {
+                    flag = spell_cc_cooldown
+                    years = 1
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                exists = this
+            }
+            add_to_recently_casted_list_effect = {
+                TARGET = scope:current_target_character
+            }
+        }
+
+        if = {
+            limit = {
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            scope:current_target_character = {
+                add_to_recently_casted_by_harmful_list_effect = {
+                    TARGET = root
+                }
+            }
+        }
+        else_if = {
+            limit = {
+                spell_is_helpful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            scope:current_target_character = {
+                add_to_recently_casted_by_helpful_list_effect = {
+                    TARGET = root
+                }
+            }
+        }
+
+        if = { 
+            limit = {
+                var:casted_class = flag:disorder
+            }
+
+            if = {
+                limit = {
+                    has_perk = disorder_magic_tree_1_perk_6
+                }
+
+                random = {
+                    chance = 50
+                    send_interface_message = {
+                        title = wc_burning_rush_title
+                        left_icon = root
+                        add_character_modifier = {
+                            modifier = wc_burning_rush_modifier
+                            months = 3
+                        }
+                    }
+                }
+            }
+
+            if = {
+                limit = {
+                    has_perk = disorder_magic_tree_2_perk_6
+                }
+
+                send_interface_message = {
+                    title = wc_chaos_beam_title
+                    left_icon = root
+                    add_character_modifier = {
+                        modifier = wc_chaos_beam_modifier
+                        months = 3
+                    }
+                }
+            }
+
+            if = {
+                limit = {
+                    has_perk = disorder_magic_tree_2_perk_4
+                }
+
+                random = {
+                    chance = 5
+                    send_interface_message = {
+                        title = disorder_magic_tree_2_perk_4_name
+                        left_icon = root
+                        random_list = {
+                            10 = {
+                                add_shadow_magic_lifestyle_xp = 25
+                            }
+                            10 = {
+                                add_death_magic_lifestyle_xp = 25
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                spell_is_dispel_type_trigger = {
+                    SPELL = var:casted_spell
+                }
+                scope:current_target_character = {
+                    any_liege_or_above = {
+                        has_perk = disorder_magic_tree_2_perk_1
+                        can_add_hook = {
+                            type = favor_hook
+                            target = scope:current_target_character 
+                        }
+                    }
+                }
+            }
+            random_liege_or_above = {
+                limit = {
+                    has_perk = disorder_magic_tree_2_perk_1
+                    can_add_hook = {
+                        type = favor_hook
+                        target = scope:current_target_character 
+                    }
+                }
+                send_interface_message = {
+                    title = disorder_magic_tree_2_perk_1_name
+                    right_icon = scope:current_target_character
+                    add_hook = {
+                        type = favor_hook
+                        target = scope:current_target_character 
+                    }
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                scope:current_target_character ?= {
+                    has_character_modifier = wc_observer_summon_modifier
+                }
+            }
+
+            random = {
+                chance = 50
+                switch = {
+                    trigger = var:casted_class
+
+                    flag:light = { observer_observation_effect  = { TYPE = light } }
+                    flag:shadow = { observer_observation_effect  = { TYPE = shadow } }
+                    flag:life = { observer_observation_effect  = { TYPE = life } }
+                    flag:death = { observer_observation_effect  = { TYPE = death } }
+                    flag:order = { observer_observation_effect  = { TYPE = order } }
+                    flag:disorder = { observer_observation_effect  = { TYPE = disorder } }
+                    flag:elemental_earth = { observer_observation_effect  = { TYPE = elemental_earth } }
+                    flag:elemental_air = { observer_observation_effect  = { TYPE = elemental_air } }
+                    flag:elemental_fire = { observer_observation_effect  = { TYPE = elemental_fire } }
+                    flag:elemental_water = { observer_observation_effect  = { TYPE = elemental_water } }
+                }
+            }
+        }
+    }
+}
+
+## root is the caster
+### Is called for every target title of a spell
+### Scope current_target_title, is the current target title
+### upon finishing the spell cast, before setting cd or anything ###
+### Variable prefix: casted_
+### Variables: spell, recipient, targets_list (variable list), rank, type (for elemental type), class (spell class), target_type, cost
+### e.g. var:casted_spell = flag:lava_lash
+wc_on_spell_cast_finish_title = {
+    effect = {
+        # Send interface message to target
+        if = {
+            limit = {
+                NOT = { scope:current_target_title.holder = root }
+            }
+            scope:current_target_title.holder = {
+                save_temporary_scope_as = castee_2
+            }
+            scope:castee_2 = {
+                root = {
+                    save_scope_as = caster_2
+                }
+                set_variable = {
+                    name = on_casted_spell
+                    value = root.var:casted_spell
+                }
+                if = {
+                    limit = {
+                        spell_is_harmful_trigger = { SPELL = root.var:casted_spell }
+                    }
+                    send_interface_message = {
+                        title = spell_cast_on_you_title
+                        type = msg_casted_on_me_bad
+                        desc = wc_spell_casted_on_name
+                        left_icon = scope:caster_2
+                    }
+                }
+                else_if = {
+                    limit = {
+                        spell_is_helpful_trigger = { SPELL = root.var:casted_spell }
+                    }
+                    send_interface_message = {
+                        title = spell_cast_on_you_title
+                        type = msg_casted_on_me_good
+                        desc = wc_spell_casted_on_name
+                        left_icon = scope:caster_2
+                    }
+                }
+                else = {
+                    send_interface_message = {
+                        title = spell_cast_on_you_title
+                        type = msg_casted_on_me
+                        desc = wc_spell_casted_on_name
+                        left_icon = scope:caster_2
+                    }
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            if = {
+                limit = {
+                    OR = {
+                        has_character_modifier = wc_malevolence_modifier
+                        any_relation = { type = summoner has_character_modifier = wc_malevolence_modifier }
+                    }
+                }
+                scope:current_target_title = {
+                    if = {
+                        limit = {
+                            NOT = { tier = tier_barony }
+                        }
+                        send_interface_message = {
+                            title = wc_malevolence_title
+                            change_development_level = root.malevolence_province_damage_scaled_value
+                        }
+                        root = {
+                            show_as_tooltip = {
+                                send_interface_message = {
+                                    title = wc_malevolence_title
+                                    scope:current_target_title = {
+                                        change_development_level = root.malevolence_province_damage_scaled_value
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                scope:current_target_title.holder = {
+                    random = {
+                        chance = 50
+                        send_interface_message = {
+                            title = wc_malevolence_title
+                            add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                        }
+                        root = {
+                            show_as_tooltip = {
+                                send_interface_message = {
+                                    title = wc_malevolence_title
+                                    scope:current_target_title.holder = {
+                                        add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    random = {
+                        chance = 5
+                        root = {
+                            send_interface_message = {
+                                title = wc_malevolence_title
+                                scope:current_target_title.holder = {
+                                    override_death_killer_effect = {
+                                        death_reason = death_burned_magic
+                                        killer = root
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        backdraft_check_effect = yes
+    }
+}
+
+## root is the caster
+### Is called for every target army of a spell
+### Scope current_target_army, is the current target army
+### upon finishing the spell cast, before setting cd or anything ###
+### Variable prefix: casted_
+### Variables: spell, recipient, targets_list (variable list), rank, type (for elemental type), class (spell class), target_type, cost
+### e.g. var:casted_spell = flag:lava_lash
+wc_on_spell_cast_finish_army = {
+    effect = {
+        var:casted_recipient.army_owner = {
+            save_scope_as = castee
+        }
+        scope:castee = {
+            root = {
+                save_temporary_scope_as = caster
+            }
+            set_variable = {
+                name = on_casted_spell
+                value = root.var:casted_spell
+            }
+            if = {
+                limit = {
+                    spell_is_harmful_trigger = { SPELL = root.var:casted_spell }
+                }
+                send_interface_message = {
+                    title = spell_cast_on_you_title
+                    type = msg_casted_on_me_bad
+                    desc = wc_spell_casted_on_name
+                    left_icon = scope:caster
+                }
+            }
+            else_if = {
+                limit = {
+                    spell_is_helpful_trigger = { SPELL = root.var:casted_spell }
+                }
+                send_interface_message = {
+                    title = spell_cast_on_you_title
+                    type = msg_casted_on_me_good
+                    desc = wc_spell_casted_on_name
+                    left_icon = scope:caster
+                }
+            }
+            else = {
+                send_interface_message = {
+                    title = spell_cast_on_you_title
+                    type = msg_casted_on_me
+                    desc = wc_spell_casted_on_name
+                    left_icon = scope:caster
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                spell_is_harmful_trigger = {
+                    SPELL = var:casted_spell
+                }
+            }
+            if = {
+                limit = {
+                    OR = {
+                        has_character_modifier = wc_malevolence_modifier
+                        any_relation = { type = summoner has_character_modifier = wc_malevolence_modifier }
+                    }
+                }
+                scope:current_target_army = {
+                    send_interface_message = {
+                        title = wc_malevolence_title
+                        deplete_army_by_percentage = root.malevolence_province_damage_scaled_value
+                    }
+                    root = {
+                        show_as_tooltip = {
+                            send_interface_message = {
+                                title = wc_malevolence_title
+                                scope:current_target_army = {
+                                    deplete_army_by_percentage = root.malevolence_province_damage_scaled_value
+                                }
+                            }
+                        }
+                    }
+                }
+                scope:castee = {
+                    random = {
+                        chance = 50
+                        send_interface_message = {
+                            title = wc_malevolence_title
+                            add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                        }
+                        root = {
+                            show_as_tooltip = {
+                                send_interface_message = {
+                                    title = wc_malevolence_title
+                                    scope:castee = {
+                                        add_or_increase_magic_injury_effect = { CASTER = root INJURY = burned }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    random = {
+                        chance = 5
+                        root = {
+                            send_interface_message = {
+                                title = wc_malevolence_title
+                                scope:castee = {
+                                    override_death_killer_effect = {
+                                        death_reason = death_burned_magic
+                                        killer = root
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+## root is the caster
+### upon canceling spell, after refunding mana and everything ###
+### Variable prefix: cancelled_
+### Variables: spell, recipient, targets_list (variable list), rank, type (for elemental type), class (spell class), target_type, cost
+### e.g. var:cancelled_spell = flag:lava_lash
+wc_on_spell_cast_cancelled = {
+    effect = {
+
+    }
+}
+
+on_game_start_after_lobby = {
+    on_actions = {
+        wc_on_game_start_magic
+    }
+}
+
+wc_magic_travel_on_action = {
+    effect = {
+        # Biome Attunement
+        if = {
+            limit = {
+                has_perk = life_magic_tree_3_perk_6 
+            }
+
+            if = {
+                limit = {
+                    NOT = { exists = var:biome_attunement_stacks }
+                }
+
+                set_variable = {
+                    name = biome_attunement_stacks
+                    value = 0
+                }
+            }
+
+            ## Plains
+            if = {
+                limit = {
+                    location = { terrain = plains }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:plains
+                }
+            }
+            ## Sea
+            else_if = {
+                limit = {
+                    location = { terrain = sea }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:sea
+                }
+            }
+            ## Coastal_sea
+            else_if = {
+                limit = {
+                    location = { terrain = coastal_sea }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:coastal_sea
+                }
+            }
+            ## Farmlands
+            else_if = {
+                limit = {
+                    location = { terrain = farmlands }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:farmlands
+                }
+            }
+            ## Hills
+            else_if = {
+                limit = {
+                    location = { terrain = hills }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:hills
+                }
+            }
+            ## Mountains
+            else_if = {
+                limit = {
+                    location = { terrain = mountains }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:mountains
+                }
+            }
+            ## Desert
+            else_if = {
+                limit = {
+                    location = { terrain = desert }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:desert
+                }
+            }
+            ## Desert_mountains
+            else_if = {
+                limit = {
+                    location = { terrain = desert_mountains }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:desert_mountains
+                }
+            }
+            ## Oasis
+            else_if = {
+                limit = {
+                    location = { terrain = oasis }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:oasis
+                }
+            }
+            ## Jungle
+            else_if = {
+                limit = {
+                    location = { terrain = jungle }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:jungle
+                }
+            }
+            ## Forest
+            else_if = {
+                limit = {
+                    location = { terrain = forest }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:forest
+                }
+            }
+            ## Taiga
+            else_if = {
+                limit = {
+                    location = { terrain = taiga }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:taiga
+                }
+            }
+            ## Wetlands
+            else_if = {
+                limit = {
+                    location = { terrain = wetlands }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:wetlands
+                }
+            }
+            ## Steppe
+            else_if = {
+                limit = {
+                    location = { terrain = steppe }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:steppe
+                }
+            }
+            ## Floodplains
+            else_if = {
+                limit = {
+                    location = { terrain = floodplains }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:floodplains
+                }
+            }
+            ## Drylands
+            else_if = {
+                limit = {
+                    location = { terrain = drylands }
+                }
+                save_scope_value_as = {
+                    name = terrain_type
+                    value = flag:drylands
+                }
+            }
+
+            if = {
+                limit = {
+                    var:biome_attunement_stacks != 0
+                }
+                switch = {
+                    trigger = has_character_modifier
+                    wc_biome_attunement_plains = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:plains } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_plains
+                            add_character_modifier = wc_biome_attunement_plains
+                        }
+                    }
+                    wc_biome_attunement_farmlands = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:farmlands } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_farmlands
+                            add_character_modifier = wc_biome_attunement_farmlands
+                        }
+                    }
+                    wc_biome_attunement_hills = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:hills } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_hills
+                            add_character_modifier = wc_biome_attunement_hills
+                        }
+                    }
+                    wc_biome_attunement_mountains = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:mountains } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_mountains
+                            add_character_modifier = wc_biome_attunement_mountains
+                        }
+                    }
+                    wc_biome_attunement_desert = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:desert } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_desert
+                            add_character_modifier = wc_biome_attunement_desert
+                        }
+                    }
+                    wc_biome_attunement_desert_mountains = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:desert_mountains } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_desert_mountains
+                            add_character_modifier = wc_biome_attunement_desert_mountains
+                        }
+                    }
+                    wc_biome_attunement_oasis = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:oasis } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_oasis
+                            add_character_modifier = wc_biome_attunement_oasis
+                        }
+                    }
+                    wc_biome_attunement_jungle = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:jungle } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_jungle
+                            add_character_modifier = wc_biome_attunement_jungle
+                        }
+                    }
+                    wc_biome_attunement_forest = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:forest } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_forest
+                            add_character_modifier = wc_biome_attunement_forest
+                        }
+                    }
+                    wc_biome_attunement_taiga = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:taiga } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_taiga
+                            add_character_modifier = wc_biome_attunement_taiga
+                        }
+                    }
+                    wc_biome_attunement_wetlands = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:wetlands } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_wetlands
+                            add_character_modifier = wc_biome_attunement_wetlands
+                        }
+                    }
+                    wc_biome_attunement_steppe = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:steppe } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_steppe
+                            add_character_modifier = wc_biome_attunement_steppe
+                        }
+                    }
+                    wc_biome_attunement_floodplains = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:floodplains } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_floodplains
+                            add_character_modifier = wc_biome_attunement_floodplains
+                        }
+                    }
+                    wc_biome_attunement_drylands = {
+                        if = { 
+                            limit = { scope:terrain_type = flag:drylands } 
+                            send_interface_message = {
+                                title = biome_attunement_added
+                                change_variable = {
+                                    name = biome_attunement_stacks
+                                    add = 0.5
+                                }
+                                custom_tooltip = biome_attunement_added_desc
+                            }
+                            remove_character_modifier = wc_biome_attunement_drylands
+                            add_character_modifier = wc_biome_attunement_drylands
+                        }
+                    }
+                }
+            }
+            else = {
+                switch = {
+                    trigger = scope:terrain_type
+                    flag:plains = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_plains
+                        }
+                    }
+                    flag:farmlands = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_farmlands
+                        }
+                    }
+                    flag:hills = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_hills
+                        }
+                    }
+                    flag:mountains = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_mountains
+                        }
+                    }
+                    flag:desert = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_desert
+                        }
+                    }
+                    flag:desert_mountains = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_desert_mountains
+                        }
+                    }
+                    flag:oasis = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_oasis
+                        }
+                    }
+                    flag:jungle = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_jungle
+                        }
+                    }
+                    flag:forest = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_forest
+                        }
+                    }
+                    flag:taiga = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_taiga
+                        }
+                    }
+                    flag:wetlands = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_wetlands
+                        }
+                    }
+                    flag:steppe = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_steppe
+                        }
+                    }
+                    flag:floodplains = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_floodplains
+                        }
+                    }
+                    flag:drylands = {
+                        send_interface_message = {
+                            title = biome_attunement_title
+                            change_variable = {
+                                name = biome_attunement_stacks
+                                add = 0.5
+                            }
+                            add_character_modifier = wc_biome_attunement_drylands
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+wc_on_game_start_magic = {
+    effect = {
+        if = {
+			limit = {
+				NOT = { exists = global_var:spellbook_init }
+			}
+			init_elemental_fire_spells_effect = yes
+			init_order_spells_effect = yes
+            init_light_spells_effect = yes
+            init_death_spells_effect = yes
+            init_elemental_water_spells_effect = yes
+            init_shadow_spells_effect = yes
+            init_life_spells_effect = yes
+            init_elemental_air_spells_effect = yes
+            init_disorder_spells_effect = yes
+            init_elemental_earth_spells_effect = yes
+
+            add_to_global_variable_list = { name = spell_types target = flag:light }
+            add_to_global_variable_list = { name = spell_types target = flag:shadow }
+            add_to_global_variable_list = { name = spell_types target = flag:life }
+            add_to_global_variable_list = { name = spell_types target = flag:death }
+            add_to_global_variable_list = { name = spell_types target = flag:order }
+            add_to_global_variable_list = { name = spell_types target = flag:disorder }
+            add_to_global_variable_list = { name = spell_types target = flag:elemental_earth }
+            add_to_global_variable_list = { name = spell_types target = flag:elemental_fire }
+            add_to_global_variable_list = { name = spell_types target = flag:elemental_water }
+            add_to_global_variable_list = { name = spell_types target = flag:elemental_air }
+
+            set_global_variable = spellbook_init
+
+            set_global_variable = {
+                name = cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = elemental_fire_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = elemental_water_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = elemental_earth_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = elemental_air_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = order_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = disorder_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = light_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = shadow_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = life_cast_count_global
+                value = 0
+            }
+
+            set_global_variable = {
+                name = death_cast_count_global
+                value = 0
+            }
+
+            if = {
+                limit = {
+                    debug_only = yes 
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_1
+                    value = 0
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_2
+                    value = 0
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_3
+                    value = 0
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_4
+                    value = 0
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_5
+                    value = 0
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_6
+                    value = 0
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_7
+                    value = 0
+                }
+                set_global_variable = {
+                    name = ai_spells_pre_cast_stage_8
+                    value = 0
+                }
+            }
+        }
+    }
+}
