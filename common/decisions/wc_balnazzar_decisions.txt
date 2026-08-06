@@ -24,11 +24,18 @@
 		NOT = { has_character_flag = renault_manipulated_by_balnazzar }
 	}
 
+	# ck3 bug: bare is_alive = yes on a directly-scoped character (not inside
+	# an any_x/every_x iterator) renders as "Alive(BUG: is_alive missing
+	# perspective)" in the Requirements panel - wrap in custom_tooltip with an
+	# explicit line instead of relying on the auto-generated tooltip.
 	is_valid = {
-		exists = character:60017
-		character:60017 = { is_alive = yes }
-		exists = character:60019 # Renault Mograine
-		character:60019 = { is_alive = yes }
+		custom_tooltip = {
+			text = balnazzar_move_against_alexandros_decision_requirement_alive
+			exists = character:60017
+			character:60017 = { is_alive = yes }
+			exists = character:60019 # Renault Mograine
+			character:60019 = { is_alive = yes }
+		}
 	}
 
 	is_valid_showing_failures_only = {
@@ -49,5 +56,188 @@
 
 	ai_will_do = {
 		base = 50
+	}
+}
+
+# Repeatable - fires whenever at least one de jure duchy under k_stratholme
+# (the Crusade's founding target, de jure Silver Hand land before Stratholme
+# fell in 603) is fully held but not yet converted. Scoped to k_stratholme
+# only for now - k_lordaeron itself is a much larger, later objective.
+balnazzar_purify_reclaimed_decision = {
+	picture = { reference = "gfx/interface/illustrations/decisions/the_scarlet_crusade.dds" }
+	decision_group_type = independent
+
+	ai_check_interval_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 0
+		kingdom = 24
+		empire = 24
+		hegemony = 24
+	}
+
+	desc = balnazzar_purify_reclaimed_decision_desc
+
+	# error.log caught two real bugs here: any_de_jure_duchy/every_de_jure_duchy
+	# (title scope) don't exist in this engine ("Unknown trigger"/"Unknown
+	# effect") - any_realm_de_jure_duchy/every_realm_de_jure_duchy (character
+	# scope, filtered by kingdom=) are the confirmed-working iterators, already
+	# used elsewhere in the mod (common/scripted_triggers/mpo_scripted_triggers.txt).
+	# holder checked with the same OR = { top_liege = root this = root }
+	# pattern as .1006's Renault re-vassalization fix - a county root holds
+	# DIRECTLY (fresh conquest, not yet granted to a vassal) can fail a bare
+	# "top_liege = root" check, since an independent character doesn't
+	# reliably resolve as their own top_liege.
+	is_shown = {
+		has_trait = balnazzar_disguise
+		any_realm_de_jure_duchy = {
+			kingdom = title:k_stratholme
+			any_de_jure_county = {
+				count = all
+				holder = { OR = { top_liege = root this = root } }
+			}
+			any_de_jure_county = {
+				OR = {
+					NOT = { faith = faith:scarletism }
+					NOT = { culture = culture:lordaeronian }
+				}
+			}
+		}
+	}
+
+	is_valid_showing_failures_only = {
+		is_imprisoned = no
+		is_incapable_trigger = no
+	}
+
+	cost = {
+		gold = major_gold_value
+	}
+
+	# ck3 quirk: a deeply nested every_x/limit block like this produces no
+	# auto-generated tooltip text at all (blank "Effects" panel) - wrap in
+	# custom_tooltip with an explicit line, same fix as the is_valid is_alive
+	# bug above.
+	effect = {
+		custom_tooltip = balnazzar_purify_reclaimed_decision_effect_tooltip
+
+		every_realm_de_jure_duchy = {
+			limit = {
+				kingdom = title:k_stratholme
+				any_de_jure_county = {
+					count = all
+					holder = { OR = { top_liege = root this = root } }
+				}
+			}
+			every_de_jure_county = {
+				set_county_faith = faith:scarletism
+				set_county_culture = culture:lordaeronian
+
+				# Purification isn't free - burns the county's development
+				# back to nothing and leaves a lasting opinion/control scar.
+				change_development_level = { subtract = development_level }
+				add_county_modifier = {
+					modifier = balnazzar_purge_scarred_modifier
+					years = 10
+				}
+			}
+		}
+
+		add_piety = medium_piety_value
+
+		# ponytail: only checked here, right after a purge - if every county in
+		# k_stratholme ends up converted some other way (e.g. captured already
+		# scarletism/lordaeronian, no purge ever needed), the capstone never
+		# fires. Acceptable for now, unlikely with a freshly-conquered realm.
+		# trigger_event fires from root (character), NOT from inside a title
+		# scope - a character_event triggered from a landed_title scope errors
+		# "Event expected scope 'character', but got 'landed_title'".
+		if = {
+			limit = {
+				any_realm_de_jure_duchy = {
+					count = all
+					kingdom = title:k_stratholme
+					any_de_jure_county = {
+						count = all
+						holder = { OR = { top_liege = root this = root } }
+						faith = faith:scarletism
+					}
+				}
+			}
+			trigger_event = {
+				id = wc_balnazzar_story.1008
+				days = { 3 10 }
+			}
+		}
+	}
+
+	ai_potential = {
+		always = yes
+	}
+
+	ai_will_do = {
+		base = 80
+	}
+}
+
+# Trigger 3 of 3 for wc_balnazzar_story.2000 (see the design spec,
+# docs/superpowers/specs/2026-08-04-balnazzar-mask-ending-design.md) -
+# lets the player strike first rather than wait to be exposed. Gated on
+# high stress specifically because stress_loss_mult on balnazzar_disguise
+# (common/traits/wc_special_traits.txt) already makes stress harder to
+# shed - this decision is the release valve the trait itself denies him.
+balnazzar_shed_the_mask_decision = {
+	picture = { reference = "gfx/interface/illustrations/decisions/the_scarlet_crusade.dds" }
+	decision_group_type = intrigue
+
+	ai_check_interval_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 12
+		kingdom = 12
+		empire = 12
+		hegemony = 12
+	}
+
+	desc = balnazzar_shed_the_mask_decision_desc
+
+	is_shown = {
+		has_trait = balnazzar_disguise
+		stress_level >= 2
+		NOT = { has_character_flag = balnazzar_shed_the_mask }
+	}
+
+	is_valid_showing_failures_only = {
+		is_imprisoned = no
+		is_incapable_trigger = no
+	}
+
+	# ck3 quirk: a bare trigger_event with no other effect produces no
+	# auto-generated tooltip text at all (blank "Effects" panel) - wrap in
+	# custom_tooltip with an explicit line, same fix as purify_reclaimed above.
+	effect = {
+		custom_tooltip = balnazzar_shed_the_mask_decision_effect_tooltip
+
+		trigger_event = {
+			id = wc_balnazzar_story.2000
+			days = 3
+		}
+	}
+
+	ai_potential = {
+		always = yes
+	}
+
+	ai_will_do = {
+		base = 10
+
+		modifier = {
+			add = 40
+			has_trait = wrathful
+		}
+		modifier = {
+			add = 40
+			has_trait = paranoid
+		}
 	}
 }
