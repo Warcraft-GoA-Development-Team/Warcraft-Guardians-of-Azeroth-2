@@ -3,18 +3,24 @@
 	skill = intrigue
 	desc = wc_mograine_assassination_desc
 	success_desc = "WC_MOGRAINE_ASSASSINATION_SUCCESS_DESC"
+	discovery_desc = "WC_MOGRAINE_ASSASSINATION_DISCOVERY_DESC"
 	icon = icon_scheme_personal
 	illustration = "gfx/interface/illustrations/event_scenes/corridor.dds"
-	category = personal
+	category = hostile
 	target_type = character
 
-	is_secret = no
+	# hostile + is_secret = yes is required for the Execute Scheme button to
+	# work - category = personal left it dead (no personal-category scheme in
+	# the game uses on_hud_click).
+	is_secret = yes
+	maximum_secrecy = 90
 	is_basic = no
 	uses_resistance = no
 	cooldown = { years = 2 }
 	phases_per_agent_charge = 1
 
 	agent_groups_owner_perspective = { courtiers }
+	agent_groups_target_character_perspective = { courtiers }
 	valid_agent = { is_valid_agent_standard_trigger = yes }
 
 	# Parameters
@@ -36,11 +42,8 @@
 			is_imprisoned = no
 			exists = location
 		}
-		# Owner is Balnazzar, not Renault - his death wouldn't otherwise
-		# auto-invalidate a scheme he isn't the owner of. Renault stays a
-		# fixed scripted participant (not an agent slot - his own employer
-		# switch to scope:owner lands mid-story, too unreliable a pool
-		# membership to gate a real agent slot on).
+		# Owner is Balnazzar, not Renault, so his death wouldn't otherwise
+		# invalidate the scheme - checked explicitly here instead.
 		exists = character:60019 # Renault Mograine
 		character:60019 = { is_alive = yes }
 	}
@@ -97,6 +100,52 @@
 			desc = "SCHEME_WC_MOGRAINE_ASSASSINATION_THEIR_TRUST"
 		}
 	}
+	base_secrecy = {
+		add = secrecy_base_value
+		add = countermeasure_apply_secrecy_maluses_value
+
+		# Renault's blood, Kel'Thuzad's pact, and a complicit court push the
+		# nominal base to 60 before target countermeasures apply. Note:
+		# base_secrecy takes add = { value = X desc = Y }, not modifier {}
+		# like base_success_chance above - ck3-tiger errors on the latter.
+		if = {
+			limit = {
+				exists = character:60019 # Renault Mograine
+				character:60019 = { is_alive = yes }
+			}
+			add = {
+				value = 20
+				desc = "SCHEME_WC_MOGRAINE_ASSASSINATION_RENAULTS_HAND"
+			}
+		}
+		if = {
+			limit = {
+				scope:owner = { has_character_flag = balnazzar_kelthuzad_pact_sealed }
+			}
+			add = {
+				value = 15
+				desc = "SCHEME_WC_MOGRAINE_ASSASSINATION_KELTHUZAD_VEIL"
+			}
+		}
+		add = {
+			value = 5
+			desc = "SCHEME_WC_MOGRAINE_ASSASSINATION_WILLING_BLINDNESS"
+		}
+
+		# No vanilla field grants flat secrecy per phase, so it's tracked by
+		# hand via a scheme variable incremented in on_phase_completed, capped
+		# at +30 (6 phases). Guarded by exists = var:X since base_secrecy also
+		# evaluates during the pre-start odds preview, before the variable is set.
+		if = {
+			limit = { exists = var:wc_mograine_secrecy_phases_elapsed }
+			add = {
+				value = var:wc_mograine_secrecy_phases_elapsed
+				multiply = 5
+				max = 30
+				desc = "SCHEME_WC_MOGRAINE_ASSASSINATION_GROWING_ROUTINE"
+			}
+		}
+	}
 
 	# On Actions
 	on_start = {
@@ -104,14 +153,29 @@
 			trigger_event = wc_mograine_assassination_outcome.1001
 		}
 		add_agent_slot = wc_mograine_whitemane_agent
+		add_agent_slot = wc_mograine_voss_agent
+		add_agent_slot = wc_mograine_founders_agent
+		# Populates the real "Advantages" resource the Execute Scheme button
+		# spends from - without this the button shows a phantom count and
+		# does nothing (confirmed: murder_scheme.txt calls this identically).
+		add_scheme_starting_opportunities_intrigue_effect = yes
+		set_variable = { name = wc_mograine_secrecy_phases_elapsed value = 0 }
 	}
+	# Progress reaching 100% only readies the ambush - suppress_scheme_follow_up_event_till_input_given_effect
+	# holds the roll until Execute Scheme is clicked (on_hud_click below), same as murder_scheme.txt.
 	on_phase_completed = {
-		save_scope_as = scheme
-		scheme_target_character = { save_scope_as = target }
-		scheme_owner = { save_scope_as = owner }
-		scope:scheme.scheme_owner = {
-			trigger_event = wc_mograine_assassination_outcome.0001
+		suppress_scheme_follow_up_event_till_input_given_effect = yes
+		wc_mograine_assassination_scheme_prep_effect = yes
+		# Self-heals schemes started before this variable existed - on_start
+		# only runs once, at creation, so it initializes to 0 here if missing.
+		if = {
+			limit = { NOT = { exists = var:wc_mograine_secrecy_phases_elapsed } }
+			set_variable = { name = wc_mograine_secrecy_phases_elapsed value = 0 }
 		}
+		change_variable = { name = wc_mograine_secrecy_phases_elapsed add = 1 }
+	}
+	on_hud_click = {
+		wc_mograine_assassination_scheme_prep_effect = yes
 	}
 	on_invalidated = {
 		save_scope_as = scheme
@@ -125,8 +189,12 @@
 		}
 	}
 	on_monthly = {
-		scheme_owner = {
-			trigger_event = { on_action = wc_mograine_assassination_ongoing }
+		hostile_scheme_monthly_discovery_chance_effect = yes
+		if = {
+			limit = { NOT = { exists = scope:discovery_event_happening } }
+			scheme_owner = {
+				trigger_event = { on_action = wc_mograine_assassination_ongoing }
+			}
 		}
 	}
 }
