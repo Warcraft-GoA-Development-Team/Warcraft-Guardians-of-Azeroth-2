@@ -1,17 +1,29 @@
 ﻿namespace = wc_balnazzar_story
 
 # Balnazzar - Dreadlord personal story. Fires only for character:430400 (bm_tft_lordaeron bookmark).
-# Chain: 1000 ambition -> 1002 Dathrohan swap (only if c_lordaeron is lost) -> 1003 settles in, decides when to reach Kel'Thuzad -> 1005 Kel'Thuzad pact sealed, unlocks balnazzar_move_against_alexandros_decision -> 1004 (via decision) manipulates Renault, starts wc_mograine_assassination scheme -> 1006 (scheme success outcome) Order seized, Scarlet Crusade born -> 1007 Stratholme conquered -> 1008 purified -> 2000 reveal.
+# Chain: 1000 ambition -> 1001 loses Lordaeron, goes to ground -> 1010 fakes his death -> 1009 finds
+# Dathrohan -> 1002 kill/possession -> 1003/1005 Kel'Thuzad pact -> 1004 manipulates Renault into
+# killing Alexandros (wc_mograine_assassination scheme) -> 1006 Order seized, Scarlet Crusade born
+# -> 1007 Stratholme conquered -> 1008 purified -> 2000 reveal.
 
 # Setup - 0001-0099
 
-# Hidden setup - creates the story on root (root = player-controlled Balnazzar)
+# Hidden setup - creates the story on root (root = player-controlled Balnazzar).
+# create_story needs the block form (save_scope_as inside it) to actually capture the story -
+# a bare create_story followed by a separate save_scope_as just re-saves whatever scope was
+# already current, so global_var:balnazzar_dreadlord_story never got set at all before this.
 wc_balnazzar_story.0001 = {
 	hidden = yes
 
 	immediate = {
-		create_story = story_balnazzar_dreadlord
-		save_scope_as = story_owner
+		create_story = {
+			type = story_balnazzar_dreadlord
+			save_scope_as = story_owner
+		}
+		set_global_variable = {
+			name = balnazzar_dreadlord_story
+			value = scope:story_owner
+		}
 
 		trigger_event = {
 			id = wc_balnazzar_story.1000
@@ -181,9 +193,170 @@ wc_balnazzar_story.1000 = {
 	}
 }
 
-# A Face Not His Own - Balnazzar fakes death, takes Saidan Dathrohan's identity (character:60021).
-# Fires from on_title_lost (wc_balnazzar_on_actions.txt) only when c_lordaeron is actually lost -
-# not a scripted inevitability. An overt reign that never loses Lordaeron never reaches this.
+# The Old Kingdom Slips - loses Lordaeron, goes to ground in the Plaguelands, no target yet,
+# just an exit plan. Fires from on_title_lost only when c_lordaeron is actually lost. First of
+# the .1001 -> .1010 -> .1009 -> .1002 expedition chain. Used to be a real activity_type - worked,
+# but needed a manual click for a one-shot beat that didn't warrant the overhead, so back to a
+# plain event chain.
+wc_balnazzar_story.1001 = {
+	type = character_event
+	title = wc_balnazzar_story.1001.title
+	desc = wc_balnazzar_story.1001.desc
+	theme = intrigue
+
+	trigger = {
+		NOT = { has_trait = nathrezim_disguise }
+	}
+
+	override_background = wc_undercity_throne_room
+
+	left_portrait = {
+		character = root
+		animation = scheme
+	}
+
+	option = {
+		name = wc_balnazzar_story.1001.a
+
+		custom_tooltip = wc_balnazzar_story.1001.a_tooltip
+		hidden_effect = {
+			# change_government to landless_adventurer_government alone silently fails - that
+			# government needs a landless-type duchy title, which create_landless_adventurer_title_effect
+			# mints but doesn't give up any titles still held. Hand everything to his liege first
+			# (same title-transfer pattern as vanilla's become_landless_adventurer_decision), so he
+			# genuinely walks out with nothing, matching .1010's framing.
+			if = {
+				limit = { top_liege != this }
+				liege = { save_scope_as = balnazzar_land_recipient }
+
+				every_held_title = {
+					title_tier > barony
+					limit = {
+						OR = {
+							is_landless_type_title = no
+							is_nomad_title = yes
+						}
+					}
+					add_to_list = balnazzar_relinquished_titles
+				}
+
+				create_title_and_vassal_change = {
+					type = conquest
+					save_scope_as = balnazzar_land_change
+					add_claim_on_loss = no
+				}
+				every_in_list = {
+					list = balnazzar_relinquished_titles
+					change_title_holder_include_vassals = {
+						holder = scope:balnazzar_land_recipient
+						change = scope:balnazzar_land_change
+					}
+				}
+				resolve_title_and_vassal_change = scope:balnazzar_land_change
+			}
+
+			create_landless_adventurer_title_effect = {
+				REASON = flag:voluntary
+				FLAVOR_CHAR = root
+			}
+
+			trigger_event = {
+				id = wc_balnazzar_story.1010
+				days = { 5 15 }
+			}
+		}
+	}
+}
+
+# Between Two Worlds - Varimathras stages Balnazzar's fake death, old identity walks out with
+# nothing. Handle it yourself for a stress cost, or let Varimathras deal with it. Second event
+# of the expedition chain; the old standalone "Wolves Among the Dead" beat is folded into the
+# desc here instead of its own popup.
+wc_balnazzar_story.1010 = {
+	type = character_event
+	title = wc_balnazzar_story.1010.title
+	desc = wc_balnazzar_story.1010.desc
+	theme = intrigue
+
+	override_background = wc_undercity_throne_room
+
+	left_portrait = {
+		character = root
+		animation = scheme
+	}
+
+	option = {
+		name = wc_balnazzar_story.1010.a
+		hidden_effect = {
+			trigger_event = {
+				id = wc_balnazzar_story.1009
+				days = { 20 35 }
+			}
+		}
+	}
+
+	option = {
+		name = wc_balnazzar_story.1010.b
+		hidden_effect = {
+			add_stress = medium_stress_gain
+
+			trigger_event = {
+				id = wc_balnazzar_story.1009
+				days = { 20 35 }
+			}
+		}
+	}
+}
+
+# Into the Ruin - watches Silver Hand remnants work Stratholme's ruins, narrows the target down
+# to Saidan Dathrohan. Watch from a distance (slower, safe) or move in closer (faster, some
+# stress). Last event before the kill; the old "Eyes in the Ash" beat is folded in here too.
+wc_balnazzar_story.1009 = {
+	type = character_event
+	title = wc_balnazzar_story.1009.title
+	desc = wc_balnazzar_story.1009.desc
+	theme = death
+
+	override_background = sm_pa_scarlet_monastery_sm
+
+	immediate = {
+		character:60021 = { save_scope_as = dathrohan }
+	}
+
+	left_portrait = {
+		character = root
+		animation = scheme
+	}
+	right_portrait = {
+		character = scope:dathrohan
+		animation = paranoia
+	}
+
+	option = {
+		name = wc_balnazzar_story.1009.a
+		hidden_effect = {
+			trigger_event = {
+				id = wc_balnazzar_story.1002
+				days = { 30 50 }
+			}
+		}
+	}
+
+	option = {
+		name = wc_balnazzar_story.1009.b
+		hidden_effect = {
+			add_stress = minor_stress_gain
+
+			trigger_event = {
+				id = wc_balnazzar_story.1002
+				days = { 10 20 }
+			}
+		}
+	}
+}
+
+# A Face Not His Own - the kill itself. Balnazzar kills Saidan Dathrohan and takes his body,
+# finishing the identity swap .1010 already set in motion.
 wc_balnazzar_story.1002 = {
 	type = character_event
 	title = wc_balnazzar_story.1002.title
@@ -198,11 +371,16 @@ wc_balnazzar_story.1002 = {
 	}
 	theme = death
 
+	# Arc's climax, needs portraits visible - fullscreen_event never renders them, so
+	# big_event_window instead (same big background art, portraits actually show).
+	window = big_event_window
+
 	trigger = {
 		NOT = { has_trait = nathrezim_disguise }
 	}
 
-	override_background = wc_undercity_throne_room
+	# The kill happens in Stratholme now, not Lordaeron's undercity.
+	override_background = wc_stratholme
 
 	left_portrait = {
 		character = root
@@ -246,6 +424,96 @@ wc_balnazzar_story.1002 = {
 				# The truth itself, tracked as a real CK3 secret - exposure
 				# (however it happens) resolves the story via .2000.
 				add_dreadlord_disguise_secret_effect = yes
+
+				# Balnazzar's magic talents (Disorder, Death) carry over into Dathrohan's body along
+				# with the disguise - no generic "copy all perks" effect exists, so each rank is
+				# checked and copied by hand. Goes through the same open/secret branch as the magic
+				# lifestyle itself instead of a raw add_trait, or Dathrohan would out himself as a
+				# warlock to the whole court the moment he's possessed.
+				if = {
+					limit = { root = { has_trait = wc_lifestyle_disorder_magic } }
+					if = {
+						limit = { can_openly_learn_magic_type_trigger = { MAGICTYPE = disorder } }
+						if = { limit = { root = { has_trait = user_of_disorder_magic_1 } } add_trait = user_of_disorder_magic_1 }
+						if = { limit = { root = { has_trait = user_of_disorder_magic_2 } } add_trait = user_of_disorder_magic_2 }
+						if = { limit = { root = { has_trait = user_of_disorder_magic_3 } } add_trait = user_of_disorder_magic_3 }
+						if = { limit = { root = { has_trait = user_of_disorder_magic_4 } } add_trait = user_of_disorder_magic_4 }
+						if = { limit = { root = { has_trait = user_of_disorder_magic_5 } } add_trait = user_of_disorder_magic_5 }
+					}
+					else = {
+						add_secret = { type = secret_disorder_magic_user }
+					}
+				}
+				if = {
+					limit = { root = { has_trait = wc_lifestyle_death_magic } }
+					if = {
+						limit = { can_openly_learn_magic_type_trigger = { MAGICTYPE = death } }
+						if = { limit = { root = { has_trait = user_of_death_magic_1 } } add_trait = user_of_death_magic_1 }
+						if = { limit = { root = { has_trait = user_of_death_magic_2 } } add_trait = user_of_death_magic_2 }
+						if = { limit = { root = { has_trait = user_of_death_magic_3 } } add_trait = user_of_death_magic_3 }
+						if = { limit = { root = { has_trait = user_of_death_magic_4 } } add_trait = user_of_death_magic_4 }
+						if = { limit = { root = { has_trait = user_of_death_magic_5 } } add_trait = user_of_death_magic_5 }
+					}
+					else = {
+						add_secret = { type = secret_death_magic_user }
+					}
+				}
+
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_1 } } add_perk = disorder_magic_tree_1_perk_1 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_2 } } add_perk = disorder_magic_tree_1_perk_2 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_3 } } add_perk = disorder_magic_tree_1_perk_3 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_4 } } add_perk = disorder_magic_tree_1_perk_4 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_5 } } add_perk = disorder_magic_tree_1_perk_5 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_6 } } add_perk = disorder_magic_tree_1_perk_6 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_7 } } add_perk = disorder_magic_tree_1_perk_7 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_8 } } add_perk = disorder_magic_tree_1_perk_8 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_1_perk_9 } } add_perk = disorder_magic_tree_1_perk_9 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_1 } } add_perk = disorder_magic_tree_2_perk_1 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_2 } } add_perk = disorder_magic_tree_2_perk_2 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_3 } } add_perk = disorder_magic_tree_2_perk_3 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_4 } } add_perk = disorder_magic_tree_2_perk_4 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_5 } } add_perk = disorder_magic_tree_2_perk_5 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_6 } } add_perk = disorder_magic_tree_2_perk_6 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_7 } } add_perk = disorder_magic_tree_2_perk_7 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_8 } } add_perk = disorder_magic_tree_2_perk_8 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_2_perk_9 } } add_perk = disorder_magic_tree_2_perk_9 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_1 } } add_perk = disorder_magic_tree_3_perk_1 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_2 } } add_perk = disorder_magic_tree_3_perk_2 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_3 } } add_perk = disorder_magic_tree_3_perk_3 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_4 } } add_perk = disorder_magic_tree_3_perk_4 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_5 } } add_perk = disorder_magic_tree_3_perk_5 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_6 } } add_perk = disorder_magic_tree_3_perk_6 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_7 } } add_perk = disorder_magic_tree_3_perk_7 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_8 } } add_perk = disorder_magic_tree_3_perk_8 }
+				if = { limit = { root = { has_perk = disorder_magic_tree_3_perk_9 } } add_perk = disorder_magic_tree_3_perk_9 }
+
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_1 } } add_perk = death_magic_tree_1_perk_1 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_2 } } add_perk = death_magic_tree_1_perk_2 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_3 } } add_perk = death_magic_tree_1_perk_3 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_4 } } add_perk = death_magic_tree_1_perk_4 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_5 } } add_perk = death_magic_tree_1_perk_5 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_6 } } add_perk = death_magic_tree_1_perk_6 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_7 } } add_perk = death_magic_tree_1_perk_7 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_8 } } add_perk = death_magic_tree_1_perk_8 }
+				if = { limit = { root = { has_perk = death_magic_tree_1_perk_9 } } add_perk = death_magic_tree_1_perk_9 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_1 } } add_perk = death_magic_tree_2_perk_1 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_2 } } add_perk = death_magic_tree_2_perk_2 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_3 } } add_perk = death_magic_tree_2_perk_3 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_4 } } add_perk = death_magic_tree_2_perk_4 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_5 } } add_perk = death_magic_tree_2_perk_5 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_6 } } add_perk = death_magic_tree_2_perk_6 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_7 } } add_perk = death_magic_tree_2_perk_7 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_8 } } add_perk = death_magic_tree_2_perk_8 }
+				if = { limit = { root = { has_perk = death_magic_tree_2_perk_9 } } add_perk = death_magic_tree_2_perk_9 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_1 } } add_perk = death_magic_tree_3_perk_1 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_2 } } add_perk = death_magic_tree_3_perk_2 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_3 } } add_perk = death_magic_tree_3_perk_3 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_4 } } add_perk = death_magic_tree_3_perk_4 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_5 } } add_perk = death_magic_tree_3_perk_5 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_6 } } add_perk = death_magic_tree_3_perk_6 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_7 } } add_perk = death_magic_tree_3_perk_7 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_8 } } add_perk = death_magic_tree_3_perk_8 }
+				if = { limit = { root = { has_perk = death_magic_tree_3_perk_9 } } add_perk = death_magic_tree_3_perk_9 }
 			}
 
 			# Keep story attached to whoever plays Balnazzar's arc.
@@ -350,6 +618,9 @@ wc_balnazzar_story.1005 = {
 		}
 	}
 	theme = intrigue
+
+	# Third major beat, same big_event_window as .1002/.1006.
+	window = big_event_window
 
 	override_background = wc_stratholme
 
