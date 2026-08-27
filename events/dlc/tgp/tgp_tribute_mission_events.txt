@@ -1,0 +1,4739 @@
+﻿namespace = tribute_mission
+
+
+# 0001 -> Hidden: Set the parameters
+
+## Character Events ##
+# 1000 -> Tributary: Fork over Tribute, try to influence reward
+# 1002 -> Overlord: Do you want the Human Tribute?
+# 1005 -> Overlord: Decide the reward
+# 1006 -> Overlord: CHINA - Decide whether to grant a Seal of Investiture or not
+# 1007 -> Tributary: CHINA - Receive the Seal of Investiture
+# 1008 -> Tributary: HEGEMON - Decide whether to become a Tributary or not
+# 1010 -> Tributary: Receive reward, go home
+
+## Court Events ##
+# 3000 -> Tributary: Fork over Tribute, try to influence reward
+# 3002 -> Overlord: Do you want the Human Tribute? ###DEPRECATED
+# 3005 -> Overlord: Decide the reward ###DEPRECATED
+# 3010 -> Tributary: Receive reward, go home
+
+## Letter Events ##
+# 9000 -> Tributary: Overlord is informing you of your imminent loss of tributary-status (unless you Tribute Mission)
+# 9500 -> Tributary: You ignored the Tribute Mission, Overlord goes bye-bye
+
+## Travel Events ##
+# 9750 -> Tributary: You lost your Human Tribute
+# 9760 -> Tributary: Your to-be Eunuch is trying to escape
+
+# Note on scope naming: 'overlord_scope' and 'tributary_scope' can be misleading since it's technically possible for some
+# non-tributaries to go on tribute missions as well. Consider these equivalent to "tribute receiver" and "tribute payer".
+
+scripted_trigger tribute_mission_1000_available_receiver_trigger = {
+	is_available = yes
+	location = scope:overlord_scope.capital_province
+}
+
+#Hidden: Set the parameters
+tribute_mission.0001 = {
+	hidden = yes
+	immediate = {
+		#Determine who is who
+		save_scope_as = tributary_scope
+		var:tribute_mission_target_scope ?= { save_scope_as = overlord_scope }
+		#Who is the receiving character?
+		scope:overlord_scope = {
+			#Overlord
+			if = {
+				limit = {
+					is_available = yes
+					is_adult = yes
+				}
+				save_scope_as = receiving_character
+			}
+			#Diarch
+			else_if = {
+				limit = {
+					diarch ?= { tribute_mission_1000_available_receiver_trigger = yes }
+				}
+				diarch = { save_scope_as = receiving_character }
+			}
+			#Councillor
+			else_if = {
+				limit = {
+					OR = {
+						cp:councillor_court_chaplain ?= { tribute_mission_1000_available_receiver_trigger = yes }
+						cp:councillor_chancellor ?= { tribute_mission_1000_available_receiver_trigger = yes }
+						cp:councillor_steward ?= { tribute_mission_1000_available_receiver_trigger = yes }
+						cp:councillor_marshal ?= { tribute_mission_1000_available_receiver_trigger = yes }
+						cp:councillor_spymaster ?= { tribute_mission_1000_available_receiver_trigger = yes }
+					}
+				}
+				if = {
+					limit = {
+						cp:councillor_steward ?= { tribute_mission_1000_available_receiver_trigger = yes }
+					}
+					cp:councillor_steward = { save_scope_as = receiving_character }
+				}
+				if = {
+					limit = {
+						NOT = { exists = scope:receiving_character }
+						cp:councillor_chancellor ?= { tribute_mission_1000_available_receiver_trigger = yes }
+					}
+					cp:councillor_chancellor = { save_scope_as = receiving_character }
+				}
+				if = {
+					limit = {
+						NOT = { exists = scope:receiving_character }
+						cp:councillor_spymaster ?= { tribute_mission_1000_available_receiver_trigger = yes }
+					}
+					cp:councillor_spymaster = { save_scope_as = receiving_character }
+				}
+				if = {
+					limit = {
+						NOT = { exists = scope:receiving_character }
+						cp:councillor_court_chaplain ?= { tribute_mission_1000_available_receiver_trigger = yes }
+					}
+					cp:councillor_court_chaplain = { save_scope_as = receiving_character }
+				}
+				if = {
+					limit = {
+						NOT = { exists = scope:receiving_character }
+						cp:councillor_marshal ?= { tribute_mission_1000_available_receiver_trigger = yes }
+					}
+					cp:councillor_marshal = { save_scope_as = receiving_character }
+				}
+			}
+			#Random attendant
+			else = {
+				create_character = {
+					template = servant_character
+					location = scope:overlord_scope.capital_province
+					culture = scope:overlord_scope.capital_province.culture
+					faith = scope:overlord_scope.capital_province.faith
+					dynasty = none
+					save_scope_as = receiving_character
+				}
+				scope:receiving_character = {
+					remove_character_flag = peasant_outfit
+					add_character_flag = created_attendant
+				}
+				scope:overlord_scope = {
+					hidden_effect = { add_courtier = scope:receiving_character }
+				}
+			}
+			# Save Overlord's opinion of the Tributary
+			save_opinion_value_as = {
+				name = opinion_of_tributary
+				target = scope:tributary_scope
+			}
+		}
+		#Set up the human tribute scopes
+		if = {
+			limit = { var:tribute_mission_type ?= flag:concubine_tribute }
+			var:offered_concubine ?= { save_scope_as = concubine_character }
+		}
+		if = {
+			limit = { var:tribute_mission_type ?= flag:eunuch_tribute }
+			var:offered_eunuch ?= {
+				save_scope_as = eunuch_character
+				if = {
+					limit = { is_eunuch_trigger = no }
+					remove_opinion = {
+						modifier = slated_for_castration_opinion
+						target = scope:tributary_scope
+					}
+					add_trait = eunuch_1
+					add_opinion = {
+						modifier = castration_opinion
+						target = scope:tributary_scope
+						opinion = -50
+					}
+					add_character_flag = {
+						flag = tribute_mission_recently_castrated
+						days = 30
+					}
+				}
+			}
+		}
+		#... or the non-living scopes
+		if = {
+			limit = { var:tribute_mission_type ?= flag:artifact_tribute }
+			var:offered_artifact ?= { save_scope_as = artifact_to_tribute }
+		}
+		if = {
+			limit = { var:tribute_mission_type ?= flag:bunga_mas_tribute }
+			var:offered_bunga_mas ?= { save_scope_as = artifact_to_tribute }
+		}
+		#Hol' up while we're here
+		hidden_effect = {
+			current_travel_plan ?= { pause_travel_plan = yes }
+		}
+		#Roll for Bunga Mas
+		if = {
+			limit = {
+				is_ai = yes
+				scope:overlord_scope = {
+					government_has_flag = government_is_mandala
+					NOT = { has_variable = bunga_mas_cooldown }
+				}
+			}
+			random = {
+				chance = 1
+				modifier = {
+					scope:overlord_scope = { has_unruined_mandala_capital_trigger = yes }
+					add = {
+						value = scope:overlord_scope.mandala_radiance_value
+						divide = 10
+					}
+				}
+				scope:overlord_scope = {
+					get_artifact_quality_effect = yes
+					get_artifact_wealth_effect = yes
+					set_variable = {
+						name = bunga_mas_cooldown
+						years = 5
+					}
+				}
+				hidden_effect_new_object = {
+					scope:tributary_scope = {
+						create_bunga_mas_artifact_effect = yes
+					}
+					scope:newly_created_bunga_mas = {
+						remove_artifact_modifier = artifact_placeholder_modifier
+						if = {
+							limit = { rarity = illustrious }
+							set_artifact_description = tribute_mission_illustrious_bunga_mas_desc
+							add_artifact_modifier = artifact_legitimacy_gain_mult_5_modifier
+							add_artifact_modifier = artifact_health_gain_3_modifier
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_creation }
+									}
+								}
+								add_artifact_modifier = artifact_seduce_scheme_phase_duration_add_3_modifier
+								add_artifact_modifier = artifact_fertility_gain_3_modifier
+								add_artifact_modifier = artifact_build_gold_cost_3_modifier
+							}
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_serenity }
+									}
+								}
+								add_artifact_modifier = artifact_befriend_scheme_phase_duration_add_3_modifier
+								add_artifact_modifier = artifact_scheme_resistance_add_3_modifier
+								add_artifact_modifier = artifact_stress_gain_4_modifier
+							}
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_destruction }
+									}
+								}
+								add_artifact_modifier = artifact_pursue_efficiency_2_modifier
+								add_artifact_modifier = artifact_prowess_4_modifier
+								add_artifact_modifier = artifact_knight_limit_1_modifier
+							}
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_trickery }
+									}
+								}
+								add_artifact_modifier = artifact_owned_hostile_scheme_success_chance_add_10_modifier
+								add_artifact_modifier = artifact_owned_personal_scheme_success_chance_add_10_modifier
+								add_artifact_modifier = artifact_owned_scheme_secrecy_add_10_modifier
+							}
+						}
+						else_if = {
+							limit = { rarity = famed }
+							set_artifact_description = tribute_mission_famed_bunga_mas_desc
+							add_artifact_modifier = artifact_legitimacy_gain_mult_4_modifier
+							add_artifact_modifier = artifact_health_gain_2_modifier
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_creation }
+									}
+								}
+								add_artifact_modifier = artifact_seduce_scheme_phase_duration_add_2_modifier
+								add_artifact_modifier = artifact_fertility_gain_1_modifier
+								add_artifact_modifier = artifact_build_gold_cost_1_modifier
+							}
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_serenity }
+									}
+								}
+								add_artifact_modifier = artifact_befriend_scheme_phase_duration_add_2_modifier
+								add_artifact_modifier = artifact_scheme_resistance_add_1_modifier
+								add_artifact_modifier = artifact_stress_gain_2_modifier
+							}
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_destruction }
+									}
+								}
+								add_artifact_modifier = artifact_pursue_efficiency_1_modifier
+								add_artifact_modifier = artifact_prowess_2_modifier
+							}
+							if = {
+								limit = {
+									scope:overlord_scope = {
+										house = { has_house_aspiration_parameter = aspect_of_trickery }
+									}
+								}
+								add_artifact_modifier = artifact_owned_hostile_scheme_success_chance_add_5_modifier
+								add_artifact_modifier = artifact_owned_personal_scheme_success_chance_add_5_modifier
+								add_artifact_modifier = artifact_owned_scheme_secrecy_add_5_modifier
+							}
+						}
+						else_if = {
+							limit = { rarity = masterwork }
+							set_artifact_description = tribute_mission_masterwork_bunga_mas_desc
+							add_artifact_modifier = artifact_legitimacy_gain_mult_3_modifier
+							add_artifact_modifier = artifact_health_gain_1_modifier
+						}
+						else = {
+							set_artifact_description = tribute_mission_common_bunga_mas_desc
+							add_artifact_modifier = artifact_legitimacy_gain_mult_2_modifier
+						}
+					}
+				}
+			}
+		}
+		#Do they have a royal court and is the overlord available? Trigger court event for the tributary
+		if = {
+			limit = {
+				scope:overlord_scope = {
+					has_royal_court = yes
+					this = scope:receiving_character
+				}
+			}
+			trigger_event = tribute_mission.3000
+		}
+		else = { trigger_event = tribute_mission.1000 }
+	}
+}
+
+tribute_mission.0002 = {
+	hidden = yes
+	#Double-check the status of the human tribute
+	immediate = {
+		if = {
+			limit = {
+				OR = {
+					AND = {
+						var:tribute_mission_type ?= flag:concubine_tribute
+						var:offered_concubine ?= { is_alive = no }
+					}
+					AND = {
+						var:tribute_mission_type ?= flag:eunuch_tribute
+						var:offered_eunuch ?= { is_alive = no }
+					}
+				}
+			}
+			add_character_flag = revisit_tribute_mission_0001
+			trigger_event = tribute_mission.9750
+		}
+		else = { trigger_event = tribute_mission.0001 }
+	}
+}
+
+#Make any stray created attendant disappear
+tribute_mission.0005 = {
+	hidden = yes
+	immediate = { silent_disappearance_effect = yes }
+}
+
+
+### TRIBUTES ###
+#Gold
+scripted_trigger tribute_mission_1000_gold_tributary_trigger = {
+	scope:tributary_scope = { has_variable = offered_gold_value }
+}
+
+scripted_effect tribute_mission_1000_fork_over_gold_effect = {
+	scope:overlord_scope = { add_gold = scope:tributary_scope.var:offered_gold_value }
+}
+
+#Herd
+scripted_trigger tribute_mission_1000_herd_tributary_trigger = {
+	scope:tributary_scope = { has_variable = offered_herd_value }
+}
+
+scripted_effect tribute_mission_1000_fork_over_herd_effect = {
+	scope:overlord_scope = { add_gold = herd_conversion_tribute_value }
+}
+
+#Concubine
+scripted_trigger tribute_mission_1000_concubine_tributary_trigger = {
+	scope:tributary_scope = { has_variable = offered_concubine }
+}
+
+scripted_effect tribute_mission_1000_common_arrival_effect = {
+	#Save the concubine
+	if = {
+		limit = { exists = scope:concubine_character }
+		scope:concubine_character = { save_scope_as = human_tribute }
+	}
+	#Save the eunuch
+	if = {
+		limit = { exists = scope:eunuch_character }
+		scope:eunuch_character = { save_scope_as = human_tribute }
+	}
+	#If we're gifting an artifact
+	scope:artifact_to_tribute ?= {
+		set_variable = {
+			name = suppress_artifact_notifications
+			value = yes
+			days = 10
+		}
+	}
+	#Or a Bunga Mas
+	scope:newly_created_bunga_mas ?= {
+		set_variable = {
+			name = suppress_artifact_notifications
+			value = yes
+			days = 10
+		}
+	}
+	#Grant Legitimacy to Hegemonic Suzerains depending on the tier of the tributary
+	if = {
+		limit = { scope:overlord_scope = { highest_held_title_tier = tier_hegemony } }
+		save_temporary_scope_value_as = {
+			name = legitimacy_gain
+			value = {
+				switch = {
+					trigger = scope:tributary_scope.primary_title.tier
+					tier_county = {
+						add = miniscule_legitimacy_gain
+					}
+					tier_duchy = {
+						add = minor_legitimacy_gain
+					}
+					tier_kingdom = {
+						add = medium_legitimacy_gain
+					}
+					tier_empire = {
+						add = major_legitimacy_gain
+					}
+				}
+			}
+		}
+		scope:overlord_scope = {
+			send_interface_toast = {
+				type = event_toast_effect_good
+				title = tribute_mission_suzerain_legitimacy_gain_title
+				left_icon = scope:tributary_scope
+				right_icon = this
+				add_legitimacy_effect = { LEGITIMACY = scope:legitimacy_gain }
+			}
+		}
+	}
+}
+
+scripted_effect tribute_mission_1000_make_concubine_effect = {
+	hidden_effect = {
+		scope:tributary_scope = {
+			current_travel_plan ?= { remove_character = scope:concubine_character }
+		}
+	}
+	make_concubine = scope:concubine_character # make_concubine inherently also adds them as a courtier first, for reference
+}
+
+scripted_effect tribute_mission_1000_make_courtier_effect = {
+	hidden_effect = {
+		scope:tributary_scope = {
+			current_travel_plan ?= { remove_character = $HUMAN_TRIB$ }
+		}
+	}
+	if = {
+		limit = {
+			$HUMAN_TRIB$ = {
+				employer != scope:overlord_scope
+			}
+		}
+		scope:overlord_scope = { add_courtier = $HUMAN_TRIB$ }
+	}
+}
+
+scripted_trigger tribute_mission_1000_overlord_can_employ_concubine_trigger = {
+	scope:overlord_scope = { allowed_more_concubines = yes }
+}
+
+scripted_effect tribute_mission_1000_fork_over_concubine_effect = {
+	scope:overlord_scope = {
+		#If the overlord is AI, they've already accepted the concubine via the interaction so just assign them right away
+		if = {
+			limit = { is_ai = yes }
+			if = {
+				limit = { tribute_mission_1000_overlord_can_employ_concubine_trigger = yes }
+				tribute_mission_1000_make_concubine_effect = yes
+			}
+			else = {
+				tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:concubine_character }
+			}
+		}
+	}
+}
+
+#Eunuch
+scripted_trigger tribute_mission_1000_eunuch_tributary_trigger = {
+	scope:tributary_scope = { has_variable = offered_eunuch }
+}
+
+#Artifact
+scripted_trigger tribute_mission_1000_artifact_tributary_trigger = {
+	scope:tributary_scope = { has_variable = offered_artifact }
+}
+
+scripted_effect tribute_mission_1000_fork_over_artifact_effect = {
+	scope:artifact_to_tribute = { set_owner = scope:overlord_scope }
+}
+
+#Bunga Mas
+scripted_trigger tribute_mission_1000_bunga_mas_tributary_trigger = {
+	scope:tributary_scope = { has_variable = offered_bunga_mas }
+}
+
+scripted_effect tribute_mission_1000_determine_bunga_mas_scale_effect = {
+	if = {
+		limit = { var:tribute_mission_type ?= flag:bunga_mas_tribute }
+		if = {
+			limit = {
+				scope:artifact_to_tribute = { rarity = illustrious }
+			}
+			set_variable = {
+				name = bunga_mas_tribute_modifier
+				value = 3
+				years = 10
+			}
+		}
+		else_if = {
+			limit = {
+				scope:artifact_to_tribute = { rarity = famed }
+			}
+			set_variable = {
+				name = bunga_mas_tribute_modifier
+				value = 2
+				years = 10
+			}
+		}
+		else_if = {
+			limit = {
+				scope:artifact_to_tribute = { rarity = masterwork }
+			}
+			random_list = {
+				50 = {
+					set_variable = {
+						name = bunga_mas_tribute_modifier
+						value = 2
+						years = 10
+					}
+				}
+				50 = {
+					set_variable = {
+						name = bunga_mas_tribute_modifier
+						value = 1
+						years = 10
+					}
+				}
+			}
+		}
+		else = {
+			set_variable = {
+				name = bunga_mas_tribute_modifier
+				value = 1
+				years = 10
+			}
+		}
+	}
+}
+
+#Give the actual Tribute
+scripted_effect tribute_mission_1000_fork_over_tribute_effect = {
+	if = {
+		limit = { tribute_mission_1000_gold_tributary_trigger = yes }
+		tribute_mission_1000_fork_over_gold_effect = yes
+	}
+	if = {
+		limit = { tribute_mission_1000_herd_tributary_trigger = yes }
+		tribute_mission_1000_fork_over_herd_effect = yes
+	}
+	if = {
+		limit = { tribute_mission_1000_concubine_tributary_trigger = yes }
+		tribute_mission_1000_fork_over_concubine_effect = yes
+	}
+	if = {
+		limit = { tribute_mission_1000_eunuch_tributary_trigger = yes }
+		tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:eunuch_character }
+	}
+	if = {
+		limit = { tribute_mission_1000_artifact_tributary_trigger = yes }
+		tribute_mission_1000_fork_over_artifact_effect = yes
+	}
+	#Bunga Mas!
+	if = {
+		limit = { exists = scope:newly_created_bunga_mas }
+		scope:newly_created_bunga_mas = { set_owner = scope:overlord_scope }
+	}
+	if = {
+		limit = { tribute_mission_1000_bunga_mas_tributary_trigger = yes }
+		tribute_mission_1000_fork_over_artifact_effect = yes #We should be able to reuse this
+	}
+
+	#Some Mandala piety
+	tribute_mission_mandala_piety_effect = yes
+}
+
+#If the Overlord is not AI and are away, notify them what they got
+scripted_effect tribute_mission_1000_fork_over_with_notification_effect = {
+	if = {
+		limit = {
+			scope:overlord_scope != scope:receiving_character
+			scope:overlord_scope = { is_ai = no }
+		}
+		#If the overlord isn't available and is a player, let them know what happened
+		scope:overlord_scope = {
+			send_interface_message = {
+				type = event_tribute_good_with_text
+				title = tribute_mission_notification.title
+				left_icon = scope:tributary_scope
+				desc = tribute_mission_notification.desc
+				tribute_mission_1000_fork_over_tribute_effect = yes
+			}
+		}
+	}
+	else = { tribute_mission_1000_fork_over_tribute_effect = yes }
+}
+
+#What options should an AI receiver be able to use when the Overlord is an unavailable player
+scripted_trigger tribute_mission_1000_is_available_to_ai_receiver_trigger = {
+	scope:overlord_scope != scope:receiving_character
+	scope:receiving_character = { is_ai = yes }
+	scope:overlord_scope = { 
+		is_ai = no
+		#Mainly for Hegemons
+		has_treasury = yes
+	}
+}
+
+### REWARDS ###
+scripted_effect tribute_mission_1000_display_potential_rewards_effect = {
+	show_as_tooltip = {
+		random_list = {
+			#Treasury
+			10 = {
+				trigger = { tribute_mission_1000_can_give_treasury_trigger = yes }
+				show_chance = no
+				desc = tribute_mission.1000.abstain.treasury.desc
+				tribute_mission_1000_give_treasury_effect = yes
+			}
+			#Artifact
+			10 = {
+				trigger = { tribute_mission_1000_can_set_artifact_reward_trigger = yes }
+				show_chance = no
+				desc = tribute_mission.1000.abstain.artifact.desc
+				custom_tooltip = tribute_mission.1000.artifact.tt
+			}
+			#Innovation
+			10 = {
+				trigger = { tribute_mission_1000_can_set_innovation_reward_trigger = yes }
+				show_chance = no
+				desc = tribute_mission.1000.abstain.innovation.desc
+				custom_tooltip = tribute_mission.1000.innovation.tt
+			}
+			#Development
+			10 = {
+				trigger = { tribute_mission_1000_eligible_development_trigger = yes }
+				show_chance = no
+				desc = tribute_mission.1000.abstain.development.desc
+				tribute_mission_1000_give_development_effect = yes
+			}
+			#Monk
+			10 = {
+				trigger = { tribute_mission_1000_eligible_for_monk_trigger = yes }
+				show_chance = no
+				desc = tribute_mission.1000.abstain.monk.desc
+				custom_tooltip = tribute_mission.1000.monk.tt
+			}
+			#Generic Legitimacy
+			10 = {
+				show_chance = no
+				desc = tribute_mission.1000.abstain.legitimacy.desc
+				tribute_mission_1000_give_legitimacy_effect = yes
+			}
+		}
+		if = {
+			limit = { var:tribute_mission_type ?= flag:bunga_mas_tribute }
+			add_character_modifier = {
+				modifier = bunga_mas_tribute_modifier
+				years = 10
+			}
+		}
+	}
+}
+
+#China: Treasury / Trade Goods
+scripted_trigger tribute_mission_1000_can_give_treasury_trigger = {
+	trigger_if = {
+		limit = {
+			scope:overlord_scope = { has_treasury = yes }
+		}
+		scope:overlord_scope.treasury > tribute_treasury_reward_value
+	}
+	trigger_else = { always = no }
+	tribute_mission_1000_is_available_to_ai_receiver_trigger = no
+}
+
+scripted_effect tribute_mission_1000_set_treasury_reward_effect = {
+	if = {
+		limit = {
+			NOT = { exists = scope:tribute_reward_type_treasury }
+		}
+		save_scope_value_as = {
+			name = tribute_reward_type_treasury
+			value = tribute_treasury_reward_value
+		}
+	}
+}
+
+#Artifact
+scripted_trigger tribute_mission_1000_can_set_artifact_reward_trigger = {
+	tribute_mission_1000_is_available_to_ai_receiver_trigger = no
+}
+
+scripted_trigger tribute_mission_1000_eligible_smith_trigger = {
+	is_physically_able_ai_adult = yes
+	OR = {
+		#Someone new?
+		AND = {
+			has_no_particular_noble_roots_trigger = yes
+		}
+		#A previous smithy
+		has_variable = tribute_mission_1000_smith
+	}
+}
+
+scripted_effect tribute_mission_1000_eligible_smith_scope_effect = {
+	if = {
+		limit = {
+			any_pool_character = {
+				province = scope:overlord_scope.capital_province
+				tribute_mission_1000_eligible_smith_trigger = yes
+			}
+		}
+		random_pool_character = {
+			province = scope:overlord_scope.capital_province
+			limit = { tribute_mission_1000_eligible_smith_trigger = yes }
+			save_scope_as = smith_character
+		}
+	}
+	else = {
+		create_character = {
+			template = merchant_template
+			location = scope:overlord_scope.capital_province
+			culture = scope:overlord_scope.capital_province.culture
+			faith = scope:overlord_scope.capital_province.faith
+			dynasty = none
+			save_scope_as = smith_character
+			after_creation = { set_variable = tribute_mission_1000_smith }
+		}
+	}
+	if = {
+		limit = { NOT = { exists = scope:smith_character } }
+		error_log = "Failed to create a valid smith in tribute_mission_1000_eligible_smith_scope_effect!"
+	}
+}
+
+scripted_effect tribute_mission_1000_reward_cost_effect = {
+	#A small fee for human players
+	if = {
+		limit = { is_ai = no }
+		if = {
+			limit = { scope:overlord_scope = { has_treasury = yes } }
+			remove_treasury = scope:overlord_scope.tribute_reward_treasury_cost
+		}
+		else = {
+			remove_short_term_gold = miniscule_gold_value
+		}
+	}
+}
+
+scripted_effect tribute_mission_1000_set_artifact_reward_effect = {
+	scope:overlord_scope = {
+		#A small fee for human players
+		tribute_mission_1000_reward_cost_effect = yes
+		hidden_effect = {
+			#Randomize the quality, somewhat
+			random_list = {
+				50 = {
+					get_artifact_quality_effect = yes
+					get_artifact_wealth_effect = yes
+				}
+				25 = { set_artifact_rarity_famed = yes }
+				10 = {
+					trigger = { has_relation_best_friend = scope:tributary_scope }
+					set_artifact_rarity_illustrious = yes
+				}
+			}
+			#Create the artifact
+			hidden_effect_new_object = {
+				#Who is making it
+				tribute_mission_1000_eligible_smith_scope_effect = yes
+				#What are we making
+				random_list = {
+					10 = {
+						create_artifact_armor_effect = {
+							OWNER = scope:overlord_scope
+							CREATOR = scope:smith_character
+							SET_ARMOR_TYPE = flag:no
+						}
+					}
+					10 = {
+						create_artifact_regalia_effect = {
+							OWNER = scope:overlord_scope
+							SMITH = scope:smith_character
+						}
+					}
+					10 = {
+						create_artifact_brooch_effect = {
+							OWNER = scope:overlord_scope
+							SMITH = scope:smith_character
+						}
+					}
+					10 = {
+						create_artifact_necklace_effect = {
+							OWNER = scope:overlord_scope
+							SMITH = scope:smith_character
+						}
+					}
+					10 = {
+						create_artifact_ring_effect = {
+							OWNER = scope:overlord_scope
+							SMITH = scope:smith_character
+						}
+					}
+					10 = {
+						create_artifact_weapon_effect = {
+							OWNER = scope:overlord_scope
+							CREATOR = scope:smith_character
+							SET_WEAPON_TYPE = flag:artifact_weapon_type_dagger
+						}
+					}
+				}
+				scope:newly_created_artifact = {
+					save_scope_as = tribute_reward_type_artifact
+					add_artifact_modifier = artifact_legitimacy_gain_mult_4_modifier
+					set_variable = {
+						name = suppress_artifact_notifications
+						value = yes
+						days = 10
+					}
+				}
+			}
+		}
+	}
+}
+
+#Innovation
+scripted_trigger tribute_mission_1000_eligible_innovation_trigger = {
+	NOT = { is_known_by_culture = scope:tributary_scope.culture }
+	culture_can_know_innovation = scope:tributary_scope.culture
+}
+
+scripted_trigger tribute_mission_1000_can_set_innovation_reward_trigger = {
+	NOT = { scope:tributary_scope.culture = scope:overlord_scope.culture }
+	OR = {
+		#Either they have a fascination we can feed/progress
+		scope:tributary_scope.culture = { culture_has_any_fascination = yes }
+		#Or we have an innovation they can unlock to research
+		scope:overlord_scope.culture = {
+			any_known_innovation = { tribute_mission_1000_eligible_innovation_trigger = yes }
+		}
+	}
+}
+
+scripted_effect tribute_mission_1000_set_innovation_reward_effect = {
+	if = {
+		limit = {
+			scope:overlord_scope.culture = {
+				any_known_innovation = { tribute_mission_1000_eligible_innovation_trigger = yes }
+			}
+		}
+		scope:saved_innovation = { save_scope_as = tribute_reward_type_innovation }
+	}
+	else = {
+		save_scope_value_as = {
+			name = tribute_reward_type_innovation # This scope still needs to exist and be consistent for loc triggers and other things
+			value = yes
+		}
+		scope:tributary_scope = {
+			set_variable = {
+				name = tribute_reward_fascination_progress # But the comparison will break if the scope can be two different things, so we use a variable
+				value = yes
+			}
+		}
+	}
+}
+
+#Development
+scripted_trigger tribute_mission_1000_eligible_development_trigger = {
+	scope:overlord_scope.capital_province != scope:tributary_scope.capital_province
+	scope:tributary_scope.capital_county = {
+		NOT = { has_county_modifier = suzerain_trade_post_modifier }
+	}
+	tribute_mission_1000_is_available_to_ai_receiver_trigger = no
+}
+
+scripted_effect tribute_mission_1000_set_development_reward_effect = {
+	scope:overlord_scope = {
+		#A small fee for human players
+		tribute_mission_1000_reward_cost_effect = yes
+		save_scope_value_as = {
+			name = tribute_reward_type_development
+			value = yes
+		}
+	}
+}
+
+#Mandala: Priest
+scripted_trigger tribute_mission_1000_eligible_for_monk_trigger = {
+	scope:overlord_scope = {
+		government_has_flag = government_is_mandala
+		NOR = {
+			faith = { has_doctrine_parameter = unreformed }
+			faith = scope:tributary_scope.faith
+		}
+	}
+	scope:tributary_scope.faith = { has_doctrine_parameter = unreformed }
+}
+
+scripted_effect tribute_mission_1000_set_monk_reward_effect = {
+	scope:overlord_scope = {
+		#A small fee for human players
+		tribute_mission_1000_reward_cost_effect = yes
+	}
+	hidden_effect_new_object = {
+		create_character = {
+			location = scope:overlord_scope.capital_province
+			template = monk_character_template
+			culture = scope:overlord_scope.culture
+			faith = scope:overlord_scope.faith
+			save_scope_as = new_monk
+			after_creation = {
+				add_character_flag = suzerains_missionary
+			}
+		}
+	}
+	save_scope_value_as = {
+		name = tribute_reward_type_monk
+		value = scope:new_monk
+	}
+}
+
+#Generic Legitimacy
+scripted_trigger tribute_mission_1000_eligible_legitimacy_trigger = {
+	scope:receiving_character = scope:overlord_scope
+}
+
+scripted_effect tribute_mission_1000_set_legitimacy_reward_effect = {
+	save_scope_value_as = {
+		name = tribute_reward_type_legitimacy
+		value = yes
+	}
+}
+
+#Determine the reward
+scripted_effect tribute_mission_1000_generate_reward_effect = {
+	#Were we successfully influenced?
+	if = {
+		limit = { scope:successful_influence ?= flag:treasury }
+		tribute_mission_1000_set_treasury_reward_effect = yes
+		save_scope_value_as = {
+			name = decided_on_treasury_reward
+			value = flag:yes
+		}
+	}
+	else_if = {
+		limit = { scope:successful_influence ?= flag:artifact }
+		tribute_mission_1000_set_artifact_reward_effect = yes
+	}
+	else_if = {
+		limit = { scope:successful_influence ?= flag:innovation }
+		tribute_mission_1000_set_innovation_reward_effect = yes
+	}
+	else_if = {
+		limit = { scope:successful_influence ?= flag:development }
+		tribute_mission_1000_set_development_reward_effect = yes
+	}
+	else = {
+		hidden_effect = {
+			random_list = {
+				#Treasury
+				10 = {
+					trigger = { tribute_mission_1000_can_give_treasury_trigger = yes }
+					tribute_mission_1000_set_treasury_reward_effect = yes
+					save_scope_value_as = {
+						name = decided_on_treasury_reward
+						value = flag:yes
+					}
+				}
+				#Artifact
+				10 = {
+					tribute_mission_1000_set_artifact_reward_effect = yes
+				}
+				#Innovation
+				10 = {
+					trigger = { tribute_mission_1000_can_set_innovation_reward_trigger = yes }
+					tribute_mission_1000_set_innovation_reward_effect = yes
+				}
+				#Development
+				10 = {
+					trigger = { tribute_mission_1000_eligible_development_trigger = yes }
+					tribute_mission_1000_set_development_reward_effect = yes
+				}
+				#Priest
+				50 = {
+					trigger = { tribute_mission_1000_eligible_for_monk_trigger = yes }
+					tribute_mission_1000_set_monk_reward_effect = yes
+				}
+				#Generic Legitimacy
+				25 = {
+					trigger = { tribute_mission_1000_eligible_legitimacy_trigger = yes }
+					tribute_mission_1000_set_legitimacy_reward_effect = yes
+				}
+			}
+		}
+	}
+}
+
+#These are re-used for when the player Overlord picks the reward
+scripted_effect tribute_mission_1000_give_treasury_effect = {
+	scope:overlord_scope = { remove_treasury = scope:tribute_reward_type_treasury }
+	scope:tributary_scope = { add_gold = scope:tribute_reward_type_treasury }
+}
+
+scripted_effect tribute_mission_1000_give_artifact_effect = {
+	scope:tribute_reward_type_artifact = { set_owner = scope:tributary_scope }
+}
+
+scripted_effect tribute_mission_1000_give_innovation_progress_effect = {
+	if = {
+		limit = {
+			scope:tributary_scope = {
+				has_variable = tribute_reward_fascination_progress
+			}
+		}
+		scope:tributary_scope.culture = {
+			add_fascination_progress = tribute_reward_fascination_progress_value
+		}
+	}
+	else = {
+		scope:tributary_scope.culture = {
+			add_innovation_progress = {
+				value = tribute_reward_innovation_progress_value
+				target = scope:tribute_reward_type_innovation
+			}
+		}
+	}
+}
+
+scripted_effect tribute_mission_1000_give_development_effect = {
+	scope:tributary_scope.capital_county = {
+		add_county_modifier = {
+			modifier = suzerain_trade_post_modifier
+			years = 10
+		}
+	}
+}
+
+scripted_effect tribute_mission_1000_give_monk_effect = {
+	scope:tributary_scope = {
+		add_courtier = scope:new_monk
+		current_travel_plan = {
+			add_companion = scope:new_monk
+		}
+	}
+	scope:overlord_scope.faith = {
+		change_fervor = {
+			value = 5
+			desc = fervor_gain_suzerain_missionaries
+		}
+	}
+}
+
+scripted_effect tribute_mission_1000_give_legitimacy_effect = {
+	scope:tributary_scope = {
+		add_legitimacy_effect = { LEGITIMACY = tribute_generic_legitimacy_reward_value }
+	}
+}
+
+scripted_effect tribute_mission_1000_rejection_effect = {
+	scope:tributary_scope = {
+		add_legitimacy = {
+			value = tribute_legitimacy_reward_value
+			multiply = -1
+		}
+		add_opinion = {
+			target = scope:overlord_scope
+			modifier = annoyed_opinion
+			opinion = -50
+		}
+	}
+}
+
+scripted_effect tribute_mission_1000_generic_reward_effect = {
+	scope:tributary_scope = {
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				modifier = pleased_opinion
+				opinion = 40
+				target = scope:overlord_scope
+			}
+		}
+		if = {
+			limit = { exists = scope:tribute_reward_type_legitimacy }
+			tribute_mission_1000_give_legitimacy_effect = yes
+		}
+		else = {
+			add_legitimacy_effect = { LEGITIMACY = tribute_legitimacy_reward_value }
+		}
+		#Disburse the Bunga Mas modifier!
+		if = {
+			limit = { var:tribute_mission_type ?= flag:bunga_mas_tribute }
+			add_character_modifier = {
+				modifier = bunga_mas_tribute_modifier
+				years = 10
+			}
+		}
+	}
+}
+
+#Actually disburse the reward
+scripted_effect tribute_mission_1000_disburse_reward_effect = {
+	if = {
+		limit = { 
+			exists = scope:tribute_reward_type_treasury
+			scope:decided_on_treasury_reward = flag:yes
+		}
+		tribute_mission_1000_give_treasury_effect = yes
+	}
+	if = {
+		limit = { exists = scope:tribute_reward_type_artifact }
+		tribute_mission_1000_give_artifact_effect = yes
+	}
+	if = {
+		limit = { exists = scope:tribute_reward_type_innovation }
+		tribute_mission_1000_give_innovation_progress_effect = yes
+	}
+	if = {
+		limit = { exists = scope:tribute_reward_type_development }
+		tribute_mission_1000_give_development_effect = yes
+	}
+	if = {
+		limit = { exists = scope:tribute_reward_type_monk }
+		tribute_mission_1000_give_monk_effect = yes
+	}
+	#Generic Legitimacy is baked into the tribute_mission_1000_generic_reward_effect
+
+	scope:tributary_scope = {
+		if = { # if the contract uses Subject Standing, grant some
+			limit = { subject_standing >= 0 }
+			hidden_effect = {
+				send_interface_toast = {
+					type = event_toast_effect_good
+					title = tribute_mission_tributary_subject_standing_gain_title
+					left_icon = this
+					right_icon = scope:overlord_scope
+
+					# add minimum 5, maximum 30, average 10 (if unsuccessful) or 17.5 (if successful)
+					add_subject_standing = {
+						value = 10
+						if = {
+							limit = { exists = scope:successful_influence }
+							add = {
+								integer_range = {
+									min = 0
+									max = 15
+								}
+							}
+						}
+						add = {
+							integer_range = {
+								min = -5
+								max = 5
+							}
+						}
+					}
+				}
+			}
+			if = {
+				limit = { exists = scope:successful_influence }
+				custom_tooltip = tribute_mission_tributary_subject_standing_gain_tt_major
+			}
+			else = {
+				custom_tooltip = tribute_mission_tributary_subject_standing_gain_tt_minor
+			}
+		}
+	}
+
+	tribute_mission_1000_generic_reward_effect = yes
+}
+
+
+### INFLUENCE ###
+#Influence duel
+scripted_effect tribute_mission_1000_determine_duel_skill_effect = {
+	random_list = {
+		10 = {
+			trigger = {
+				scope:tributary_scope = { highest_skill = diplomacy }
+			}
+			tribute_mission_1000_duel_effect = {
+				INFLUENCED_REWARD = $INFLUENCED_REWARD$
+				REWARD_INCREMENT = $REWARD_INCREMENT$
+				SKILL = diplomacy
+			}
+		}
+		10 = {
+			trigger = {
+				scope:tributary_scope = { highest_skill = martial }
+			}
+			tribute_mission_1000_duel_effect = {
+				INFLUENCED_REWARD = $INFLUENCED_REWARD$
+				REWARD_INCREMENT = $REWARD_INCREMENT$
+				SKILL = martial
+			}
+		}
+		10 = {
+			trigger = {
+				scope:tributary_scope = { highest_skill = stewardship }
+			}
+			tribute_mission_1000_duel_effect = {
+				INFLUENCED_REWARD = $INFLUENCED_REWARD$
+				REWARD_INCREMENT = $REWARD_INCREMENT$
+				SKILL = stewardship
+			}
+		}
+		10 = {
+			trigger = {
+				scope:tributary_scope = { highest_skill = intrigue }
+			}
+			tribute_mission_1000_duel_effect = {
+				INFLUENCED_REWARD = $INFLUENCED_REWARD$
+				REWARD_INCREMENT = $REWARD_INCREMENT$
+				SKILL = intrigue
+			}
+		}
+		10 = {
+			trigger = {
+				scope:tributary_scope = { highest_skill = learning }
+			}
+			tribute_mission_1000_duel_effect = {
+				INFLUENCED_REWARD = $INFLUENCED_REWARD$
+				REWARD_INCREMENT = $REWARD_INCREMENT$
+				SKILL = learning
+			}
+		}
+	}
+}
+
+#Actual duel
+scripted_effect tribute_mission_1000_duel_effect = {
+	duel = {
+		skill = $SKILL$
+		target = scope:receiving_character
+		#You convince them
+		50 = {
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = 3.5
+			}
+			modifier = {
+				culture = { has_cultural_parameter = more_successful_kowtows }
+				add = 25
+			}
+			desc = tribute_mission.1000.success.desc
+			send_interface_toast = {
+				type = event_toast_effect_good
+				title = tribute_mission.1000.success.t
+				left_icon = scope:tributary_scope
+				right_icon = scope:receiving_character
+				#Woo!
+				save_scope_value_as = {
+					name = successful_influence
+					value = flag:$INFLUENCED_REWARD$
+				}
+				if = {
+					limit = { $REWARD_INCREMENT$ = 0 }
+					show_as_tooltip = { tribute_mission_1000_give_treasury_effect = yes }
+				}
+				if = {
+					limit = { $REWARD_INCREMENT$ = 1 }
+					custom_tooltip = tribute_mission.1000.artifact.tt
+				}
+				if = {
+					limit = { $REWARD_INCREMENT$ = 2 }
+					custom_tooltip = tribute_mission.1000.innovation.tt
+				}
+				if = {
+					limit = { $REWARD_INCREMENT$ = 3 }
+					show_as_tooltip = { tribute_mission_1000_give_development_effect = yes }
+				}
+			}
+		}
+		#Hmm no
+		50 = {
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = -3.5
+			}
+			desc = tribute_mission.1000.failure.desc
+			send_interface_toast = {
+				type = event_toast_effect_bad
+				title = tribute_mission.1000.failure.t
+				left_icon = scope:tributary_scope
+				right_icon = scope:receiving_character
+				custom_tooltip = tribute_mission.1000.failure.tt
+				#Ayy
+				stress_impact = { base = miniscule_stress_impact_gain }
+			}
+		}
+	}
+}
+
+#Tributary: Fork over Tribute
+tribute_mission.1000 = {
+	type = character_event
+	title = tribute_mission.1000.t
+	desc = {
+		desc = tribute_mission.1000.intro
+		#Who is greeting us?
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:overlord_scope = scope:receiving_character }
+				desc = tribute_mission.1000.intro.overlord
+			}
+			triggered_desc = {
+				trigger = { scope:overlord_scope.diarch ?= scope:receiving_character }
+				desc = tribute_mission.1000.intro.diarch
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						scope:overlord_scope.cp:councillor_steward ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_chancellor ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_spymaster ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_court_chaplain ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_marshal ?= scope:receiving_character
+					}
+				}
+				desc = tribute_mission.1000.intro.councillor
+			}
+			desc = tribute_mission.1000.intro.attendant
+		}
+		desc = tribute_mission.1000.desc.segway
+		#What did we bring?
+		first_valid = {
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:bunga_mas_tribute }
+				desc = tribute_mission.1000.desc.bunga_mas
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:small_gold_tribute }
+				desc = tribute_mission.1000.desc.small_gold
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:adequate_gold_tribute }
+				desc = tribute_mission.1000.desc.adequate_gold
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:excessive_gold_tribute }
+				desc = tribute_mission.1000.desc.excessive_gold
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:small_herd_tribute }
+				desc = tribute_mission.1000.desc.small_herd
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:adequate_herd_tribute }
+				desc = tribute_mission.1000.desc.adequate_herd
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:excessive_herd_tribute }
+				desc = tribute_mission.1000.desc.excessive_herd
+			}
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.1000.desc.concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:eunuch_character }
+				desc = tribute_mission.1000.desc.eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:artifact_to_tribute }
+				desc = tribute_mission.1000.desc.artifact
+			}
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:receiving_character = { has_character_flag = created_attendant }
+				}
+				desc = tribute_mission.1000.outro.attendant
+			}
+			desc = tribute_mission.1000.outro
+		}
+	}
+
+	theme = tributary
+
+	left_portrait = {
+		character = root
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:receiving_character
+		triggered_animation = {
+			trigger = {
+				scope:tributary_scope = { var:tribute_mission_type ?= flag:bunga_mas_tribute }
+			}
+			animation = shock
+		}
+		animation = personality_honorable
+	}
+	lower_center_portrait = {
+		character = scope:human_tribute
+		trigger = { exists = scope:human_tribute }
+	}
+	#Artifact Tribute
+	artifact = {
+		trigger = { exists = scope:artifact_to_tribute }
+		target = scope:artifact_to_tribute
+		position = lower_left_portrait
+	}
+
+	immediate = {
+		tribute_mission_1000_common_arrival_effect = yes
+		#For the tooltip
+		if = {
+			limit = { tribute_mission_1000_can_give_treasury_trigger = yes }
+			tribute_mission_1000_set_treasury_reward_effect = yes
+		}
+		if = {
+			limit = {
+				scope:overlord_scope.culture = {
+					any_known_innovation = { tribute_mission_1000_eligible_innovation_trigger = yes }
+				}
+			}
+			scope:overlord_scope.culture = {
+				random_known_innovation = {
+					limit = { tribute_mission_1000_eligible_innovation_trigger = yes }
+					save_scope_as = saved_innovation
+				}
+			}
+		}
+		else = {
+			save_scope_as = grant_fascination
+		}
+		#What level of Bunga Mas modifier?
+		tribute_mission_1000_determine_bunga_mas_scale_effect = yes
+	}
+
+	#China: Duel for Treasury
+	option = {
+		name = tribute_mission.1000.treasury
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_can_give_treasury_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = treasury REWARD_INCREMENT = 0 }
+		ai_chance = { base = 100 }
+	}
+	#Duel for Artifact
+	option = {
+		name = tribute_mission.1000.artifact
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_can_set_artifact_reward_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = artifact REWARD_INCREMENT = 1 }
+		ai_chance = { base = 150 }
+	}
+
+	#Duel for Innovation
+	option = {
+		name = tribute_mission.1000.innovation
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_can_set_innovation_reward_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = innovation REWARD_INCREMENT = 2 }
+		ai_chance = { base = 200 }
+	}
+
+	#Duel for Development
+	option = {
+		name = tribute_mission.1000.development
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_eligible_development_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = development REWARD_INCREMENT = 3 }
+		ai_chance = { base = 100 }
+	}
+
+	#I'm sure it'll be fine
+	option = {
+		name = tribute_mission.1000.abstain
+		tribute_mission_1000_display_potential_rewards_effect = yes
+		ai_chance = {
+			base = 100
+			modifier = {
+				has_trait = arbitrary
+				add = 200
+			}
+		}
+	}
+	after = {
+		#Non-AI Receiving person: Decide on if you want to accept the human tribute
+		if = {
+			limit = {
+				OR = {
+					exists = scope:concubine_character
+					exists = scope:eunuch_character
+				}
+				AND = {
+					#If the overlord is an AI, they've already said yay/nay
+					scope:overlord_scope = { is_ai = no }
+					#... so if we're a player diarch of a player ruler, you get to decide
+					scope:receiving_character = { is_ai = no }
+				}
+			}
+			show_as_tooltip = { tribute_mission_1000_fork_over_with_notification_effect = yes }
+			scope:receiving_character = { trigger_event = tribute_mission.1002 }
+		}
+		#Or the Non-AI Receiving person / Hegemon gets to decide the reward
+		else_if = {
+			limit = {
+				scope:receiving_character = {
+					OR = {
+						is_ai = no
+						scope:overlord_scope = { highest_held_title_tier = tier_hegemony }
+					}
+				}
+			}
+			show_as_tooltip = { tribute_mission_1000_fork_over_with_notification_effect = yes }
+			scope:receiving_character = { trigger_event = tribute_mission.1005 }
+		}
+		#Or if the Receiving person is AI then we we skip the event and just generate the reward
+		else = {
+			tribute_mission_1000_fork_over_with_notification_effect = yes
+			scope:overlord_scope = { tribute_mission_1000_generate_reward_effect = yes }
+			scope:tributary_scope = { trigger_event = tribute_mission.1010 }
+		}
+	}
+}
+
+
+#What's their personality like?
+scripted_trigger 1002_human_tribute_shy_personality_trigger = {
+	has_trait = shy
+}
+
+scripted_trigger 1002_human_tribute_bold_personality_trigger = {
+	OR = {
+		has_trait = brave
+		has_trait = gregarious
+	}
+}
+
+scripted_trigger 1002_human_tribute_callous_personality_trigger = {
+	OR = {
+		has_trait = cynical
+		has_trait = callous
+	}
+}
+
+scripted_trigger 1002_human_tribute_angry_personality_trigger = {
+	OR = {
+		has_trait = wrathful
+		has_trait = irritable
+		has_trait = arrogant
+	}
+}
+
+#Recipient: Decide on the human tribute
+tribute_mission.1002 = {
+	type = character_event
+	title = tribute_mission.1002.t
+	desc = {
+		desc = tribute_mission.1002.segway
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.1002.desc.concubine
+			}
+			triggered_desc = {
+				trigger = {
+					scope:eunuch_character ?= { has_character_flag = tribute_mission_recently_castrated }
+				}
+				desc = tribute_mission.1002.desc.new_eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:eunuch_character }
+				desc = tribute_mission.1002.desc.eunuch
+			}
+		}
+		#Some descriptive exterior words
+		first_valid = {
+			#Beauty
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = beauty_good_1
+							has_trait = beauty_good_2
+							has_trait = beauty_good_3
+						}
+					}
+				}
+				desc = tribute_mission.1002.beauty.concubine.good
+			}
+			#Bad Beauty
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = beauty_bad_1
+							has_trait = beauty_bad_2
+							has_trait = beauty_bad_3
+						}
+					}
+				}
+				desc = tribute_mission.1002.beauty.concubine.bad
+			}
+			#Physique
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = physique_good_1
+							has_trait = physique_good_2
+							has_trait = physique_good_3
+						}
+					}
+				}
+				desc = tribute_mission.1002.physique.concubine.good
+			}
+			#Bad Physique
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = physique_bad_1
+							has_trait = physique_bad_2
+							has_trait = physique_bad_3
+						}
+					}
+				}
+				desc = tribute_mission.1002.physique.concubine.bad
+			}
+			#Fallback
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.1002.exterior.plain
+			}
+		}
+		#Some descriptive personality words
+		first_valid = {
+			#Shy
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_shy_personality_trigger = yes }
+				}
+				desc = tribute_mission.1002.personality.shy
+			}
+			#Bold
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_bold_personality_trigger = yes }
+				}
+				desc = tribute_mission.1002.personality.bold
+			}
+			#Cynical
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_callous_personality_trigger = yes }
+				}
+				desc = tribute_mission.1002.personality.cynical
+			}
+			#Angry
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_angry_personality_trigger = yes }
+				}
+				desc = tribute_mission.1002.personality.angry
+			}
+			#Fallback
+			desc = tribute_mission.1002.personality.fallback
+		}
+	}
+
+	theme = tributary
+
+	left_portrait = {
+		character = scope:receiving_character
+		animation = interested
+	}
+	right_portrait = {
+		character = scope:human_tribute
+		triggered_animation = {
+			trigger = { has_character_flag = tribute_mission_recently_castrated }
+			animation = severelywounded
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_shy_personality_trigger = yes }
+			animation = shame
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_bold_personality_trigger = yes }
+			animation = personality_bold
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_callous_personality_trigger = yes }
+			animation = personality_cynical
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_angry_personality_trigger = yes }
+			animation = disapproval
+		}
+		animation = personality_honorable
+	}
+	lower_right_portrait = {
+		character = scope:tributary_scope
+	}
+	immediate = {
+		tribute_mission_1000_fork_over_with_notification_effect = yes
+	}
+	#Add 'em to court
+	option = {
+		name = tribute_mission.1002.a
+		if = {
+			limit = { exists = scope:concubine_character }
+			tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:concubine_character }
+		}
+		else = {
+			tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:eunuch_character }
+		}
+		ai_chance = { base = 100 }
+	}
+	#Make 'em your concubine
+	option = {
+		name = tribute_mission.1002.b
+		trigger = {
+			exists = scope:concubine_character
+			scope:overlord_scope = scope:receiving_character
+			tribute_mission_1000_overlord_can_employ_concubine_trigger = yes
+		}
+		flavor = tribute_mission.1002.b.flavor
+		tribute_mission_1000_make_concubine_effect = yes
+		save_scope_value_as = {
+			name = appointed_concubine
+			value = flag:yes
+		}
+		ai_chance = {
+			base = 100
+			modifier = {
+				add = {
+					value = 50
+					multiply = scope:concubine_character.num_of_good_genetic_traits
+				}
+				scope:concubine_character = {
+					num_of_good_genetic_traits > 0
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			modifier = {
+				add = 50
+				scope:concubine_character = {
+					is_lowborn = no
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			modifier = {
+				add = {
+					value = -50
+					multiply = scope:concubine_character.num_of_bad_genetic_traits
+				}
+				scope:concubine_character = {
+					num_of_bad_genetic_traits > 0
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			modifier = {
+				add = {
+					value = -50
+				}
+				scope:concubine_character = {
+					is_lowborn = yes
+					num_of_good_genetic_traits = 0
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			opinion_modifier = { # Opinion of you
+				who = scope:overlord_scope
+				opinion_target = scope:tributary_scope
+				multiplier = 1.0
+				desc = AI_OPINION_REASON
+			}
+			opinion_modifier = { # Opinion of concubine
+				who = scope:overlord_scope
+				opinion_target = scope:concubine_character
+				multiplier = 0.25
+				desc = AI_OPINION_REASON
+			}
+			compare_modifier = { # Recipient is reluctant to marry old women (procreation is a key factor)
+				trigger = {
+					scope:concubine_character = {
+						is_young_character = no
+						is_female = yes
+					}
+				}
+				target = scope:concubine_character
+				value = age
+				multiplier = -5
+				step = 1
+				offset = -29
+			}
+			modifier = {
+				add = 50
+				scope:overlord_scope = {
+					is_attracted_to_gender_of = scope:concubine_character
+				}
+			}
+			#More/Less likely based on difference in rank between tributary_scope and overlord_scope
+			modifier = {
+				add = 50
+				scope:tributary_scope = {
+					tier_difference = {
+						target = scope:overlord_scope
+						value > 1
+					}
+				}
+			}
+			modifier = {
+				add = -20
+				scope:tributary_scope = {
+					tier_difference = {
+						target = scope:overlord_scope
+						value < 1
+					}
+				}
+			}
+		}
+	}
+	#Appoint 'em head Eunuch
+	option = {
+		name = tribute_mission.1002.c
+		trigger = {
+			exists = scope:eunuch_character
+			scope:overlord_scope = scope:receiving_character
+			can_employ_court_position_type = chief_eunuch_court_position
+		}
+		#Make 'em courtier
+		tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:eunuch_character }
+		#Gain obligation hook
+		custom_tooltip = obligation_hook_tt
+		add_hook = {
+			type = obligation_hook
+			target = scope:eunuch_character
+		}
+		#Replace current Chief Eunuch
+		if = {
+			limit = {
+				employs_court_position = chief_eunuch_court_position
+			}
+			every_court_position_holder = {
+				type = chief_eunuch_court_position
+				save_temporary_scope_as = current_chief_eunuch
+			}
+			replace_court_position = {
+				recipient = scope:eunuch_character
+				holder = scope:current_chief_eunuch
+				court_position = chief_eunuch_court_position
+			}
+		}
+		#Or simply appoint new Eunuch
+		else = {
+			appoint_court_position = {
+				recipient = scope:eunuch_character
+				court_position = chief_eunuch_court_position
+			}
+		}
+		save_scope_value_as = {
+			name = appointed_eunuch
+			value = flag:yes
+		}
+		ai_chance = {
+			base = 100
+			opinion_modifier = {
+				who = scope:overlord_scope
+				opinion_target = scope:tributary_scope
+				multiplier = 0.5
+			}
+			opinion_modifier = {
+				who = scope:overlord_scope
+				opinion_target = scope:eunuch_character
+				multiplier = 0.5
+			}
+			modifier = {
+				add = {
+					value = 50
+					subtract = scope:eunuch_character.age
+				}
+			}
+			modifier = {
+				add = {
+					add = scope:eunuch_character.diplomacy
+					add = scope:eunuch_character.intrigue
+					add = scope:eunuch_character.stewardship
+					add = scope:eunuch_character.martial
+					add = scope:eunuch_character.learning
+				}
+			}
+			modifier = {
+				scope:eunuch_character = { has_trait = beardless_eunuch }
+				add = 25
+			}
+		}
+	}
+	#Um... nah
+	option = {
+		name = tribute_mission.1002.d
+		custom_tooltip = tribute_mission.1002.d.tt
+		if = {
+			limit = { exists = scope:concubine_character }
+			save_scope_value_as = {
+				name = rejected_concubine
+				value = flag:yes
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = rejected_eunuch
+				value = flag:yes
+			}
+		}
+		ai_chance = {
+			base = 10
+			modifier = {
+				has_trait = paranoid
+				add = 1000
+			}
+		}
+	}
+	after = {
+		#Moving on
+		trigger_event = tribute_mission.1005
+	}
+}
+
+#Recipient: What do you give?
+tribute_mission.1005 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = { # Bunga Mas
+				trigger = { exists = scope:newly_created_bunga_mas }
+				desc = tribute_mission.1005.t.ai.bunga_mas
+			}
+			triggered_desc = { # Bunga Mas
+				trigger = { tribute_mission_1000_bunga_mas_tributary_trigger = yes }
+				desc = tribute_mission.1005.t.bunga_mas
+			}
+			triggered_desc = { # Gold
+				trigger = { tribute_mission_1000_gold_tributary_trigger = yes }
+				desc = tribute_mission.1005.t.gold
+			}
+			triggered_desc = { # Herd
+				trigger = { tribute_mission_1000_herd_tributary_trigger = yes }
+				desc = tribute_mission.1005.t.herd
+			}
+			triggered_desc = { # Concubine
+				trigger = { tribute_mission_1000_concubine_tributary_trigger = yes }
+				desc = tribute_mission.1005.t.concubine
+			}
+			triggered_desc = { # Eunuch
+				trigger = { tribute_mission_1000_eunuch_tributary_trigger = yes }
+				desc = tribute_mission.1005.t.eunuch
+			}
+			triggered_desc = { # Artifact
+				trigger = { tribute_mission_1000_artifact_tributary_trigger = yes }
+				desc = tribute_mission.1005.t.artifact
+			}
+			desc = tribute_mission.1005.t
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					OR = {
+						exists = scope:concubine_character
+						exists = scope:eunuch_character
+					}
+				}
+				desc = tribute_mission.1005.intro.human_tribute
+			}
+			desc = tribute_mission.1005.intro
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					OR = {
+						exists = scope:newly_created_bunga_mas
+						tribute_mission_1000_bunga_mas_tributary_trigger = yes
+					}
+				}
+				desc = tribute_mission.1005.desc.bunga_mas
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:small_gold_tribute }
+				desc = tribute_mission.1005.desc.small_gold
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:adequate_gold_tribute }
+				desc = tribute_mission.1005.desc.adequate_gold
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:excessive_gold_tribute }
+				desc = tribute_mission.1005.desc.excessive_gold
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:small_herd_tribute }
+				desc = tribute_mission.1005.desc.small_herd
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:adequate_herd_tribute }
+				desc = tribute_mission.1005.desc.adequate_herd
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:excessive_herd_tribute }
+				desc = tribute_mission.1005.desc.excessive_herd
+			}
+			triggered_desc = {
+				trigger = { exists = scope:rejected_concubine }
+				desc = tribute_mission.1005.desc.rejected_concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:appointed_concubine }
+				desc = tribute_mission.1005.desc.appointed_concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.1005.desc.concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:rejected_eunuch }
+				desc = tribute_mission.1005.desc.rejected_eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:appointed_eunuch }
+				desc = tribute_mission.1005.desc.appointed_eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:eunuch_character }
+				desc = tribute_mission.1005.desc.eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:artifact_to_tribute }
+				desc = tribute_mission.1005.desc.artifact
+			}
+			#Fallback
+			desc = tribute_mission.1005.desc
+		}
+	}
+
+	theme = tributary
+
+	left_portrait = {
+		character = root
+		triggered_animation = {
+			trigger = { exists = scope:newly_created_bunga_mas }
+			animation = disbelief
+		}
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:tributary_scope
+		triggered_animation = {
+			trigger = { exists = scope:newly_created_bunga_mas }
+			animation = admiration
+		}
+		animation = personality_honorable
+	}
+	#Human Tribute
+	lower_center_portrait = {
+		trigger = { exists = scope:human_tribute }
+		character = scope:human_tribute
+	}
+	#Artifact Tribute
+	artifact = {
+		trigger = { exists = scope:artifact_to_tribute }
+		target = scope:artifact_to_tribute
+		position = lower_left_portrait
+	}
+	#Bunga Mas
+	artifact = {
+		trigger = { exists = scope:newly_created_bunga_mas }
+		target = scope:newly_created_bunga_mas
+		position = lower_right_portrait
+	}
+	immediate = {
+		#For the tooltip
+		if = {
+			limit = {
+				scope:overlord_scope.culture = {
+					any_known_innovation = { tribute_mission_1000_eligible_innovation_trigger = yes }
+				}
+			}
+			scope:overlord_scope.culture = {
+				random_known_innovation = {
+					limit = { tribute_mission_1000_eligible_innovation_trigger = yes }
+					save_scope_as = saved_innovation
+				}
+			}
+		}
+		else = {
+			save_scope_as = grant_fascination
+		}
+		#Ful-fix
+		save_scope_value_as = {
+			name = decided_on_treasury_reward
+			value = flag:no
+		}
+	}
+	#China: Treasury / Trade Goods
+	option = {
+		name = tribute_mission.1005.treasury
+		trigger = { tribute_mission_1000_can_give_treasury_trigger = yes }
+		show_as_tooltip = { tribute_mission_1000_give_treasury_effect = yes }
+		#Default is set in the immediate
+		save_scope_value_as = {
+			name = decided_on_treasury_reward
+			value = flag:yes
+		}
+		ai_chance = {
+			base = 0
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:treasury
+				add = 1000
+			}
+		}
+	}
+	#Artifact
+	option = {
+		name = tribute_mission.1005.artifact
+		trigger = { tribute_mission_1000_can_set_artifact_reward_trigger = yes }
+		#Inform the player what will happen (since the artifact doesn't exist yet)
+		custom_tooltip = tribute_mission.1005.artifact.tt
+		tribute_mission_1000_set_artifact_reward_effect = yes
+		ai_chance = {
+			base = 0
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:artifact
+				add = 1000
+			}
+		}
+	}
+	#Innovation
+	option = {
+		name = tribute_mission.1005.innovation
+		trigger = { tribute_mission_1000_can_set_innovation_reward_trigger = yes }
+		tribute_mission_1000_set_innovation_reward_effect = yes
+		#Display the effects
+		show_as_tooltip = {
+			if = {
+				limit = { exists = scope:saved_innovation }
+				scope:tributary_scope.culture = {
+					add_innovation_progress = {
+						value = tribute_reward_innovation_progress_value
+						target = scope:saved_innovation
+					}
+				}
+			}
+			if = {
+				limit = { exists = scope:grant_fascination }
+				scope:tributary_scope.culture = {
+					add_fascination_progress = tribute_reward_fascination_progress_value
+				}
+			}
+		}
+		ai_chance = {
+			base = 0
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:innovation
+				add = 1000
+			}
+		}
+	}
+	#Development
+	option = {
+		name = tribute_mission.1005.development
+		trigger = { tribute_mission_1000_eligible_development_trigger = yes }
+		show_as_tooltip = { tribute_mission_1000_give_development_effect = yes }
+		tribute_mission_1000_set_development_reward_effect = yes
+		ai_chance = {
+			base = 0
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:development
+				add = 1000
+			}
+		}
+	}
+	#Monk
+	option = {
+		name = tribute_mission.1005.monk
+		trigger = { tribute_mission_1000_eligible_for_monk_trigger = yes }
+		show_as_tooltip = { tribute_mission_1000_give_monk_effect = yes }
+		tribute_mission_1000_set_monk_reward_effect = yes
+		ai_chance = {
+			base = 0
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 100
+			}
+		}
+	}
+	#Generic Legitimacy
+	option = {
+		name = tribute_mission.1005.legitimacy
+		show_as_tooltip = { tribute_mission_1000_give_legitimacy_effect = yes }
+		tribute_mission_1000_set_legitimacy_reward_effect = yes
+		ai_chance = {
+			base = 100
+		}
+	}
+	#Rejection
+	option = {
+		name = imperial_examination.7100.b.singular #I refuse to accept mediocrity not a tributary we can reject them.
+		trigger = { 
+			NOT = { government_has_flag = government_is_mandala }
+		}
+		show_as_tooltip = { tribute_mission_1000_rejection_effect = yes }
+		scope:tributary_scope = { set_variable = new_overlord_unable_to_accept_tribute }
+		save_scope_value_as = {
+			name = tribute_reward_type_rejection
+			value = flag:yes
+		}
+		ai_chance = {
+			base = 0
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				scope:tributary_scope = { has_variable = new_overlord_unable_to_accept_tribute }
+			}
+			scope:tributary_scope = { trigger_event = tribute_mission.9800 }
+		}
+		else = {
+			tribute_mission_1000_fork_over_with_notification_effect = yes
+			show_as_tooltip = { tribute_mission_1000_common_arrival_effect = yes }
+			if = {
+				limit = {
+					scope:tributary_scope = {
+						subject_standing > seal_of_investiture_minimum_subject_standing
+						NOT = {
+							any_character_artifact = {
+								OR = {
+									artifact_type = seal_of_investiture
+									artifact_type = seal_of_investiture_court
+								}
+							}
+						}
+					}
+					scope:overlord_scope = {
+						primary_title = title:h_pandaria #Warcraft
+						this = scope:receiving_character
+					}
+				}
+				trigger_event = tribute_mission.1006
+			}
+			else_if = {
+				limit = { scope:tributary_scope = { is_tributary = no } }
+				scope:tributary_scope = {
+					if = {
+						limit = {
+							scope:overlord_scope = { has_royal_court = yes }
+							scope:overlord_scope = scope:receiving_character
+						}
+						trigger_event = tribute_mission.3008
+					}
+					else = { trigger_event = tribute_mission.1008 }
+				}
+			}
+			else = {
+				scope:tributary_scope = {
+					if = {
+						limit = {
+							scope:overlord_scope = { has_royal_court = yes }
+							scope:overlord_scope = scope:receiving_character
+						}
+						trigger_event = tribute_mission.3010
+					}
+					else = { trigger_event = tribute_mission.1010 }
+				}
+			}
+		}
+	}
+}
+
+scripted_trigger tribute_mission_1006_eligible_scribe_trigger = {
+	is_physically_able_ai_adult = yes
+	OR = {
+		#Someone new?
+		AND = {
+			has_no_particular_noble_roots_trigger = yes
+			learning > 10
+			culture = scope:overlord_scope.culture
+		}
+		#A previous scribe
+		has_variable = tribute_mission_1006_scribe
+	}
+}
+
+scripted_effect tribute_mission_1006_eligible_scribe_scope_effect = {
+	scope:overlord_scope = {
+		# Try to grab someone from a suitable court position first
+		random_courtier = {
+			limit = { has_court_position = court_artificer_court_position }
+			save_scope_as = scribe_character
+			set_variable = tribute_mission_1006_scribe
+		}
+		if = {
+			limit = { NOT = { exists = scope:scribe_character } }
+			court_position:chronicler_court_position ?= {
+				save_scope_as = scribe_character
+				set_variable = tribute_mission_1006_scribe
+			}
+		}
+		if = {
+			limit = { NOT = { exists = scope:scribe_character } }
+			court_position:antiquarian_court_position ?= {
+				save_scope_as = scribe_character
+				set_variable = tribute_mission_1006_scribe
+			}
+		}
+
+		# If we can't find an official scribe, try to find one in the crowd
+		if = {
+			limit = { NOT = { exists = scope:scribe_character } }
+			random_courtier = {
+				limit = { tribute_mission_1006_eligible_scribe_trigger = yes }
+				save_scope_as = scribe_character
+				set_variable = tribute_mission_1006_scribe
+			}
+		}
+		# Or in the city
+		if = {
+			limit = { NOT = { exists = scope:scribe_character } }
+			random_pool_character = {
+				province = scope:overlord_scope.capital_province
+				limit = { tribute_mission_1006_eligible_scribe_trigger = yes }
+				save_scope_as = scribe_character
+				set_variable = tribute_mission_1006_scribe
+			}
+		}
+		# If all else fails, make one
+		if = {
+			limit = { NOT = { exists = scope:scribe_character } }
+			create_character = {
+				template = random_learned_eunuch_character
+				location = scope:overlord_scope.capital_province
+				culture = scope:overlord_scope.capital_province.culture
+				faith = scope:overlord_scope.capital_province.faith
+				dynasty = none
+				save_scope_as = scribe_character
+				after_creation = { set_variable = tribute_mission_1006_scribe }
+			}
+		}
+	}
+	if = {
+		limit = { NOT = { exists = scope:scribe_character } }
+		error_log = "Failed to create a valid scribe in tribute_mission_1006_eligible_scribe_scope_effect!"
+	}
+}
+
+#Overlord: Decide whether to grant a Seal of Investiture or not
+tribute_mission.1006 = {
+	type = character_event
+	title = tribute_mission.1006.t
+	desc = tribute_mission.1006.desc
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	immediate = {
+		tribute_mission_1006_eligible_scribe_scope_effect = yes
+	}
+
+	left_portrait = {
+		character = root
+		animation = personality_honorable
+	}
+	right_portrait = {
+		character = scope:tributary_scope
+		animation = personality_rational
+	}
+
+	#Grant the Seal
+	option = {
+		name = tribute_mission.1006.grant
+		trigger = {
+			trigger_if = {
+				limit = {
+					scope:receiving_character = {
+				 		is_ai = yes
+				 	}
+				}
+		 		treasury > tribute_seal_of_investiture_cost
+		 	}
+		 	trigger_else = {
+		 		always = yes #Humans can always get one
+		 	}
+		}
+		show_as_unavailable = { always = yes }
+		custom_tooltip = {
+			text = tribute_mission.1006.grant.tt
+			create_artifact_imperial_seal_effect = {
+				OWNER = scope:receiving_character
+				SMITH = scope:scribe_character
+			}
+		}
+		remove_treasury = tribute_seal_of_investiture_cost
+		add_legitimacy = 50
+		scope:tributary_scope = {
+			if = {
+				limit = {
+					scope:overlord_scope = { has_royal_court = yes }
+				}
+				trigger_event = tribute_mission.3007
+			}
+			else = { trigger_event = tribute_mission.1007 }
+		}
+
+		# do not change from making this only the scripted value; add additions to the value itself if needed
+		ai_will_select = scope:tributary_scope.tribute_mission_seal_of_investiture_ai_will_select
+	}
+	#Decline to grant the Seal
+	option = {
+		name = {
+			text = {
+				first_valid = {
+					triggered_desc = {
+						trigger = { treasury < tribute_seal_of_investiture_cost }
+						desc = tribute_mission.1006.decline.no_money
+					}
+					desc = tribute_mission.1006.decline.dont_wanna
+				}
+			}
+		}
+		add_legitimacy = -50
+		reverse_add_opinion = {
+			target = scope:tributary_scope
+			modifier = refused_seal_of_investiture_opinion
+			opinion = -50
+		}
+		scope:tributary_scope = {
+			if = {
+				limit = {
+					scope:overlord_scope = { has_royal_court = yes }
+				}
+				trigger_event = tribute_mission.3010
+			}
+			else = { trigger_event = tribute_mission.1010 }
+		}
+
+		# do not change from making this only the scripted value; add additions to the value itself if needed
+ 		ai_will_select = scope:tributary_scope.tribute_mission_no_seal_of_investiture_ai_will_select
+	}
+}
+
+### IS THIS ACTUALLY USED? (Hegemons that receive Tributary scopes should always have Royal Courts)
+#Tributary: Receive the Seal of Investiture
+tribute_mission.1007 = {
+	type = character_event
+	title = tribute_mission.1007.t
+	desc = tribute_mission.1007.desc
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+
+	left_portrait = {
+		character = root
+		animation = personality_rational
+	}
+	artifact = {
+		trigger = { exists = scope:tribute_reward_type_artifact }
+		target = scope:seal_of_investiture_scope
+		position = lower_center_portrait
+	}
+	right_portrait = {
+		character = scope:receiving_character
+		animation = personality_honorable
+	}
+
+	#Grant the Seal
+	option = {
+		name = tribute_mission.1007.a
+		scope:seal_of_investiture_scope = {
+			set_owner = scope:tributary_scope
+		}
+
+	}
+	after = {
+		scope:tributary_scope = {
+			if = {
+				limit = {
+					scope:overlord_scope = { has_royal_court = yes }
+				}
+				trigger_event = tribute_mission.3010
+			}
+			else = { trigger_event = tribute_mission.1010 }
+		}
+	}
+}
+
+### ARE THESE ACTUALLY USED? (Hegemons that receive Tributary scopes should always have Royal Courts)
+#Tributary: Decide whether to become a Tributary or not
+tribute_mission.1008 = {
+	type = character_event
+	title = tribute_mission.1008.t
+	desc = tribute_mission.1008.desc
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+
+	left_portrait = {
+		character = root
+		animation = personality_rational
+	}
+	right_portrait = {
+		character = scope:receiving_character
+		animation = personality_honorable
+	}
+
+	#Become a Tributary
+	option = {
+		name = tribute_mission.1008.a
+		start_tributary_interaction_effect = {
+			TRIBUTARY = scope:tributary_scope
+			SUZERAIN = scope:overlord_scope
+		}
+		scope:overlord_scope = {
+			send_interface_message = {
+				type = event_tribute_good_text
+				title = tribute_mission.new_tributary.title
+				left_icon = scope:tributary_scope
+				desc = tribute_mission.new_tributary.desc
+			}
+		}
+	}
+	#No thanks
+	option = {
+		name = tribute_mission.1008.b
+	}
+	after = {
+		trigger_event = tribute_mission.1010
+	}
+}
+
+scripted_effect tribute_mission_1010_complete_effect = {
+	scope:tributary_scope = {
+		#Scaling grace
+		if = {
+			limit = {
+				OR = {
+					var:tribute_mission_type ?= flag:excessive_gold_tribute
+					var:tribute_mission_type ?= flag:excessive_herd_tribute
+					AND = {
+						var:tribute_mission_type ?= flag:artifact_tribute
+						scope:artifact_to_tribute ?= {
+							OR = {
+								rarity = famed
+								rarity = illustrious
+							}
+						}
+					}
+					exists = scope:appointed_concubine
+					exists = scope:appointed_eunuch
+				}
+			}
+			set_variable = {
+				name = tribute_mission_grace
+				value = scope:overlord_scope
+				years = tribute_mission_cooldown_most_years
+			}
+		}
+		else_if = {
+			limit = {
+				OR = {
+					var:tribute_mission_type ?= flag:adequate_gold_tribute
+					var:tribute_mission_type ?= flag:adequate_herd_tribute
+					AND = {
+						var:tribute_mission_type ?= flag:artifact_tribute
+						scope:artifact_to_tribute ?= { rarity = masterwork }
+					}
+					exists = scope:concubine_character
+					exists = scope:eunuch_character
+				}
+			}
+			set_variable = {
+				name = tribute_mission_grace
+				value = scope:overlord_scope
+				years = tribute_mission_cooldown_more_years
+			}
+		}
+		else = {
+			set_variable = {
+				name = tribute_mission_grace
+				value = scope:overlord_scope
+				years = tribute_mission_cooldown_years
+			}
+		}
+		#Clean up & head back home
+		tribute_mission_clean_up_variables_effect = yes
+		tribute_mission_clean_up_request_variables_effect = yes
+		current_travel_plan ?= { resume_travel_plan = yes }
+	}
+	scope:receiving_character = {
+		if = {
+			limit = { has_character_flag = created_attendant }
+			#Clean 'em up
+			trigger_event = tribute_mission.0005
+		}
+	}
+	scope:artifact_to_tribute ?= {
+		remove_variable = is_tribute_mission_artifact
+		set_variable = {
+			name = given_via_tribute_mission
+			value = scope:tributary_scope
+		}
+		if = {
+			limit = { has_variable = given_via_tribute_mission }
+			#Error supression
+		}
+	}
+}
+
+#Tributary: Receive reward, go home
+tribute_mission.1010 = {
+	type = character_event
+	title = {
+		first_valid = {
+			#Treasury
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_treasury }
+				desc = tribute_mission.1010.t.treasury
+			}
+			#Artifact
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_artifact }
+				desc = tribute_mission.1010.t.artifact
+			}
+			#Innovation
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_innovation }
+				desc = tribute_mission.1010.t.innovation
+			}
+			#Development
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_development }
+				desc = tribute_mission.1010.t.development
+			}
+			#Monk
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_monk }
+				desc = tribute_mission.1010.t.monk
+			}
+			#Legitimacy
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_legitimacy }
+				desc = tribute_mission.1010.t.legitimacy
+			}
+			desc = tribute_mission.1010.t
+		}
+	}
+	desc = {
+		first_valid = {
+		triggered_desc = {
+			trigger = { exists = scope:seal_of_investiture_scope }
+				desc = tribute_mission.1010.intro.postseal
+			}
+			triggered_desc = {
+				trigger = {
+					scope:receiving_character = { has_character_flag = created_attendant }
+				}
+				desc = tribute_mission.1010.intro.attendant
+			}
+			desc = tribute_mission.1010.intro
+		}
+		first_valid = {
+			#Treasury
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_treasury }
+				desc = tribute_mission.1010.desc.treasury
+			}
+			#Artifact
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_artifact }
+				desc = tribute_mission.1010.desc.artifact
+			}
+			#Innovation
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_innovation }
+				desc = tribute_mission.1010.desc.innovation
+			}
+			#Development
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_development }
+				desc = tribute_mission.1010.desc.development
+			}
+			#Monk
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_monk }
+				desc = tribute_mission.1010.desc.monk
+			}
+			#Legitimacy
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_legitimacy }
+				desc = tribute_mission.1010.desc.legitimacy
+			}
+		}
+		desc = tribute_mission.1010.outro
+	}
+	theme = tributary
+	left_portrait = {
+		character = root
+		animation = personality_rational
+	}
+	artifact = {
+		trigger = { exists = scope:tribute_reward_type_artifact }
+		target = scope:tribute_reward_type_artifact
+		position = lower_center_portrait
+	}
+	right_portrait = {
+		character = scope:receiving_character
+		animation = personality_honorable
+	}
+	immediate = {
+		tribute_mission_1000_disburse_reward_effect = yes
+	}
+	#Thanks, bye!
+	option = {
+		name = tribute_mission.1010.a
+	}
+	after = {
+		#Clean up variables & set up cooldown
+		tribute_mission_1010_complete_effect = yes
+	}
+}
+
+
+### COURT EVENTS ###
+
+#Tributary: Fork over Tribute, try to influence reward
+tribute_mission.3000 = {
+	type = court_event
+	title = tribute_mission.3000.t
+	desc = {
+		desc = tribute_mission.3000.intro
+		#Who is greeting us?
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:overlord_scope = scope:receiving_character }
+				desc = tribute_mission.3000.intro.overlord
+			}
+			triggered_desc = {
+				trigger = { scope:overlord_scope.diarch ?= scope:receiving_character }
+				desc = tribute_mission.3000.intro.diarch
+			}
+			triggered_desc = {
+				trigger = {
+					OR = {
+						scope:overlord_scope.cp:councillor_steward ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_chancellor ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_spymaster ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_court_chaplain ?= scope:receiving_character
+						scope:overlord_scope.cp:councillor_marshal ?= scope:receiving_character
+					}
+				}
+				desc = tribute_mission.3000.intro.councillor
+			}
+			desc = tribute_mission.3000.intro.attendant
+		}
+		desc = tribute_mission.3000.desc.segway
+		#What did we bring?
+		first_valid = {
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:bunga_mas_tribute }
+				desc = tribute_mission.3000.desc.bunga_mas
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:small_gold_tribute }
+				desc = tribute_mission.3000.desc.small_gold
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:adequate_gold_tribute }
+				desc = tribute_mission.3000.desc.adequate_gold
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:excessive_gold_tribute }
+				desc = tribute_mission.3000.desc.excessive_gold
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:small_herd_tribute }
+				desc = tribute_mission.3000.desc.small_herd
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:adequate_herd_tribute }
+				desc = tribute_mission.3000.desc.adequate_herd
+			}
+			triggered_desc = {
+				trigger = { var:tribute_mission_type ?= flag:excessive_herd_tribute }
+				desc = tribute_mission.3000.desc.excessive_herd
+			}
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.3000.desc.concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:eunuch_character }
+				desc = tribute_mission.3000.desc.eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:artifact_to_tribute }
+				desc = tribute_mission.3000.desc.artifact
+			}
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:receiving_character = { has_character_flag = created_attendant }
+				}
+				desc = tribute_mission.3000.outro.attendant
+			}
+			desc = tribute_mission.3000.outro
+		}
+	}
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	court_scene = {
+		button_position_character = scope:receiving_character
+		court_owner = scope:overlord_scope
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:tributary_scope = {
+		    	group = petition_liege_group
+				animation = throne_room_kneel_1
+		    }
+		    scope:human_tribute = {
+		    	group = petition_liege_group
+		    	animation = throne_room_kneel_1
+		    }
+		}
+	}
+	immediate = {
+		scope:overlord_scope = {
+			open_view_data = {
+				view = royal_court
+				secondary_actor = scope:tributary_scope
+				player = scope:tributary_scope
+			}
+		}
+		tribute_mission_1000_common_arrival_effect = yes
+		#For the tooltips
+		if = {
+			limit = { tribute_mission_1000_can_give_treasury_trigger = yes }
+			tribute_mission_1000_set_treasury_reward_effect = yes
+		}
+		if = {
+			limit = {
+				scope:overlord_scope.culture = {
+					any_known_innovation = { tribute_mission_1000_eligible_innovation_trigger = yes }
+				}
+			}
+			scope:overlord_scope.culture = {
+				random_known_innovation = {
+					limit = { tribute_mission_1000_eligible_innovation_trigger = yes }
+					save_scope_as = saved_innovation
+				}
+			}
+		}
+		else = {
+			save_scope_as = grant_fascination
+		}
+		#What level of Bunga Mas modifier?
+		tribute_mission_1000_determine_bunga_mas_scale_effect = yes
+	}
+	#China: Duel for Treasury
+	option = {
+		name = tribute_mission.3000.treasury
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_can_give_treasury_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = treasury REWARD_INCREMENT = 0 }
+		ai_chance = { base = 100 }
+	}
+	#Duel for Artifact
+	option = {
+		name = tribute_mission.3000.artifact
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_can_set_artifact_reward_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = artifact REWARD_INCREMENT = 1 }
+		ai_chance = { base = 150 }
+	}
+
+	#Duel for Innovation
+	option = {
+		name = tribute_mission.3000.innovation
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_can_set_innovation_reward_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = innovation REWARD_INCREMENT = 2 }
+		ai_chance = { base = 200 }
+	}
+
+	#Duel for Development
+	option = {
+		name = tribute_mission.3000.development
+		trigger = {
+			scope:receiving_character = { is_ai = yes }
+			tribute_mission_1000_eligible_development_trigger = yes
+		}
+		tribute_mission_1000_determine_duel_skill_effect = { INFLUENCED_REWARD = development REWARD_INCREMENT = 3 }
+		ai_chance = { base = 150 }
+	}
+
+	#I'm sure it'll be fine
+	option = {
+		name = tribute_mission.3000.abstain
+		tribute_mission_1000_display_potential_rewards_effect = yes
+		ai_chance = {
+			base = 100
+			modifier = {
+				has_trait = arbitrary
+				add = 200
+			}
+		}
+	}
+
+	after = {
+		#Non-AI Receiving person: Decide on if you want to accept the human tribute
+		if = {
+			limit = {
+				OR = {
+					exists = scope:concubine_character
+					exists = scope:eunuch_character
+				}
+				AND = {
+					#If the overlord is an AI, they've already said yay/nay
+					scope:overlord_scope = { is_ai = no }
+					#... so if we're a player diarch of a player ruler, you get to decide
+					scope:receiving_character = { is_ai = no }
+				}
+			}
+			show_as_tooltip = { tribute_mission_1000_fork_over_with_notification_effect = yes }
+			scope:receiving_character = { trigger_event = tribute_mission.1002 }
+		}
+		#Or the Non-AI Receiving person / Hegemon gets to decide the reward
+		else_if = {
+			limit = {
+				scope:receiving_character = {
+					OR = {
+						is_ai = no
+						scope:overlord_scope = { highest_held_title_tier = tier_hegemony }
+					}
+				}
+			}
+			show_as_tooltip = { tribute_mission_1000_fork_over_with_notification_effect = yes }
+			scope:receiving_character = { trigger_event = tribute_mission.1005 }
+		}
+		#Or if the Receiving person is AI then we we skip the event and just generate the reward
+		else = {
+			tribute_mission_1000_fork_over_with_notification_effect = yes
+			scope:overlord_scope = { tribute_mission_1000_generate_reward_effect = yes }
+			scope:tributary_scope = { trigger_event = tribute_mission.3010 }
+		}
+	}
+}
+
+###DEPRECATED
+#Recipient: Decide on the human tribute
+tribute_mission.3002 = {
+	orphan = yes
+	type = court_event
+	title = tribute_mission.3002.t
+	desc = {
+		desc = tribute_mission.3002.segway
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.3002.desc.concubine
+			}
+			triggered_desc = {
+				trigger = {
+					scope:eunuch_character ?= { has_character_flag = tribute_mission_recently_castrated }
+				}
+				desc = tribute_mission.3002.desc.new_eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:eunuch_character }
+				desc = tribute_mission.3002.desc.eunuch
+			}
+		}
+		#Some descriptive exterior words
+		first_valid = {
+			#Beauty
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = beauty_good_1
+							has_trait = beauty_good_2
+							has_trait = beauty_good_3
+						}
+					}
+				}
+				desc = tribute_mission.3002.beauty.concubine.good
+			}
+			#Bad Beauty
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = beauty_bad_1
+							has_trait = beauty_bad_2
+							has_trait = beauty_bad_3
+						}
+					}
+				}
+				desc = tribute_mission.3002.beauty.concubine.bad
+			}
+			#Physique
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = physique_good_1
+							has_trait = physique_good_2
+							has_trait = physique_good_3
+						}
+					}
+				}
+				desc = tribute_mission.3002.physique.concubine.good
+			}
+			#Bad Physique
+			triggered_desc = {
+				trigger = {
+					exists = scope:concubine_character
+					scope:human_tribute = {
+						OR = {
+							has_trait = physique_bad_1
+							has_trait = physique_bad_2
+							has_trait = physique_bad_3
+						}
+					}
+				}
+				desc = tribute_mission.3002.physique.concubine.bad
+			}
+			#Fallback
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.3002.exterior.plain
+			}
+		}
+		#Some descriptive personality words
+		first_valid = {
+			#Shy
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_shy_personality_trigger = yes }
+				}
+				desc = tribute_mission.3002.personality.shy
+			}
+			#Bold
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_bold_personality_trigger = yes }
+				}
+				desc = tribute_mission.3002.personality.bold
+			}
+			#Cynical
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_callous_personality_trigger = yes }
+				}
+				desc = tribute_mission.3002.personality.cynical
+			}
+			#Angry
+			triggered_desc = {
+				trigger = {
+					scope:human_tribute = { 1002_human_tribute_angry_personality_trigger = yes }
+				}
+				desc = tribute_mission.3002.personality.angry
+			}
+			#Fallback
+			desc = tribute_mission.3002.personality.fallback
+		}
+	}
+
+	theme = tributary
+
+	left_portrait = {
+		character = scope:receiving_character
+		animation = interested
+	}
+	right_portrait = {
+		character = scope:human_tribute
+		triggered_animation = {
+			trigger = { has_character_flag = tribute_mission_recently_castrated }
+			animation = severelywounded
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_shy_personality_trigger = yes }
+			animation = shame
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_bold_personality_trigger = yes }
+			animation = personality_bold
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_callous_personality_trigger = yes }
+			animation = personality_cynical
+		}
+		triggered_animation = {
+			trigger = { 1002_human_tribute_angry_personality_trigger = yes }
+			animation = disapproval
+		}
+		animation = personality_honorable
+	}
+	lower_right_portrait = {
+		character = scope:tributary_scope
+	}
+	court_scene = {
+		button_position_character = scope:receiving_character
+		court_owner = scope:overlord_scope
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:tributary_scope = {
+		    	group = petition_liege_group
+				animation = throne_room_kneel_1
+		    }
+		    scope:human_tribute = {
+		    	group = petition_liege_group
+		    	animation = throne_room_kneel_1
+		    }
+		}
+	}
+	immediate = {
+		tribute_mission_1000_fork_over_with_notification_effect = yes
+	}
+	#Add 'em to court
+	option = {
+		name = tribute_mission.3002.a
+		if = {
+			limit = { exists = scope:concubine_character }
+			tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:concubine_character }
+		}
+		else = {
+			tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:eunuch_character }
+		}
+		ai_chance = { base = 100 }
+	}
+	#Make 'em your concubine
+	option = {
+		name = tribute_mission.3002.b
+		trigger = {
+			exists = scope:concubine_character
+			scope:overlord_scope = scope:receiving_character
+			tribute_mission_1000_overlord_can_employ_concubine_trigger = yes
+		}
+		flavor = tribute_mission.3002.b.flavor
+		tribute_mission_1000_make_concubine_effect = yes
+		save_scope_value_as = {
+			name = appointed_concubine
+			value = flag:yes
+		}
+		ai_chance = {
+			base = 100
+			modifier = {
+				add = {
+					value = 50
+					multiply = scope:concubine_character.num_of_good_genetic_traits
+				}
+				scope:concubine_character = {
+					num_of_good_genetic_traits > 0
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			modifier = {
+				add = 50
+				scope:concubine_character = {
+					is_lowborn = no
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			modifier = {
+				add = {
+					value = -50
+					multiply = scope:concubine_character.num_of_bad_genetic_traits
+				}
+				scope:concubine_character = {
+					num_of_bad_genetic_traits > 0
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			modifier = {
+				add = {
+					value = -50
+				}
+				scope:concubine_character = {
+					is_lowborn = yes
+					num_of_good_genetic_traits = 0
+					trigger_if = {
+						limit = {
+							is_female = yes
+						}
+						is_aging_character = no
+					}
+				}
+			}
+			opinion_modifier = { # Opinion of you
+				who = scope:overlord_scope
+				opinion_target = scope:tributary_scope
+				multiplier = 1.0
+				desc = AI_OPINION_REASON
+			}
+			opinion_modifier = { # Opinion of concubine
+				who = scope:overlord_scope
+				opinion_target = scope:concubine_character
+				multiplier = 0.25
+				desc = AI_OPINION_REASON
+			}
+			compare_modifier = { # Recipient is reluctant to marry old women (procreation is a key factor)
+				trigger = {
+					scope:concubine_character = {
+						is_young_character = no
+						is_female = yes
+					}
+				}
+				target = scope:concubine_character
+				value = age
+				multiplier = -5
+				step = 1
+				offset = -29
+			}
+			modifier = {
+				add = 50
+				scope:overlord_scope = {
+					is_attracted_to_gender_of = scope:concubine_character
+				}
+			}
+			#More/Less likely based on difference in rank between tributary_scope and overlord_scope
+			modifier = {
+				add = 50
+				scope:tributary_scope = {
+					tier_difference = {
+						target = scope:overlord_scope
+						value > 1
+					}
+				}
+			}
+			modifier = {
+				add = -20
+				scope:tributary_scope = {
+					tier_difference = {
+						target = scope:overlord_scope
+						value < 1
+					}
+				}
+			}
+		}
+	}
+	#Appoint 'em head Eunuch
+	option = {
+		name = tribute_mission.3002.c
+		trigger = {
+			exists = scope:eunuch_character
+			scope:overlord_scope = scope:receiving_character
+			can_employ_court_position_type = chief_eunuch_court_position
+		}
+		#Make 'em courtier
+		tribute_mission_1000_make_courtier_effect = { HUMAN_TRIB = scope:eunuch_character }
+		#Gain obligation hook
+		custom_tooltip = obligation_hook_tt
+		add_hook = {
+			type = obligation_hook
+			target = scope:eunuch_character
+		}
+		#Replace current Chief Eunuch
+		if = {
+			limit = {
+				employs_court_position = chief_eunuch_court_position
+			}
+			every_court_position_holder = {
+				type = chief_eunuch_court_position
+				save_temporary_scope_as = current_chief_eunuch
+			}
+			replace_court_position = {
+				recipient = scope:eunuch_character
+				holder = scope:current_chief_eunuch
+				court_position = chief_eunuch_court_position
+			}
+		}
+		#Or simply appoint new Eunuch
+		else = {
+			appoint_court_position = {
+				recipient = scope:eunuch_character
+				court_position = chief_eunuch_court_position
+			}
+		}
+		save_scope_value_as = {
+			name = appointed_eunuch
+			value = flag:yes
+		}
+		ai_chance = {
+			base = 100
+			opinion_modifier = {
+				who = scope:overlord_scope
+				opinion_target = scope:tributary_scope
+				multiplier = 0.5
+			}
+			opinion_modifier = {
+				who = scope:overlord_scope
+				opinion_target = scope:eunuch_character
+				multiplier = 0.5
+			}
+			modifier = {
+				add = {
+					value = 50
+					subtract = scope:eunuch_character.age
+				}
+			}
+			modifier = {
+				add = {
+					add = scope:eunuch_character.diplomacy
+					add = scope:eunuch_character.intrigue
+					add = scope:eunuch_character.stewardship
+					add = scope:eunuch_character.martial
+					add = scope:eunuch_character.learning
+				}
+			}
+			modifier = {
+				scope:eunuch_character = { has_trait = beardless_eunuch }
+				add = 25
+			}
+		}
+	}
+	#Um... nah
+	option = {
+		name = tribute_mission.3002.d
+		custom_tooltip = tribute_mission.3002.d.tt
+		if = {
+			limit = { exists = scope:concubine_character }
+			save_scope_value_as = {
+				name = rejected_concubine
+				value = flag:yes
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = rejected_eunuch
+				value = flag:yes
+			}
+		}
+		ai_chance = {
+			base = 10
+			modifier = {
+				has_trait = paranoid
+				add = 1000
+			}
+		}
+	}
+	after = {
+		#Moving on
+		trigger_event = tribute_mission.3005
+	}
+}
+
+###DEPRECATED
+#Recipient: What do you give?
+tribute_mission.3005 = {
+	type = court_event
+	title = {
+		first_valid = {
+			triggered_desc = { # Gold
+				trigger = { tribute_mission_1000_gold_tributary_trigger = yes }
+				desc = tribute_mission.3005.t.gold
+			}
+			triggered_desc = { # Herd
+				trigger = { tribute_mission_1000_herd_tributary_trigger = yes }
+				desc = tribute_mission.3005.t.herd
+			}
+			triggered_desc = { # Concubine
+				trigger = { tribute_mission_1000_concubine_tributary_trigger = yes }
+				desc = tribute_mission.3005.t.concubine
+			}
+			triggered_desc = { # Eunuch
+				trigger = { tribute_mission_1000_eunuch_tributary_trigger = yes }
+				desc = tribute_mission.3005.t.eunuch
+			}
+			triggered_desc = { # Artifact
+				trigger = { tribute_mission_1000_artifact_tributary_trigger = yes }
+				desc = tribute_mission.3005.t.artifact
+			}
+			desc = tribute_mission.3005.t
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					OR = {
+						exists = scope:concubine_character
+						exists = scope:eunuch_character
+					}
+				}
+				desc = tribute_mission.3005.intro.human_tribute
+			}
+			desc = tribute_mission.3005.intro
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:small_gold_tribute }
+				desc = tribute_mission.3005.desc.small_gold
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:adequate_gold_tribute }
+				desc = tribute_mission.3005.desc.adequate_gold
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:excessive_gold_tribute }
+				desc = tribute_mission.3005.desc.excessive_gold
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:small_herd_tribute }
+				desc = tribute_mission.3005.desc.small_herd
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:adequate_herd_tribute }
+				desc = tribute_mission.3005.desc.adequate_herd
+			}
+			triggered_desc = {
+				trigger = { scope:tributary_scope.var:tribute_mission_type ?= flag:excessive_herd_tribute }
+				desc = tribute_mission.3005.desc.excessive_herd
+			}
+			triggered_desc = {
+				trigger = { exists = scope:rejected_concubine }
+				desc = tribute_mission.3005.desc.rejected_concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:appointed_concubine }
+				desc = tribute_mission.3005.desc.appointed_concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:concubine_character }
+				desc = tribute_mission.3005.desc.concubine
+			}
+			triggered_desc = {
+				trigger = { exists = scope:rejected_eunuch }
+				desc = tribute_mission.3005.desc.rejected_eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:appointed_eunuch }
+				desc = tribute_mission.3005.desc.appointed_eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:eunuch_character }
+				desc = tribute_mission.3005.desc.eunuch
+			}
+			triggered_desc = {
+				trigger = { exists = scope:artifact_to_tribute }
+				desc = tribute_mission.3005.desc.artifact
+			}
+			#Fallback
+			desc = tribute_mission.3005.desc
+		}
+	}
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	court_scene = {
+		button_position_character = scope:receiving_character
+		court_owner = scope:overlord_scope
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:tributary_scope = {
+		    	group = petition_liege_group
+				animation = throne_room_kneel_1
+		    }
+		    scope:human_tribute = {
+		    	group = petition_liege_group
+		    	animation = throne_room_kneel_1
+		    }
+		}
+	}
+	immediate = {
+		tribute_mission_1000_fork_over_with_notification_effect = yes
+	}
+	#China: Treasury / Trade Goods
+	option = {
+		name = tribute_mission.3005.treasury
+		trigger = { tribute_mission_1000_can_give_treasury_trigger = yes }
+		show_as_tooltip = { tribute_mission_1000_give_treasury_effect = yes }
+		tribute_mission_1000_set_treasury_reward_effect = yes
+
+		ai_chance = {
+			base = 0
+
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:treasury
+				add = 1000
+			}
+		}
+	}
+	#Artifact
+	option = {
+		name = tribute_mission.3005.artifact
+		#Inform the player what will happen (since the artifact doesn't exist yet)
+		custom_tooltip = tribute_mission.3005.artifact.tt
+		tribute_mission_1000_set_artifact_reward_effect = yes
+
+		ai_chance = {
+			base = 0
+
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:artifact
+				add = 1000
+			}
+		}
+	}
+
+	#Innovation
+	option = {
+		name = tribute_mission.3005.innovation
+		trigger = { tribute_mission_1000_can_set_innovation_reward_trigger = yes }
+		tribute_mission_1000_set_innovation_reward_effect = yes
+		#Display the effects
+		show_as_tooltip = {
+			if = {
+				limit = { exists = scope:saved_innovation }
+				scope:tributary_scope.culture = {
+					add_innovation_progress = {
+						value = tribute_reward_innovation_progress_value
+						target = scope:saved_innovation
+					}
+				}
+			}
+			if = {
+				limit = { exists = scope:grant_fascination }
+				scope:tributary_scope.culture = {
+					add_fascination_progress = tribute_reward_fascination_progress_value
+				}
+			}
+		}
+		ai_chance = {
+			base = 0
+
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:innovation
+				add = 1000
+			}
+		}
+	}
+
+	#Development
+	option = {
+		name = tribute_mission.3005.development
+		trigger = { tribute_mission_1000_eligible_development_trigger = yes }
+		show_as_tooltip = { tribute_mission_1000_give_development_effect = yes }
+		tribute_mission_1000_set_development_reward_effect = yes
+
+		ai_chance = {
+			base = 0
+
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 20
+			}
+
+			# Always choose this option if we were successfully influenced
+			modifier = {
+				scope:successful_influence ?= flag:development
+				add = 1000
+			}
+		}
+	}
+	#Monk
+	option = {
+		name = tribute_mission.3005.monk
+		trigger = { tribute_mission_1000_eligible_for_monk_trigger = yes }
+		show_as_tooltip = { tribute_mission_1000_give_monk_effect = yes }
+		tribute_mission_1000_set_monk_reward_effect = yes
+
+		ai_chance = {
+			base = 0
+
+			# If we were not influenced, just add a base chance
+			modifier = {
+				NOT = { exists = scope:successful_influence }
+				add = 100
+			}
+		}
+	}
+	#Generic Legitimacy
+	option = {
+		name = tribute_mission.3005.legitimacy
+		show_as_tooltip = { tribute_mission_1000_give_legitimacy_effect = yes }
+		tribute_mission_1000_set_legitimacy_reward_effect = yes
+
+		ai_chance = {
+			base = 100
+		}
+	}
+	after = {
+		if = {
+			limit = {
+				scope:tributary_scope = {
+					subject_standing > seal_of_investiture_minimum_subject_standing
+					NOT = {
+						any_character_artifact = {
+							OR = {
+								artifact_type = seal_of_investiture
+								artifact_type = seal_of_investiture_court
+							}
+						}
+					}
+				}
+			}
+			trigger_event = { id = tribute_mission.3006 }
+		}
+		else_if = {
+			limit = { scope:tributary_scope = { is_tributary = no } }
+			scope:tributary_scope = { trigger_event = tribute_mission.3008 }
+		}
+		else = {
+			scope:tributary_scope = {
+				trigger_event = { id = tribute_mission.3010 }
+			}
+		}
+	}
+}
+
+###DEPRECATED
+#Overlord: Decide whether to grant a Seal of Investiture or not
+tribute_mission.3006 = {
+	type = court_event
+	title = tribute_mission.3006.t
+	desc = tribute_mission.3006.desc
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	court_scene = {
+		button_position_character = scope:receiving_character
+		court_owner = scope:overlord_scope
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:tributary_scope = {
+		    	group = petition_liege_group
+				animation = throne_room_kneel_1
+		    }
+		}
+	}
+	immediate = {
+		tribute_mission_1006_eligible_scribe_scope_effect = yes
+	}
+	#Grant the Seal
+	option = {
+		name = tribute_mission.3006.grant
+		trigger = {
+			trigger_if = {
+				limit = {
+					scope:receiving_character = {
+				 		is_ai = yes
+				 	}
+				}
+		 		treasury > tribute_seal_of_investiture_cost
+		 	}
+		 	trigger_else = {
+		 		always = yes #Humans can always get one
+		 	}
+		}
+		show_as_unavailable = { always = yes }
+		custom_tooltip = {
+			text = tribute_mission.3006.grant.tt
+			create_artifact_imperial_seal_effect = {
+				OWNER = scope:receiving_character
+				SMITH = scope:scribe_character
+			}
+		}
+		remove_treasury = tribute_seal_of_investiture_cost
+		add_legitimacy = 50
+		scope:tributary_scope = {
+			trigger_event = tribute_mission.3007
+		}
+
+		ai_chance = {
+			base = 50
+			modifier = {
+	    		exists = scope:successful_influence
+	    		add = 50
+			}
+			modifier = {
+				always = yes
+				add = scope:tributary_scope.subject_standing
+				add = -50
+			}
+			ai_value_modifier = {
+				ai_greed = -0.5
+				ai_honor = 0.5
+			}
+		}
+	}
+	#Decline to grant the Seal
+	option = {
+		name = {
+			text = {
+				first_valid = {
+					triggered_desc = {
+						trigger = { treasury < tribute_seal_of_investiture_cost }
+						desc = tribute_mission.3006.decline.no_money
+					}
+					desc = tribute_mission.3006.decline.dont_wanna
+				}
+			}
+		}
+		add_legitimacy = -50
+		reverse_add_opinion = {
+			target = scope:tributary_scope
+			modifier = refused_seal_of_investiture_opinion
+			opinion = -50
+		}
+		scope:tributary_scope = {
+			trigger_event = {
+				id = tribute_mission.3010
+			}
+		}
+
+		ai_chance = {
+			base = 10
+		}
+	}
+}
+
+#Tributary: Receive the Seal of Investiture
+tribute_mission.3007 = {
+	type = court_event
+	title = tribute_mission.3007.t
+	desc = tribute_mission.3007.desc
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	court_scene = {
+		button_position_character = scope:receiving_character
+		court_owner = scope:overlord_scope
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:receiving_character = {
+		    	group = petition_liege_group
+		    }
+		    scope:scribe_character = {
+		    	group = petition_liege_group
+		    }
+		    scope:tributary_scope = {
+		    	group = petition_liege_group
+				animation = throne_room_kneel_1
+		    }
+		}
+	}
+	#Grant the Seal
+	option = {
+		name = tribute_mission.3007.a
+		scope:seal_of_investiture_scope = {
+			set_owner = scope:tributary_scope
+		}
+
+	}
+	after = {
+		scope:tributary_scope = {
+			trigger_event = tribute_mission.3010
+		}
+	}
+}
+
+#Tributary: Decide whether to become a Tributary or not
+tribute_mission.3008 = {
+	type = court_event
+	title = tribute_mission.3008.t
+	desc = tribute_mission.3008.desc
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	court_scene = {
+		button_position_character = scope:receiving_character
+		court_owner = scope:overlord_scope
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:receiving_character = {
+		    	group = petition_liege_group
+		    }
+		    scope:tributary_scope = {
+		    	group = petition_liege_group
+				animation = throne_room_kneel_1
+		    }
+		}
+	}
+
+	#Become a Tributary
+	option = {
+		name = tribute_mission.3008.a
+		start_tributary_interaction_effect = {
+			TRIBUTARY = scope:tributary_scope
+			SUZERAIN = scope:overlord_scope
+		}
+		scope:overlord_scope = {
+			send_interface_message = {
+				type = event_tribute_good_text
+				title = tribute_mission.new_tributary.title
+				left_icon = scope:tributary_scope
+				desc = tribute_mission.new_tributary.desc
+			}
+		}
+		#if = {
+		#	limit = { has_variable = wants_to_become_tributary_of_china } 
+		#	debug_log = "wants_to_become_tributary_of_china realized!"
+		#}
+		#else = {
+			debug_log = "Became tributary through tribute mission"
+		#}
+
+		ai_chance = { # essentially a copy of the ai_chance for become_tributary_interaction
+			base = -50
+
+			modifier = { # Special case for Hegemonic Tributaries
+				scope:overlord_scope = {
+					highest_held_title_tier >= tier_hegemony
+				}
+				add = {
+					add = 25
+					if = {
+						limit = {
+							OR = {
+								NOT = { scope:overlord_scope.primary_title = title:h_pandaria }
+								government_has_flag = government_is_meritocratic
+							}
+						}
+						add = 25
+					}
+				}
+				desc = tributary_interaction_aibehavior_recipient_hegemon_tier_tt
+			}
+
+			modifier = { # Special case for Hegemonic Tributaries in the Dynastic Cycle - Stable Phase
+				scope:overlord_scope = {
+					highest_held_title_tier >= tier_hegemony
+					any_character_situation = {
+						situation_type = dynastic_cycle
+					}
+				}
+				add = {
+					if = { # Unstable Phase
+						limit = {
+							any_character_situation = {
+								situation_type = dynastic_cycle
+								OR = {
+									situation_current_phase = situation_dynastic_cycle_phase_instability
+									situation_current_phase = situation_dynastic_cycle_phase_instability_conquest
+								}
+							}
+						}
+						add = -50
+						desc = tributary_interaction_aibehavior_recipient_unstable_cycle_tt
+					}
+					else = { # Stable Phase
+						if = {
+							limit = {
+								scope:overlord_scope.legitimacy_level < dynastic_cycle_legitimacy_expectation
+							}
+							add = -25
+							desc = tributary_interaction_aibehavior_recipient_low_legitimacy_tt
+						}
+						else_if = {
+							limit = {
+								scope:overlord_scope.legitimacy_level >= dynastic_cycle_legitimacy_expectation
+							}
+							add = 25
+							desc = tributary_interaction_aibehavior_recipient_high_legitimacy_tt
+						}
+					}
+				}
+				desc = ai_will_do_debug # For debugging, not shown to players
+			}
+
+			#A devaraja should never willingly _offer_ to become a tributary
+			modifier = {
+				trigger = {
+					government_has_flag = government_is_mandala
+					OR = {
+						has_unruined_mandala_capital_trigger = yes
+						has_mandala_aspect_trigger = yes
+					}
+				}
+				add = -1000
+			}
+
+			#MINOR MODIFIERS
+			ai_military_threat_modifier = {
+				SENDER = scope:tributary_scope
+				RECEIVER = scope:overlord_scope
+				MULTIPLIER = 0.5
+			}
+
+			modifier = {
+				is_obedient_to = scope:overlord_scope
+				add = 40
+				desc = obedient_interaction_reason
+			}
+
+			modifier = {
+				highest_held_title_tier <= tier_duchy
+				OR = {
+					government_has_flag = government_is_feudal
+					government_has_flag = government_is_tribal_excluding_wanua
+				}
+				add = 25
+			}
+
+			modifier = {
+				OR = {
+					NOT = {
+						any_neighboring_top_liege_realm_owner = {
+							always = yes # no neighbors, i.e. island
+						}
+					}
+					any_neighboring_top_liege_realm_owner = {
+						top_suzerain = scope:overlord_scope # this includes direct neighbors with overlord
+					}
+				}
+				add = 25
+			}
+
+			modifier = { # Rivalry modifier.
+				desc = offer_vassalization_interaction_aibehavior_rival_tt
+				trigger = {
+					scope:tributary_scope = {
+						has_relation_rival = scope:overlord_scope
+						NOT = { has_relation_nemesis = scope:overlord_scope }
+					}
+				}
+				add = -10
+			}
+			modifier = { # Nemesis modifier.
+				desc = offer_vassalization_interaction_aibehavior_nemesis_tt
+				trigger = {
+					scope:tributary_scope = {
+						has_relation_nemesis = scope:overlord_scope
+					}
+				}
+				add = -100
+			}
+
+			modifier = { # Different faith, no pluralism.
+				desc = offer_vassalization_interaction_aibehavior_differentfaith_tt
+				trigger = {
+					scope:tributary_scope = {
+						NOR = { # Of two different faiths AND the potential vassal's faith is not pluralistic.
+							faith = scope:overlord_scope.faith
+							faith = { has_doctrine = doctrine_pluralism_pluralistic }
+						}
+					}
+				}
+				add = {
+					value = -25
+					if = {
+						limit = {
+							scope:tributary_scope.faith = {
+								faith_hostility_level = {
+									target = scope:overlord_scope.faith
+									value >= faith_hostile_level
+								}
+							}
+						}
+						add = -10
+					}
+					if = {
+						limit = {
+							scope:tributary_scope.faith = {
+								faith_hostility_level = {
+									target = scope:overlord_scope.faith
+									value >= faith_evil_level
+								}
+							}
+						}
+						add = -25
+					}
+				}
+			}
+
+			modifier = { # Cultural Acceptance
+				scope:tributary_scope = {
+					NOT = { # cultural condition below doesn't have to apply if both actor and recipient have nomadic_philosophy
+						has_trait = nomadic_philosophy
+						scope:overlord_scope = { has_trait = nomadic_philosophy }
+					}
+					NOT = { has_same_culture_as = scope:overlord_scope }
+					culture = {
+						cultural_acceptance = { target = scope:overlord_scope.culture value < 50 }
+					}
+				}
+				add = {
+					add = -10
+					if = {
+						limit = { scope:tributary_scope.culture = { has_cultural_pillar = ethos_bellicose } }
+						add = -10
+					}
+				}
+				desc = cultural_acceptance_interaction_reason
+			}
+
+			modifier = { # Same language
+				add = 5
+				desc = speaks_same_language_interaction_reason
+				trigger = {
+					scope:tributary_scope = {
+						knows_language_of_culture = scope:overlord_scope.culture
+					}
+				}
+			}
+		}
+	}
+	#No thanks
+	option = {
+		name = tribute_mission.3008.b
+		ai_chance = 10
+	}
+	after = {
+		trigger_event = tribute_mission.3010
+	}
+}
+
+#Tributary: Receive reward, go home
+tribute_mission.3010 = {
+	type = court_event
+	title = {
+		first_valid = {
+			#Treasury
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_treasury }
+				desc = tribute_mission.3010.t.treasury
+			}
+			#Artifact
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_artifact }
+				desc = tribute_mission.3010.t.artifact
+			}
+			#Innovation
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_innovation }
+				desc = tribute_mission.3010.t.innovation
+			}
+			#Development
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_development }
+				desc = tribute_mission.3010.t.development
+			}
+			#Monk
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_monk }
+				desc = tribute_mission.3010.t.monk
+			}
+			#Monk
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_legitimacy }
+				desc = tribute_mission.3010.t.legitimacy
+			}
+			desc = tribute_mission.3010.t
+		}
+	}
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:seal_of_investiture_scope }
+				desc = tribute_mission.3010.intro.postseal
+			}
+			triggered_desc = {
+				trigger = {
+					scope:receiving_character = { has_character_flag = created_attendant }
+				}
+				desc = tribute_mission.3010.intro.attendant
+			}
+			desc = tribute_mission.3010.intro
+		}
+		first_valid = {
+			#Treasury
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_treasury }
+				desc = tribute_mission.3010.desc.treasury
+			}
+			#Artifact
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_artifact }
+				desc = tribute_mission.3010.desc.artifact
+			}
+			#Innovation
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_innovation }
+				desc = tribute_mission.3010.desc.innovation
+			}
+			#Development
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_development }
+				desc = tribute_mission.3010.desc.development
+			}
+			#Monk
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_monk }
+				desc = tribute_mission.3010.desc.monk
+			}
+			#Legitimacy
+			triggered_desc = {
+				trigger = { exists = scope:tribute_reward_type_legitimacy }
+				desc = tribute_mission.3010.desc.legitimacy
+			}
+		}
+		desc = tribute_mission.3010.outro
+	}
+	theme = tributary
+	override_sound = { reference = "event:/SFX/Events/Themes/sfx_event_theme_type_duty" }
+	artifact = {
+		trigger = { exists = scope:tribute_reward_type_artifact }
+		target = scope:tribute_reward_type_artifact
+		position = lower_center_portrait
+	}
+	court_scene = {
+		button_position_character = scope:receiving_character
+		court_owner = scope:overlord_scope
+		court_event_force_open = no
+		show_timeout_info = yes
+		should_pause_time = yes
+		roles = {
+		    scope:tributary_scope = {
+		    	group = petition_liege_group
+				animation = throne_room_kneel_1
+		    }
+		}
+	}
+	immediate = {
+		tribute_mission_1000_disburse_reward_effect = yes
+	}
+	#Thanks, bye!
+	option = {
+		name = tribute_mission.3010.a
+	}
+	after = {
+		close_view = {
+			view = royal_court
+		    player = scope:tributary_scope
+		}
+		#Clean up variables & set up cooldown
+		tribute_mission_1010_complete_effect = yes
+	}
+}
+
+
+
+### LETTER EVENTS ###
+
+#Your Tributary refused your Exact Tribute Interaction
+tribute_mission.9000 = {
+	type = letter_event
+	opening = tribute_mission.9000.opening
+	desc = tribute_mission.9000.desc
+	sender = scope:recipient
+
+	immediate = {
+		scope:recipient = {
+			show_as_tooltip = {
+				add_legitimacy = minor_legitimacy_loss
+				if = {
+					limit = { is_ai = yes }
+					add_opinion = {
+						modifier = declined_tribute_mission_opinion
+						opinion = -30
+						target = scope:actor
+					}
+				}
+			}
+		}
+	}
+
+	#Hokay...
+	option = {
+		name = tribute_mission.9000.a
+
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_greed = -1
+				ai_boldness = -1
+			}
+		}
+	}
+}
+
+#Tributary is going on a mission!
+tribute_mission.9010 = {
+	type = letter_event
+	opening = tribute_mission.9010.opening
+	desc = tribute_mission.9010.desc
+	sender = scope:recipient
+
+	immediate = {
+
+	}
+
+	#Yay!
+	option = {
+		name = tribute_mission.9010.a
+
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_greed = -1
+				ai_boldness = -1
+			}
+		}
+	}
+}
+
+#Tributary: You ignored the Requested Tribute Mission, have some penalty
+tribute_mission.9500 = {
+	type = letter_event
+	opening = tribute_mission.9500.opening
+	desc = tribute_mission.9500.desc
+	sender = scope:overlord
+
+	trigger = {
+		is_tributary = yes
+		has_variable = requested_tribute_mission
+		var:requested_tribute_mission = overlord
+		#We're going, we're going...
+		NOT = {
+			has_variable = tribute_mission_type
+			exists = current_travel_plan
+		}
+	}
+
+	on_trigger_fail = {
+		set_variable = invalidation_should_fail_ongoing_requested_tribute_mission
+	}
+
+	immediate = {
+		add_legitimacy = minor_legitimacy_loss
+		if = {
+			limit = {
+				NOT = { exists = scope:overlord }
+			}
+			overlord = {
+				save_scope_as = overlord
+			}
+		}
+		scope:overlord = {
+			if = {
+				limit = { is_ai = yes }
+				add_opinion = {
+					modifier = declined_tribute_mission_opinion
+					opinion = -30
+					target = root
+				}
+			}
+		}
+		#Clean up Requested Tribute Mission variables
+		requested_tribute_mission_clean_up_variables_effect = yes
+	}
+
+	#Hokay...
+	option = {
+		name = tribute_mission.9500.a
+
+		ai_chance = {
+			base = 25
+			ai_value_modifier = {
+				ai_greed = -1
+				ai_boldness = -1
+			}
+		}
+	}
+}
+
+
+
+### TRAVEL EVENTS ###
+
+#Your human tribute is not available any more
+tribute_mission.9750 = {
+	type = character_event
+	title = tribute_mission.9750.t
+	desc = tribute_mission.9750.desc
+
+	theme = travel
+	override_icon = { reference = "gfx/interface/icons/event_types/type_tributary.dds" }
+
+	left_portrait = {
+		character = root
+		animation = stress
+	}
+	right_portrait = {
+		character = scope:human_tribute
+		trigger = {
+			NOT = { has_character_flag = tribute_mission_escaped_eunuch }
+		}
+		triggered_animation = {
+			trigger = { is_alive = no }
+			animation = dead
+		}
+		animation = prisonhouse
+	}
+	immediate = {
+		#Hol' up
+		current_travel_plan ?= { pause_travel_plan = yes }
+		#Save the concubine
+		if = {
+			limit = { has_variable = offered_concubine }
+			var:offered_concubine = { save_scope_as = human_tribute }
+		}
+		#Save the eunuch
+		if = {
+			limit = { has_variable = offered_eunuch }
+			var:offered_eunuch = { save_scope_as = human_tribute }
+		}
+	}
+	#Swap to gold?
+	option = {
+		name = tribute_mission.9750.a
+		show_as_unavailable = { always = yes }
+		#Define how much gold it is
+		set_variable = {
+			name = tribute_mission_type
+			value = flag:adequate_gold_tribute
+		}
+		set_variable = {
+			name = offered_gold_value
+			value = adequate_gold_tribute_value
+		}
+		#Clear out the old variables
+		remove_variable = offered_concubine
+		remove_variable = offered_eunuch
+		#Stash the gold so you don't use it elsewhere on your trip to the capital
+		custom_tooltip = {
+			text = tribute_mission.adequate_reserved_gold
+			hidden_effect = { remove_short_term_gold = adequate_gold_tribute_value }
+		}
+		#Keep on keeping on
+		current_travel_plan ?= { resume_travel_plan = yes }
+		if = {
+			limit = { has_character_flag = revisit_tribute_mission_0001 }
+			trigger_event = {
+				id = tribute_mission.0001
+				delayed = yes
+			}
+		}
+	}
+	#Or go home
+	option = {
+		name = tribute_mission.9750.b
+		current_travel_plan = {
+			if = {
+				limit = { can_cancel = yes }
+				cancel_travel_plan = yes
+			}
+		}
+		custom_tooltip = tribute_mission.9750.tt
+		#Keep on keeping on
+		hidden_effect = {
+			current_travel_plan ?= { resume_travel_plan = yes }
+		}
+		tribute_mission_clean_up_variables_effect = yes
+		tribute_mission_clean_up_request_variables_effect = yes
+	}
+	after = {
+		if = {
+			limit = { has_character_flag = revisit_tribute_mission_0001 }
+			remove_character_flag = revisit_tribute_mission_0001
+		}
+	}
+}
+
+
+scripted_effect tribute_mission_9760_escape_effect = {
+	scope:escapee_eunuch = {
+		add_character_flag = {
+			flag = tribute_mission_escaped_eunuch
+			days = 30
+		}
+	}
+	current_travel_plan = { remove_character = scope:escapee_eunuch }
+	hidden_effect = {
+		scope:escapee_eunuch = { move_to_pool_at = root.location }
+	}
+	trigger_event = {
+		id = tribute_mission.9750
+		delayed = yes
+	}
+}
+
+#Your slated eunuch is trying to escape
+tribute_mission.9760 = {
+	type = character_event
+	title = tribute_mission.9760.t
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:vengeful_eunuch }
+				desc = tribute_mission.9760.desc.vengeful
+			}
+			desc = tribute_mission.9760.desc
+		}
+	}
+	theme = travel
+	override_icon = { reference = "gfx/interface/icons/event_types/type_tributary.dds" }
+	override_background = { reference = bedchamber }
+
+	left_portrait = {
+		character = root
+		animation = disbelief
+	}
+	right_portrait = {
+		character = scope:escapee_eunuch
+		triggered_animation = {
+			trigger = { exists = scope:vengeful_eunuch }
+			animation = menacing
+		}
+		animation = shock
+	}
+	trigger = {
+		is_tributary = yes
+		location != var:tribute_mission_target_scope.capital_province
+		has_variable = offered_eunuch
+		var:offered_eunuch = { has_character_flag = tribute_mission_attempt_escape }
+	}
+	immediate = {
+		#Save the eunuch
+		if = {
+			limit = { has_variable = offered_eunuch }
+			var:offered_eunuch = { save_scope_as = escapee_eunuch }
+		}
+		scope:escapee_eunuch = {
+			if = {
+				limit = {
+					OR = {
+						1002_human_tribute_angry_personality_trigger = yes
+						has_trait = sadistic
+						has_trait = just
+					}
+				}
+				save_scope_as = vengeful_eunuch
+			}
+		}
+	}
+	#Vengeful eunuch
+	option = {
+		name = tribute_mission.9760.a
+		trigger = { exists = scope:vengeful_eunuch }
+		duel = {
+			skill = prowess
+			target = scope:vengeful_eunuch
+			#You overpower them
+			50 = {
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = 3.5
+				}
+				desc = tribute_mission.9760.a.success
+				custom_tooltip = tribute_mission.9760.a.success.tt
+				#You learned something!
+				random = {
+					chance = 10
+					add_prowess_skill = 1
+				}
+			}
+			#You get injured
+			40 = {
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = -3.5
+				}
+				desc = tribute_mission.9760.a.failure
+				increase_wounds_effect = { REASON = fight }
+				#Hmmm, vindication
+				if = {
+					limit = { is_female = no }
+					random = {
+						chance = 5
+						add_trait = eunuch_1
+					}
+				}
+				tribute_mission_9760_escape_effect = yes
+			}
+		}
+	}
+	#Guards!!!
+	option = {
+		name = tribute_mission.9760.b
+		trigger = {
+			NOT = { exists = scope:vengeful_eunuch }
+		}
+		scope:escapee_eunuch = {
+			duel = {
+				skill = prowess
+				value = very_high_skill_rating
+				#Eunuch is overpowered
+				30 = {
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = -3.5
+					}
+					desc = tribute_mission.9760.b.success
+					custom_tooltip = tribute_mission.9760.a.success.tt
+				}
+				#Eunuch escapes
+				60 = {
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = 3.5
+					}
+					desc = tribute_mission.9760.b.failure
+					tribute_mission_9760_escape_effect = yes
+				}
+				#Eunuch is killed in the process
+				5 = {
+					compare_modifier = {
+						value = scope:duel_value
+						multiplier = -3.5
+						min = 5
+					}
+					desc = tribute_mission.9760.b.critical_failure
+					override_death_effect = { death_reason = death_fight }
+					trigger_event = {
+						id = tribute_mission.9750
+						delayed = yes
+					}
+				}
+			}
+		}
+
+	}
+	#Let 'em go
+	option = {
+		name = tribute_mission.9760.c
+		tribute_mission_9760_escape_effect = yes
+	}
+	after = {
+		scope:escapee_eunuch = {
+			if = {
+				limit = { is_alive = yes }
+				remove_character_flag = tribute_mission_attempt_escape
+			}
+		}
+	}
+}
+
+#Somehow your Tribute Mission invalidated, refund and return home
+tribute_mission.9800 = {
+	type = character_event
+	title = tribute_mission.9800.t
+	desc = {
+		first_valid = {
+			#New overlord can't accept my tribute
+			triggered_desc = {
+				trigger = { has_variable = new_overlord_unable_to_accept_tribute }
+				desc = tribute_mission.9800.desc.unable_to_accept_tribute
+			}
+			#Hmm got vassalized by Suzerain
+			triggered_desc = {
+				trigger = {
+					is_tributary = no
+					liege = var:tribute_mission_target_scope
+				}
+				desc = tribute_mission.9800.desc.suzerain_turned_liege
+			}
+			#No longer Tributary
+			triggered_desc = {
+				trigger = { is_tributary = no }
+				desc = tribute_mission.9800.desc.no_longer_tributary
+			}
+			#New overlord has a different end destination
+			triggered_desc = {
+				trigger = { has_variable = new_overlord_somewhere_else }
+				desc = tribute_mission.9800.desc.different_end_location
+			}
+		}
+	}
+
+	theme = travel
+	override_icon = { reference = "gfx/interface/icons/event_types/type_tributary.dds" }
+
+	left_portrait = {
+		character = root
+		animation = thinking
+	}
+	lower_right_portrait = scope:current_overlord
+	immediate = {
+		overlord = {
+			if = {
+				limit = { this != root }
+				save_scope_as = current_overlord
+			}
+		}
+		#Refunds
+		if = {
+			limit = { has_variable = offered_gold_value }
+			add_short_term_gold = var:offered_gold_value
+		}
+		if = {
+			limit = { has_variable = offered_herd_value }
+			domicile ?= {
+				change_herd = { add = var:offered_herd_value }
+			}
+		}
+	}
+	#Oh well
+	option = {
+		name = tribute_mission.9800.a
+		current_travel_plan = {
+			if = {
+				limit = { can_cancel = yes }
+				cancel_travel_plan = yes
+			}
+		}
+	}
+	after = {
+		tribute_mission_clean_up_variables_effect = yes
+		tribute_mission_clean_up_request_variables_effect = yes
+
+		remove_variable = new_overlord_unable_to_accept_tribute
+
+		if = {
+			limit = { exists = scope:tribute_reward_type_rejection }
+			tribute_mission_1000_rejection_effect = yes
+		}
+	}
+}

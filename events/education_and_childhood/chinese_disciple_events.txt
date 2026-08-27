@@ -1,0 +1,3681 @@
+﻿namespace = chinese_students
+
+# Hidden setup event for student rivalry
+# This event selects appropriate students and triggers the main rivalry event
+chinese_students.0001 = {
+    type = character_event
+    hidden = yes
+    cooldown = { years = 10 }
+    trigger = {
+		has_tgp_dlc_trigger = yes
+		is_available_at_peace_adult = yes
+
+        any_relation = {
+            type = disciple
+		    is_available_at_peace_adult = yes
+            NOT = { has_character_modifier = tgp_harsh_cultivation_modifier }
+            add_to_temporary_list = mentees
+        }
+        any_relation = {
+            type = student
+		    is_available_at_peace_adult = yes
+            NOT = {
+                has_character_modifier = tgp_harsh_cultivation_modifier
+                any_in_list = {
+                    list = mentees
+                    this = prev
+                }
+            }
+            add_to_temporary_list = mentees
+        }
+        top_participant_group:dynastic_cycle = {
+            trigger_if = {
+                limit = {
+                    var:movement_leader ?= root
+                    any_in_list = {
+                        list = mentees
+                        count < 3 # only include movement members in the list of mentees if you have less than 3
+                    }
+                }
+                any_situation_group_participant = {
+                    this != root
+		            is_available_at_peace_adult = yes
+                    NOT = {
+                        has_character_modifier = tgp_harsh_cultivation_modifier
+                        any_in_list = {
+                            list = mentees
+                            this = prev
+                        }
+                    }
+                    add_to_temporary_list = mentees
+                }
+            }
+        }
+
+        any_in_list = {
+            list = mentees
+            count >= 2
+        }
+    }
+
+    immediate = {
+        save_scope_as = mentor
+        every_relation = {
+            type = disciple
+            limit = {
+			    is_available_at_peace_adult = yes
+                NOT = {
+                    has_character_modifier = tgp_harsh_cultivation_modifier
+                }
+            }
+            add_to_temporary_list = mentees
+        }
+        every_relation = {
+            limit = {
+			    is_available_at_peace_adult = yes
+                NOT = {
+                    has_character_modifier = tgp_harsh_cultivation_modifier
+                    any_in_list = {
+                        list = mentees
+                        this = prev
+                    }
+                }
+            }
+            type = student
+            add_to_temporary_list = mentees
+        }
+        top_participant_group:dynastic_cycle = {
+            if = {
+                limit = {
+                    var:movement_leader ?= root
+                    any_in_list = {
+                        list = mentees
+                        count < 3 # only include movement members in the list of mentees if you have less than 3
+                    }
+                }
+                every_situation_group_participant = {
+                    limit = {
+                        this != root
+                        is_available_at_peace_adult = yes
+                        NOT = {
+                            has_character_modifier = tgp_harsh_cultivation_modifier
+                            any_in_list = {
+                                list = mentees
+                                this = prev
+                            }
+                        }
+                    }
+                    add_to_temporary_list = mentees
+                }
+            }
+        }
+
+        ordered_in_list = { # find first rival student
+            list = mentees
+            order_by = {
+                value = merit_level
+                if = {
+                    limit = { is_ai = no }
+                    multiply = 20 # always pick a human player as the first_student if possible
+                }
+            }
+            save_scope_as = first_student
+        }
+        ordered_in_list = { # find second rival student
+            list = mentees
+            limit = {
+                is_ai = yes
+                this != scope:first_student
+            }
+            order_by = {
+                value = 100
+                subtract = { # order by ascending merit level difference
+                    value = scope:first_student.merit_level
+                    subtract = this.merit_level
+                    abs = yes
+                }
+            }
+            save_scope_as = second_student
+        }
+
+        # Assuming we found two suitable students, which we should, trigger the main event (otherwise do nothing)
+        if = {
+            limit = {
+                exists = scope:first_student
+                exists = scope:second_student
+            }
+
+            # Trigger the main event with the selected students
+            trigger_event = chinese_students.0002
+        }
+    }
+}
+
+scripted_effect punish_student_effect = {
+    change_merit = minor_merit_loss
+    add_stress = medium_stress_impact_gain
+
+    if = {
+        limit = { is_ai = yes }
+        add_opinion = { target = scope:mentor modifier = opinion_mentor_strict_negative }
+    }
+}
+
+scripted_effect student_rivalry_effect = {
+    if = {
+        limit = { can_set_relation_rival_trigger = { CHARACTER = $OTHER_STUDENT$ } }
+        set_relation_rival = {
+            reason = rival_disciple_rivalry
+            target = $OTHER_STUDENT$
+            involved_character = scope:mentor
+        }
+    }
+
+    stress_impact = {
+        compassionate = medium_stress_impact_gain
+        humble = minor_stress_impact_gain
+        ambitious = minor_stress_impact_loss
+    }
+
+    add_character_modifier = {
+        modifier = tgp_harsh_cultivation_modifier
+        years = 5
+    }
+}
+
+scripted_effect chinese_students.0002.option.a_effect = {
+    scope:second_student = {
+        add_opinion = { target = scope:mentor modifier = opinion_mentor_appreciation }
+        student_rivalry_effect = { OTHER_STUDENT = scope:first_student }
+    }
+}
+
+scripted_effect chinese_students.0002.option.b_effect = {
+    scope:mentor = {
+        change_merit = minor_merit_loss
+    }
+    scope:most_renowned_student = {
+        change_merit = medium_merit_value
+        if = {
+            limit = { is_ai = yes }
+            add_opinion = { target = scope:mentor modifier = opinion_mentor_favoritism_positive }
+        }
+        house = {
+            change_house_relation_effect = {
+                HOUSE = root.house
+                VALUE = house_relation_improve_medium_value
+                REASON = nepotism
+                CHAR = root
+                TARGET_CHAR = scope:mentor
+                TITLE = scope:dummy_gender
+            }
+            if = {
+                limit = { house_head != prev }
+                house_head = {
+                    if = {
+                        limit = { is_ai = yes }
+                        add_opinion = { target = scope:mentor modifier = opinion_mentor_favoritism_positive }
+                    }
+                }
+            }
+        }
+    }
+    scope:first_student = {
+        if = {
+            limit = { this != scope:most_renowned_student }
+            add_stress = medium_stress_impact_gain
+            if = {
+                limit = { is_ai = yes }
+                add_opinion = { target = scope:mentor modifier = opinion_mentor_favoritism_negative }
+            }
+        }
+        else = {
+            scope:second_student = {
+                add_stress = medium_stress_impact_gain
+                add_opinion = { target = scope:mentor modifier = opinion_mentor_favoritism_negative }
+            }
+        }
+    }
+}
+
+scripted_effect chinese_students.0002.option.c_effect = {
+    scope:underdog = {
+        punish_student_effect = yes
+    }
+    scope:overdog = {
+        change_merit = medium_merit_value
+        if = {
+            limit = { is_ai = yes }
+            add_opinion = { target = scope:mentor modifier = opinion_mentor_appreciation }
+        }
+    }
+}
+
+scripted_effect chinese_students.0002.option.d_effect = {
+    scope:overdog = {
+        punish_student_effect = yes
+    }
+    scope:underdog = {
+        change_merit = medium_merit_value
+        if = {
+            limit = { is_ai = yes }
+            add_opinion = { target = scope:mentor modifier = opinion_mentor_appreciation }
+        }
+    }
+}
+
+scripted_effect chinese_students.0002.option.e_effect = {
+    # Mentor gains Merit for enforcing strictness but students lose it
+    scope:mentor = {
+        change_merit = medium_merit_value
+    }
+    scope:first_student = {
+        punish_student_effect = yes
+    }
+    scope:second_student = {
+        punish_student_effect = yes
+    }
+}
+
+# Event: Rivalry During Teaching
+# This event shows the actual rivalry interaction between two students
+chinese_students.0002 = {
+    type = character_event
+    title = chinese_students.0002.t
+    desc = chinese_students.0002.desc
+    theme = merit
+
+    # Trigger conditions - should only be triggered by the setup event
+    trigger = {
+        exists = scope:first_student
+        exists = scope:second_student
+    }
+
+    immediate = {
+        scope:first_student = {
+            dynasty = {
+                if = {
+                    limit = {
+                        dynasty_prestige > scope:second_student.dynasty.dynasty_prestige
+                    }
+                    PREV = { save_scope_as = most_renowned_student }
+                }
+                else = {
+                    scope:second_student = {
+                        save_scope_as = most_renowned_student
+                    }
+                }
+            }
+        }
+
+        scope:first_student = { # set up loc for options d and e
+            if = {
+                limit = { merit_level > scope:second_student.merit_level }
+                save_scope_as = overdog
+                scope:second_student = {
+                    save_scope_as = underdog
+                }
+            }
+            else = {
+                save_scope_as = underdog
+                scope:second_student = {
+                    save_scope_as = overdog
+                }
+            }
+        }
+    }
+
+    left_portrait = {
+        character = root
+        animation = personality_rational
+    }
+    right_portrait = {
+        character = scope:second_student
+        animation = schadenfreude
+    }
+    lower_right_portrait = {
+        character = scope:first_student
+        animation = worry
+    }
+
+    # Main event options
+    option = { # Encourage competition
+        name = chinese_students.0002.a
+
+        save_scope_value_as = {
+            name = mentor_approach
+            value = flag:encourage_both
+        }
+
+        show_as_tooltip = {
+            chinese_students.0002.option.a_effect = yes
+        }
+
+        stress_impact = {
+            impatient = medium_stress_impact_gain
+            irritable = medium_stress_impact_gain
+        }
+
+        ai_chance = {
+            base = 30
+            modifier = {
+                add = 40
+                has_trait = ambitious
+            }
+            modifier = {
+                add = -25
+                has_trait = content
+            }
+            modifier = {
+                add = -25
+                has_trait = calm
+            }
+        }
+    }
+
+    option = { # Same merit level, favor the student from the more prestigious dynasty
+        name = chinese_students.0002.b
+
+        trigger = {
+            scope:first_student.merit_level = scope:second_student.merit_level
+            scope:first_student.dynasty != scope:second_student.dynasty
+        }
+
+        if = {
+            limit = { scope:first_student = scope:most_renowned_student }
+            save_scope_value_as = {
+                name = mentor_approach
+                value = flag:favor
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = mentor_approach
+                value = flag:disfavor
+            }
+        }
+        save_scope_value_as = {
+            name = mentor_option
+            value = flag:b
+        }
+        show_as_tooltip = {
+            chinese_students.0002.option.b_effect = yes
+        }
+
+        stress_impact = {
+            just = medium_stress_impact_gain
+        }
+
+        ai_chance = {
+            base = 20
+            modifier = {
+                add = 40
+                has_trait = arbitrary
+            }
+            modifier = {
+                add = 25
+                has_trait = greedy
+            }
+            modifier = {
+                add = -30
+                has_trait = just
+            }
+        }
+    }
+
+    option = { # Punish the underdog
+        name = chinese_students.0002.c
+
+        trigger = {
+            scope:first_student.merit_level != scope:second_student.merit_level
+        }
+
+        if = {
+            limit = { scope:first_student = scope:underdog }
+            save_scope_value_as = {
+                name = mentor_approach
+                value = flag:disfavor
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = mentor_approach
+                value = flag:favor
+            }
+        }
+        save_scope_value_as = {
+            name = mentor_option
+            value = flag:c
+        }
+        show_as_tooltip = {
+            chinese_students.0002.option.c_effect = yes
+        }
+
+        ai_chance = {
+            base = 15
+            modifier = {
+                add = 40
+                has_trait = sadistic
+            }
+            modifier = {
+                add = 25
+                has_trait = callous
+            }
+            modifier = {
+                add = -30
+                has_trait = compassionate
+            }
+        }
+    }
+
+    option = { # Punish the overdog
+        name = chinese_students.0002.d
+
+        trigger = {
+            scope:first_student.merit_level != scope:second_student.merit_level
+        }
+
+        if = {
+            limit = { scope:first_student = scope:overdog }
+            save_scope_value_as = {
+                name = mentor_approach
+                value = flag:disfavor
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = mentor_approach
+                value = flag:favor
+            }
+        }
+        save_scope_value_as = {
+            name = mentor_option
+            value = flag:d
+        }
+        show_as_tooltip = {
+            chinese_students.0002.option.d_effect = yes
+        }
+
+        ai_chance = {
+            base = 15
+            modifier = {
+                add = 40
+                has_trait = just
+            }
+            modifier = {
+                add = 25
+                has_trait = forgiving
+            }
+            modifier = {
+                add = -25
+                has_trait = vengeful
+            }
+        }
+    }
+
+    option = { # Punish both for disrupting the lesson
+        name = chinese_students.0002.e
+
+        save_scope_value_as = {
+            name = mentor_approach
+            value = flag:punish_both
+        }
+        show_as_tooltip = {
+            chinese_students.0002.option.e_effect = yes
+        }
+
+        stress_impact = {
+            base = minor_stress_impact_gain
+            compassionate = medium_stress_impact_gain
+            just = minor_stress_impact_loss
+        }
+
+        ai_chance = {
+            base = 20
+            modifier = {
+                add = 40
+                has_trait = wrathful
+            }
+            modifier = {
+                add = 25
+                has_trait = impatient
+            }
+            modifier = {
+                add = -25
+                has_trait = shy
+            }
+        }
+    }
+
+    after = {
+        scope:first_student = {
+            trigger_event = {
+                id = chinese_students.0003
+                days = { 7 14 }
+            }
+        }
+    }
+}
+
+chinese_students.0003 = {
+    type  = character_event
+    title = chinese_students.0003.t
+    theme = merit
+
+    left_portrait = {
+        character = root
+
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    scope:mentor_approach = flag:encourage_both
+                    scope:mentor_approach = flag:favor
+                }
+            }
+            animation = personality_bold
+        }
+        triggered_animation = {
+            trigger = {
+                scope:mentor_approach = flag:punish_both
+                scope:mentor_approach = flag:disfavor
+            }
+            animation = disappointed
+        }
+    }
+    right_portrait = {
+        character = scope:second_student
+        triggered_animation = {
+            trigger = {
+                OR = {
+                    scope:mentor_approach = flag:encourage_both
+                    scope:mentor_approach = flag:disfavor
+                }
+            }
+            animation = schadenfreude
+        }
+        triggered_animation = {
+            trigger = {
+                scope:mentor_approach = flag:punish_both
+                scope:mentor_approach = flag:favor
+            }
+            animation = disappointed
+        }
+    }
+    lower_right_portrait = {
+        character = scope:mentor
+        animation = worry
+    }
+
+    immediate = {
+        if = {
+            limit = { scope:mentor_approach = flag:encourage_both }
+            chinese_students.0002.option.a_effect = yes
+        }
+        else_if = {
+            limit = { scope:mentor_approach = flag:punish_both }
+            chinese_students.0002.option.e_effect = yes
+        }
+        else_if = {
+            limit = { scope:mentor_option = flag:b }
+            chinese_students.0002.option.b_effect = yes
+        }
+        else_if = {
+            limit = { scope:mentor_option = flag:c }
+            chinese_students.0002.option.c_effect = yes
+        }
+        else_if = {
+            limit = { scope:mentor_option = flag:d }
+            chinese_students.0002.option.d_effect = yes
+        }
+    }
+
+    desc = {
+        desc = chinese_students.0003.desc.intro
+        triggered_desc = {
+            trigger = { scope:mentor_approach = flag:encourage_both }
+            desc = chinese_students.0003.desc.encourage_both
+        }
+        triggered_desc = {
+            trigger = { scope:mentor_approach = flag:punish_both }
+            desc = chinese_students.0003.desc.punish_both
+        }
+        triggered_desc = {
+            trigger = { scope:mentor_approach = flag:favor }
+            desc = chinese_students.0003.desc.favor
+        }
+        triggered_desc = {
+            trigger = { scope:mentor_approach = flag:disfavor }
+            desc = chinese_students.0003.desc.disfavor
+        }
+    }
+
+    # ===========================
+    # 1) Mentor neutral / strict
+    # ===========================
+    option = {
+        name = chinese_students.0003.a     # Work harder
+        trigger = {
+            OR = {
+                scope:mentor_approach = flag:punish_both
+                scope:mentor_approach = flag:encourage_both
+            }
+        }
+        add_focused_lifestyle_xp_effect = { AMOUNT = medium }
+        student_rivalry_effect = { OTHER_STUDENT = scope:second_student }
+
+        stress_impact = {
+            humble = minor_stress_impact_gain
+        }
+
+        ai_chance = {
+            base = 25
+            modifier = {
+                add = 40
+                has_trait = diligent
+            }
+            modifier = {
+                add = 25
+                has_trait = ambitious
+            }
+            modifier = {
+                add = -25
+                has_trait = lazy
+            }
+        }
+    }
+
+    option = {
+        name = chinese_students.0003.b     # Take it in stride
+        trigger = {
+            OR = {
+                scope:mentor_approach = flag:punish_both
+                scope:mentor_approach = flag:encourage_both
+            }
+        }
+
+        add_piety = medium_piety_gain
+
+        stress_impact = {
+            humble = medium_stress_impact_loss
+            ambitious = medium_stress_impact_gain
+            irritable = medium_stress_impact_gain
+        }
+
+        ai_chance = {
+            base = 25
+            modifier = {
+                add = 35
+                has_trait = calm
+            }
+            modifier = {
+                add = 35
+                has_trait = content
+            }
+            modifier = {
+                add = 20
+                has_trait = forgiving
+            }
+            modifier = {
+                add = -30
+                has_trait = wrathful
+            }
+        }
+    }
+
+    # ===========================
+    # 2) Mentor favoured root
+    # ===========================
+    option = {
+        name = chinese_students.0003.c     # Lord it over
+        trigger = { scope:mentor_approach = flag:favor }
+        add_prestige = medium_prestige_gain
+        student_rivalry_effect = { OTHER_STUDENT = scope:second_student }
+
+        ai_chance = {
+            base = 20
+            modifier = {
+                add = 40
+                has_trait = arrogant
+            }
+            modifier = {
+                add = 30
+                has_trait = ambitious
+            }
+        }
+    }
+
+    option = {
+        name = chinese_students.0003.d     # Practice humility
+        trigger = { scope:mentor_approach = flag:favor }
+        add_piety = medium_piety_gain
+        scope:second_student = {
+            add_opinion = { target = root modifier = opinion_student_humility months = 60 }
+        }
+        scope:mentor = {
+            if = {
+                limit = { is_ai = yes }
+                add_opinion = { target = root modifier = opinion_student_highroad months = 60 }
+            }
+        }
+        stress_impact = {
+            humble = medium_stress_loss
+            lazy = minor_stress_loss
+        }
+
+        ai_chance = {
+            base = 25
+            modifier = {
+                add = 40
+                has_trait = humble
+            }
+            modifier = {
+                add = 25
+                has_trait = patient
+            }
+        }
+    }
+
+    # ===========================
+    # 3) Mentor disfavoured root
+    # ===========================
+    option = {
+        name = chinese_students.0003.e     # Swear revenge
+        trigger = {
+            scope:mentor_approach = flag:disfavor
+            can_set_relation_nemesis_trigger = { CHARACTER = scope:second_student }
+        }
+        set_relation_nemesis = {
+            reason = nemesis_disciple_rivalry
+            target = scope:second_student
+            involved_character = scope:mentor
+        }
+
+        stress_impact = { vengeful = minor_stress_impact_loss }
+
+        ai_chance = {
+            base = 15
+            modifier = {
+                add = 40
+                has_trait = vengeful
+            }
+            modifier = {
+                add = 25
+                has_trait = wrathful
+            }
+        }
+    }
+
+    option = {
+        name = chinese_students.0003.f     # Accept and learn
+        trigger = { scope:mentor_approach = flag:disfavor }
+        add_stress = minor_stress_loss
+        scope:second_student = {
+            add_opinion = { target = root modifier = opinion_student_gratitude months = 60 }
+        }
+        scope:mentor = {
+            if = {
+                limit = { is_ai = yes }
+                add_opinion = { target = root modifier = opinion_mentor_respect months = 60 }
+            }
+        }
+
+        ai_chance = {
+            base = 25
+            modifier = {
+                add = 35
+                has_trait = forgiving
+            }
+            modifier = {
+                add = 25
+                has_trait = patient
+            }
+            modifier = {
+                add = 35
+                has_trait = calm
+            }
+        }
+    }
+}
+
+
+scripted_effect scroll_writing_duel_effect = {
+    duel = {
+        skill = $SKILL$
+        value = decent_skill_rating # f.ex. 12
+        50 = {
+            desc = chinese_students.0010.success
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = 4 # f.ex. if your score is 16, you get 66% chance to succeed (compared to 34% below)
+                max = 49
+            }
+            custom_tooltip = {
+                text = chinese_students.0010.$TYPE$.success.tt
+                save_scope_value_as = {
+                    name = mentee_outcome
+                    value = flag:success
+                }
+            }
+        }
+        50 = {
+            desc = chinese_students.0010.failure
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = -4 # f.ex. if your score is 10, you get 58% chance to fail (compared to 42% above)
+                min = -49
+            }
+            custom_tooltip = {
+                text = chinese_students.0010.failure.tt
+                save_scope_value_as = {
+                    name = mentee_outcome
+                    value = flag:failure
+                }
+            }
+        }
+    }
+}
+
+scripted_effect exclusive_skill_saving_effect = {
+    if = {
+        limit = { highest_skill = $SKILL$ }
+        random_list = {
+            50 = { # if there's already a best_skill, we have a 50/50 chance of overwriting it, otherwise 100%
+                save_scope_value_as = {
+                    name = best_skill
+                    value = flag:$SKILL$
+                }
+            }
+            0 = { # this is not an option unless there is already a best_skill, in which case it's 50/50
+                modifier = {
+                    exists = scope:best_skill
+                    add = 50
+                }
+            }
+        }
+    }
+    else_if = {
+        limit = { lowest_skill = $SKILL$ }
+        random_list = {
+            50 = { # if there's already a worst_skill, we have a 50/50 chance of overwriting it, otherwise 100%
+                save_scope_value_as = {
+                    name = worst_skill
+                    value = flag:$SKILL$
+                }
+            }
+            0 = { # this is not an option unless there is already a worst_skill, in which case it's 50/50
+                modifier = {
+                    exists = scope:worst_skill
+                    add = 50
+                }
+            }
+        }
+    }
+}
+
+# A Test of Wisdom: The Blank Scroll
+# A student is approached by an elder or movement leader with a blank ornate scroll, asked to write something meaningful.
+chinese_students.0010 = {
+	type = character_event
+	cooldown = { years = 10 }
+	desc = chinese_students.0010.desc
+	title = chinese_students.0010.t
+	# is_triggered_only = yes
+
+    theme = merit
+
+    trigger = {
+		has_tgp_dlc_trigger = yes
+		is_available_at_peace_adult = yes
+        OR = {
+            any_relation = {
+                type = elder
+		        is_available_at_peace_adult = yes
+            }
+            any_relation = {
+                type = mentor
+		        is_available_at_peace_adult = yes
+            }
+            top_participant_group:dynastic_cycle.var:movement_leader ?= {
+                this != root
+		        is_available_at_peace_adult = yes
+            }
+        }
+    }
+
+    immediate = {
+        random_relation = {
+            type = elder
+            save_scope_as = mentor
+        }
+        if = {
+            limit = { NOT = { exists = scope:mentor } }
+            random_relation = {
+                type = mentor
+                save_scope_as = mentor
+            }
+        }
+        if = {
+            limit = { NOT = { exists = scope:mentor } }
+            top_participant_group:dynastic_cycle.var:movement_leader ?= {
+                save_scope_as = mentor
+            }
+        }
+        random_relation = {
+            type = soulmate
+            save_scope_as = beloved
+        }
+        if = {
+            limit = { NOT = { exists = scope:beloved } }
+            random_relation = {
+                type = lover
+                save_scope_as = beloved
+            }
+        }
+        if = {
+            limit = { NOT = { exists = scope:beloved } }
+            primary_spouse = {
+                save_scope_as = beloved
+            }
+        }
+
+        exclusive_skill_saving_effect = { SKILL = diplomacy }
+        exclusive_skill_saving_effect = { SKILL = martial }
+        exclusive_skill_saving_effect = { SKILL = stewardship }
+        exclusive_skill_saving_effect = { SKILL = intrigue }
+        exclusive_skill_saving_effect = { SKILL = learning }
+    }
+
+    left_portrait = {
+        character = root
+        animation = pondering
+    }
+    right_portrait = {
+        character = scope:mentor
+        animation = holding_scrolls
+    }
+
+    option = {
+        # Write a new law
+        name = {
+            trigger = { scope:best_skill = flag:stewardship }
+            text = chinese_students.0010.a.strength
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:stewardship }
+            text = chinese_students.0010.a.weakness
+        }
+        name = {
+            trigger = { stewardship >= decent_skill_rating }
+            text = chinese_students.0010.a.strength
+        }
+        name = {
+            trigger = { stewardship < decent_skill_rating }
+            text = chinese_students.0010.a.weakness
+        }
+
+        trigger = {
+            OR = {
+                scope:best_skill = flag:stewardship
+                scope:worst_skill = flag:stewardship
+                has_lifestyle = stewardship_lifestyle
+            }
+            stewardship >= 0 # to reveal the icon
+        }
+        save_scope_value_as = {
+            name = scroll_type
+            value = flag:law
+        }
+        show_as_tooltip = {
+            scroll_writing_duel_effect = { SKILL = stewardship TYPE = law }
+        }
+        if = {
+            limit = { scope:best_skill = flag:stewardship }
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:best
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:worst
+            }
+        }
+
+        ai_chance = {
+            factor = 20
+            modifier = {
+                factor = 2
+                has_trait = just
+            }
+            modifier = {
+                factor = 0.5
+                has_trait = arbitrary
+            }
+        }
+    }
+
+    option = {
+        # Write a poem to a loved one
+        name = {
+            trigger = { scope:best_skill = flag:intrigue }
+            text = chinese_students.0010.b.strength
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:intrigue }
+            text = chinese_students.0010.b.weakness
+        }
+        name = {
+            trigger = { intrigue >= decent_skill_rating }
+            text = chinese_students.0010.b.strength
+        }
+        name = {
+            trigger = { intrigue < decent_skill_rating }
+            text = chinese_students.0010.b.weakness
+        }
+
+        trigger = {
+            exists = scope:beloved
+            OR = {
+                scope:best_skill = flag:intrigue
+                scope:worst_skill = flag:intrigue
+                has_lifestyle = intrigue_lifestyle
+            }
+            intrigue >= 0 # to reveal the icon
+        }
+        save_scope_value_as = {
+            name = scroll_type
+            value = flag:poem
+        }
+        show_as_tooltip = {
+            scroll_writing_duel_effect = { SKILL = intrigue TYPE = poem }
+        }
+        if = {
+            limit = { scope:best_skill = flag:intrigue }
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:best
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:worst
+            }
+        }
+
+        ai_chance = {
+            factor = 25
+            modifier = {
+                factor = 2
+                has_trait = lustful
+            }
+        }
+    }
+
+    option = {
+        # Write an ode to the Emperor's glory
+        name = {
+            trigger = {
+                scope:best_skill = flag:diplomacy
+                top_overlord = title:h_pandaria.holder
+            }
+            text = chinese_students.0010.c.strength.china
+        }
+        name = {
+            trigger = {
+                scope:worst_skill = flag:diplomacy
+                top_overlord = title:h_pandaria.holder
+            }
+            text = chinese_students.0010.c.weakness.china
+        }
+        name = {
+            trigger = {
+                scope:best_skill = flag:diplomacy
+                NOT = { top_overlord = title:h_pandaria.holder }
+            }
+            text = chinese_students.0010.c.strength.other
+        }
+        name = {
+            trigger = {
+                scope:worst_skill = flag:diplomacy
+                NOT = { top_overlord = title:h_pandaria.holder }
+            }
+            text = chinese_students.0010.c.weakness.other
+        }
+        name = {
+            trigger = {
+                diplomacy >= decent_skill_rating
+                top_overlord = title:h_pandaria.holder
+            }
+            text = chinese_students.0010.c.strength.china
+        }
+        name = {
+            trigger = {
+                diplomacy < decent_skill_rating
+                top_overlord = title:h_pandaria.holder
+            }
+            text = chinese_students.0010.c.weakness.china
+        }
+        name = {
+            trigger = {
+                diplomacy >= decent_skill_rating
+                NOT = { top_overlord = title:h_pandaria.holder }
+            }
+            text = chinese_students.0010.c.strength.other
+        }
+        name = {
+            trigger = {
+                diplomacy < decent_skill_rating
+                NOT = { top_overlord = title:h_pandaria.holder }
+            }
+            text = chinese_students.0010.c.weakness.other
+        }
+
+        trigger = {
+            OR = {
+                scope:best_skill = flag:diplomacy
+                scope:worst_skill = flag:diplomacy
+                has_lifestyle = diplomacy_lifestyle
+            }
+            diplomacy >= 0 # to reveal the icon
+        }
+        save_scope_value_as = {
+            name = scroll_type
+            value = flag:ode
+        }
+        show_as_tooltip = {
+            scroll_writing_duel_effect = { SKILL = diplomacy TYPE = ode }
+        }
+        if = {
+            limit = { scope:best_skill = flag:diplomacy }
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:best
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:worst
+            }
+        }
+
+        ai_chance = {
+            factor = 20
+            modifier = {
+                factor = 2
+                has_trait = loyal
+            }
+        }
+    }
+
+    option = {
+        # Write a philosophical treaty
+        name = {
+            trigger = { scope:best_skill = flag:learning }
+            text = chinese_students.0010.d.strength
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:learning }
+            text = chinese_students.0010.d.weakness
+        }
+        name = {
+            trigger = { learning >= decent_skill_rating }
+            text = chinese_students.0010.d.strength
+        }
+        name = {
+            trigger = { learning < decent_skill_rating }
+            text = chinese_students.0010.d.weakness
+        }
+
+        trigger = {
+            OR = {
+                scope:best_skill = flag:learning
+                scope:worst_skill = flag:learning
+                has_lifestyle = learning_lifestyle
+            }
+            learning >= 0 # to reveal the icon
+        }
+        save_scope_value_as = {
+            name = scroll_type
+            value = flag:treatise
+        }
+        show_as_tooltip = {
+            scroll_writing_duel_effect = { SKILL = learning TYPE = treatise }
+        }
+        if = {
+            limit = { scope:best_skill = flag:learning }
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:best
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:worst
+            }
+        }
+
+        ai_chance = {
+            factor = 15
+            modifier = {
+                factor = 2
+                has_trait = scholar
+            }
+            modifier = {
+                factor = 2
+                has_trait = arrogant
+            }
+            modifier = {
+                factor = 2
+                learning >= 18
+            }
+        }
+    }
+
+	option = {
+		# Write a military stratagem
+        name = {
+            trigger = { scope:best_skill = flag:martial }
+            text = chinese_students.0010.e.strength
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:martial }
+            text = chinese_students.0010.e.weakness
+        }
+        name = {
+            trigger = { martial >= decent_skill_rating }
+            text = chinese_students.0010.e.strength
+        }
+        name = {
+            trigger = { martial < decent_skill_rating }
+            text = chinese_students.0010.e.weakness
+        }
+
+        trigger = {
+            OR = {
+                scope:best_skill = flag:martial
+                scope:worst_skill = flag:martial
+                has_lifestyle = martial_lifestyle
+            }
+            martial >= 0 # to reveal the icon
+        }
+        save_scope_value_as = {
+            name = scroll_type
+            value = flag:stratagem
+        }
+        show_as_tooltip = {
+            scroll_writing_duel_effect = { SKILL = martial TYPE = stratagem }
+        }
+        if = {
+            limit = { scope:best_skill = flag:martial }
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:best
+            }
+        }
+        else = {
+            save_scope_value_as = {
+                name = scroll_effort
+                value = flag:worst
+            }
+        }
+
+		ai_chance = {
+			factor = 15
+			modifier = {
+				factor = 2
+				has_trait = scholar
+			}
+			modifier = {
+				factor = 2
+				martial >= 18
+			}
+		}
+	}
+
+	option = {
+		name = chinese_students.0010.f
+		# Leave the scroll blank
+		trigger = {
+			OR = {
+				has_trait = lifestyle_mystic
+				like_taoism_religion_trigger = yes
+			}
+		}
+        save_scope_value_as = {
+            name = scroll_type
+            value = flag:blank
+        }
+        show_as_tooltip = {
+            duel = {
+                # This is copied to ensure we get custom descs, since you're not actually writing anything
+                skill = learning
+                value = decent_skill_rating
+                50 = {
+                    desc = chinese_students.0010.success_blank
+                    compare_modifier = {
+                        value = scope:duel_value
+                        multiplier = 5
+                        max = 49
+                    }
+                    custom_tooltip = {
+                        text = chinese_students.0010.blank.success.tt
+                    }
+                }
+                50 = {
+                    desc = chinese_students.0010.failure_blank
+                    compare_modifier = {
+                        value = scope:duel_value
+                        multiplier = -5
+                        min = -49
+                    }
+                    custom_tooltip = {
+                        text = chinese_students.0010.failure.tt
+                    }
+                }
+            }
+        }
+		ai_chance = {
+			factor = 20
+			modifier = {
+				factor = 3
+				has_trait = lifestyle_mystic
+			}
+			modifier = {
+				factor = 2
+				learning >= 18
+			}
+		}
+	}
+
+	after = {
+        save_scope_as = scroll_student
+		scope:mentor = {
+			trigger_event = {
+				id = chinese_students.0011
+				days = { 14 28 }
+			}
+		}
+	}
+}
+
+scripted_effect positive_scroll_evaluation_effect = {
+	#// Handles student rewards for positive evaluation based on scroll type
+
+	# Add Merit reward/penalty for mentor based on success/failure
+    switch = {
+        trigger = scope:mentee_outcome
+        flag:success = {
+            add_stress = miniscule_stress_loss
+            change_merit = medium_merit_value
+        }
+        flag:failure = {
+            add_stress = miniscule_stress_gain
+            change_merit = minor_merit_loss
+        }
+    }
+
+    scope:scroll_student = {
+        # Apply the positive character modifier based on scroll type
+        switch = {
+            trigger = scope:scroll_type
+            flag:law = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = wrote_law_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:scroll_effort = flag:worst }
+                    add_stewardship_skill = 1
+                }
+            }
+            flag:poem = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = wrote_poem_loved_one_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:scroll_effort = flag:worst }
+                    add_intrigue_skill = 1
+                }
+            }
+            flag:ode = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = wrote_ode_to_liege_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:scroll_effort = flag:worst }
+                    add_diplomacy_skill = 1
+                }
+            }
+            flag:treatise = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = wrote_philosophical_treatise_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:scroll_effort = flag:worst }
+                    add_learning_skill = 1
+                }
+            }
+            flag:stratagem = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = wrote_strategy_scroll_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:scroll_effort = flag:worst }
+                    add_martial_skill = 1
+                }
+            }
+            flag:blank = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = left_scroll_blank_modifier
+                        years = 5
+                    }
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                is_ai = yes
+                scope:mentee_outcome = flag:success
+            }
+            add_opinion = {
+                modifier = opinion_mentor_respect
+                target = root
+                months = 120
+            }
+        }
+
+        scope:scroll_student = {
+            if = {
+                limit = { root = { is_ai = yes } }
+                add_opinion = {
+                    modifier = opinion_student_gratitude
+                    target = root
+                    months = 120
+                }
+            }
+        }
+    }
+}
+
+# Handles negative evaluation of any scroll type
+scripted_effect negative_scroll_evaluation_effect = {
+	#// Handles student rewards for negative evaluation
+
+	# Add Merit reward/penalty for mentor based on success/failure
+    switch = {
+        trigger = scope:mentee_outcome
+        flag:failure = {
+            add_stress = miniscule_stress_loss
+            change_merit = medium_merit_value
+        }
+        flag:success = {
+            add_stress = miniscule_stress_gain
+            change_merit = minor_merit_loss
+        }
+    }
+
+    scope:scroll_student = {
+        # Apply stress to the student
+	    add_stress = minor_stress_gain
+	    change_merit = minor_merit_loss
+        if = {
+            limit = { is_ai = yes }
+            add_opinion = {
+                modifier = opinion_student_scolded
+                target = root
+                months = 120
+            }
+        }
+
+        if = {
+            limit = { root = { is_ai = yes } }
+            reverse_add_opinion = {
+                modifier = opinion_mentor_disrespect
+                target = root
+                months = 120
+            }
+        }
+    }
+}
+
+# The mentor evaluates the blank scroll
+chinese_students.0011 = {
+	type = character_event
+	desc = {
+        desc = chinese_students.0011.desc.intro
+        first_valid = {
+            triggered_desc = {
+                trigger = { scope:scroll_type = flag:law }
+                desc = chinese_students.0011.desc.law
+            }
+            triggered_desc = {
+                trigger = { scope:scroll_type = flag:poem }
+                desc = chinese_students.0011.desc.love_letter
+            }
+            triggered_desc = {
+                trigger = { scope:scroll_type = flag:ode }
+                desc = chinese_students.0011.desc.emperor_ode
+            }
+            triggered_desc = {
+                trigger = { scope:scroll_type = flag:treatise }
+                desc = chinese_students.0011.desc.treatise
+            }
+            triggered_desc = {
+                trigger = { scope:scroll_type = flag:stratagem }
+                desc = chinese_students.0011.desc.strategy
+            }
+            triggered_desc = {
+                trigger = { scope:scroll_type = flag:blank }
+                desc = chinese_students.0011.desc.blank
+            }
+        }
+        desc = chinese_students.0011.desc.conclusion
+        first_valid = {
+            triggered_desc = {
+                trigger = {
+                    NOT = { scope:scroll_type = flag:blank }
+                    scope:mentee_outcome = flag:success
+                }
+                desc = chinese_students.0011.desc.quality_success
+            }
+            triggered_desc = {
+                trigger = {
+                    NOT = { scope:scroll_type = flag:blank }
+                    scope:mentee_outcome = flag:failure
+                }
+                desc = chinese_students.0011.desc.quality_failure
+            }
+            triggered_desc = {
+                trigger = { scope:mentee_outcome = flag:success }
+                desc = chinese_students.0011.desc.quality_success.blank
+            }
+            triggered_desc = {
+                trigger = { scope:mentee_outcome = flag:failure }
+                desc = chinese_students.0011.desc.quality_failure.blank
+            }
+        }
+    }
+	title = chinese_students.0011.t
+	theme = merit
+
+	trigger = {
+		exists = scope:scroll_student
+	}
+
+    # Quality Success
+    immediate = {
+        hidden_effect = {
+            scope:scroll_student = {
+                if = {
+                    limit = { scope:scroll_type = flag:law }
+                    scroll_writing_duel_effect = { SKILL = stewardship TYPE = law }
+                }
+                else_if = {
+                    limit = { scope:scroll_type = flag:poem }
+                    scroll_writing_duel_effect = { SKILL = intrigue TYPE = poem }
+                }
+                else_if = {
+                    limit = { scope:scroll_type = flag:ode }
+                    scroll_writing_duel_effect = { SKILL = diplomacy TYPE = ode }
+                }
+                else_if = {
+                    limit = { scope:scroll_type = flag:stratagem }
+                    scroll_writing_duel_effect = { SKILL = martial TYPE = stratagem }
+                }
+                else_if = {
+                    limit = { scope:scroll_type = flag:treatise }
+                    scroll_writing_duel_effect = { SKILL = learning TYPE = treatise }
+                }
+                else = {
+                    scroll_writing_duel_effect = { SKILL = learning TYPE = blank }
+                }
+            }
+            save_scope_as = mentee # for mentor_negative_evaluation_modifiers
+        }
+    }
+
+	left_portrait = {
+		character = scope:scroll_student
+		animation = obsequious_bow
+    }
+
+	right_portrait = {
+		character = root
+		animation = pondering
+	}
+
+	# POSITIVE EVALUATION OPTION
+	option = {
+		name = {
+            trigger = {
+                scope:scroll_type = flag:law
+                scope:scroll_effort = flag:best
+            }
+            text = chinese_students.0011.positive_law
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:poem }
+            text = chinese_students.0011.positive_love
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:ode }
+            text = chinese_students.0011.positive_emperor
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:treatise }
+            text = chinese_students.0011.positive_philosophy
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:stratagem }
+            text = chinese_students.0011.positive_strategy
+        }
+
+		name = {
+            trigger = {
+                scope:scroll_type = flag:law
+                scope:scroll_effort = flag:worst
+            }
+            text = chinese_students.0011.positive_law.worst
+        }
+        name = {
+            trigger = {
+                scope:scroll_type = flag:poem
+                scope:scroll_effort = flag:worst
+            }
+            text = chinese_students.0011.positive_love.worst
+        }
+        name = {
+            trigger = {
+                scope:scroll_type = flag:ode
+                scope:scroll_effort = flag:worst
+            }
+            text = chinese_students.0011.positive_emperor.worst
+        }
+        name = {
+            trigger = {
+                scope:scroll_type = flag:treatise
+                scope:scroll_effort = flag:worst
+            }
+            text = chinese_students.0011.positive_philosophy.worst
+        }
+        name = {
+            trigger = {
+                scope:scroll_type = flag:stratagem
+                scope:scroll_effort = flag:worst
+            }
+            text = chinese_students.0011.positive_strategy.worst
+        }
+
+        name = {
+            trigger = { scope:scroll_type = flag:blank }
+            text = chinese_students.0011.positive_blank
+        }
+
+		scope:scroll_student = {
+            send_interface_toast = {
+                title = chinese_students.0011.positive.toast
+                left_icon = root
+                right_icon = scope:scroll_student
+                root = { positive_scroll_evaluation_effect = yes }
+            }
+		}
+
+		# AI chance calculation for evaluation
+		ai_chance = {
+			base = 50
+
+			# Common modifiers for all scroll types
+			modifier = {
+				add = 40
+				scope:mentee_outcome = flag:success
+			}
+			mentor_positive_evaluation_modifiers = yes
+
+            # Law scroll specific modifiers
+            modifier = {
+                add = 15
+                scope:scroll_type = flag:law
+                has_trait = just
+            }
+            modifier = {
+                add = 10
+                scope:scroll_type = flag:law
+                has_trait = diligent
+            }
+
+            # Love poem specific modifiers
+            modifier = {
+                add = 15
+                scope:scroll_type = flag:poem
+                has_trait = lifestyle_poet
+            }
+            modifier = {
+                add = 10
+                scope:scroll_type = flag:poem
+                has_trait = compassionate
+            }
+
+            # Emperor ode specific modifiers
+            modifier = {
+                add = 20
+                scope:scroll_type = flag:ode
+                has_trait = ambitious
+            }
+            modifier = {
+                add = 15
+                scope:scroll_type = flag:ode
+                has_trait = diplomat
+            }
+
+            # Philosophy treatise modifiers
+            modifier = {
+                add = 15
+                scope:scroll_type = flag:treatise
+                has_trait = scholar
+            }
+            modifier = {
+                add = 10
+                scope:scroll_type = flag:treatise
+                has_trait = patient
+            }
+
+            # Military strategy modifiers
+            modifier = {
+                add = 15
+                scope:scroll_type = flag:stratagem
+                has_trait = strategist
+            }
+            modifier = {
+                add = 10
+                scope:scroll_type = flag:stratagem
+                has_trait = brave
+            }
+
+            # Blank scroll specific modifiers
+            modifier = {
+                add = 25
+                scope:scroll_type = flag:blank
+                has_trait = lifestyle_mystic
+            }
+            modifier = {
+                add = 15
+                scope:scroll_type = flag:blank
+                has_trait = scholarly_court_2
+            }
+        }
+	}
+
+	# NEGATIVE EVALUATION OPTION - HARSH
+	option = {
+		name = {
+            trigger = { scope:scroll_type = flag:law }
+            text = chinese_students.0011.negative_law
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:poem }
+            text = chinese_students.0011.negative_love
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:ode }
+            text = chinese_students.0011.negative_emperor
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:treatise }
+            text = chinese_students.0011.negative_philosophy
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:stratagem }
+            text = chinese_students.0011.negative_strategy
+        }
+        name = {
+            trigger = { scope:scroll_type = flag:blank }
+            text = chinese_students.0011.negative_blank
+        }
+
+        trigger = {
+            scope:mentee_outcome = flag:failure
+        }
+
+		scope:scroll_student = {
+            send_interface_toast = {
+                title = chinese_students.0011.negative.toast
+                left_icon = root
+                right_icon = scope:scroll_student
+                add_character_modifier = {
+                    modifier = mentor_encouragement_modifier
+                    years = 5
+                }
+                root = { negative_scroll_evaluation_effect = yes }
+            }
+		}
+
+		# AI chance calculation for evaluation
+		ai_chance = {
+			base = 50
+
+			# Common modifiers for all scroll types
+			modifier = {
+				add = 40
+				scope:mentee_outcome = flag:failure
+			}
+
+			mentor_negative_evaluation_modifiers = yes
+
+            # Law scroll specific modifiers
+            modifier = {
+                add = -20
+                scope:scroll_type = flag:law
+                has_trait = arbitrary
+            }
+            modifier = {
+                add = -10
+                scope:scroll_type = flag:law
+                has_trait = arrogant
+            }
+
+            # Love poem specific modifiers
+            modifier = {
+                add = -15
+                scope:scroll_type = flag:poem
+                has_trait = cynical
+            }
+            modifier = {
+                add = -10
+                scope:scroll_type = flag:poem
+                has_trait = callous
+            }
+
+            # Emperor ode specific modifiers
+            modifier = {
+                add = -15
+                scope:scroll_type = flag:ode
+                has_trait = humble
+            }
+            modifier = {
+                add = -10
+                scope:scroll_type = flag:ode
+                has_trait = shy
+            }
+
+            # Philosophy treatise modifiers
+            modifier = {
+                add = -15
+                scope:scroll_type = flag:treatise
+                has_trait = impatient
+            }
+            modifier = {
+                add = -10
+                scope:scroll_type = flag:treatise
+                has_trait = arrogant
+            }
+
+            # Military strategy modifiers
+            modifier = {
+                add = -15
+                scope:scroll_type = flag:stratagem
+                has_trait = craven
+            }
+            modifier = {
+                add = -10
+                scope:scroll_type = flag:stratagem
+                has_trait = compassionate
+            }
+
+            # Blank scroll specific modifiers
+            modifier = {
+                add = -25
+                scope:scroll_type = flag:blank
+                has_trait = arrogant
+            }
+            modifier = {
+                add = -15
+                scope:scroll_type = flag:blank
+                has_trait = impatient
+            }
+        }
+	}
+
+	# SELF-IMPROVEMENT OPTION
+	option = {
+		name = chinese_students.0011.self_improvement
+		trigger = { NOT = { scope:scroll_type = flag:blank } }
+		scope:scroll_student = {
+            send_interface_toast = {
+                title = chinese_students.0011.self_improvement.toast
+                left_icon = root
+                right_icon = scope:scroll_student
+
+                add_stress = miniscule_stress_gain
+                add_character_modifier = {
+                    modifier = mentor_encouragement_modifier
+                    years = 5
+                }
+            }
+            if = {
+                limit = {
+                    is_ai = yes
+                    scope:mentee_outcome = flag:failure
+                }
+                add_opinion = {
+                    modifier = opinion_student_gratitude
+                    target = root
+                }
+            }
+		}
+
+		ai_chance = {
+			base = 20
+			mentor_balanced_evaluation_modifiers = yes
+		}
+	}
+}
+
+scripted_effect divination_duel_effect = {
+    duel = {
+        skill = $SKILL$
+        value = decent_skill_rating
+        50 = {
+            desc = chinese_students.0020.$TYPE$.success.tt
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = 5
+                max = 49
+            }
+            save_scope_value_as = {
+                name = mentee_outcome
+                value = flag:success
+            }
+        }
+        50 = {
+            desc = chinese_students.0020.failure.tt
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = -5
+                min = -49
+            }
+            save_scope_value_as = {
+                name = mentee_outcome
+                value = flag:failure
+            }
+        }
+    }
+}
+
+scripted_effect find_third_divination_option = {
+    if = {
+        #// This checks to ensure the student has a lifestyle focus other than one of their best/worst skills
+        #// and in this case sets the third option to correspond with their lifestyle
+        limit = {
+            has_any_lifestyle_focus_trigger = yes
+            switch = {
+                trigger = has_lifestyle
+                diplomacy_lifestyle = {
+                    NOR = {
+                        scope:best_skill = flag:diplomacy
+                        scope:worst_skill = flag:diplomacy
+                    }
+                }
+                martial_lifestyle = {
+                    NOR = {
+                        scope:best_skill = flag:martial
+                        scope:worst_skill = flag:martial
+                    }
+                }
+                stewardship_lifestyle = {
+                    NOR = {
+                        scope:best_skill = flag:stewardship
+                        scope:worst_skill = flag:stewardship
+                    }
+                }
+                intrigue_lifestyle = {
+                    NOR = {
+                        scope:best_skill = flag:intrigue
+                        scope:worst_skill = flag:intrigue
+                    }
+                }
+                learning_lifestyle = {
+                    NOR = {
+                        scope:best_skill = flag:learning
+                        scope:worst_skill = flag:learning
+                    }
+                }
+            }
+        }
+        switch = {
+            trigger = has_lifestyle
+            diplomacy_lifestyle = {
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:wind
+                }
+            }
+            martial_lifestyle = {
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:thunder
+                }
+            }
+            stewardship_lifestyle = {
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:water
+                }
+            }
+            intrigue_lifestyle = {
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:fire
+                }
+            }
+            learning_lifestyle = {
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:mountain
+                }
+            }
+        }
+    }
+    else = {
+        random_list = {
+            20 =  {
+                trigger = {
+                    NOR = {
+                        scope:best_skill = flag:diplomacy
+                        scope:worst_skill = flag:diplomacy
+                    }
+                }
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:wind
+                }
+            }
+            20 =  {
+                trigger = {
+                    NOR = {
+                        scope:best_skill = flag:martial
+                        scope:worst_skill = flag:martial
+                    }
+                }
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:thunder
+                }
+            }
+            20 =  {
+                trigger = {
+                    NOR = {
+                        scope:best_skill = flag:intrigue
+                        scope:worst_skill = flag:intrigue
+                    }
+                }
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:water
+                }
+            }
+            20 =  {
+                trigger = {
+                    NOR = {
+                        scope:best_skill = flag:stewardship
+                        scope:worst_skill = flag:stewardship
+                    }
+                }
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:heaven
+                }
+            }
+            20 =  {
+                trigger = {
+                    NOR = {
+                        scope:best_skill = flag:learning
+                        scope:worst_skill = flag:learning
+                    }
+                }
+                save_scope_value_as = {
+                    name = third_option
+                    value = flag:mountain
+                }
+            }
+        }
+    }
+}
+
+# Event: I Ching Divination with Mentor
+# Student performs divination with their mentor's guidance
+chinese_students.0020 = {
+	type = character_event
+	cooldown = { years = 10 }
+	desc = {
+        desc = chinese_students.0020.desc
+        first_valid = {
+            triggered_desc = {
+                trigger = { scope:best_skill = flag:stewardship }
+                desc = chinese_students.0020.desc.heaven
+            }
+            triggered_desc = {
+                trigger = { scope:best_skill = flag:diplomacy }
+                desc = chinese_students.0020.desc.wind
+            }
+            triggered_desc = {
+                trigger = { scope:best_skill = flag:martial }
+                desc = chinese_students.0020.desc.thunder
+            }
+            triggered_desc = {
+                trigger = { scope:best_skill = flag:intrigue }
+                desc = chinese_students.0020.desc.water
+            }
+            triggered_desc = {
+                trigger = { scope:best_skill = flag:learning }
+                desc = chinese_students.0020.desc.mountain
+            }
+        }
+        desc = comma_space
+        first_valid = {
+            triggered_desc = {
+                trigger = { scope:worst_skill = flag:stewardship }
+                desc = chinese_students.0020.desc.heaven
+            }
+            triggered_desc = {
+                trigger = { scope:worst_skill = flag:diplomacy }
+                desc = chinese_students.0020.desc.wind
+            }
+            triggered_desc = {
+                trigger = { scope:worst_skill = flag:martial }
+                desc = chinese_students.0020.desc.thunder
+            }
+            triggered_desc = {
+                trigger = { scope:worst_skill = flag:intrigue }
+                desc = chinese_students.0020.desc.water
+            }
+            triggered_desc = {
+                trigger = { scope:worst_skill = flag:learning }
+                desc = chinese_students.0020.desc.mountain
+            }
+        }
+        desc = comma_space_and
+        first_valid = {
+            triggered_desc = {
+                trigger = { scope:third_option = flag:heaven }
+                desc = chinese_students.0020.desc.heaven
+            }
+            triggered_desc = {
+                trigger = { scope:third_option = flag:wind }
+                desc = chinese_students.0020.desc.wind
+            }
+            triggered_desc = {
+                trigger = { scope:third_option = flag:thunder }
+                desc = chinese_students.0020.desc.thunder
+            }
+            triggered_desc = {
+                trigger = { scope:third_option = flag:water }
+                desc = chinese_students.0020.desc.water
+            }
+            triggered_desc = {
+                trigger = { scope:third_option = flag:mountain }
+                desc = chinese_students.0020.desc.mountain
+            }
+        }
+        desc = chinese_students.0020.desc.conclusion
+    }
+	title = chinese_students.0020.t
+	theme = merit
+
+	trigger = {
+        has_tgp_dlc_trigger = yes
+        is_available_at_peace_adult = yes
+        OR = {
+            any_relation = {
+                type = elder
+                is_available_at_peace_adult = yes
+            }
+            any_relation = {
+                type = mentor
+                is_available_at_peace_adult = yes
+            }
+            top_participant_group:dynastic_cycle.var:movement_leader ?= {
+                this != root
+                is_available_at_peace_adult = yes
+            }
+        }
+	}
+
+	immediate = {
+		random_relation = {
+			type = elder
+			save_scope_as = mentor
+		}
+		if = {
+			limit = { NOT = { exists = scope:mentor } }
+			random_relation = {
+				type = mentor
+				save_scope_as = mentor
+			}
+		}
+		if = {
+			limit = { NOT = { exists = scope:mentor } }
+			top_participant_group:dynastic_cycle.var:movement_leader ?= {
+				save_scope_as = mentor
+			}
+		}
+
+		exclusive_skill_saving_effect = { SKILL = diplomacy }
+		exclusive_skill_saving_effect = { SKILL = martial }
+		exclusive_skill_saving_effect = { SKILL = stewardship }
+		exclusive_skill_saving_effect = { SKILL = intrigue }
+		exclusive_skill_saving_effect = { SKILL = learning }
+
+        find_third_divination_option = yes
+	}
+
+	left_portrait = {
+		character = root
+		animation = pondering
+	}
+	right_portrait = {
+		character = scope:mentor
+		animation = personality_rational
+	}
+
+	option = {
+		# Focus on Heaven hexagram - leadership and governance
+		name = {
+			trigger = { scope:best_skill = flag:stewardship }
+			text = chinese_students.0020.a.strength
+		}
+		name = {
+			trigger = { scope:worst_skill = flag:stewardship }
+			text = chinese_students.0020.a.weakness
+		}
+		name = {
+			trigger = { stewardship >= decent_skill_rating }
+			text = chinese_students.0020.a.strength
+		}
+		name = {
+			trigger = { stewardship < decent_skill_rating }
+			text = chinese_students.0020.a.weakness
+		}
+
+		trigger = {
+			OR = {
+				scope:best_skill = flag:stewardship
+				scope:worst_skill = flag:stewardship
+                scope:third_option = flag:heaven
+			}
+			stewardship >= 0
+		}
+		save_scope_value_as = {
+			name = divination_type
+			value = flag:heaven
+		}
+		show_as_tooltip = {
+			divination_duel_effect = { SKILL = stewardship TYPE = heaven }
+		}
+		if = {
+			limit = { scope:best_skill = flag:stewardship }
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:best
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:worst
+			}
+		}
+
+		ai_chance = {
+			factor = 20
+			modifier = {
+				factor = 2
+				has_trait = just
+			}
+			modifier = {
+				factor = 2
+				has_trait = ambitious
+			}
+		}
+	}
+
+	option = {
+		# Focus on Thunder hexagram - action and movement
+		name = {
+			trigger = { scope:best_skill = flag:martial }
+			text = chinese_students.0020.b.strength
+		}
+		name = {
+			trigger = { scope:worst_skill = flag:martial }
+			text = chinese_students.0020.b.weakness
+		}
+		name = {
+			trigger = { martial >= decent_skill_rating }
+			text = chinese_students.0020.b.strength
+		}
+		name = {
+			trigger = { martial < decent_skill_rating }
+			text = chinese_students.0020.b.weakness
+		}
+
+		trigger = {
+			OR = {
+				scope:best_skill = flag:martial
+				scope:worst_skill = flag:martial
+                scope:third_option = flag:thunder
+			}
+			martial >= 0
+		}
+		save_scope_value_as = {
+			name = divination_type
+			value = flag:thunder
+		}
+		show_as_tooltip = {
+			divination_duel_effect = { SKILL = martial TYPE = thunder }
+		}
+		if = {
+			limit = { scope:best_skill = flag:martial }
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:best
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:worst
+			}
+		}
+
+		ai_chance = {
+			factor = 20
+			modifier = {
+				factor = 2
+				has_trait = brave
+			}
+			modifier = {
+				factor = 2
+				has_trait = wrathful
+			}
+		}
+	}
+
+	option = {
+		# Focus on Water hexagram - adaptability and flow
+		name = {
+			trigger = { scope:best_skill = flag:intrigue }
+			text = chinese_students.0020.c.strength
+		}
+		name = {
+			trigger = { scope:worst_skill = flag:intrigue }
+			text = chinese_students.0020.c.weakness
+		}
+		name = {
+			trigger = { intrigue >= decent_skill_rating }
+			text = chinese_students.0020.c.strength
+		}
+		name = {
+			trigger = { intrigue < decent_skill_rating }
+			text = chinese_students.0020.c.weakness
+		}
+
+		trigger = {
+			OR = {
+				scope:best_skill = flag:intrigue
+				scope:worst_skill = flag:intrigue
+                scope:third_option = flag:water
+			}
+			intrigue >= 0
+		}
+		save_scope_value_as = {
+			name = divination_type
+			value = flag:water
+		}
+		show_as_tooltip = {
+			divination_duel_effect = { SKILL = intrigue TYPE = water }
+		}
+		if = {
+			limit = { scope:best_skill = flag:intrigue }
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:best
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:worst
+			}
+		}
+
+		ai_chance = {
+			factor = 20
+			modifier = {
+				factor = 2
+				has_trait = patient
+			}
+			modifier = {
+				factor = 2
+				has_trait = deceitful
+			}
+		}
+	}
+
+	option = {
+		# Focus on Mountain hexagram - stillness and wisdom
+		name = {
+			trigger = { scope:best_skill = flag:learning }
+			text = chinese_students.0020.d.strength
+		}
+		name = {
+			trigger = { scope:worst_skill = flag:learning }
+			text = chinese_students.0020.d.weakness
+		}
+		name = {
+			trigger = { learning >= decent_skill_rating }
+			text = chinese_students.0020.d.strength
+		}
+		name = {
+			trigger = { learning < decent_skill_rating }
+			text = chinese_students.0020.d.weakness
+		}
+
+		trigger = {
+			OR = {
+				scope:best_skill = flag:learning
+				scope:worst_skill = flag:learning
+                scope:third_option = flag:mountain
+			}
+			learning >= 0
+		}
+		save_scope_value_as = {
+			name = divination_type
+			value = flag:mountain
+		}
+		show_as_tooltip = {
+			divination_duel_effect = { SKILL = learning TYPE = mountain }
+		}
+		if = {
+			limit = { scope:best_skill = flag:learning }
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:best
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:worst
+			}
+		}
+
+		ai_chance = {
+			factor = 25
+			modifier = {
+				factor = 2
+				has_trait = scholar
+			}
+			modifier = {
+				factor = 2
+				has_trait = calm
+			}
+		}
+	}
+
+	option = {
+		# Focus on Wind hexagram - influence and diplomacy
+		name = {
+			trigger = { scope:best_skill = flag:diplomacy }
+			text = chinese_students.0020.e.strength
+		}
+		name = {
+			trigger = { scope:worst_skill = flag:diplomacy }
+			text = chinese_students.0020.e.weakness
+		}
+		name = {
+			trigger = { diplomacy >= decent_skill_rating }
+			text = chinese_students.0020.e.strength
+		}
+		name = {
+			trigger = { diplomacy < decent_skill_rating }
+			text = chinese_students.0020.e.weakness
+		}
+
+		trigger = {
+			OR = {
+				scope:best_skill = flag:diplomacy
+				scope:worst_skill = flag:diplomacy
+                scope:third_option = flag:wind
+			}
+			diplomacy >= 0
+		}
+		save_scope_value_as = {
+			name = divination_type
+			value = flag:wind
+		}
+		show_as_tooltip = {
+			divination_duel_effect = { SKILL = diplomacy TYPE = wind }
+		}
+		if = {
+			limit = { scope:best_skill = flag:diplomacy }
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:best
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = divination_effort
+				value = flag:worst
+			}
+		}
+
+		ai_chance = {
+			factor = 20
+			modifier = {
+				factor = 2
+				has_trait = gregarious
+			}
+			modifier = {
+				factor = 2
+				has_trait = honest
+			}
+		}
+	}
+
+	after = {
+		save_scope_as = divination_student
+		scope:mentor = {
+			trigger_event = {
+				id = chinese_students.0021
+				days = { 14 28 }
+			}
+		}
+	}
+}
+
+scripted_effect positive_divination_evaluation_effect = {
+	# Handles student rewards for positive evaluation based on divination type
+
+	switch = {
+		trigger = scope:mentee_outcome
+		flag:success = {
+			add_stress = miniscule_stress_loss
+			change_merit = medium_merit_value
+		}
+		flag:failure = {
+			add_stress = miniscule_stress_gain
+			change_merit = minor_merit_loss
+		}
+	}
+
+    scope:divination_student = {
+        # Apply the positive character modifier based on divination type
+        switch = {
+            trigger = scope:divination_type
+            flag:heaven = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = heaven_divination_insight_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:divination_effort = flag:worst }
+                    add_stewardship_skill = 1
+                }
+            }
+            flag:thunder = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = thunder_divination_insight_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:divination_effort = flag:worst }
+                    add_martial_skill = 1
+                }
+            }
+            flag:water = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = water_divination_insight_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:divination_effort = flag:worst }
+                    add_intrigue_skill = 1
+                }
+            }
+            flag:mountain = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = mountain_divination_insight_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:divination_effort = flag:worst }
+                    add_learning_skill = 1
+                }
+            }
+            flag:wind = {
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = wind_divination_insight_modifier
+                        years = 5
+                    }
+                }
+                if = {
+                    limit = { scope:divination_effort = flag:worst }
+                    add_diplomacy_skill = 1
+                }
+            }
+        }
+
+        if = {
+            limit = {
+                is_ai = yes
+                scope:mentee_outcome = flag:success
+            }
+            add_opinion = {
+                modifier = opinion_mentor_respect
+                target = root
+                months = 120
+            }
+        }
+
+        scope:divination_student = {
+            if = {
+                limit = { root = { is_ai = yes } }
+                add_opinion = {
+                    modifier = opinion_student_gratitude
+                    target = root
+                    months = 120
+                }
+            }
+        }
+    }
+}
+
+scripted_effect negative_divination_evaluation_effect = {
+	# Handles mentor's harsh evaluation
+
+	switch = {
+		trigger = scope:mentee_outcome
+		flag:failure = {
+			add_stress = miniscule_stress_loss
+			change_merit = medium_merit_value
+		}
+		flag:success = {
+			add_stress = miniscule_stress_gain
+			change_merit = minor_merit_loss
+		}
+	}
+	scope:divination_student = {
+		change_merit = minor_merit_loss
+		add_stress = medium_stress_impact_gain
+		add_opinion = { target = root modifier = opinion_mentor_strict_negative }
+	}
+}
+
+# Event: Mentor's Evaluation of I Ching Divination
+# The mentor reflects on the student's divination interpretation
+chinese_students.0021 = {
+	type = character_event
+	desc = {
+        desc = chinese_students.0021.desc
+        first_valid = {
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:heaven
+                    scope:mentee_outcome = flag:success
+                }
+                desc = chinese_students.0021.desc.heaven.success
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:heaven
+                    scope:mentee_outcome = flag:failure
+                }
+                desc = chinese_students.0021.desc.heaven.failure
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:thunder
+                    scope:mentee_outcome = flag:success
+                }
+                desc = chinese_students.0021.desc.thunder.success
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:thunder
+                    scope:mentee_outcome = flag:failure
+                }
+                desc = chinese_students.0021.desc.thunder.failure
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:water
+                    scope:mentee_outcome = flag:success
+                }
+                desc = chinese_students.0021.desc.water.success
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:water
+                    scope:mentee_outcome = flag:failure
+                }
+                desc = chinese_students.0021.desc.water.failure
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:mountain
+                    scope:mentee_outcome = flag:success
+                }
+                desc = chinese_students.0021.desc.mountain.success
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:mountain
+                    scope:mentee_outcome = flag:failure
+                }
+                desc = chinese_students.0021.desc.mountain.failure
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:wind
+                    scope:mentee_outcome = flag:success
+                }
+                desc = chinese_students.0021.desc.wind.success
+            }
+            triggered_desc = {
+                trigger = {
+                    scope:divination_type = flag:wind
+                    scope:mentee_outcome = flag:failure
+                }
+                desc = chinese_students.0021.desc.wind.failure
+            }
+        }
+    }
+	title = chinese_students.0021.t
+	theme = merit
+
+	trigger = {
+		exists = scope:divination_student
+		scope:divination_student = { is_alive = yes }
+	}
+
+	immediate = {
+		# Determine divination outcome based on skill and effort
+		scope:divination_student = {
+            if = {
+                limit = { scope:divination_type = flag:heaven }
+                divination_duel_effect = { SKILL = stewardship TYPE = heaven }
+            }
+            else_if = {
+                limit = { scope:divination_type = flag:thunder }
+                divination_duel_effect = { SKILL = martial TYPE = thunder }
+            }
+            else_if = {
+                limit = { scope:divination_type = flag:water }
+                divination_duel_effect = { SKILL = intrigue TYPE = water }
+            }
+            else_if = {
+                limit = { scope:divination_type = flag:mountain }
+                divination_duel_effect = { SKILL = learning TYPE = mountain }
+            }
+            else_if = {
+                limit = { scope:divination_type = flag:wind }
+                divination_duel_effect = { SKILL = diplomacy TYPE = wind }
+            }
+            save_scope_as = mentee # for mentor_negative_evaluation_modifiers
+        }
+    }
+
+	left_portrait = {
+		character = root
+        triggered_animation = {
+            trigger = {
+                scope:mentee_outcome = flag:success
+            }
+            animation = interested
+        }
+        triggered_animation = {
+            trigger = {
+                scope:mentee_outcome = flag:failure
+            }
+            animation = disappointed
+        }
+	}
+	right_portrait = {
+		character = scope:divination_student
+		animation = debating
+	}
+
+	# POSITIVE EVALUATION OPTION
+	option = {
+		name = {
+			trigger = {
+				scope:divination_type = flag:heaven
+				scope:divination_effort = flag:best
+			}
+			text = chinese_students.0021.positive_heaven.best
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:heaven
+				scope:divination_effort = flag:worst
+			}
+			text = chinese_students.0021.positive_heaven.worst
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:thunder
+				scope:divination_effort = flag:best
+			}
+			text = chinese_students.0021.positive_thunder.best
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:thunder
+				scope:divination_effort = flag:worst
+			}
+			text = chinese_students.0021.positive_thunder.worst
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:water
+				scope:divination_effort = flag:best
+			}
+			text = chinese_students.0021.positive_water.best
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:water
+				scope:divination_effort = flag:worst
+			}
+			text = chinese_students.0021.positive_water.worst
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:mountain
+				scope:divination_effort = flag:best
+			}
+			text = chinese_students.0021.positive_mountain.best
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:mountain
+				scope:divination_effort = flag:worst
+			}
+			text = chinese_students.0021.positive_mountain.worst
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:wind
+				scope:divination_effort = flag:best
+			}
+			text = chinese_students.0021.positive_wind.best
+		}
+		name = {
+			trigger = {
+				scope:divination_type = flag:wind
+				scope:divination_effort = flag:worst
+			}
+			text = chinese_students.0021.positive_wind.worst
+		}
+
+		scope:divination_student = {
+			send_interface_toast = {
+				title = chinese_students.0021.positive.toast
+				left_icon = root
+				right_icon = scope:divination_student
+				root = { positive_divination_evaluation_effect = yes }
+			}
+		}
+
+		ai_chance = {
+			base = 40
+			modifier = {
+				add = 40
+				scope:mentee_outcome = flag:success
+			}
+
+            mentor_positive_evaluation_modifiers = yes
+        }
+	}
+
+	# NEGATIVE EVALUATION OPTION
+	option = {
+		name = {
+			trigger = { scope:divination_type = flag:heaven }
+			text = chinese_students.0021.negative_heaven
+		}
+		name = {
+			trigger = { scope:divination_type = flag:thunder }
+			text = chinese_students.0021.negative_thunder
+		}
+		name = {
+			trigger = { scope:divination_type = flag:water }
+			text = chinese_students.0021.negative_water
+		}
+		name = {
+			trigger = { scope:divination_type = flag:mountain }
+			text = chinese_students.0021.negative_mountain
+		}
+		name = {
+			trigger = { scope:divination_type = flag:wind }
+			text = chinese_students.0021.negative_wind
+		}
+
+		trigger = {
+			scope:mentee_outcome = flag:failure
+		}
+
+		scope:divination_student = {
+			send_interface_toast = {
+				title = chinese_students.0021.negative.toast
+				left_icon = root
+				right_icon = scope:divination_student
+				add_character_modifier = {
+					modifier = mentor_encouragement_modifier
+					years = 5
+				}
+				root = { negative_divination_evaluation_effect = yes }
+			}
+		}
+
+		ai_chance = {
+			base = 40
+            modifier = {
+                add = 40
+                scope:mentee_outcome = flag:failure
+            }
+
+			mentor_negative_evaluation_modifiers = yes
+		}
+	}
+
+	# BALANCED EVALUATION OPTION
+	option = {
+		name = chinese_students.0021.balanced_evaluation
+
+		scope:divination_student = {
+			send_interface_toast = {
+				title = chinese_students.0021.balanced.toast
+				left_icon = root
+				right_icon = scope:divination_student
+
+				add_stress = miniscule_stress_gain
+				add_character_modifier = {
+					modifier = mentor_encouragement_modifier
+					years = 5
+				}
+			}
+			if = {
+				limit = {
+					is_ai = yes
+					scope:mentee_outcome = flag:failure
+				}
+				add_opinion = {
+					modifier = opinion_student_gratitude
+					target = root
+				}
+			}
+		}
+
+		ai_chance = {
+			base = 40
+			mentor_balanced_evaluation_modifiers = yes
+		}
+	}
+}
+
+scripted_effect chinese_students.0030_duel_against_value_effect = {
+    save_scope_value_as = {
+        name = approach
+        value = flag:$APPROACH$
+    }
+    duel = {
+        skill = $SKILL$
+        value = decent_skill_rating
+        50 = {
+            desc = chinese_students.0030.$APPROACH$.success
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = 4 # f.ex. if your score is 16, you get 66% chance to succeed (compared to 34% below)
+                max = 49
+            }
+            custom_tooltip = {
+                text = chinese_students.0030.$APPROACH$.success.tt
+                save_scope_value_as = {
+                    name = mentee_outcome
+                    value = flag:success
+                }
+            }
+        }
+        50 = {
+            desc = chinese_students.0030.$APPROACH$.failure
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = -4 # f.ex. if your score is 10, you get 58% chance to fail (compared to 42% above)
+                min = -49
+            }
+            custom_tooltip = {
+                text = chinese_students.0030.$APPROACH$.failure.tt
+                save_scope_value_as = {
+                    name = mentee_outcome
+                    value = flag:failure
+                }
+            }
+        }
+    }
+}
+
+scripted_effect chinese_students.0030_duel_against_mentor_effect = {
+    save_scope_value_as = {
+        name = approach
+        value = flag:$APPROACH$
+    }
+    duel = {
+        skill = $SKILL$
+        target = scope:mentor
+        50 = {
+            desc = chinese_students.0030.$APPROACH$.success
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = 4 # f.ex. if your score is 16, you get 66% chance to succeed (compared to 34% below)
+                max = 49
+            }
+            custom_tooltip = {
+                text = chinese_students.0030.$APPROACH$.success.tt
+                save_scope_value_as = {
+                    name = mentee_outcome
+                    value = flag:success
+                }
+            }
+        }
+        50 = {
+            desc = chinese_students.0030.$APPROACH$.failure
+            compare_modifier = {
+                value = scope:duel_value
+                multiplier = -4 # f.ex. if your score is 10, you get 58% chance to fail (compared to 42% above)
+                min = -49
+            }
+            custom_tooltip = {
+                text = chinese_students.0030.$APPROACH$.failure.tt
+                save_scope_value_as = {
+                    name = mentee_outcome
+                    value = flag:failure
+                }
+            }
+        }
+    }
+}
+
+# Event: Showcase Best Skill or Seek Training
+# Student chooses to either impress their mentor with their strongest skill or ask for help with their weakest
+chinese_students.0030 = {
+    type = character_event
+    cooldown = { years = 10 }
+    title = chinese_students.0030.t
+    desc  = chinese_students.0030.desc
+    theme = merit
+    override_background = {
+		reference = tgp_garden_asia
+	}
+
+	trigger = {
+        has_tgp_dlc_trigger = yes
+        is_available_at_peace_adult = yes
+        OR = {
+			any_relation = {
+				type = elder
+				is_available_at_peace_adult = yes
+			}
+			any_relation = {
+				type = mentor
+			    is_available_at_peace_adult = yes
+            }
+            top_participant_group:dynastic_cycle.var:movement_leader ?= {
+                this != root
+                is_available_at_peace_adult = yes
+            }
+        }
+    }
+
+    immediate = {
+        random_relation = {
+            type = elder
+            save_scope_as = mentor
+        }
+        if = {
+            limit = { NOT = { exists = scope:mentor } }
+            random_relation = {
+                type = mentor
+                save_scope_as = mentor
+            }
+        }
+        if = {
+            limit = { NOT = { exists = scope:mentor } }
+            top_participant_group:dynastic_cycle.var:movement_leader ?= {
+                save_scope_as = mentor
+            }
+        }
+
+        exclusive_skill_saving_effect = { SKILL = diplomacy }
+        exclusive_skill_saving_effect = { SKILL = martial }
+        exclusive_skill_saving_effect = { SKILL = stewardship }
+        exclusive_skill_saving_effect = { SKILL = intrigue }
+        exclusive_skill_saving_effect = { SKILL = learning }
+
+        save_scope_as = mentee
+    }
+
+    left_portrait  = {
+        character = root
+        animation = pondering
+    }
+    right_portrait = {
+        character = scope:mentor
+        animation = personality_rational
+    }
+
+    option = {
+        name = {
+            trigger = { scope:best_skill = flag:diplomacy }
+            text = chinese_students.0030.a.diplomacy
+        }
+        name = {
+            trigger = { scope:best_skill = flag:martial }
+            text = chinese_students.0030.a.martial
+        }
+        name = {
+            trigger = { scope:best_skill = flag:stewardship }
+            text = chinese_students.0030.a.stewardship
+        }
+        name = {
+            trigger = { scope:best_skill = flag:intrigue }
+            text = chinese_students.0030.a.intrigue
+        }
+        name = {
+            trigger = { scope:best_skill = flag:learning }
+            text = chinese_students.0030.a.learning
+        }
+
+        trigger = { # this exists just to show the icon
+            switch = {
+                trigger = scope:best_skill
+                flag:diplomacy = { diplomacy >= 0 }
+                flag:martial = { martial >= 0 }
+                flag:stewardship = { stewardship >= 0 }
+                flag:intrigue = { intrigue >= 0 }
+                flag:learning = { learning >= 0 }
+            }
+        }
+
+        switch = {
+            trigger = scope:best_skill
+            flag:diplomacy = { chinese_students.0030_duel_against_value_effect = { SKILL = diplomacy APPROACH = talent } }
+            flag:martial = { chinese_students.0030_duel_against_value_effect = { SKILL = martial APPROACH = talent } }
+            flag:stewardship = { chinese_students.0030_duel_against_value_effect = { SKILL = stewardship APPROACH = talent } }
+            flag:intrigue = { chinese_students.0030_duel_against_value_effect = { SKILL = intrigue APPROACH = talent } }
+            flag:learning = { chinese_students.0030_duel_against_value_effect = { SKILL = learning APPROACH = talent } }
+        }
+    }
+
+    option = {
+        name = {
+            trigger = { scope:best_skill = flag:diplomacy }
+            text = chinese_students.0030.b.diplomacy
+        }
+        name = {
+            trigger = { scope:best_skill = flag:martial }
+            text = chinese_students.0030.b.martial
+        }
+        name = {
+            trigger = { scope:best_skill = flag:stewardship }
+            text = chinese_students.0030.b.stewardship
+        }
+        name = {
+            trigger = { scope:best_skill = flag:intrigue }
+            text = chinese_students.0030.b.intrigue
+        }
+        name = {
+            trigger = { scope:best_skill = flag:learning }
+            text = chinese_students.0030.b.learning
+        }
+
+        trigger = {
+            switch = {
+                trigger = scope:best_skill
+                flag:diplomacy = { scope:mentor = { highest_skill = diplomacy } diplomacy >= 0 }
+                flag:martial = { scope:mentor = { highest_skill = martial } martial >= 0 }
+                flag:stewardship = { scope:mentor = { highest_skill = stewardship } stewardship >= 0 }
+                flag:intrigue = { scope:mentor = { highest_skill = intrigue } intrigue >= 0 }
+                flag:learning = { scope:mentor = { highest_skill = learning } learning >= 0 }
+            }
+        }
+        switch = {
+            trigger = scope:best_skill
+            flag:diplomacy = { chinese_students.0030_duel_against_mentor_effect = { SKILL = diplomacy APPROACH = show_off } }
+            flag:martial = { chinese_students.0030_duel_against_mentor_effect = { SKILL = martial APPROACH = show_off } }
+            flag:stewardship = { chinese_students.0030_duel_against_mentor_effect = { SKILL = stewardship APPROACH = show_off } }
+            flag:intrigue = { chinese_students.0030_duel_against_mentor_effect = { SKILL = intrigue APPROACH = show_off } }
+            flag:learning = { chinese_students.0030_duel_against_mentor_effect = { SKILL = learning APPROACH = show_off } }
+        }
+    }
+
+    option = {
+        name = {
+            trigger = { scope:worst_skill = flag:diplomacy }
+            text = chinese_students.0030.c.diplomacy
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:martial }
+            text = chinese_students.0030.c.martial
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:stewardship }
+            text = chinese_students.0030.c.stewardship
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:intrigue }
+            text = chinese_students.0030.c.intrigue
+        }
+        name = {
+            trigger = { scope:worst_skill = flag:learning }
+            text = chinese_students.0030.c.learning
+        }
+
+        trigger = { # this exists just to show the icon
+            switch = {
+                trigger = scope:worst_skill
+                flag:diplomacy = { diplomacy >= 0 }
+                flag:martial = { martial >= 0 }
+                flag:stewardship = { stewardship >= 0 }
+                flag:intrigue = { intrigue >= 0 }
+                flag:learning = { learning >= 0 }
+            }
+        }
+        switch = {
+            trigger = scope:worst_skill
+            flag:diplomacy = { chinese_students.0030_duel_against_value_effect = { SKILL = diplomacy APPROACH = improve } }
+            flag:martial = { chinese_students.0030_duel_against_value_effect = { SKILL = martial APPROACH = improve } }
+            flag:stewardship = { chinese_students.0030_duel_against_value_effect = { SKILL = stewardship APPROACH = improve } }
+            flag:intrigue = { chinese_students.0030_duel_against_value_effect = { SKILL = intrigue APPROACH = improve } }
+            flag:learning = { chinese_students.0030_duel_against_value_effect = { SKILL = learning APPROACH = improve } }
+        }
+    }
+
+    after = {
+        # Fire evaluation after short delay so that mentor evaluates choice
+        hidden_effect = {
+            scope:mentor = {
+                trigger_event = {
+                    id = chinese_students.0031
+                    days = { 14 28 }
+                }
+            }
+        }
+    }
+}
+
+scripted_effect chinese_students.0031.advance_skill_effect = {
+    scope:mentee = { add_$SKILL$_skill = 1 }
+}
+
+scripted_effect chinese_students.0031.common_outcome_effect = {
+    #// Should run in mentee scope
+    if = {
+        limit = { scope:approach = flag:improve }
+        switch = {
+            trigger = scope:worst_skill
+            flag:diplomacy = { chinese_students.0031.advance_skill_effect = { SKILL = diplomacy } }
+            flag:martial = { chinese_students.0031.advance_skill_effect = { SKILL = martial } }
+            flag:stewardship = { chinese_students.0031.advance_skill_effect = { SKILL = stewardship } }
+            flag:intrigue = { chinese_students.0031.advance_skill_effect = { SKILL = intrigue } }
+            flag:learning = { chinese_students.0031.advance_skill_effect = { SKILL = learning } }
+        }
+    }
+    if = {
+        limit = { scope:mentee_outcome = flag:success }
+        scope:mentor = {
+            if = {
+                limit = { is_ai = yes }
+                add_opinion = {
+                    target = prev
+                    modifier = opinion_mentor_respect
+                    months = 60
+                }
+            }
+        }
+    }
+    if = {
+        limit = { scope:mentee_outcome = flag:failure }
+        if = {
+            limit = { scope:approach = flag:show_off }
+            change_merit = major_merit_loss
+        }
+        else = {
+            change_merit = minor_merit_loss
+        }
+        scope:mentor = {
+            if = {
+                limit = { is_ai = yes }
+                add_opinion = {
+                    target = prev
+                    modifier = opinion_mentor_disrespect
+                    months = 60
+                }
+            }
+        }
+    }
+}
+
+# Event: Mentor evaluation of student’s attempt
+chinese_students.0031 = {
+    type  = character_event
+
+    title = chinese_students.0031.t
+    desc = {
+        desc = chinese_students.0031.desc.intro
+        # Describe what the student actually attempted (approach + skill)
+        first_valid = {
+            # Talent showcase (best skill)
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:diplomacy  } desc = chinese_students.0031.desc.action.talent.diplomacy  }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:martial   } desc = chinese_students.0031.desc.action.talent.martial   }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:stewardship} desc = chinese_students.0031.desc.action.talent.stewardship}
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:intrigue } desc = chinese_students.0031.desc.action.talent.intrigue }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:learning } desc = chinese_students.0031.desc.action.talent.learning }
+
+            # Show-off attempt (best skill)
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:diplomacy } desc = chinese_students.0031.desc.action.show_off.diplomacy }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:martial   } desc = chinese_students.0031.desc.action.show_off.martial   }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:stewardship} desc = chinese_students.0031.desc.action.show_off.stewardship}
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:intrigue } desc = chinese_students.0031.desc.action.show_off.intrigue }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:learning } desc = chinese_students.0031.desc.action.show_off.learning }
+
+            # Improvement request (worst skill)
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:diplomacy } desc = chinese_students.0031.desc.action.improve.diplomacy }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:martial   } desc = chinese_students.0031.desc.action.improve.martial   }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:stewardship} desc = chinese_students.0031.desc.action.improve.stewardship}
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:intrigue } desc = chinese_students.0031.desc.action.improve.intrigue }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:learning } desc = chinese_students.0031.desc.action.improve.learning }
+        }
+        # Outcome description layer
+        first_valid = {
+            # Talent showcase (best skill)
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:diplomacy  scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.talent.diplomacy.success }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:diplomacy  scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.talent.diplomacy.failure }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:martial   scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.talent.martial.success }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:martial   scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.talent.martial.failure }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:stewardship scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.talent.stewardship.success }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:stewardship scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.talent.stewardship.failure }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:intrigue scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.talent.intrigue.success }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:intrigue scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.talent.intrigue.failure }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:learning scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.talent.learning.success }
+            triggered_desc = { trigger = { scope:approach = flag:talent  scope:best_skill = flag:learning scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.talent.learning.failure }
+
+            # Show-off attempt (best skill)
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:diplomacy scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.show_off.diplomacy.success }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:diplomacy scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.show_off.diplomacy.failure }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:martial scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.show_off.martial.success }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:martial scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.show_off.martial.failure }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:stewardship scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.show_off.stewardship.success }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:stewardship scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.show_off.stewardship.failure }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:intrigue scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.show_off.intrigue.success }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:intrigue scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.show_off.intrigue.failure }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:learning scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.show_off.learning.success }
+            triggered_desc = { trigger = { scope:approach = flag:show_off scope:best_skill = flag:learning scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.show_off.learning.failure }
+
+            # Improvement request (worst skill)
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:diplomacy scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.improve.diplomacy.success }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:diplomacy scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.improve.diplomacy.failure }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:martial scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.improve.martial.success }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:martial scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.improve.martial.failure }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:stewardship scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.improve.stewardship.success }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:stewardship scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.improve.stewardship.failure }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:intrigue scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.improve.intrigue.success }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:intrigue scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.improve.intrigue.failure }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:learning scope:mentee_outcome = flag:success } desc = chinese_students.0031.desc.improve.learning.success }
+            triggered_desc = { trigger = { scope:approach = flag:improve scope:worst_skill = flag:learning scope:mentee_outcome = flag:failure } desc = chinese_students.0031.desc.improve.learning.failure }
+        }
+        desc = chinese_students.0031.desc.conclusion
+    }
+    theme = merit
+    override_background = {
+		reference = tgp_garden_asia
+	}
+
+    left_portrait  = {
+        character = root
+        triggered_animation = {
+            trigger = { scope:approach = flag:show_off }
+            animation = disbelief
+        }
+        triggered_animation = {
+            trigger = { scope:mentee_outcome = flag:success }
+            animation = happy_teacher
+        }
+        triggered_animation = {
+            trigger = { scope:mentee_outcome = flag:failure }
+            animation = stressed_teacher
+        }
+    }
+    right_portrait = {
+        character = scope:mentee
+        triggered_animation = {
+            trigger = { scope:mentee_outcome = flag:success }
+            animation = nervous
+        }
+        triggered_animation = {
+            trigger = { scope:mentee_outcome = flag:failure }
+            animation = shame
+        }
+    }
+
+    option = {
+        name = {
+            trigger = { scope:approach = flag:talent scope:mentee_outcome = flag:success }
+            text = chinese_students.0031.a.success.talent
+        }
+        name = {
+            trigger = { scope:approach = flag:show_off scope:mentee_outcome = flag:success }
+            text = chinese_students.0031.a.success.show_off
+        }
+        name = {
+            trigger = { scope:approach = flag:improve scope:mentee_outcome = flag:success }
+            text = chinese_students.0031.a.success.improve
+        }
+        name = {
+            trigger = { scope:approach = flag:talent scope:mentee_outcome = flag:failure }
+            text = chinese_students.0031.a.failure.talent
+        }
+        name = {
+            trigger = { scope:approach = flag:show_off scope:mentee_outcome = flag:failure }
+            text = chinese_students.0031.a.failure.show_off
+        }
+        name = {
+            trigger = { scope:approach = flag:improve scope:mentee_outcome = flag:failure }
+            text = chinese_students.0031.a.failure.improve
+        }
+
+        scope:mentee = {
+            send_interface_toast = {
+                title = chinese_students.0031.kind_evaluation.toast
+                left_icon = this
+                right_icon = scope:mentor
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    if = {
+                        limit = { scope:approach = flag:show_off }
+                        change_merit = major_merit_value
+                    }
+                    else = {
+                        change_merit = minor_merit_value
+                    }
+                }
+                else_if = {
+                    limit = { scope:approach != flag:show_off }
+                    gain_trait_or_experience_effect = { TRAIT = confucian_education AMOUNT = 5 }
+                }
+                if = {
+                    limit = { is_ai = yes }
+                    add_opinion = {
+                        target = scope:mentor
+                        modifier = opinion_student_gratitude
+                        months = 60
+                    }
+                }
+                chinese_students.0031.common_outcome_effect = yes
+            }
+        }
+
+        ai_chance = {
+            base = 40
+            modifier = {
+                add = 20
+                scope:mentee_outcome = flag:success
+            }
+            mentor_positive_evaluation_modifiers = yes
+        }
+    }
+
+    option = {
+        name = {
+            trigger = { scope:approach = flag:talent scope:mentee_outcome = flag:success }
+            text = chinese_students.0031.b.success.talent
+        }
+        name = {
+            trigger = { scope:approach = flag:show_off scope:mentee_outcome = flag:success }
+            text = chinese_students.0031.b.success.show_off
+        }
+        name = {
+            trigger = { scope:approach = flag:improve scope:mentee_outcome = flag:success }
+            text = chinese_students.0031.b.success.improve
+        }
+        name = {
+            trigger = { scope:approach = flag:talent scope:mentee_outcome = flag:failure }
+            text = chinese_students.0031.b.failure.talent
+        }
+        name = {
+            trigger = { scope:approach = flag:show_off scope:mentee_outcome = flag:failure }
+            text = chinese_students.0031.b.failure.show_off
+        }
+        name = {
+            trigger = { scope:approach = flag:improve scope:mentee_outcome = flag:failure }
+            text = chinese_students.0031.b.failure.improve
+        }
+
+        if = {
+            limit = { scope:mentee_outcome = flag:failure }
+            change_merit = minor_merit_gain
+        }
+        scope:mentee = {
+            send_interface_toast = {
+                title = chinese_students.0031.harsh_evaluation.toast
+                left_icon = this
+                right_icon = scope:mentor
+                if = {
+                    limit = { is_ai = yes }
+                    add_opinion = {
+                        target = scope:mentor
+                        modifier = opinion_student_scolded
+                        months = 60
+                    }
+                }
+                if = {
+                    limit = { scope:mentee_outcome = flag:success }
+                    add_character_modifier = {
+                        modifier = mentor_encouragement_modifier
+                        years = 5
+                    }
+                }
+                chinese_students.0031.common_outcome_effect = yes
+            }
+        }
+        if = {
+            limit = {
+                scope:approach = flag:show_off
+                is_ai = yes
+            }
+            random_list = {
+                50 = {
+                    modifier = {
+                        scope:mentee_outcome = flag:failure
+                        add = 50
+                    }
+                    scope:mentee = {
+                        trigger_event = {
+                            id = chinese_students.0032
+                            days = { 14 28 }
+                        }
+                    }
+                }
+                50 = {
+                    # no effect
+                }
+            }
+        }
+        ai_chance = {
+            base = 40
+            modifier = {
+                add = 20
+                scope:mentee_outcome = flag:failure
+            }
+            mentor_negative_evaluation_modifiers = yes
+        }
+    }
+}
+
+chinese_students.0032 = {
+    type = character_event
+
+    title = chinese_students.0032.t
+    desc  = chinese_students.0032.desc
+    theme = merit
+
+    trigger = { exists = scope:mentor }
+
+    left_portrait  = { character = scope:mentor animation = disappointed }
+    right_portrait = { character = root animation = sadness }
+
+    option = {
+        name = chinese_students.0032.a
+        remove_relation_disciple = scope:mentor
+    }
+}
