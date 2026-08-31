@@ -2104,8 +2104,9 @@ Effect portrait_attachment_selection
 Effect wc_portrait_attachment_ice
 {
 	VertexShader = "VS_standard"
-	PixelShader = "PS_wc_ice"
+	PixelShader = "PS_attachment"
 	BlendState = "ice_alpha_blend"
+	Defines = { "USE_CHARACTER_DATA" "PDX_MESH_BLENDSHAPES" }
 }
 
 Effect wc_portrait_attachment_ice_selection

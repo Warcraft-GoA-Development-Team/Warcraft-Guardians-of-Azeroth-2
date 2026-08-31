@@ -50,6 +50,12 @@ cast_flash_of_light_effect = { # Refer to Dispel sheet
                     }
                     remove_major_illness_effect = yes
                 }
+                else_if = {
+                    limit = {
+                        target_has_curse_trigger = yes
+                    }
+                    remove_curse_effect = yes
+                }
                 else = {
                     custom_tooltip = wc_dispel_no_effect_tooltip
                 }
@@ -135,7 +141,7 @@ cast_dispel_effect = {
         }
         add_character_flag = {
             flag = wc_recently_dispelled_flag
-            days = 180
+            days = wc_spell_cooldown_dispel_personal
         }
     }
 }
@@ -162,11 +168,22 @@ dispel_remove_modifier_effect = {
             exists = scope:dispel_modifier
             flag:$MODIFIER$ = scope:dispel_modifier
         }
+        
         send_interface_toast = {
             title = wc_dispel_successful
             left_icon = scope:this_recipient
             right_icon = scope:real_caster
-            remove_character_modifier = $MODIFIER$_modifier
+            if = {
+                limit = {
+                    flag:$MODIFIER$_modifier = flag:wc_seed_of_corruption_modifier
+                }
+                trigger_event = {
+                    on_action = wc_on_seed_of_corruption_removal
+                }
+            }
+            else = {
+                remove_character_modifier = $MODIFIER$_modifier
+            }
         }
         if = {
             limit = {
@@ -463,55 +480,7 @@ proc_salvation_effect = {
         add_opinion = { modifier = attempted_to_kill_me target = scope:killer }
     }
 
-    while = { # DISPEL HIM OF EVERYTHING SO HE DOESNT DIE AGIAN
-        limit = {
-            OR = {
-                target_has_magic_illness_trigger = yes
-                target_has_illness_trigger = yes
-                target_has_major_illness_trigger = yes
-                target_has_injury_trigger = yes
-                target_has_major_injury_trigger = yes
-                target_has_magic_injury_trigger = yes
-            }
-        }
-
-        if = {
-            limit = {
-                target_has_magic_injury_trigger = yes
-            }
-            remove_magic_injury_effect = { REDUCE_SEVERITY = no }
-        }
-        else_if = {
-            limit = {
-                target_has_major_injury_trigger = yes
-            }
-            remove_major_injury_effect = yes
-        }
-        else_if = {
-            limit = {
-                target_has_magic_illness_trigger = yes
-            }
-            remove_magic_illness_effect = yes
-        }
-        else_if = {
-            limit = {
-                target_has_major_illness_trigger = yes
-            }
-            remove_major_illness_effect = yes
-        }
-        else_if = {
-            limit = {
-                target_has_illness_trigger = yes
-            }
-            remove_illness_effect = yes
-        }
-        else_if = {
-            limit = {
-                target_has_injury_trigger = yes
-            }
-            remove_injury_effect = { REDUCE_SEVERITY = no }
-        }
-    }
+    dispel_all_effect = yes # DISPEL HIM OF EVERYTHING SO HE DOESNT DIE AGIAN
 }
 
 cast_bless_effect = {
@@ -525,17 +494,19 @@ cast_bless_effect = {
             }
         }
         custom_tooltip = wc_bless_effect
+        if = {
+            limit = { has_variable_list = bless_eligible_modifiers }
+            clear_variable_list = bless_eligible_modifiers
+        }
         every_spell_modifier_effect = { EFFECT = bless_add_modifier_to_list_effect }
         if = {
-            limit = {
-                has_variable_list = bless_modifiers
-            }
+            limit = { has_variable_list = bless_eligible_modifiers }
             random_in_list = {
-                variable = bless_modifiers
+                variable = bless_eligible_modifiers
                 save_scope_as = bless_modifier
             }
-            every_spell_modifier_effect = { EFFECT = bless_add_modifier_effect }
-            clear_variable_list = bless_modifiers
+            every_spell_modifier_effect = { EFFECT = bless_apply_selected_modifier_effect }
+            clear_variable_list = bless_eligible_modifiers
         }
         add_character_flag = {
             flag = wc_recently_blessed
@@ -554,19 +525,23 @@ bless_add_modifier_to_list_effect = {
             }
         }
         add_to_variable_list = {
-            name = bless_modifiers
+            name = bless_eligible_modifiers
             target = flag:$MODIFIER$
         }
     }
+
+    if = { # Error prevention
+        limit = { flag:$TYPE$ = flag:error }
+        limit = { flag:$SPELL$ = flag:error }
+    }
 }
 
-bless_add_modifier_effect = {
+bless_apply_selected_modifier_effect = {
     if = {
         limit = {
             exists = scope:bless_modifier
             flag:$MODIFIER$ = scope:bless_modifier
         }
-
         send_interface_toast = {
             title = wc_bless_successful
             left_icon = scope:this_recipient
@@ -598,7 +573,6 @@ bless_add_modifier_effect = {
                 }
             }
         }
-
     }
 
     if = { # Error prevention
@@ -677,9 +651,12 @@ apply_consecration_effect = {
             $CONSECRATION_TYPE$ = flag:positive
         }
         $COUNTY$ = {
-            add_county_modifier = {
-                modifier = wc_consecration_county_positive_modifier
-                days = wc_consecration_spell_duration
+            if = {
+                limit = { tier = tier_county }
+                add_county_modifier = {
+                    modifier = wc_consecration_county_positive_modifier
+                    days = wc_consecration_spell_duration
+                }
             }
             set_variable = {
                 name = consecration_owner
@@ -703,9 +680,12 @@ apply_consecration_effect = {
     }
     else = {
         $COUNTY$ = {
-            add_county_modifier = {
-                modifier = wc_consecration_county_negative_modifier
-                days = wc_consecration_spell_duration
+            if = {
+                limit = { tier = tier_county }
+                add_county_modifier = {
+                    modifier = wc_consecration_county_negative_modifier
+                    days = wc_consecration_spell_duration
+                }
             }
             set_variable = {
                 name = consecration_owner
@@ -976,19 +956,15 @@ final_stand_effect = {
         }
         add_piety = 500
         add_prestige = 1500
-        spawn_army = {
-            uses_supply = no
-            inheritable = yes
-            name = wc_army_of_the_templar
-            men_at_arms = {
-                type = armored_footmen
-                stacks = 3
-            }
-            men_at_arms = {
-                type = bombard
-                stacks = 1
-            }
-            location = capital_province
+        create_maa_regiment = {
+            type = armored_footmen
+            size = 3
+            check_can_recruit = no
+        }
+        create_maa_regiment = {
+            type = bombard
+            size = 1
+            check_can_recruit = no
         }
         faith = {
             change_fervor = {
@@ -1052,7 +1028,7 @@ cast_power_word_barrier_effect = {
             if = {
                 limit = { exists = var:power_word_barrier_recipient }
                 var:power_word_barrier_recipient = {
-                    save_temporary_scope_as = this_recipient
+                    save_temporary_scope_as = power_word_barrier_this_recipient
                 }
             }
             else_if = {
@@ -1063,10 +1039,10 @@ cast_power_word_barrier_effect = {
                     exists = var:spell_recipient
                 }
                 var:spell_recipient = {
-                    save_temporary_scope_as = this_recipient
+                    save_temporary_scope_as = power_word_barrier_this_recipient
                 }
             }
-            scope:this_recipient = {
+            scope:power_word_barrier_this_recipient = {
                 add_character_modifier = {
                     modifier = wc_power_word_barrier_modifier
                 }
