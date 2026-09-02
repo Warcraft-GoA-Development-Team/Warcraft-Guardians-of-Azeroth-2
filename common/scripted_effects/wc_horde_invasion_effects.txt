@@ -237,6 +237,17 @@ try_to_set_horde_story_owner = {
 		$OWNER$ = {
 			add_character_modifier = { modifier = great_invader_modifier }
 			trigger_event = { id = wc_horde_invasion.0004 days = 1 } #Spawns Horde troops
+
+			# Truce on Blackrock Mountain
+			title:c_blackrock_depths.holder = { save_scope_as = blackrock_mountain_holder }
+
+			if = {
+				limit = { scope:blackrock_mountain_holder = { has_variable = blackrock_mountain_truce_active_var } }
+				trigger_event = {
+					id = wc_horde_invasion.3010
+					days = { 10 20 }
+				}
+			}
 		}
 		make_story_owner = $OWNER$
 	}
@@ -672,6 +683,9 @@ garona_breakout_effect = { # todo: add this to the normal breakout rules
 }
 
 assassination_of_lane_effect = { 
+	get_story_character = { NAME = garona } # even tho we are in garona scope, this is now needed for 2901
+	get_story_character = { NAME = guldan }
+	scope:story.var:first_war_target = { save_scope_as = stormwind_king }
 	if = { 
 		limit = { 
 			OR = { 
@@ -706,6 +720,13 @@ assassination_of_lane_effect = {
 		scope:story = { 
 			might_lose_garona_hook_effect = { CHANCE = 5 }
 		}
+		if = { 
+			limit = { exists = current_travel_plan }
+			current_travel_plan = { 
+				cancel_travel_plan = yes
+			}
+		}
+		remove_character_flag = assassination_ready
 	}
 }
 
@@ -744,6 +765,7 @@ get_moroes_character_effect = {
 }
 
 medivh_death_effect = { 
+	get_story_character = { NAME = garona }
 	if = {
 		limit = { exists = scope:moroes_character }
 		give_land_to_settler = { TO_WHO = scope:moroes_character COUNTY_NAME = title:c_karazhan GIVE_INDEPENDENCY = yes ADD_CLAIM_ON_LOSS = no }
@@ -851,14 +873,11 @@ medivh_death_effect = {
 					destination = scope:stormwind_king.capital_county.title_province
 					on_arrival_on_action = garona_assassinate_lane_on_action
 					on_arrival_destinations = all
-					return_trip = no
+					return_trip = yes
 				}
 			}
 			else = { 
-				trigger_event = { 
-					on_action = garona_assassinate_lane_on_action
-					days = 7
-				}
+				add_character_flag = assassination_ready
 			}
 		}
 	}
@@ -1002,6 +1021,13 @@ blackdoom_makgora_lore_victory_effect = {
 	}
 
 	scope:blackhand_character = {
+		every_character_war = { 
+			limit = {
+				primary_attacker = this
+				using_cb = mongol_invasion_war
+			}
+			end_war = invalidated
+		}
 		override_death_killer_effect = { 
 			death_reason = death_duel
 			killer = scope:orgrim_character
@@ -1134,6 +1160,471 @@ blackdoom_makgora_alt_victory_effect = {
 		override_death_killer_effect = { 
 			death_reason = death_duel
 			killer = scope:blackhand_character
+		}
+	}
+}
+
+test_WCHI_2000_effect = { 
+	character:10000 = { 
+		random_owned_story = {
+			limit = { type = story_horde_invasion }
+			save_scope_as = story
+		}
+	}
+	trigger_event = wc_horde_invasion.2000
+}
+
+#################################
+# Shadow Council Effects
+#################################
+
+skirmishes_in_blackrock_mountain_effect = {
+	custom_tooltip = skirmishes_in_blackrock_mountain_effect.tt
+
+	hidden_effect = {
+		if = {
+			limit = {
+				exists = scope:skirmish_attacker
+				exists = scope:skirmish_defender
+				exists = scope:skirmish_attacker_liege
+				exists = scope:skirmish_defender_liege
+			}
+
+			# Skirmish
+			scope:skirmish_attacker = {
+				duel = {
+					skill = prowess
+					target = scope:skirmish_defender
+
+					18 = { # Attacker wins
+						compare_modifier = {
+							value = scope:duel_value
+							multiplier = 1
+							min = -15
+						}
+						scope:skirmish_attacker = { save_scope_as = skirmish_winner }
+						scope:skirmish_defender = { save_scope_as = skirmish_loser }
+						scope:skirmish_attacker_liege = { save_scope_as = skirmish_winner_liege }
+						scope:skirmish_defender_liege = { save_scope_as = skirmish_loser_liege }
+					}
+					22 = { # Defender wins
+						compare_modifier = {
+							value = scope:duel_value
+							multiplier = -1
+							min = -15
+						}
+						scope:skirmish_defender = { save_scope_as = skirmish_winner }
+						scope:skirmish_attacker = { save_scope_as = skirmish_loser }
+						scope:skirmish_defender_liege = { save_scope_as = skirmish_winner_liege }
+						scope:skirmish_attacker_liege = { save_scope_as = skirmish_loser_liege }
+					}
+				}
+			}
+
+			scope:skirmish_loser = {
+				random_list = {
+					40 = { } # Shaken, but unhurt
+					45 = {
+						increase_wounds_effect = { REASON = fight }
+
+						# For the loser's own liege
+						scope:skirmish_loser_liege = {
+							send_interface_message = {
+								type = event_slain_combatants_bad
+								title = skirmishes_in_blackrock_mountain_effect.wounded_message.t
+								desc = skirmishes_in_blackrock_mountain_effect.wounded_message.desc
+								left_icon = scope:skirmish_loser
+								right_icon = scope:skirmish_winner
+							}
+						}
+
+						# For the enemy's liege
+						scope:skirmish_winner_liege = {
+							send_interface_message = {
+								type = event_slain_combatants_good
+								title = skirmishes_in_blackrock_mountain_effect.wounded_message.t
+								desc = skirmishes_in_blackrock_mountain_effect.wounded_message.desc
+								left_icon = scope:skirmish_loser
+								right_icon = scope:skirmish_winner
+							}
+						}
+					}
+					15 = { # A killing blow
+						override_death_killer_effect = {
+							death_reason = death_battle
+							killer = scope:skirmish_winner
+						}
+
+						# For the loser's own liege
+						scope:skirmish_loser_liege = {
+							send_interface_message = {
+								type = event_slain_combatants_bad
+								title = skirmishes_in_blackrock_mountain_effect.slain_message.t
+								desc = skirmishes_in_blackrock_mountain_effect.slain_message.desc
+								left_icon = scope:skirmish_loser
+								right_icon = scope:skirmish_winner
+							}
+						}
+
+						# For the enemy's liege
+						scope:skirmish_winner_liege = {
+							send_interface_message = {
+								type = event_slain_combatants_good
+								title = skirmishes_in_blackrock_mountain_effect.slain_message.t
+								desc = skirmishes_in_blackrock_mountain_effect.slain_message.desc
+								left_icon = scope:skirmish_loser
+								right_icon = scope:skirmish_winner
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+negotiate_blackrock_mountain_duel_effect = {
+	scope:negotiator = {
+		duel = {
+			skill = diplomacy
+			target = scope:blackrock_mountain_holder
+
+			99 = { # The negotiator wins them over
+				desc = negotiate_blackrock_mountain_duel_effect.success
+
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = 1
+					min = -15
+				}
+				modifier = { # Well-read negotiators argue more persuasively
+					add = scope:negotiator.learning
+					factor = 0.5
+				}
+				modifier = { # A fellow servant of the Firelord is trusted here
+					add = 15
+					scope:negotiator = {
+						OR = {
+							has_religion = religion:ignism_religion
+							AND = {
+								exists = secret_faith
+								secret_faith = { religion = religion:ignism_religion }
+							}
+						}
+					}
+				}
+				modifier = { # The Old Gods' whispers make for a very convincing tongue
+					add = 15
+					scope:negotiator = {
+						has_faith = faith:twilights_hammer_cult
+					}
+				}
+
+				# Accept
+				scope:shadow_council_master = {
+					show_as_tooltip = { negotiate_blackrock_mountain_accept_effect = yes }
+					trigger_event = {
+						id = wc_horde_invasion.3005
+						days = { 10 14 }
+					}
+				}
+			}
+			1 = { # The talks collapse
+				desc = negotiate_blackrock_mountain_duel_effect.failure
+
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = -1
+					min = -15
+				}
+
+				if = {
+					limit = {
+						exists = scope:skirmish_attacker
+						exists = scope:skirmish_defender
+					}
+					skirmishes_in_blackrock_mountain_effect = yes # Actual fight
+				}
+
+				# Rejection + War
+				negotiate_blackrock_mountain_reject_effect = yes
+				show_as_tooltip = { declare_war_on_blackrock_holder_effect = yes }
+				scope:shadow_council_master = {
+					trigger_event = {
+						id = wc_horde_invasion.3006
+						days = { 10 14 }
+					}
+				}
+			}
+		}
+	}
+}
+
+negotiate_blackrock_mountain_accept_effect = {
+	custom_tooltip = negotiate_blackrock_mountain_accept_effect.partition_active.tt
+
+	take_blackrock_spire_effect = yes
+	take_burning_steppes_effect = yes
+
+	# Truce with the Shadow Council, vassals and the Horde
+	scope:blackrock_mountain_holder = {
+		# Truce variable
+		set_variable = {
+			name = blackrock_mountain_truce_active_var
+			years = 15
+		}
+
+		# Shadow Council
+		add_truce_both_ways = {
+			character = scope:shadow_council_master
+			years = 15
+			name = TRUCE_SIGNED_PARTITION
+		}
+
+		# Vassals
+		scope:shadow_council_master = {
+			every_vassal = {
+				scope:blackrock_mountain_holder = {
+					add_truce_both_ways = {
+						character = prev
+						years = 15
+						name = TRUCE_SIGNED_PARTITION
+					}
+				}
+			}
+		}
+
+		# Horde
+		add_truce_both_ways = {
+			character = scope:shadow_council_master.top_liege
+			years = 15
+			name = TRUCE_SIGNED_PARTITION
+		}
+	}
+
+	# The Shadow Council Master values the negotiator's loyalty
+	scope:shadow_council_master = {
+		add_opinion = {
+			target = scope:negotiator
+			modifier = loyal_servant
+			opinion = 30
+		}
+	}
+}
+
+negotiate_blackrock_mountain_reject_effect = {
+	scope:negotiator = {
+		if = {
+			limit = {
+				can_set_relation_nemesis_trigger = { CHARACTER = scope:blackrock_mountain_holder }
+			}
+			set_relation_nemesis = {
+				reason = nemesis_blackrock_mountain_rejection
+				copy_reason = rival
+				target = scope:blackrock_mountain_holder
+			}
+		}
+		else = {
+			add_opinion = {
+				target = scope:blackrock_mountain_holder
+				modifier = humiliated_opinion
+				opinion = -75
+			}
+		}
+		add_prestige = massive_prestige_loss
+		give_nickname = nick_the_weak
+	}
+}
+
+take_blackrock_spire_effect = {
+	custom_tooltip = {
+		text = take_blackrock_spire_effect.tt
+
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+		}
+
+		title:c_blackrock_spire = { # TODO: After map update, be sure it still work
+			change_title_holder = {
+				holder = scope:shadow_council_master
+				change = scope:change
+				take_baronies = yes
+			}
+
+			# Change culture and faith
+			set_county_culture = scope:shadow_council_master.top_liege.culture
+			set_county_faith = scope:shadow_council_master.faith
+			change_development_level = { # Reset development after the takeover
+				value = {
+					add = development_level
+					multiply = { -0.8 -0.9 }
+				}
+			}
+		}
+
+		resolve_title_and_vassal_change = scope:change
+
+		scope:shadow_council_master = {
+			set_realm_capital = title:c_blackrock_spire
+		}
+	}
+}
+
+take_burning_steppes_effect = {
+	custom_tooltip = {
+		text = take_burning_steppes_effect.tt
+
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+			add_claim_on_loss = no
+		}
+
+		# Every county in the Burning Steppes held by the Blackrock Mountain holder or one of their vassals
+		title:d_redhelm = { # TODO: After map update, be sure it still work
+			every_de_jure_county = {
+				limit = {
+					exists = holder
+					holder = {
+						OR = {
+							this = scope:blackrock_mountain_holder
+							is_vassal_or_below_of = scope:blackrock_mountain_holder
+						}
+					}
+				}
+				change_title_holder = {
+					holder = scope:shadow_council_master
+					change = scope:change
+					take_baronies = yes
+				}
+
+				# Change culture and faith
+				set_county_culture = scope:shadow_council_master.top_liege.culture
+				set_county_faith = scope:shadow_council_master.faith
+				change_development_level = { # Reset development after the takeover
+					value = {
+						add = development_level
+						multiply = { -0.8 -0.9 }
+					}
+				}
+			}
+		}
+		title:d_burning_steppes = { # TODO: After map update, be sure it still work
+			every_de_jure_county = {
+				limit = {
+					exists = holder
+					holder = {
+						OR = {
+							this = scope:blackrock_mountain_holder
+							is_vassal_or_below_of = scope:blackrock_mountain_holder
+						}
+					}
+				}
+				change_title_holder = {
+					holder = scope:shadow_council_master
+					change = scope:change
+					take_baronies = yes
+				}
+
+				# Change culture and faith
+				set_county_culture = scope:shadow_council_master.top_liege.culture
+				set_county_faith = scope:shadow_council_master.faith
+				change_development_level = { # Reset development after the takeover
+					value = {
+						add = development_level
+						multiply = { -0.8 -0.9 }
+					}
+				}
+			}
+		}
+
+		resolve_title_and_vassal_change = scope:change
+	}
+}
+
+take_badlands_effect = {
+	custom_tooltip = {
+		text = take_badlands_effect.tt
+
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+			add_claim_on_loss = no
+		}
+
+		# Every county in the Badlands held by the Blackrock Mountain holder or one of their vassals
+		title:d_badland = { # TODO: After map update, be sure it still work
+			every_de_jure_county = {
+				limit = {
+					exists = holder
+					holder = {
+						OR = {
+							this = scope:blackrock_mountain_holder
+							is_vassal_or_below_of = scope:blackrock_mountain_holder
+						}
+					}
+				}
+				change_title_holder = {
+					holder = scope:negotiator
+					change = scope:change
+					take_baronies = yes
+				}
+
+				# Change culture and faith
+				set_county_culture = scope:negotiator.culture
+				set_county_faith = scope:negotiator.faith
+				change_development_level = { # Reset development after the takeover
+					value = {
+						add = development_level
+						multiply = { -0.8 -0.9 }
+					}
+				}
+			}
+		}
+		title:d_lethlor = { # TODO: After map update, be sure it still work
+			every_de_jure_county = {
+				limit = {
+					exists = holder
+					holder = {
+						OR = {
+							this = scope:blackrock_mountain_holder
+							is_vassal_or_below_of = scope:blackrock_mountain_holder
+						}
+					}
+				}
+				change_title_holder = {
+					holder = scope:negotiator
+					change = scope:change
+					take_baronies = yes
+				}
+
+				# Change culture and faith
+				set_county_culture = scope:negotiator.culture
+				set_county_faith = scope:negotiator.faith
+				change_development_level = { # Reset development after the takeover
+					value = {
+						add = development_level
+						multiply = { -0.8 -0.9 }
+					}
+				}
+			}
+		}
+
+		resolve_title_and_vassal_change = scope:change
+	}
+}
+
+declare_war_on_blackrock_holder_effect = {
+	scope:shadow_council_master = {
+		add_character_flag = {
+			flag = free_mongol_cb
+			days = 14
+		}
+		start_war = {
+			cb = mongol_invasion_war
+			target = scope:blackrock_mountain_holder
+			target_title = title:k_shadowforge
 		}
 	}
 }
