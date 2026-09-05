@@ -357,6 +357,20 @@ wc_balnazzar_story.1001 = {
 			}
 		}
 
+		# Console tests and old saves can reach this event before the setup event.
+		# Self-heal the story reference before transferring its owner.
+		if = {
+			limit = { NOT = { exists = global_var:balnazzar_dreadlord_story } }
+			create_story = {
+				type = story_balnazzar_dreadlord
+				save_scope_as = wc_balnazzar_recovered_story
+			}
+			set_global_variable = {
+				name = balnazzar_dreadlord_story
+				value = scope:wc_balnazzar_recovered_story
+			}
+		}
+
 		# Trait/secret/perk changes render natively in the confirm panel.
 			scope:dathrohan = {
 				# Possession burns off Dathrohan's age-related decline.
@@ -585,12 +599,22 @@ wc_balnazzar_story.1005 = {
 			start_scheme = {
 				type = murder
 				target_character = character:60017 # Alexandros Mograine
+			}
+			random_scheme = {
+				type = murder
+				limit = {
+					scheme_owner = root
+					scheme_target_character = character:60017
+				}
 				save_scope_as = balnazzar_alexandros_murder_scheme
 			}
-			character:60017 = {
-				add_character_flag = wc_balnazzar_alexandros_marked_for_murder
+			if = {
+				limit = { exists = scope:balnazzar_alexandros_murder_scheme }
+				character:60017 = {
+					add_character_flag = wc_balnazzar_alexandros_marked_for_murder
+				}
+				wc_balnazzar_force_renault_as_assassin_effect = yes
 			}
-			wc_balnazzar_force_renault_as_assassin_effect = yes
 		}
 	}
 
@@ -671,6 +695,13 @@ wc_balnazzar_story.1007 = {
 	desc = wc_balnazzar_story.1007.desc
 	theme = intrigue
 
+	trigger = {
+		is_alive = yes
+		has_character_flag = wc_balnazzar_disguise_active
+		exists = global_var:balnazzar_dreadlord_story
+		global_var:balnazzar_dreadlord_story = { story_owner = root }
+	}
+
 	# Another major beat, same big_event_window as .1001.
 	window = big_event_window
 
@@ -687,6 +718,7 @@ wc_balnazzar_story.1007 = {
 
 	immediate = {
 		character:60019 = { save_scope_as = renault }
+		character:60020 = { save_scope_as = darion }
 	}
 
 	# .1007.b is the fallback if Renault is dead/missing by this point.
@@ -695,6 +727,32 @@ wc_balnazzar_story.1007 = {
 
 		trigger = {
 			scope:renault = { is_alive = yes }
+		}
+
+		# Renault leaves the blade behind after murdering Alexandros. Darion
+		# recovers it instead of letting the killer inherit it permanently.
+		hidden_effect = {
+			if = {
+				limit = { scope:darion = { is_alive = yes } }
+				scope:renault = {
+					every_character_artifact = {
+						limit = {
+							OR = {
+								has_variable = ashbringer
+								has_variable = corrupted_ashbringer
+							}
+						}
+						set_owner = {
+							target = scope:darion
+							history = {
+								type = inherited
+								recipient = scope:darion
+							}
+						}
+						equip_artifact_to_owner_replace = yes
+					}
+				}
+			}
 		}
 
 		# Title/faith/culture/army changes render natively in the confirm panel.
@@ -941,84 +999,105 @@ wc_balnazzar_story.2000 = {
 					save_scope_as = resurrected_character
 				}
 
-				# Take every ordinary duchy personally held by the host; fall back to the capital county.
+				# Tyr's Hand is the fixed core. Prefer the host's current capital duchy
+				# as the dynamic second duchy; if the capital is already in Tyr's Hand,
+				# use another ordinary duchy the host personally holds.
+				# Light's Hope remains a living enclave, and foreign-held land is untouched.
 				root.capital_county = {
 					save_scope_as = wc_balnazzar_risen_capital
 				}
-				if = {
-					limit = {
-						any_held_title = {
-							tier = tier_duchy
-							is_landless_type_title = no
-							is_nomad_title = no
+				root = {
+					if = {
+						limit = {
+							capital_county.duchy = {
+								NOT = { this = title:d_tyrs_hand }
+							}
+						}
+						capital_county.duchy = {
+							save_scope_as = wc_balnazzar_risen_dynamic_duchy
 						}
 					}
-					every_held_title = {
-						limit = {
-							tier = tier_duchy
-							is_landless_type_title = no
-							is_nomad_title = no
+					else = {
+						random_held_title = {
+							title_tier = duchy
+							limit = {
+								NOT = { this = title:d_tyrs_hand }
+								is_landless_type_title = no
+								is_nomad_title = no
+							}
+							save_scope_as = wc_balnazzar_risen_dynamic_duchy
 						}
-						add_to_list = wc_balnazzar_risen_duchies
-						save_scope_as = wc_balnazzar_risen_fallback_duchy
+					}
+				}
+				title:d_tyrs_hand = {
+					every_de_jure_county = {
+						limit = {
+							NOT = { this = title:c_lights_hope }
+							exists = holder
+							holder = {
+								OR = {
+									this = root
+									is_vassal_or_below_of = root
+								}
+							}
+						}
+						add_to_list = wc_balnazzar_risen_counties
+					}
+				}
+				if = {
+					limit = {
+						exists = scope:wc_balnazzar_risen_dynamic_duchy
+						scope:wc_balnazzar_risen_dynamic_duchy = {
+							NOT = { this = title:d_tyrs_hand }
+						}
+					}
+					scope:wc_balnazzar_risen_dynamic_duchy = {
 						every_de_jure_county = {
 							limit = {
-								county_held_or_vassal_to_target_trigger = { TARGET = root }
+								exists = holder
+								holder = {
+									OR = {
+										this = root
+										is_vassal_or_below_of = root
+									}
+								}
 							}
 							add_to_list = wc_balnazzar_risen_counties
 						}
 					}
 				}
-				else = {
-					scope:wc_balnazzar_risen_capital = { add_to_list = wc_balnazzar_risen_counties }
-				}
-
-				# type = granted, not "independence" (invalid, fails "No type set" at read-time).
-				create_title_and_vassal_change = {
-					type = granted
-					save_scope_as = balnazzar_reveal_title_change
-					add_claim_on_loss = no
-				}
-				if = {
-					limit = {
-						any_held_title = {
-							tier = tier_duchy
-							is_landless_type_title = no
-							is_nomad_title = no
-						}
-					}
-					every_in_list = {
-						list = wc_balnazzar_risen_duchies
-						every_de_jure_county = {
+				# Seed the list so the duplicate guard is valid for the first holder.
+				root = { add_to_list = wc_balnazzar_risen_vassals }
+				every_in_list = {
+					list = wc_balnazzar_risen_counties
+					holder = {
+						if = {
 							limit = {
-								holder = root
-								this != scope:wc_balnazzar_risen_capital
+								NOT = { this = root }
+								is_vassal_or_below_of = root
+								NOT = { is_in_list = wc_balnazzar_risen_vassals }
 							}
-								change_title_holder_include_vassals = {
-									holder = scope:resurrected_character
-									change = scope:balnazzar_reveal_title_change
-									take_baronies = yes
-								}
-						}
-						change_title_holder_include_vassals = {
-							holder = scope:resurrected_character
-							change = scope:balnazzar_reveal_title_change
-							take_baronies = yes
+							add_to_list = wc_balnazzar_risen_vassals
 						}
 					}
 				}
-				# A titular duchy alone is not playable. Always give Balnazzar the
-				# host's capital county directly before changing player character.
-				scope:wc_balnazzar_risen_capital = {
-					change_title_holder_include_vassals = {
-						holder = scope:resurrected_character
-						change = scope:balnazzar_reveal_title_change
-						take_baronies = yes
+				root = { remove_from_list = wc_balnazzar_risen_vassals }
+				title:c_lights_hope = {
+					if = {
+						limit = {
+							exists = holder
+							holder = {
+								is_alive = yes
+								NOT = { this = root }
+								is_vassal_or_below_of = root
+							}
+						}
+						holder = { save_scope_as = wc_balnazzar_argent_enclave }
 					}
 				}
-				resolve_title_and_vassal_change = scope:balnazzar_reveal_title_change
 
-				# The Risen are a personal host, not a renamed piece of the old realm.
+				# Create the titular realm before moving vassals so on_vassal_gained
+				# recognizes Balnazzar as the revealed ruler of the Risen.
 				if = {
 					limit = { title:d_wc_the_risen = { NOT = { exists = holder } } }
 					create_title_and_vassal_change = {
@@ -1040,10 +1119,89 @@ wc_balnazzar_story.2000 = {
 						set_primary_title_to = title:d_wc_the_risen
 					}
 				}
-				else_if = {
-					limit = { scope:wc_balnazzar_risen_fallback_duchy = { holder = scope:resurrected_character } }
-					scope:resurrected_character = {
-						set_primary_title_to = scope:wc_balnazzar_risen_fallback_duchy
+
+				# Keep the two target duchies, personal counties, and county-holder
+				# vassal trees together. Vassal county holders keep their own titles.
+				create_title_and_vassal_change = {
+					type = granted
+					save_scope_as = balnazzar_reveal_title_change
+					add_claim_on_loss = no
+				}
+				title:d_tyrs_hand = {
+					if = {
+						limit = { holder = root }
+						change_title_holder = {
+							holder = scope:resurrected_character
+							change = scope:balnazzar_reveal_title_change
+							take_baronies = no
+						}
+					}
+				}
+				if = {
+					limit = {
+						exists = scope:wc_balnazzar_risen_dynamic_duchy
+						scope:wc_balnazzar_risen_dynamic_duchy = {
+							NOT = { this = title:d_tyrs_hand }
+							holder = root
+						}
+					}
+					scope:wc_balnazzar_risen_dynamic_duchy = {
+						change_title_holder = {
+							holder = scope:resurrected_character
+							change = scope:balnazzar_reveal_title_change
+							take_baronies = no
+						}
+					}
+				}
+				every_in_list = {
+					list = wc_balnazzar_risen_counties
+					if = {
+						limit = { holder = root }
+						change_title_holder = {
+							holder = scope:resurrected_character
+							change = scope:balnazzar_reveal_title_change
+							take_baronies = yes
+						}
+					}
+				}
+				every_in_list = {
+					list = wc_balnazzar_risen_vassals
+					change_liege = {
+						liege = scope:resurrected_character
+						change = scope:balnazzar_reveal_title_change
+					}
+				}
+				resolve_title_and_vassal_change = scope:balnazzar_reveal_title_change
+
+				# Existing undead still need Balnazzar's faith; living vassals and their
+				# descendants are raised without flooding the player with notifications.
+				every_in_list = {
+					list = wc_balnazzar_risen_vassals
+					if = {
+						limit = {
+							is_alive = yes
+							NOT = { has_trait = being_undead }
+						}
+						raise_undead_faith_only_no_notification_effect = { MASTER = scope:resurrected_character }
+					}
+					else_if = {
+						limit = { is_alive = yes }
+						set_character_faith_with_conversion = scope:resurrected_character.faith
+					}
+					if = {
+						limit = { is_alive = yes }
+						add_opinion = { modifier = loyal_undead target = scope:resurrected_character }
+					}
+					every_vassal_or_below = {
+						limit = { is_alive = yes }
+						if = {
+							limit = { NOT = { has_trait = being_undead } }
+							raise_undead_faith_only_no_notification_effect = { MASTER = scope:resurrected_character }
+						}
+						else = {
+							set_character_faith_with_conversion = scope:resurrected_character.faith
+						}
+						add_opinion = { modifier = loyal_undead target = scope:resurrected_character }
 					}
 				}
 
@@ -1083,6 +1241,77 @@ wc_balnazzar_story.2000 = {
 				resolve_title_and_vassal_change = scope:balnazzar_independence_change
 				scope:resurrected_character = {
 					check_available_government_effect = yes
+				}
+
+				# Light's Hope survives as a living Argent enclave rather than passing
+				# to either Balnazzar or the new Scarlet ruler.
+				if = {
+					limit = { exists = scope:wc_balnazzar_argent_enclave }
+					create_title_and_vassal_change = {
+						type = independency
+						save_scope_as = wc_balnazzar_argent_independence_change
+						add_claim_on_loss = no
+					}
+					scope:wc_balnazzar_argent_enclave = {
+						becomes_independent = { change = scope:wc_balnazzar_argent_independence_change }
+					}
+					resolve_title_and_vassal_change = scope:wc_balnazzar_argent_independence_change
+					scope:wc_balnazzar_argent_enclave = {
+						set_character_faith_with_conversion = faith:argent
+					}
+					title:c_lights_hope = { set_county_faith = faith:argent }
+				}
+
+				# The old Scarlet realm survives under a mortal Scarlet successor.
+				if = {
+					limit = {
+						character:60019 = {
+							is_alive = yes
+							has_trait = creature_human
+							NOT = { has_trait = being_undead }
+						}
+					}
+					character:60019 = { save_scope_as = wc_balnazzar_scarlet_successor }
+				}
+				else = {
+					random_vassal = {
+						limit = {
+							is_alive = yes
+							has_trait = creature_human
+							NOT = { has_trait = being_undead }
+							has_faith = faith:scarletism
+						}
+						save_scope_as = wc_balnazzar_scarlet_successor
+					}
+				}
+				if = {
+					limit = {
+						exists = scope:wc_balnazzar_scarlet_successor
+						title:k_order_of_the_silver_hand = { holder = root }
+					}
+					create_title_and_vassal_change = {
+						type = granted
+						save_scope_as = wc_balnazzar_scarlet_title_change
+						add_claim_on_loss = no
+					}
+					every_held_title = {
+						limit = {
+							tier = tier_duchy
+							de_jure_liege = title:k_order_of_the_silver_hand
+						}
+						change_title_holder_include_vassals = {
+							holder = scope:wc_balnazzar_scarlet_successor
+							change = scope:wc_balnazzar_scarlet_title_change
+						}
+					}
+					title:k_order_of_the_silver_hand = {
+						change_title_holder = {
+							holder = scope:wc_balnazzar_scarlet_successor
+							change = scope:wc_balnazzar_scarlet_title_change
+							take_baronies = no
+						}
+					}
+					resolve_title_and_vassal_change = scope:wc_balnazzar_scarlet_title_change
 				}
 
 				# Former Scarlet guards and casters rise twisted, but recognizable.
