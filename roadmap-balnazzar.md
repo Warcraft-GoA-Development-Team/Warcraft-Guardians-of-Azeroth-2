@@ -34,6 +34,8 @@ Exit gate: no supported player state can silently stall the chain.
 
 - [x] Preserve every magical school and perk Balnazzar acquired while respecting Saidan's magic-secrecy rules.
 - [x] Skip magic perks already present on the possessed body instead of producing duplicate `add_perk` errors.
+- [x] Preserve the union of source/body Intrigue perks, remove Light perks and points, and block disease contraction through the existing disguise flag without taking ownership of vanilla immunity.
+- [x] Repair already possessed saves once on the next 30–60 day story tick.
 - [x] Restrict automatic undead-vassal conversion to revealed Balnazzar while he holds `d_wc_the_risen`.
 - [ ] Verify Balnazzar-to-Dathrohan player transfer, titles, court, gold, magic traits, perks, secrets, and story ownership.
 - [ ] Verify `.1007` de jure changes and vassal conversions do not damage unrelated realms.
@@ -86,9 +88,9 @@ Exit gate: static checks pass, the complete in-game path passes, the fresh log i
 - [x] Restrict the interaction to the human-controlled, still-hidden Balnazzar story owner after the Scarlet Crusade forms.
 - [x] Preserve Balnazzar's magic, disguise secret, story ownership, and player control in the new human ruler.
 - [x] Kill the abandoned mortal shell only after player control moves.
-- [x] Make Dathrohan's reveal seize held Tyr's Hand except Light's Hope plus the host's capital duchy, falling back to another personally held duchy when the capital is already in Tyr's Hand.
+- [x] Make Dathrohan's reveal seize held Tyr's Hand except Light's Hope plus the host's capital duchy, falling back to another personally held duchy when the capital is already in Tyr's Hand; later bodies transfer only their capital county.
 - [x] Preserve relevant direct vassal trees instead of confiscating their county titles; explicitly raise them and align existing undead with Balnazzar's faith.
-- [x] Transfer the selected counties' holders directly instead of relying on their place in the Scarlet hierarchy, prevent the Scarlet succession handoff from reclaiming them, and leave Light's Hope as an independent Argent enclave.
+- [x] Detach Light's Hope and its subrealm as an independent Argent enclave before collecting or raising Risen vassals; transfer the selected counties' remaining holders directly and prevent the Scarlet succession handoff from reclaiming them.
 - [x] Preserve raised characters' cultures and avoid converting unrelated Scarlet Crusade territory.
 - [x] Resolve the second duchy from the current host's capital, including after a later body transfer.
 - [x] Use the Nathrezim trait icon for the possession interaction.
@@ -125,7 +127,7 @@ Exit gate: hidden play produces readable counter-pressure and exposure changes t
 
 ## Phase 10 — 1000-series consistency pass
 
-Scope this pass to `wc_balnazzar_story.1001` through `.1011`. Do not add Argent or Light's Hope content until their earlier history has its own supported arc.
+Scope this pass to `wc_balnazzar_story.1001` through `.1012`. Do not add Argent or Light's Hope content until their earlier history has its own supported arc.
 
 - [x] Label canon and alternate-history beats honestly in the staged-death, Ashbringer, vessel, suspicion, and Risen design notes. Player-facing tooltips describe mechanics without presenting them as historical canon.
 - [x] Treat staged death, Dathrohan possession, Scarlet corruption, Stratholme exposure, and the later Risen as the canon spine.
@@ -133,8 +135,44 @@ Scope this pass to `wc_balnazzar_story.1001` through `.1011`. Do not add Argent 
 - [x] Reduce repeated `mask`, `face`, `lie`, and `throne as scaffolding` imagery; preserve the user-approved `.1001`, rename `.1002` to `Borrowed Authority`, and keep Renault's knowledge grounded in observed conduct or reports.
 - [x] Keep the concrete scene craft already working in `.0110`, `.0111`, and the opening of `.1005`; keep numerical mechanics in tooltips.
 - [x] Bridge the murder scheme at 15 and 65 percent visible success chance: `.1010` builds Renault's Darion bait, `.1011` sends Alexandros and Fairbanks toward Stratholme, and `.1006` reaches Balnazzar as Renault's report.
+- [x] Add `.1012` six months after `.1007.a`: living, free, non-undead Fairbanks publicly accuses Renault and Dathrohan while the player still controls the disguised Dathrohan story owner. The lore reaction imprisons him and adds 2 suspicion; letting him leave adds 4 suspicion.
 
 Exit gate: the lore reviewer finds no accidental canon claim, the narrative reviewer finds no blocking repetition or omniscience, and the user approves every changed line.
+
+## Phase 11 — Fairbanks fallout and the late Risen endpoint
+
+Keep two canon periods separate. Fairbanks's accusation is an early Scarlet Crusade crisis. The Risen appear much later, after the Scarlet Crusade has fallen in Stratholme.
+
+### Established lore
+
+- [x] Fairbanks survives the Stratholme ambush, returns to Hearthglen, and accuses Renault and Dathrohan. Those who believe him split away and found the Argent Dawn.
+- [x] Dathrohan-Balnazzar rejects the accusation, presents Fairbanks as blasphemous or plague-tainted, and has him executed. Fairbanks later exists as an undead hidden in the Scarlet Monastery; his testimony survives into the later Silver Hand record.
+- [x] The Risen are not the immediate result of this accusation. After the Scarlet Crusade's later collapse, Balnazzar abandons Dathrohan's body, kills the remaining crusaders in Stratholme, and raises them as the Risen.
+- [x] Argent forces and adventurers stop the Risen expansion at Stratholme. Balnazzar later returns during Legion and attacks Netherlight Temple, where priests and paladins defeat him together.
+
+Sources: *World of Warcraft: Ashbringer* via the [Fairbanks source map](https://warcraft.wiki.gg/wiki/High_Inquisitor_Fairbanks); the Cataclysm quest [The Dreadlord Balnazzar](https://www.wowhead.com/quest=27208/the-dreadlord-balnazzar); the Legion quests [United As One](https://www.wowhead.com/quest=43397/united-as-one) and [A Light in the Darkness](https://www.wowhead.com/quest=43401/a-light-in-the-darkness).
+
+### GoA2 work
+
+- [x] Write a separate design spec for the consequences of `.1012`: the split, Fairbanks's fate, and the minimum bridge into existing Argent content.
+- [x] Reuse `faith:argent`, `e_argent_dawn`, and hidden `argent.1000`; leave `form_the_argent_dawn_decision` as the normal player path and do not duplicate its army or costs. `d_argent_dawn` has no mechanical title definition in this checkout.
+- [x] Use Raymond George, the existing first Argent leader, for the breakaway when he still holds Light's Hope. Represent Fairbanks's later undead state on his stable historical ID instead of creating a replacement character.
+- [x] Keep `.2000` reactive and player-driven. `.1013` handles the Argent split for either reaction; it schedules `.1014` only when the lore reaction left Fairbanks alive and imprisoned. Neither event triggers or mutates the Risen reveal.
+- [x] Let `.1012` use the shared suspicion threshold: if Fairbanks's accusation pushes suspicion to 9, `.2000` may expose Balnazzar as an alternate reactive outcome, not as the scheduled lore chronology.
+- [x] Keep the Argent split in hidden `.1013`, then show Fairbanks's undead fate in `.1014` only on the lore reaction. The user explicitly authorized its English localization.
+- [ ] If the Risen arc gains a conclusion, use the canonical Stratholme counterattack as its first endpoint. Treat Netherlight Temple as a separate long-horizon 615-era capstone, not the next event.
+- [ ] Do not call Balnazzar's Netherlight defeat permanent without stronger primary-source confirmation than the current quest objective.
+
+Exit gate: Fairbanks can cause the Argent split without duplicating existing systems, and the early Scarlet crisis remains chronologically distinct from the Cataclysm-era Risen and Legion-era Netherlight defeat.
+
+### Parked follow-up — standalone Argent Dawn branch
+
+This is not a completion gate for the Balnazzar branch. After Balnazzar is merged, start `feat/code/argentdawn` from the updated `dev` branch.
+
+- [ ] Build a self-contained Argent Dawn arc that works without the Balnazzar campaign.
+- [ ] Recognize and preserve an Argent Dawn already created by the minimal `.1013` bridge instead of founding it twice.
+- [ ] Own the visible founding narrative, leadership succession, Light's Hope development, and any broader use of `form_the_argent_dawn_decision` there.
+- [ ] Keep only the accusation's direct consequences in the Balnazzar chain; do not move generic Argent systems into this branch.
 
 ## Immediate in-game test
 
@@ -145,8 +183,16 @@ Use a fresh 605.6.6 Balnazzar game; the existing 2026-09-03 logs predate this ch
 - [ ] Confirm Sylvanas receives every landed title and vassal, Balnazzar becomes a landless adventurer, and no duplicate transition fires.
 - [ ] Confirm the Dathrohan decision becomes available immediately after the landless transition.
 - [ ] Take the Dathrohan decision and confirm control, story ownership, magic, titles, court, and gold transfer correctly.
+- [ ] Repeat with Alexandros dying during the delay before `.1003`; confirm only the Scarlet branch stops and the disguised Balnazzar can still prepare another vessel or reveal later.
+- [ ] Confirm a fresh and migrated possessed body keeps both sets of Intrigue perks, has no Light perks or points, cannot contract a new disease, retains existing disease state, preserves unrelated vanilla immunity on reveal, and clears legacy disguise-owned immunity during migration.
 - [ ] Confirm pre-existing perks on Saidan are skipped and a fresh `error.log` contains no duplicate `add_perk` error.
-- [x] Trigger `.2000` as Dathrohan and confirm held Tyr's Hand plus the current capital duchy convert, their selected vassal trees remain under the Risen, Light's Hope becomes an independent Argent enclave, and unrelated Scarlet lands remain unchanged. Confirmed in game on 2026-09-05.
+- [ ] Accept `.1007.a`, wait six months, and confirm `.1012` shows living, free Fairbanks and living Renault only when available. Take the lore reaction: confirm Fairbanks is imprisoned and suspicion rises by 2.
+- [ ] Repeat with Renault dead and confirm the popup remains without his portrait. Take the alternate reaction: confirm Fairbanks remains free and suspicion rises by 4. Separately test Fairbanks dead, imprisoned, undead, and the Dathrohan disguise removed; confirm each suppresses the popup.
+- [ ] Repeat both reactions close to 9 suspicion and confirm the existing exposure threshold queues `.2000` exactly once.
+- [ ] One month after `.1012`, confirm `.1013` makes living Raymond's Light's Hope an independent Argent enclave after either reaction, without spawning the decision army. Repeat with Raymond dead/displaced and with `e_argent_dawn` already held; confirm existing state is preserved.
+- [ ] Six months after `.1013`, confirm `.1014` gives still-living Fairbanks `being_undead` only while he remains Dathrohan's prisoner and Balnazzar still owns the disguised story. Confirm the Scarlet Monastery scene shows undead Fairbanks and does not appear after the alternate reaction.
+- [ ] Trigger `.2000` as Dathrohan while the living `faith:argent` holder of `title:c_lights_hope` remains in the realm; confirm that holder and their subrealm leave before the Risen transfer, remain living and Argent, and unrelated Scarlet lands remain unchanged.
+- [ ] Trigger `.2000` after a body-hop and confirm only the current host's capital county transfers to the Risen; every other duchy and county remains behind.
 - [ ] As another revealed Nathrezim, gain a living vassal and confirm the Balnazzar/Risen undead cascade does not fire.
 - [ ] In a separate save, ignore the decision and lose Lordaeron or accept vassalization; confirm the fallback reaches the same landless state.
 - [ ] Repeat once without Roads to Power and record whether the landless transition is supported or must be gated.
@@ -155,6 +201,7 @@ Use a fresh 605.6.6 Balnazzar game; the existing 2026-09-03 logs predate this ch
 ## Out of scope for this branch
 
 - A new Balnazzar campaign, scheme type, custom interface, or general dreadlord framework.
+- The standalone Argent Dawn campaign parked for `feat/code/argentdawn` after this branch is merged.
 - Retconning unrelated Warcraft history to fit this story.
 - Broad narrative rewrites outside the staged-death transition.
 - Broad cleanup of copied vanilla systems exposed only through Tiger's total-conversion baseline.
