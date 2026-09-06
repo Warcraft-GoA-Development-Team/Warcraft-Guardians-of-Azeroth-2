@@ -46,15 +46,15 @@ Exit gate: possession and revelation survive save/reload and preserve unrelated 
 ## Phase 4 — Human lore and narrative revision
 
 - [x] Correct `thal'kituun` to the canonical meaning “unseen guest(s)”.
-- [ ] Resolve the post-Archimonde chronology and the bookmark contradiction about following his commands.
-- [ ] Review Detheroc's description so defeat on Azeroth is not confused with permanent destruction.
+- [x] Resolve the post-Archimonde chronology and the bookmark contradiction about following his commands. The 605 description treats Archimonde as already dead and presents revenge against the Lich King as Balnazzar's possible response to the Legion's defeat, not a documented personal order from Kil'jaeden.
+- [x] Review Detheroc's presentation so defeat on Azeroth is not confused with permanent destruction. No player-facing Detheroc description exists in current English localization. A history comment calls his 605 defeat a banishment, although the implemented death reason remains the generic `death_battle`; no unsupported narrative rewrite was added.
 - [x] Correct Brigitte Abbendis's gender reference.
-- [ ] Clarify Dathrohan's identity and rank after possession.
-- [ ] Remove writer-only knowledge of Renault's internal thoughts unless Balnazzar has evidence for it.
-- [ ] Move numerical and progression mechanics out of narrative prose and into tooltips.
+- [x] Clarify Dathrohan's identity after possession. `.1002` establishes the stolen identity, while `.1003` shows Balnazzar using Dathrohan's authority without inventing an unsupported canonical rank.
+- [x] Remove writer-only knowledge of Renault's internal thoughts unless Balnazzar has evidence for it. `.1005` uses observed behavior and Balnazzar's questions; `.1006` depicts the murder and its visible consequences directly.
+- [x] Move numerical and progression mechanics out of narrative prose and into tooltips. Current Balnazzar event prose contains no exposed numerical progression instructions.
 - [x] Preserve the user-approved comic-adjacent passage in `.1001`; do not rewrite it during later editorial passes.
-- [ ] Reduce repeated motifs and cadence while preserving Balnazzar's calculating, contemptuous voice.
-- [ ] Check the longest descriptions in the real event window and shorten them where the UI requires it.
+- [x] Reduce repeated motifs and cadence while preserving Balnazzar's calculating, contemptuous voice. The repeated possession title and stacked triplets in `.1007`/`.2001` were replaced with concrete scene language; the evolving face/mask motif remains intentional.
+- [x] Check the longest descriptions against their event windows. `.1001`, `.1007`, `.2000`, and `.2001` use `big_event_window`; the reviewer found no remaining blocking length issue, and the user-approved `.1001` remains untouched.
 
 Exit gate: lore accuracy and narrative-localization reviewers report no blocking issue, and the user approves every changed player-facing line.
 
@@ -101,33 +101,38 @@ Exit gate: repeated hidden possession works without stale scheme state, Dathroha
 
 ## Phase 8 — Rebuild the Scarlet corruption chronology
 
-- [ ] Reorder the core arc to: staged death → Dathrohan possession → collective Scarlet founding → gradual corruption → Renault manipulation → Alexandros's death → Balnazzar's seizure and radicalization → Stratholme → the Risen.
-- [ ] Add a focused Scarlet Conclave scene with Alexandros, Dathrohan, Abbendis, Isillien, Fairbanks, and Renault as an observer when useful.
-- [ ] Recast `.1007` as Balnazzar's seizure and radicalization of an existing Scarlet Crusade, not its instant creation after Alexandros dies.
-- [ ] Review the primary _Ashbringer_ chronology before changing ownership: Renault strikes Alexandros, the Ashbringer is corrupted, and Alexandros retains it after being raised; reserve Darion's acquisition for a later Naxxramas arc.
-- [ ] Make the Kel'Thuzad choice mechanically distinct: acceptance buys easier murder or undead aid at the cost of a future debt; refusal keeps independence but makes the route harder.
-- [ ] Write Balnazzar and Kel'Thuzad as mutually distrustful partners of convenience, never old allies.
+- [x] Supersede the pre-death founding design with `docs/superpowers/specs/2026-09-05-balnazzar-ashbringer-chronology-design.md`.
+- [x] Reorder the core arc to: staged death → Dathrohan possession → final Silver Hand council → Kel'Thuzad pact → Renault manipulation → Alexandros's death and raising → Balnazzar reforms the remnants as the Scarlet Crusade → Stratholme → the Risen.
+- [x] Add a focused final Silver Hand council with Alexandros, Dathrohan, Abbendis, Isillien, and Fairbanks when alive, without founding the Scarlet Crusade early.
+- [x] Recast `.1007` as Balnazzar's post-mortem reorganization of the surviving Silver Hand into the Scarlet Crusade; keep its separate 56-stack founding army removed instead of confusing it with the 24-stack Risen reveal army.
+- [x] Preserve the primary _Ashbringer_ chronology: Renault strikes Alexandros, the Ashbringer is corrupted, and Alexandros retains it after being raised; reserve Darion's acquisition for a later Naxxramas arc.
+- [x] Make the Kel'Thuzad choice mechanically distinct: acceptance buys easier murder and Alexandros's resurrection at the cost of a favor hook; refusal keeps independence but makes the route harder and leaves the corrupted blade with Renault.
+- [x] Write Balnazzar and Kel'Thuzad as mutually distrustful partners of convenience, never old allies.
 
-Exit gate: the Scarlet Crusade exists before Alexandros's death, Ashbringer continuity is not compressed, and both pact branches have distinct consequences.
+Exit gate: Alexandros remains Highlord of the Silver Hand until his death, Balnazzar creates the Scarlet Crusade afterward, Ashbringer continuity is not compressed, and both pact branches have distinct consequences.
+
+Validated in game on 2026-09-06, including `.1006`, Corrupted Ashbringer, and the post-transfer Scarlet founding.
 
 ## Phase 9 — Make secrecy and revelation reactive
 
-- [ ] Add one lightweight suspicion value with three thresholds: odd behavior, formal investigation, then exposure or confrontation.
-- [ ] Raise suspicion from purges, visible forbidden magic, and repeated body changes; lower it through manipulation, imprisonment, or eliminating informed witnesses.
-- [ ] Split revelation by host context: Dathrohan uses Tyr's Hand except Light's Hope; later vessels use only their current personal base.
-- [ ] Add `The Light Still Burns` as the immediate reaction to the Risen, making Light's Hope the sacred resistance point and first post-reveal antagonist.
-- [ ] Add a focused objective or war to extinguish or corrupt Light's Hope, plus a Scarlet or Argent reaction.
+- [x] Add one lightweight suspicion value with three thresholds: odd behavior, formal investigation, then exposure or confrontation.
+- [x] Raise suspicion from purges in living, non-Mord'truari counties; lower it through manipulation, imprisonment, eliminating informed witnesses, or a successful change of body that breaks the trail.
+- [ ] Add suspicion from visible forbidden magic only after the shared magic runtime exposes a reliable witnessed-cast signal.
+- [x] Split revelation by host context: Dathrohan uses Tyr's Hand except Light's Hope; later vessels use only their current personal base.
 - [ ] Do not add another culture, faith, government, or generic Nathrezim framework unless playtests expose a concrete mechanical need.
 
-Exit gate: hidden play produces readable counter-pressure, exposure changes the campaign, and Light's Hope matters without expanding the system beyond Balnazzar.
+Exit gate: hidden play produces readable counter-pressure and exposure changes the campaign without expanding the system beyond Balnazzar.
 
-## Phase 10 — Narrative consistency pass
+## Phase 10 — 1000-series consistency pass
 
-- [ ] Label canon and alternate-history beats honestly in design notes and tooltips where needed.
-- [ ] Treat staged death, Dathrohan possession, Scarlet corruption, Stratholme exposure, and the later Risen as the canon spine.
-- [ ] Treat repeat body-hopping, the Tyr's Hand-wide transformation, the sovereign Risen title, and collective Sargerite conversion as explicit GoA2 player-driven departures.
-- [ ] Reduce repeated `mask`, `face`, `lie`, and `throne as scaffolding` imagery; avoid polished triplets and narrator omniscience about Renault.
-- [ ] Keep the concrete scene craft already working in `.0110`, `.0111`, and the opening of `.1005`; keep mechanics in tooltips.
+Scope this pass to `wc_balnazzar_story.1001` through `.1011`. Do not add Argent or Light's Hope content until their earlier history has its own supported arc.
+
+- [x] Label canon and alternate-history beats honestly in the staged-death, Ashbringer, vessel, suspicion, and Risen design notes. Player-facing tooltips describe mechanics without presenting them as historical canon.
+- [x] Treat staged death, Dathrohan possession, Scarlet corruption, Stratholme exposure, and the later Risen as the canon spine.
+- [x] Treat repeat body-hopping, the Tyr's Hand-wide transformation, the sovereign Risen title, and collective Sargerite conversion as explicit GoA2 player-driven departures.
+- [x] Reduce repeated `mask`, `face`, `lie`, and `throne as scaffolding` imagery; preserve the user-approved `.1001`, rename `.1002` to `Borrowed Authority`, and keep Renault's knowledge grounded in observed conduct or reports.
+- [x] Keep the concrete scene craft already working in `.0110`, `.0111`, and the opening of `.1005`; keep numerical mechanics in tooltips.
+- [x] Bridge the murder scheme at 15 and 65 percent visible success chance: `.1010` builds Renault's Darion bait, `.1011` sends Alexandros and Fairbanks toward Stratholme, and `.1006` reaches Balnazzar as Renault's report.
 
 Exit gate: the lore reviewer finds no accidental canon claim, the narrative reviewer finds no blocking repetition or omniscience, and the user approves every changed line.
 
