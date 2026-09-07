@@ -36,7 +36,7 @@ Exit gate: no supported player state can silently stall the chain.
 - [x] Skip magic perks already present on the possessed body instead of producing duplicate `add_perk` errors.
 - [x] Preserve the union of source/body Intrigue perks, remove Light perks and points, and block disease contraction through the existing disguise flag without taking ownership of vanilla immunity.
 - [x] Repair already possessed saves once on the next 30–60 day story tick.
-- [x] Restrict automatic undead-vassal conversion to revealed Balnazzar while he holds `d_wc_the_risen`.
+- [x] Restrict automatic undead-vassal conversion to revealed Balnazzar while he holds `d_the_risen`.
 - [ ] Verify Balnazzar-to-Dathrohan player transfer, titles, court, gold, magic traits, perks, secrets, and story ownership.
 - [ ] Verify `.1007` de jure changes and vassal conversions do not damage unrelated realms.
 - [x] Review the reveal army: it now spawns 24 men-at-arms stacks across four existing raised-crusader roles, not the obsolete 56-stack composition. The successful 2026-09-05 playtest produced about 3,184 troops, so no extra balance or memory system is warranted yet.
@@ -94,7 +94,7 @@ Exit gate: static checks pass, the complete in-game path passes, the fresh log i
 - [x] Preserve raised characters' cultures and avoid converting unrelated Scarlet Crusade territory.
 - [x] Resolve the second duchy from the current host's capital, including after a later body transfer.
 - [x] Use the Nathrezim trait icon for the possession interaction.
-- [x] Give the breakaway realm the event-only titular title `d_wc_the_risen` and a post-switch founding event.
+- [x] Give the breakaway realm the event-only titular title `d_the_risen` and a post-switch founding event.
 - [x] Replace the generic Scourge reveal army with raised-crusader troop roles and end the titular state with Balnazzar.
 - [ ] Cancel, fail, and succeed with the next-vessel murder scheme in game.
 - [ ] After a successful jump, expose the disguise and verify the later-vessel fallback, Risen conversions, restored true body, and that unrelated duchies remain behind.
