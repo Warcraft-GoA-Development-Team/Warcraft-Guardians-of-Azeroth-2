@@ -1,0 +1,206 @@
+﻿# County scope. Completed coexistence upgrades start from zero, without another installation cost.
+wc_titanforged_settlement_resume_effect = {
+	if = {
+		limit = { NOT = { has_variable = wc_titanforged_settlement_cycle_active } }
+		set_variable = { name = wc_titanforged_settlement_cycle_active value = yes }
+		set_variable = { name = wc_titanforged_settlement_checkpoint value = 0 }
+		remove_variable = wc_titanforged_institutions
+	}
+	if = {
+		limit = { has_variable = wc_titanforged_settlement_result var:wc_titanforged_settlement_result = flag:coexistence }
+		scope:restoration = { set_variable = { name = wc_titanforged_upgrade value = yes } }
+	}
+	set_variable = { name = wc_titanforged_reorder_current_progress value = var:wc_titanforged_settlement_checkpoint }
+}
+
+# County scope, after the monthly increment. Clamp before the engine sees completion.
+wc_titanforged_settlement_tick_effect = {
+	if = {
+		limit = {
+			exists = scope:councillor_liege.var:wc_titanforged_restoration
+			scope:councillor_liege.var:wc_titanforged_restoration = {
+				has_variable = wc_titanforged_project_version
+				var:wc_titanforged_restoration_method = flag:implantation
+			}
+		}
+		scope:councillor_liege.var:wc_titanforged_restoration = { save_scope_as = restoration }
+		save_scope_value_as = { name = reorder_started value = var:wc_titanforged_reorder_started }
+		if = {
+			limit = { var:wc_titanforged_reorder_current_progress >= 3 NOT = { has_variable = wc_titanforged_installations } }
+			set_variable = { name = wc_titanforged_reorder_current_progress value = 3 }
+			if = {
+				limit = { scope:restoration = { NOT = { has_variable = wc_titanforged_waiting } } }
+				scope:restoration = { set_variable = { name = wc_titanforged_waiting value = flag:installation } }
+				scope:councillor_liege = { trigger_event = wc_titanforged_forge.0010 }
+			}
+		}
+		else_if = {
+			limit = { var:wc_titanforged_reorder_current_progress >= 9 NOT = { has_variable = wc_titanforged_institutions } }
+			set_variable = { name = wc_titanforged_reorder_current_progress value = 9 }
+			if = {
+				limit = { scope:restoration = { NOT = { has_variable = wc_titanforged_waiting } } }
+				scope:restoration = { set_variable = { name = wc_titanforged_waiting value = flag:institutions } }
+				scope:councillor_liege = { trigger_event = wc_titanforged_forge.0020 }
+			}
+		}
+		else_if = {
+			limit = { var:wc_titanforged_reorder_current_progress >= 12 has_variable = wc_titanforged_institutions var:wc_titanforged_institutions = flag:coexistence }
+			set_variable = { name = wc_titanforged_reorder_current_progress value = 11.99 }
+			if = {
+				limit = { scope:restoration = { NOT = { has_variable = wc_titanforged_waiting } } scope:councillor_liege = { gold >= 75 } }
+				scope:restoration = { set_variable = { name = wc_titanforged_waiting value = flag:completion } }
+				scope:councillor_liege = { trigger_event = wc_titanforged_forge.0030 }
+			}
+		}
+	}
+}
+
+wc_titanforged_settlement_complete_effect = {
+	if = {
+		limit = { var:wc_titanforged_institutions = flag:coexistence }
+		scope:councillor_liege = { remove_short_term_gold = 75 }
+		change_development_level = { value = development_level max = 1 multiply = -1 }
+		set_variable = { name = wc_titanforged_settlement_result value = flag:coexistence }
+	}
+	else = {
+		set_county_culture = culture:titanforged
+		set_county_faith = faith:mystery_of_the_makers
+		change_development_level = wc_titanforged_implantation_development_change
+		add_county_modifier = { modifier = wc_titanforged_displaced_institutions_modifier years = 10 }
+		set_variable = { name = wc_titanforged_settlement_result value = flag:dominant }
+	}
+	remove_variable = wc_titanforged_settlement_cycle_active
+	remove_variable = wc_titanforged_settlement_checkpoint
+	remove_corruption_modifiers = yes
+	remove_county_modifier = wc_titanforged_reordered_county_modifier
+	wc_titanforged_ensure_maintenance_effect = yes
+	scope:councillor_liege = { save_scope_as = completing_ruler }
+	wc_titanforged_network_refresh_effect = yes
+	scope:completing_ruler = { save_scope_as = councillor_liege }
+}
+
+# One maintenance story per improved county; independent of the active Marshal task.
+wc_titanforged_ensure_maintenance_effect = {
+	if = {
+		limit = { NOT = { exists = var:wc_titanforged_maintenance } }
+		save_scope_as = improved_county
+		holder = { create_story = { type = wc_story_titanforged_forge_network save_scope_as = forge_network } }
+		set_variable = { name = wc_titanforged_maintenance value = scope:forge_network }
+		scope:forge_network = { set_variable = { name = wc_titanforged_network_county value = scope:improved_county } }
+	}
+}
+
+# County scope. Prefer an eligible controlling holder, then the closest eligible liege.
+wc_titanforged_network_refresh_effect = {
+	save_scope_as = improved_county
+	holder = { save_scope_as = councillor_liege }
+	# Prefer an eligible supplying liege over an unserved holder.
+	holder = {
+		every_liege_or_above = {
+			limit = { wc_titanforged_ordering_ruler_trigger = yes completely_controls = scope:improved_county }
+			scope:councillor_liege = { save_scope_as = previous_network_ruler }
+			save_scope_as = councillor_liege
+			if = {
+				limit = { scope:improved_county = { wc_titanforged_forge_served_trigger = no } }
+				scope:previous_network_ruler = { save_scope_as = councillor_liege }
+			}
+		}
+	}
+	set_variable = { name = wc_titanforged_network_ruler value = scope:councillor_liege }
+	if = {
+		limit = {
+			has_variable = wc_titanforged_arcane_incident
+			OR = {
+				NOT = { has_variable = wc_titanforged_arcane_project }
+				var:wc_titanforged_arcane_incident = { is_alive = no }
+				NOT = { var:wc_titanforged_arcane_incident = { completely_controls = scope:improved_county } }
+			}
+		}
+		remove_variable = wc_titanforged_arcane_incident
+	}
+
+	if = {
+		limit = { has_variable = wc_titanforged_arcane_project NOT = { has_county_modifier = county_corruption_arcane_modifier } }
+		remove_variable = wc_titanforged_arcane_project
+	}
+	remove_county_modifier = wc_titanforged_unserved_arcane_modifier
+	if = {
+		limit = {
+			has_variable = wc_titanforged_arcane_project
+			NOT = { scope:councillor_liege = { wc_titanforged_ordering_ruler_trigger = yes } wc_titanforged_forge_served_trigger = yes }
+		}
+		add_county_modifier = wc_titanforged_unserved_arcane_modifier
+	}
+	remove_county_modifier = wc_titanforged_served_coexistence_modifier
+	remove_county_modifier = wc_titanforged_served_dominant_modifier
+	if = {
+		limit = { scope:councillor_liege = { wc_titanforged_ordering_ruler_trigger = yes } wc_titanforged_forge_served_trigger = yes }
+		if = {
+			limit = { has_variable = wc_titanforged_settlement_result var:wc_titanforged_settlement_result = flag:coexistence }
+			add_county_modifier = wc_titanforged_served_coexistence_modifier
+		}
+		else_if = {
+			limit = { has_variable = wc_titanforged_settlement_result var:wc_titanforged_settlement_result = flag:dominant }
+			add_county_modifier = wc_titanforged_served_dominant_modifier
+		}
+	}
+}
+
+wc_titanforged_arcane_complete_effect = {
+	add_corruption_modifier = { MOD = county_corruption_arcane_modifier }
+	# Assignment serial survives cancellation, unlike the ongoing progress variable.
+	set_variable = { name = wc_titanforged_arcane_project value = var:wc_titanforged_reorder_started }
+	wc_titanforged_ensure_maintenance_effect = yes
+	set_variable = { name = wc_titanforged_network_ruler value = scope:councillor_liege }
+}
+
+wc_titanforged_arcane_dismantle_effect = {
+	remove_variable = wc_titanforged_arcane_incident
+	remove_county_modifier = county_corruption_arcane_modifier
+	remove_county_modifier = wc_titanforged_unserved_arcane_modifier
+	remove_variable = wc_titanforged_arcane_project
+}
+
+# Ruler scope; once per calendar year, irrespective of how many counties are served.
+wc_titanforged_arcane_annual_effect = {
+	if = {
+		limit = {
+			NOT = { has_variable = wc_titanforged_arcane_incident_year var:wc_titanforged_arcane_incident_year = current_year }
+			any_sub_realm_county = {
+				has_variable = wc_titanforged_arcane_project
+				has_county_modifier = county_corruption_arcane_modifier
+				NOT = { has_variable = wc_titanforged_arcane_incident }
+				var:wc_titanforged_network_ruler = root
+				root = { completely_controls = prev }
+			}
+		}
+		set_variable = { name = wc_titanforged_arcane_incident_year value = current_year }
+		random = {
+			chance = 15
+			random_sub_realm_county = {
+				limit = {
+					has_variable = wc_titanforged_arcane_project
+					has_county_modifier = county_corruption_arcane_modifier
+					NOT = { has_variable = wc_titanforged_arcane_incident }
+					var:wc_titanforged_network_ruler = root
+					root = { completely_controls = prev }
+				}
+				set_variable = { name = wc_titanforged_arcane_incident value = root }
+				save_scope_as = county
+				save_scope_value_as = { name = arcane_serial value = var:wc_titanforged_arcane_project }
+			}
+			trigger_event = wc_titanforged_forge.0040
+		}
+	}
+}
+
+# A failed confirmation only releases the pause belonging to this exact audience.
+wc_titanforged_settlement_retry_effect = {
+	if = {
+		limit = {
+			wc_titanforged_settlement_audience_trigger = yes
+			scope:restoration = { var:wc_titanforged_waiting = flag:$STAGE$ }
+		}
+		scope:restoration = { remove_variable = wc_titanforged_waiting }
+	}
+}

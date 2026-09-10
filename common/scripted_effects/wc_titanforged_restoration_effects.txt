@@ -1,0 +1,225 @@
+﻿# Ruler scope, called from the marshal task with county/councillor scopes.
+wc_titanforged_restoration_start_effect = {
+	if = {
+		limit = {
+			NOT = { exists = var:wc_titanforged_restoration }
+		}
+		create_story = { type = wc_story_titanforged_restoration save_scope_as = restoration }
+		set_variable = { name = wc_titanforged_restoration value = scope:restoration }
+		scope:restoration = {
+			set_variable = { name = wc_titanforged_restoration_county value = scope:county }
+			set_variable = { name = wc_titanforged_project_version value = 2 }
+			set_variable = { name = wc_titanforged_restoration_duchy value = scope:county.duchy }
+			set_variable = { name = wc_titanforged_restoration_method value = flag:pending }
+		}
+	}
+	if = {
+		limit = { exists = var:wc_titanforged_restoration }
+		var:wc_titanforged_restoration = {
+			save_scope_as = restoration
+			set_variable = { name = wc_titanforged_restoration_marshal value = scope:councillor }
+		}
+		if = {
+			limit = { scope:restoration = { var:wc_titanforged_restoration_method = flag:pending } }
+			scope:county = {
+				save_scope_value_as = { name = reorder_started value = var:wc_titanforged_reorder_started }
+			}
+			trigger_event = wc_titanforged_restoration.0001
+		}
+	}
+}
+
+# County scope. Revalidation is performed by the task before this effect.
+wc_titanforged_restoration_complete_county_effect = {
+	if = {
+		limit = {
+			exists = scope:councillor_liege.var:wc_titanforged_restoration
+			scope:councillor_liege.var:wc_titanforged_restoration = { var:wc_titanforged_restoration_method = flag:implantation }
+		}
+		if = {
+			limit = { scope:councillor_liege.var:wc_titanforged_restoration = { has_variable = wc_titanforged_project_version } }
+			wc_titanforged_settlement_complete_effect = yes
+		}
+		else = { wc_titanforged_implantation_complete_effect = yes }
+	}
+	else_if = {
+		limit = {
+			exists = scope:councillor_liege.var:wc_titanforged_restoration
+			scope:councillor_liege.var:wc_titanforged_restoration = { var:wc_titanforged_restoration_method = flag:arcane }
+		}
+		wc_titanforged_arcane_complete_effect = yes
+	}
+	else = {
+		reforge_liberated_county_effect = yes
+		if = {
+			limit = {
+				exists = scope:councillor_liege.var:wc_titanforged_restoration
+				scope:councillor_liege.var:wc_titanforged_restoration = {
+					NOT = { var:wc_titanforged_restoration_method = flag:legacy }
+				}
+			}
+			change_development_level = wc_titanforged_restoration_development_change
+			if = {
+				limit = { scope:councillor_liege.var:wc_titanforged_restoration = { var:wc_titanforged_restoration_method = flag:mandate } }
+				set_county_faith = scope:councillor_liege.faith
+				if = {
+					limit = { scope:councillor_liege.var:wc_titanforged_restoration = { NOT = { has_variable = wc_titanforged_project_version } } }
+					add_corruption_modifier = { MOD = county_corruption_arcane_modifier }
+				}
+				else = { remove_corruption_modifiers = yes }
+			}
+			else = { remove_corruption_modifiers = yes }
+		}
+		else = {
+			# Unfinished methodless assignments and standing orders retain their outcome.
+			change_development_level = { value = development_level multiply = -1 }
+			add_corruption_modifier = { MOD = county_corruption_arcane_modifier }
+		}
+		add_county_modifier = { modifier = wc_titanforged_reordered_county_modifier years = 100 }
+		if = {
+			limit = {
+				exists = scope:councillor_liege.var:wc_titanforged_restoration
+				scope:councillor_liege.var:wc_titanforged_restoration = { var:wc_titanforged_restoration_method = flag:pact }
+			}
+			set_variable = { name = wc_titanforged_county_pact value = yes }
+		}
+	}
+	if = {
+		limit = {
+			NOT = {
+				exists = scope:councillor_liege.var:wc_titanforged_restoration
+				scope:councillor_liege.var:wc_titanforged_restoration = {
+					var:wc_titanforged_restoration_method = flag:arcane
+				}
+			}
+		}
+		add_county_modifier = { modifier = wc_titanforged_reordered_county_control_growth_modifier years = 5 }
+	}
+}
+
+# County scope. This branch never invokes the historical restoration table.
+wc_titanforged_implantation_complete_effect = {
+	set_county_culture = culture:titanforged
+	set_county_faith = faith:mystery_of_the_makers
+	remove_corruption_modifiers = yes
+	change_development_level = wc_titanforged_implantation_development_change
+	remove_county_modifier = wc_titanforged_reordered_county_modifier
+	add_county_modifier = { modifier = wc_titanforged_displaced_institutions_modifier years = 10 }
+}
+
+# Story scope, called monthly and after county completion. No political resolution.
+wc_titanforged_implantation_check_end_effect = {
+	save_scope_as = implantation_project
+	if = {
+		limit = { has_variable = wc_titanforged_restoration_county }
+		wc_titanforged_restoration_check_county_effect = yes
+	}
+	else_if = {
+		limit = {
+			var:wc_titanforged_restoration_method = flag:implantation
+			OR = {
+				story_owner = { wc_titanforged_implantation_ruler_trigger = no }
+				NOT = {
+					var:wc_titanforged_restoration_duchy = {
+						any_de_jure_county = {
+							scope:implantation_project.story_owner = { completely_controls = prev }
+							wc_titanforged_implantation_county_trigger = yes
+						}
+					}
+				}
+			}
+		}
+		end_story = yes
+	}
+}
+
+# Ruler scope. A stale audience may only release its own still-pending assignment.
+wc_titanforged_restoration_cancel_audience_effect = {
+	if = {
+		limit = {
+			exists = scope:restoration
+			exists = var:wc_titanforged_restoration
+			exists = scope:councillor
+			exists = scope:county
+			exists = scope:reorder_started
+			var:wc_titanforged_restoration = scope:restoration
+			cp:councillor_marshal = scope:councillor
+			scope:restoration = { var:wc_titanforged_restoration_method = flag:pending }
+			scope:councillor = {
+				is_performing_council_task = task_reorder_county
+				councillor_task_target = scope:county.title_province
+			}
+			scope:county = { has_variable = wc_titanforged_reorder_started }
+			scope:county.var:wc_titanforged_reorder_started = scope:reorder_started
+		}
+		scope:restoration = { end_story = yes }
+	}
+}
+
+# Ruler scope. Task callbacks detach before ending, protecting a replacement task.
+wc_titanforged_restoration_detach_effect = {
+	if = {
+		limit = { exists = var:wc_titanforged_restoration }
+		var:wc_titanforged_restoration = { save_scope_as = ending_restoration }
+		remove_variable = wc_titanforged_restoration
+		scope:ending_restoration = { end_story = yes }
+	}
+}
+
+# Story scope. Preserve promises from old duchy-wide pact saves on termination.
+wc_titanforged_restoration_migrate_pact_effect = {
+	if = {
+		limit = {
+			NOT = { has_variable = wc_titanforged_restoration_county }
+			var:wc_titanforged_restoration_method = flag:pact
+		}
+		var:wc_titanforged_restoration_duchy = {
+			every_de_jure_county = { set_variable = { name = wc_titanforged_county_pact value = yes } }
+		}
+	}
+}
+
+# Story scope. Current assignment must retain its county and eligible method.
+wc_titanforged_restoration_check_county_effect = {
+	story_owner = { save_scope_as = councillor_liege }
+	var:wc_titanforged_restoration_county = { save_scope_as = county }
+	if = {
+		limit = {
+			OR = {
+				scope:county = { wc_titanforged_reorder_target_trigger = no }
+				NOT = {
+					story_owner = {
+						cp:councillor_marshal ?= {
+							is_performing_council_task = task_reorder_county
+							councillor_task_target = scope:county.title_province
+						}
+						exists = cp:councillor_marshal
+					}
+				}
+			}
+		}
+		end_story = yes
+	}
+}
+
+# Ruler scope. Called only after a successfully validated duchy resolution.
+wc_titanforged_restoration_resolve_effect = {
+	if = {
+		limit = {
+			exists = var:wc_titanforged_restoration
+			var:wc_titanforged_restoration = { NOT = { has_variable = wc_titanforged_restoration_county } }
+			var:wc_titanforged_restoration.var:wc_titanforged_restoration_duchy = scope:ceded_duchy
+		}
+		wc_titanforged_restoration_detach_effect = yes
+	}
+	scope:ceded_duchy = {
+		every_de_jure_county = {
+			limit = { has_variable = wc_titanforged_county_pact }
+			if = {
+				limit = { root = { completely_controls = scope:ceded_duchy } }
+				add_county_modifier = { modifier = wc_titanforged_broken_pact_modifier years = 10 }
+			}
+			remove_variable = wc_titanforged_county_pact
+		}
+	}
+}
