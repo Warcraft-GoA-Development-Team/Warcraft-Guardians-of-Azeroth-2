@@ -38,6 +38,62 @@ wc_balnazzar_relinquish_realm_effect = {
 	}
 }
 
+# Story scope: personal council bookkeeping only; institutional state is title-owned.
+wc_balnazzar_update_stratholme_effect = {
+	wc_scarlet_update_crusade_effect = yes
+	# Private council bookkeeping mirrors the institutional acquisition.
+	if = {
+		limit = {
+			exists = global_var:wc_scarlet_crusade_title
+			global_var:wc_scarlet_crusade_title = { exists = var:wc_scarlet_stratholme_resolved }
+		}
+		set_variable = { name = wc_balnazzar_stratholme_resolved value = yes }
+	}
+}
+
+# Character scope: only this pardoner's reasons are consumed, not other lieges'.
+wc_balnazzar_pardon_renault_effect = {
+	consume_imprisonment_reasons = character:60019
+	consume_banish_reasons = character:60019
+	consume_execute_reasons = character:60019
+	consume_revoke_title_reason = character:60019
+	character:60019 = {
+		add_opinion = { target = root modifier = wc_balnazzar_protected_opinion opinion = 20 years = 5 }
+	}
+}
+
+# Story scope, reusing the existing maintenance pulse. No AI exclusion.
+wc_balnazzar_update_renault_effect = {
+	if = {
+		limit = { exists = var:wc_balnazzar_scarlet_founded }
+		if = {
+			limit = {
+				OR = {
+					NOT = { story_owner = character:60021 }
+					story_owner = {
+						OR = {
+							is_alive = no
+							NOT = { has_character_flag = wc_balnazzar_disguise_active }
+							has_character_flag = balnazzar_shed_the_mask
+						}
+					}
+					exists = var:wc_balnazzar_exposure_queued
+					character:60019 = { is_alive = no }
+				}
+			}
+			set_variable = wc_balnazzar_renault_closed
+			remove_variable = wc_balnazzar_renault_protected
+		}
+		else_if = {
+			limit = { NOT = { exists = var:wc_balnazzar_renault_closed } }
+			story_owner = {
+				trigger_event = { id = wc_balnazzar_story.1016 }
+				trigger_event = { id = wc_balnazzar_story.1017 }
+			}
+		}
+	}
+}
+
 # Reforms the Silver Hand after .1007 without changing its holder.
 wc_balnazzar_establish_scarlet_crusade_effect = {
 	title:k_order_of_the_silver_hand = {
@@ -51,24 +107,9 @@ wc_balnazzar_establish_scarlet_crusade_effect = {
 			}
 		}
 	}
-	if = {
-		limit = {
-			NOT = {
-				is_target_in_global_variable_list = {
-					name = unavailable_unique_decisions
-					target = flag:form_the_scarlet_crusade_decision
-				}
-			}
-		}
-		add_to_global_variable_list = {
-			name = unavailable_unique_decisions
-			target = flag:form_the_scarlet_crusade_decision
-		}
-	}
-	if = {
-		limit = { has_faith = faith:holy_light }
-		set_character_faith_with_conversion = faith:scarletism
-	}
+	save_scope_value_as = { name = wc_scarlet_prefer_isillien value = yes }
+	wc_scarlet_register_crusade_effect = { TITLE = title:k_order_of_the_silver_hand }
+
 	character:60017 ?= {
 		if = {
 			limit = { is_alive = yes has_faith = faith:holy_light }
@@ -148,6 +189,7 @@ wc_balnazzar_change_suspicion_effect = {
 			}
 			change_variable = { name = wc_balnazzar_suspicion add = $CHANGE$ }
 			clamp_variable = { name = wc_balnazzar_suspicion min = 0 max = 9 }
+			wc_balnazzar_update_inquiry_effect = yes
 
 			story_owner = {
 				remove_character_modifier = wc_balnazzar_suspicion_whispers_modifier
@@ -160,39 +202,6 @@ wc_balnazzar_change_suspicion_effect = {
 				}
 				story_owner = {
 					add_character_modifier = { modifier = wc_balnazzar_suspicion_inquiry_modifier }
-					if = {
-						limit = {
-							NOT = {
-								any_courtier = {
-									is_alive = yes
-									has_character_flag = wc_balnazzar_noticed_something_wrong
-								}
-							}
-						}
-						random_courtier = {
-							limit = {
-								is_alive = yes
-								NOT = { has_trait = being_undead }
-								NOT = { has_character_flag = wc_balnazzar_noticed_something_wrong }
-							}
-							add_character_flag = wc_balnazzar_noticed_something_wrong
-						}
-					}
-				}
-				if = {
-					limit = {
-						NOT = { exists = var:wc_balnazzar_suspicion_inquiry_started }
-						story_owner = {
-							any_courtier = {
-								is_alive = yes
-								has_character_flag = wc_balnazzar_noticed_something_wrong
-							}
-						}
-					}
-					set_variable = { name = wc_balnazzar_suspicion_inquiry_started value = yes }
-					story_owner = {
-						trigger_event = { id = wc_balnazzar_story.0101 days = { 3 7 } }
-					}
 				}
 			}
 			else_if = {
@@ -204,19 +213,76 @@ wc_balnazzar_change_suspicion_effect = {
 					add_character_modifier = { modifier = wc_balnazzar_suspicion_whispers_modifier }
 				}
 			}
+		}
+	}
+}
 
-			if = {
-				limit = {
-					exists = var:wc_balnazzar_suspicion
-					var:wc_balnazzar_suspicion >= 9
-					NOT = { exists = var:wc_balnazzar_exposure_queued }
-				}
-				set_variable = { name = wc_balnazzar_exposure_queued value = yes }
-				story_owner = {
-					trigger_event = { id = wc_balnazzar_story.2000 days = 1 }
+# Story scope. Timed variables survive saves and owner transfers.
+wc_balnazzar_update_inquiry_effect = {
+	if = {
+		limit = { NOT = { exists = var:wc_balnazzar_inquiry_migrated } }
+		set_variable = { name = wc_balnazzar_inquiry_migrated value = yes }
+		if = {
+			limit = { exists = var:wc_balnazzar_suspicion_inquiry_started }
+			set_variable = { name = wc_balnazzar_inquiry_cooldown value = yes years = 1 }
+		}
+		else = { set_variable = { name = wc_balnazzar_inquiry_ready value = yes } }
+	}
+	if = {
+		limit = { var:wc_balnazzar_suspicion < 6 }
+		set_variable = { name = wc_balnazzar_inquiry_ready value = yes }
+	}
+	# An old body's open window must not lock its successor's court.
+	if = {
+		limit = {
+			exists = var:wc_balnazzar_inquiry_open
+			NOT = { var:wc_balnazzar_inquiry_open = story_owner }
+		}
+		remove_variable = wc_balnazzar_inquiry_open
+	}
+	if = {
+		limit = { var:wc_balnazzar_suspicion >= 9 }
+		set_variable = { name = wc_balnazzar_exposure_queued value = yes }
+	}
+	if = {
+		limit = { exists = var:wc_balnazzar_exposure_queued }
+		# A body change cannot cancel an exposure already committed at nine.
+		if = {
+			limit = {
+				OR = {
+					NOT = { exists = var:wc_balnazzar_exposure_target }
+					NOT = { var:wc_balnazzar_exposure_target = story_owner }
 				}
 			}
+			set_variable = { name = wc_balnazzar_exposure_target value = story_owner }
+			story_owner = { trigger_event = { id = wc_balnazzar_story.2000 days = 1 } }
 		}
+	}
+	else_if = {
+		limit = {
+			var:wc_balnazzar_suspicion >= 6
+			exists = var:wc_balnazzar_inquiry_ready
+			NOT = { exists = var:wc_balnazzar_inquiry_cooldown }
+			NOT = { exists = var:wc_balnazzar_inquiry_open }
+			story_owner = { any_courtier = { wc_balnazzar_valid_witness_trigger = yes } }
+		}
+		# No delay: delivery validates the court before consuming readiness.
+		story_owner = { trigger_event = { id = wc_balnazzar_story.0101 } }
+	}
+}
+
+# Called only by .0101 after its delivery trigger succeeds.
+wc_balnazzar_open_inquiry_effect = {
+	global_var:balnazzar_dreadlord_story = {
+		set_variable = { name = wc_balnazzar_suspicion_inquiry_started value = yes }
+		set_variable = { name = wc_balnazzar_inquiry_open value = root }
+		set_variable = { name = wc_balnazzar_inquiry_cooldown value = yes years = 1 }
+		remove_variable = wc_balnazzar_inquiry_ready
+	}
+	random_courtier = {
+		limit = { wc_balnazzar_valid_witness_trigger = yes }
+		add_character_flag = wc_balnazzar_noticed_something_wrong
+		save_scope_as = balnazzar_witness
 	}
 }
 
