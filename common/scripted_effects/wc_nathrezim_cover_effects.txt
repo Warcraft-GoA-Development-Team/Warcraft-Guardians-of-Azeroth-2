@@ -7,6 +7,16 @@ wc_nathrezim_begin_cover_crisis_effect = {
 		}
 		set_variable = { name = wc_nathrezim_cover_crisis value = yes }
 	}
+	# Repair unresolved saved crises without renewing a settled bargain's penalty.
+	if = {
+		limit = {
+			wc_nathrezim_cover_active_trigger = yes
+			has_variable = wc_nathrezim_cover_crisis
+			NOT = { has_variable = wc_nathrezim_cover_resolved }
+			NOT = { has_character_modifier = wc_nathrezim_contested_identity_modifier }
+		}
+		add_character_modifier = { modifier = wc_nathrezim_contested_identity_modifier }
+	}
 	wc_nathrezim_dispatch_cover_crisis_effect = yes
 }
 
@@ -57,6 +67,23 @@ wc_nathrezim_dispatch_cover_crisis_effect = {
 	}
 }
 
+# Character scope: an aborted escape must not leave its private case locked.
+wc_nathrezim_retry_cover_case_effect = {
+	if = {
+		limit = {
+			wc_nathrezim_cover_active_trigger = yes
+			has_variable = wc_nathrezim_cover_crisis
+			NOT = { has_variable = wc_nathrezim_cover_resolved }
+			exists = scope:wc_cover_body
+			exists = scope:wc_cover_witness
+			this = scope:wc_cover_body
+			var:wc_nathrezim_cover_investigator ?= scope:wc_cover_witness
+		}
+		remove_variable = wc_nathrezim_cover_investigator
+		wc_nathrezim_dispatch_cover_crisis_effect = yes
+	}
+}
+
 wc_nathrezim_open_cover_case_effect = {
 	save_scope_as = wc_cover_witness
 	scope:wc_cover_body = {
@@ -86,5 +113,69 @@ wc_nathrezim_end_cover_effect = {
 	set_variable = { name = wc_nathrezim_cover_resolved value = yes }
 	add_character_flag = balnazzar_shed_the_mask
 	remove_dreadlord_disguise_secret_effect = yes
+	remove_character_modifier = wc_nathrezim_contested_identity_modifier
 	add_character_modifier = { modifier = wc_nathrezim_public_impostor_modifier }
+	save_scope_as = wc_cover_body
+	every_vassal = {
+		limit = { opinion = { target = scope:wc_cover_body value <= -1 } }
+		wc_nathrezim_organize_opposition_effect = yes
+	}
+}
+
+# Informed vassal scope. Respect native faction eligibility, alliances and hooks.
+wc_nathrezim_organize_opposition_effect = {
+	if = {
+		limit = {
+			is_alive = yes
+			is_imprisoned = no
+			liege ?= scope:wc_cover_body
+			can_create_faction = { type = liberty_faction target = scope:wc_cover_body }
+		}
+		create_faction = { type = liberty_faction target = scope:wc_cover_body }
+	}
+	if = {
+		limit = {
+			exists = joined_faction
+			joined_faction = { faction_is_type = liberty_faction faction_target = scope:wc_cover_body }
+		}
+		joined_faction = { add_faction_discontent = 25 }
+	}
+}
+
+# Body scope. Defiance risks custody; a ruler faces informed political opposition.
+wc_nathrezim_resist_cover_case_effect = {
+	if = {
+		limit = { wc_nathrezim_cover_case_valid_trigger = yes }
+		add_prestige = -150
+		add_dread = -20
+		scope:wc_cover_witness = {
+			add_opinion = { target = scope:wc_cover_body modifier = angry_opinion opinion = -40 years = 10 }
+		}
+		if = {
+			limit = { wc_nathrezim_cover_authority_trigger = yes is_imprisoned = no }
+			scope:wc_cover_witness = {
+				add_opinion = { target = scope:wc_cover_body modifier = wc_nathrezim_defied_inquiry_opinion }
+			}
+			random_list = {
+				60 = {
+					modifier = {
+						factor = 2
+						scope:wc_cover_witness = { current_military_strength >= scope:wc_cover_body.current_military_strength }
+					}
+					# Native legality checks reuse actor/recipient if already present.
+					scope:wc_cover_witness = { save_scope_as = actor }
+					scope:wc_cover_body = { save_scope_as = recipient }
+					imprison_character_effect = { TARGET = scope:wc_cover_body IMPRISONER = scope:wc_cover_witness }
+				}
+				40 = { custom_tooltip = wc_nathrezim_cover.evaded_arrest }
+			}
+		}
+		else = {
+			every_in_list = {
+				variable = wc_nathrezim_imposture_witnesses
+				wc_nathrezim_organize_opposition_effect = yes
+			}
+		}
+		set_variable = { name = wc_nathrezim_cover_resolved value = yes }
+	}
 }
