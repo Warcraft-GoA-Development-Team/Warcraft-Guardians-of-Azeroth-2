@@ -21,7 +21,10 @@ class InquisitionContracts(unittest.TestCase):
 
     def test_unique_case_and_generation(self):
         start = block(self.effects, "wc_inquisition_open_effect")
-        self.assertIn("NOT = { has_variable = wc_inquisition_stage }", start)
+        self.assertIn("wc_inquisition_hearing_eligible_trigger = yes", block(start, "limit"))
+        eligibility = block(self.triggers, "wc_inquisition_hearing_eligible_trigger")
+        self.assertIn("NOT = { has_variable = wc_inquisition_stage }", eligibility)
+        self.assertIn("is_imprisoned_by = scope:inquisitor", block(start, "limit"))
         self.assertIn("change_variable = { name = wc_inquisition_generation add = 1 }", start)
         match = block(self.triggers, "wc_inquisition_case_matches_trigger")
         self.assertIn("var:wc_inquisition_generation = scope:wc_case_generation", match)
@@ -58,7 +61,33 @@ class InquisitionContracts(unittest.TestCase):
         self.assertIn("modifier = scarlet_mark_recently_lifted_modifier", resolve)
         self.assertNotIn("add_secret", self.effects + self.events)
         for sentence in ("acquittal", "penance", "execution"):
-            self.assertIn(f"SENTENCE = {sentence}", self.events)
+            self.assertIn(f"SENTENCE = {sentence}", self.effects)
+
+    def test_verdict_and_appeal_use_shared_weighted_rolls(self):
+        for event_id, effect, weights in (
+            ("2", "wc_inquisition_roll_sentence_effect", (30, 50, 15)),
+            ("4", "wc_inquisition_roll_appeal_effect", (40, 25)),
+        ):
+            event = block(self.events, f"wc_scarlet_inquisition.{event_id}")
+            self.assertIn(f"{effect} = yes", event)
+            self.assertEqual(event.count("ai_chance"), 1)
+            roll = block(block(self.effects, effect), "random_list")
+            for weight in weights:
+                outcome = block(roll, str(weight))
+                self.assertIn("desc = wc_scarlet_inquisition.", outcome)
+                self.assertIn("hidden_effect", outcome)
+            self.assertIn("wc_inquisition_known_crime_trigger", roll)
+        preview = block(self.interaction, "show_as_tooltip")
+        self.assertIn("save_scope_as = wc_accused", preview)
+        self.assertIn("wc_inquisition_roll_sentence_effect = yes", preview)
+        command = block(self.events, "wc_scarlet_inquisition.3")
+        self.assertIn("wc_inquisition_roll_appeal_effect = yes", block(command, "show_as_tooltip"))
+
+    def test_judgment_labels_each_sentence(self):
+        loc = read("localization/english/event_localization/wc_scarlet_inquisition_l_english.yml")
+        for sentence in ("execution", "penance", "acquittal"):
+            line = next(line for line in loc.splitlines() if f"wc_scarlet_inquisition.3.{sentence}:" in line)
+            self.assertIn("#bold Sentence:", line)
 
     def test_execution_only_silences_a_witness_after_actual_death(self):
         resolve = block(self.effects, "wc_inquisition_resolve_effect")

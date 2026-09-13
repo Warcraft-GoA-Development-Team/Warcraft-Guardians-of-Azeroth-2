@@ -2,22 +2,14 @@
 wc_inquisition_open_effect = {
 	if = {
 		limit = {
-			NOT = { has_variable = wc_inquisition_stage }
-			is_alive = yes
-			is_adult = yes
-			has_faith = faith:scarletism
+			wc_inquisition_hearing_eligible_trigger = yes
 			is_imprisoned_by = scope:inquisitor
-			faith.religious_head = scope:inquisitor
-			scope:actor = { has_faith = faith:scarletism wc_scarlet_maa_member_trigger = yes }
-			global_var:wc_scarlet_crusade_title.holder = {
-				is_alive = yes is_adult = yes has_faith = faith:scarletism
-			}
 		}
 		save_scope_as = wc_accused
 		# Snapshot attribution; later marks must not rewrite an open case.
 		set_variable = { name = wc_inquisition_accuser value = scope:actor }
 		if = {
-			limit = { has_trait = scarlet_mark exists = var:requested_my_scarlet_mark }
+			limit = { has_trait = scarlet_mark exists = var:requested_my_scarlet_mark NOT = { has_variable = wc_inquisition_purge_case } }
 			set_variable = { name = wc_inquisition_accuser value = var:requested_my_scarlet_mark }
 		}
 		if = {
@@ -43,6 +35,8 @@ wc_inquisition_close_effect = {
 	if = {
 		limit = { has_variable = wc_inquisition_stage }
 		remove_variable = wc_inquisition_stage
+		remove_variable = wc_inquisition_purge_case
+		remove_variable = wc_inquisition_purge_detention
 		remove_variable = wc_inquisition_sentence
 		remove_variable = wc_inquisition_commander
 		remove_variable = wc_inquisition_accuser
@@ -55,7 +49,20 @@ wc_inquisition_close_effect = {
 wc_inquisition_discard_effect = {
 	if = {
 		limit = { wc_inquisition_case_matches_trigger = yes }
-		scope:wc_accused = { wc_inquisition_close_effect = yes }
+		scope:wc_accused = {
+			if = {
+				limit = {
+					is_alive = yes
+					var:wc_inquisition_purge_detention ?= scope:wc_inquisitor
+					var:wc_inquisition_purge_case ?= scope:wc_inquisitor
+					is_imprisoned_by = scope:wc_inquisitor
+				}
+				# Close first so the native release callback cannot re-enter this case.
+				wc_inquisition_close_effect = yes
+				release_from_prison = yes
+			}
+			else = { wc_inquisition_close_effect = yes }
+		}
 	}
 }
 
@@ -65,16 +72,88 @@ wc_inquisition_propose_effect = {
 		scope:wc_accused = {
 			set_variable = { name = wc_inquisition_sentence value = flag:$SENTENCE$ }
 			set_variable = { name = wc_inquisition_stage value = 3 }
-			set_variable = { name = wc_inquisition_commander value = scope:wc_court_title.holder }
+			if = {
+				limit = { NOT = { this = scope:wc_court_title.holder } }
+				set_variable = { name = wc_inquisition_commander value = scope:wc_court_title.holder }
+			}
 		}
 		scope:wc_court_title.holder = { save_scope_as = wc_commander }
 		if = {
-			limit = { scope:wc_commander = scope:wc_inquisitor }
+			limit = {
+				OR = {
+					scope:wc_commander = scope:wc_inquisitor
+					scope:wc_commander = scope:wc_accused
+				}
+			}
 			wc_inquisition_resolve_effect = yes
 		}
 		else = { scope:wc_commander = { trigger_event = wc_scarlet_inquisition.3 } }
 	}
 	else = { wc_inquisition_discard_effect = yes }
+}
+
+# Inquisitor scope. Native percentages and resolution share this one roll.
+wc_inquisition_roll_sentence_effect = {
+	random_list = {
+		30 = {
+			modifier = { add = 50 has_trait = compassionate }
+			modifier = { add = 40 has_trait = forgiving }
+			modifier = { factor = 0.2 wc_inquisition_known_crime_trigger = yes }
+			modifier = { add = 40 has_relation_friend = scope:wc_accused }
+			modifier = { factor = 0.2 has_relation_rival = scope:wc_accused }
+			desc = wc_scarlet_inquisition.acquittal
+			hidden_effect = { wc_inquisition_propose_effect = { SENTENCE = acquittal } }
+		}
+		50 = {
+			modifier = { add = 30 has_trait = forgiving }
+			modifier = { add = 30 has_trait = compassionate }
+			desc = wc_scarlet_inquisition.penance
+			hidden_effect = { wc_inquisition_propose_effect = { SENTENCE = penance } }
+		}
+		15 = {
+			modifier = { add = 50 has_trait = zealous }
+			modifier = { add = 60 has_trait = sadistic }
+			modifier = { add = 60 has_relation_rival = scope:wc_accused }
+			modifier = { add = 80 wc_inquisition_known_crime_trigger = yes }
+			modifier = { factor = 0.2 has_trait = compassionate }
+			modifier = { factor = 0.4 has_trait = forgiving }
+			desc = wc_scarlet_inquisition.execution
+			hidden_effect = { wc_inquisition_propose_effect = { SENTENCE = execution } }
+		}
+	}
+}
+
+# Inquisitor scope. Native percentages and resolution share this one roll.
+wc_inquisition_roll_appeal_effect = {
+	random_list = {
+		40 = {
+			modifier = { add = 40 has_trait = zealous }
+			modifier = { add = 50 has_trait = sadistic }
+			modifier = { add = 60 has_relation_rival = scope:wc_accused }
+			modifier = { add = 60 wc_inquisition_known_crime_trigger = yes }
+			modifier = { add = 30 has_relation_rival = scope:wc_commander }
+			desc = wc_scarlet_inquisition.sentence_upheld
+			hidden_effect = { wc_inquisition_resolve_effect = yes }
+		}
+		25 = {
+			modifier = { add = 50 has_trait = compassionate }
+			modifier = { add = 50 has_trait = forgiving }
+			modifier = { add = 40 has_relation_friend = scope:wc_accused }
+			modifier = { add = 40 opinion = { target = scope:wc_commander value >= 50 } }
+			modifier = { factor = 0.3 wc_inquisition_known_crime_trigger = yes }
+			desc = wc_scarlet_inquisition.sentence_reduced
+			hidden_effect = {
+				scope:wc_accused = {
+					if = {
+						limit = { var:wc_inquisition_sentence = flag:execution }
+						set_variable = { name = wc_inquisition_sentence value = flag:penance }
+					}
+					else = { set_variable = { name = wc_inquisition_sentence value = flag:acquittal } }
+				}
+				wc_inquisition_resolve_effect = yes
+			}
+		}
+	}
 }
 
 wc_inquisition_resolve_effect = {
