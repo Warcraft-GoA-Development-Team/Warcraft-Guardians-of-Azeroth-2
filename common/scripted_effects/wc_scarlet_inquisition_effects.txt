@@ -1,0 +1,175 @@
+﻿# Called on the successfully transferred prisoner, after any eligible payment.
+wc_inquisition_open_effect = {
+	if = {
+		limit = {
+			NOT = { has_variable = wc_inquisition_stage }
+			is_alive = yes
+			is_adult = yes
+			has_faith = faith:scarletism
+			is_imprisoned_by = scope:inquisitor
+			faith.religious_head = scope:inquisitor
+			scope:actor = { has_faith = faith:scarletism wc_scarlet_maa_member_trigger = yes }
+			global_var:wc_scarlet_crusade_title.holder = {
+				is_alive = yes is_adult = yes has_faith = faith:scarletism
+			}
+		}
+		save_scope_as = wc_accused
+		# Snapshot attribution; later marks must not rewrite an open case.
+		set_variable = { name = wc_inquisition_accuser value = scope:actor }
+		if = {
+			limit = { has_trait = scarlet_mark exists = var:requested_my_scarlet_mark }
+			set_variable = { name = wc_inquisition_accuser value = var:requested_my_scarlet_mark }
+		}
+		if = {
+			limit = { wc_balnazzar_associated_witness_trigger = yes }
+			set_variable = { name = wc_inquisition_witness_episode value = var:wc_balnazzar_witness_episode }
+		}
+		scope:inquisitor = { save_scope_as = wc_inquisitor }
+		global_var:wc_scarlet_crusade_title = { save_scope_as = wc_court_title }
+		if = {
+			limit = { NOT = { has_variable = wc_inquisition_generation } }
+			set_variable = { name = wc_inquisition_generation value = 0 }
+		}
+		change_variable = { name = wc_inquisition_generation add = 1 }
+		save_scope_value_as = { name = wc_case_generation value = var:wc_inquisition_generation }
+		set_variable = { name = wc_inquisition_stage value = 1 }
+		trigger_event = { id = wc_scarlet_inquisition.1 days = 30 }
+		trigger_event = { id = wc_scarlet_inquisition.9 days = 7 }
+	}
+}
+
+# Prisoner scope; idempotent, and called before native release/death hooks.
+wc_inquisition_close_effect = {
+	if = {
+		limit = { has_variable = wc_inquisition_stage }
+		remove_variable = wc_inquisition_stage
+		remove_variable = wc_inquisition_sentence
+		remove_variable = wc_inquisition_commander
+		remove_variable = wc_inquisition_accuser
+		remove_variable = wc_inquisition_witness_episode
+		add_character_flag = { flag = wc_inquisition_cooldown years = 1 }
+	}
+}
+
+# Old windows must never close a newer case.
+wc_inquisition_discard_effect = {
+	if = {
+		limit = { wc_inquisition_case_matches_trigger = yes }
+		scope:wc_accused = { wc_inquisition_close_effect = yes }
+	}
+}
+
+wc_inquisition_propose_effect = {
+	if = {
+		limit = { wc_inquisition_judge_valid_trigger = { STAGE = 2 } }
+		scope:wc_accused = {
+			set_variable = { name = wc_inquisition_sentence value = flag:$SENTENCE$ }
+			set_variable = { name = wc_inquisition_stage value = 3 }
+			set_variable = { name = wc_inquisition_commander value = scope:wc_court_title.holder }
+		}
+		scope:wc_court_title.holder = { save_scope_as = wc_commander }
+		if = {
+			limit = { scope:wc_commander = scope:wc_inquisitor }
+			wc_inquisition_resolve_effect = yes
+		}
+		else = { scope:wc_commander = { trigger_event = wc_scarlet_inquisition.3 } }
+	}
+	else = { wc_inquisition_discard_effect = yes }
+}
+
+wc_inquisition_resolve_effect = {
+	if = {
+		limit = {
+			wc_inquisition_case_valid_trigger = yes
+			scope:wc_accused = { has_variable = wc_inquisition_sentence }
+		}
+		# Reset per resolution; a caller may carry scopes from an older case.
+		save_scope_value_as = { name = wc_inquisition_execution_witness value = no }
+		wc_inquisition_consequences_effect = yes
+		if = {
+			limit = { scope:wc_accused = { var:wc_inquisition_sentence = flag:execution } }
+			hidden_effect = { scope:wc_accused = { wc_inquisition_close_effect = yes } }
+			execute_prisoner_effect = { VICTIM = scope:wc_accused EXECUTIONER = scope:wc_inquisitor }
+			if = {
+				limit = {
+					scope:wc_inquisition_execution_witness = yes
+					scope:wc_accused = { is_alive = no }
+				}
+				scope:wc_accused = { wc_balnazzar_resolve_witness_effect = { CHANGE = -18 } }
+			}
+		}
+		else = {
+			scope:wc_accused = {
+				remove_trait = scarlet_mark
+				remove_character_modifier = recent_scarlet_mark_modifier
+				if = {
+					limit = { var:wc_inquisition_sentence = flag:penance }
+					add_character_modifier = { modifier = scarlet_mark_recently_lifted_modifier years = 5 }
+				}
+				hidden_effect = { wc_inquisition_close_effect = yes }
+				release_from_prison = yes
+			}
+		}
+	}
+	else = { wc_inquisition_discard_effect = yes }
+}
+
+# Final sentence only, while the case is valid and before release/death cleanup.
+wc_inquisition_consequences_effect = {
+	if = {
+		limit = {
+			wc_inquisition_case_valid_trigger = yes
+			scope:wc_accused = {
+				var:wc_inquisition_sentence = flag:acquittal
+				exists = var:wc_inquisition_accuser
+				var:wc_inquisition_accuser = { is_alive = yes }
+			}
+			wc_inquisition_known_crime_trigger = no
+		}
+		scope:wc_inquisitor = {
+			add_opinion = { modifier = angry_opinion target = scope:wc_accused.var:wc_inquisition_accuser opinion = -20 }
+		}
+	}
+	if = {
+		limit = {
+			wc_inquisition_case_valid_trigger = yes
+			scope:wc_accused = {
+				wc_balnazzar_associated_witness_trigger = yes
+				exists = var:wc_inquisition_accuser
+				var:wc_inquisition_accuser = var:wc_balnazzar_witness_body
+				exists = var:wc_inquisition_witness_episode
+				var:wc_inquisition_witness_episode = var:wc_balnazzar_witness_episode
+			}
+		}
+		scope:wc_accused = {
+			if = {
+				limit = { var:wc_inquisition_sentence = flag:execution }
+				# Preserve attribution before case cleanup, not a premature reward.
+				save_scope_value_as = { name = wc_inquisition_execution_witness value = yes }
+			}
+			else_if = {
+				limit = { var:wc_inquisition_sentence = flag:penance }
+				wc_balnazzar_resolve_witness_effect = { CHANGE = -8 }
+			}
+			else_if = {
+				limit = { var:wc_inquisition_sentence = flag:acquittal }
+				# No secret is created or exposed by the court's verdict.
+				var:wc_balnazzar_witness_body = { wc_balnazzar_change_suspicion_effect = { CHANGE = 15 } }
+			}
+		}
+	}
+}
+
+wc_inquisition_hook_effect = {
+	if = {
+		limit = {
+			wc_inquisition_command_valid_trigger = yes
+			has_usable_hook = scope:wc_inquisitor
+			scope:wc_accused = { var:wc_inquisition_sentence = flag:execution }
+		}
+		use_hook = scope:wc_inquisitor
+		scope:wc_accused = { set_variable = { name = wc_inquisition_sentence value = flag:penance } }
+		wc_inquisition_resolve_effect = yes
+	}
+	else = { wc_inquisition_discard_effect = yes }
+}
