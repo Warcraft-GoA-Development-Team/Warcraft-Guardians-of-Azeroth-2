@@ -13,6 +13,21 @@ def read(path):
 
 
 class CoverCrisisContracts(unittest.TestCase):
+    def test_aborted_escape_releases_only_its_own_unresolved_case(self):
+        retry = block(read("common/scripted_effects/wc_nathrezim_cover_effects.txt"), "wc_nathrezim_retry_cover_case_effect")
+        for guard in ("wc_nathrezim_cover_active_trigger = yes", "has_variable = wc_nathrezim_cover_crisis",
+                      "NOT = { has_variable = wc_nathrezim_cover_resolved }",
+                      "exists = scope:wc_cover_witness", "this = scope:wc_cover_body",
+                      "var:wc_nathrezim_cover_investigator ?= scope:wc_cover_witness"):
+            self.assertIn(guard, block(retry, "limit"))
+        self.assertLess(retry.index("remove_variable = wc_nathrezim_cover_investigator"),
+                        retry.index("wc_nathrezim_dispatch_cover_crisis_effect = yes"))
+        self.assertNotIn("remove_variable = wc_nathrezim_cover_crisis", retry)
+        for path, name in (("common/scripted_effects/wc_balnazzar_effects.txt", "wc_balnazzar_escape_cover_effect"),
+                           ("events/story_cycles/wc_story_cycle_balnazzar_events.txt", "wc_balnazzar_story.0110")):
+            event = block(read(path), name)
+            self.assertIn("wc_nathrezim_retry_cover_case_effect = yes", block(event, "else"))
+
     def test_noncriminal_secret_remains_interesting_to_spies(self):
         gate = block(read("common/scripted_triggers/00_councillor_triggers.txt"), "spymaster_task_find_secrets_interesting_secret_type_trigger")
         interest = gate.split("secret_is_always_interesting_trigger", 1)[1]
@@ -83,7 +98,7 @@ class CoverCrisisContracts(unittest.TestCase):
         for value in ("this = character:60021", "wc_balnazzar_scarlet_founded", "wc_balnazzar_stratholme_resolved", "wc_scarlet_controls_stratholme_trigger = yes"):
             self.assertIn(value, risen)
         router = block(read("events/story_cycles/wc_story_cycle_balnazzar_events.txt"), "wc_balnazzar_story.2000")
-        self.assertIn("wc_balnazzar_risen_context_trigger = yes", router)
+        self.assertIn("wc_balnazzar_can_raise_risen_trigger = yes", router)
         self.assertIn("wc_nathrezim_end_cover_effect = yes", router)
         self.assertNotIn("spawn_army", router)
 
