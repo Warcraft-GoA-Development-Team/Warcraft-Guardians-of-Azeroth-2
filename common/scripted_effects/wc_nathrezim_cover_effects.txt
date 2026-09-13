@@ -17,6 +17,19 @@ wc_nathrezim_begin_cover_crisis_effect = {
 		}
 		add_character_modifier = { modifier = wc_nathrezim_contested_identity_modifier }
 	}
+	# Let the owner choose a response before any private case can settle the crisis.
+	if = {
+		limit = {
+			wc_nathrezim_cover_active_trigger = yes
+			has_variable = wc_nathrezim_cover_crisis
+			NOT = { has_variable = wc_nathrezim_cover_resolved }
+			NOT = { has_variable = wc_nathrezim_cover_opening_seen }
+			NOT = { has_variable = wc_nathrezim_cover_opening_pending }
+		}
+		remove_variable = wc_nathrezim_cover_investigator
+		set_variable = { name = wc_nathrezim_cover_opening_pending value = yes }
+		trigger_event = wc_nathrezim_cover.0007
+	}
 	wc_nathrezim_dispatch_cover_crisis_effect = yes
 }
 
@@ -28,7 +41,7 @@ wc_nathrezim_dispatch_cover_crisis_effect = {
 		remove_variable = wc_nathrezim_cover_investigator
 	}
 	if = {
-		limit = { wc_nathrezim_cover_active_trigger = yes has_variable = wc_nathrezim_cover_crisis NOT = { has_variable = wc_nathrezim_cover_resolved } is_at_war = no }
+		limit = { wc_nathrezim_cover_active_trigger = yes has_variable = wc_nathrezim_cover_crisis NOT = { has_variable = wc_nathrezim_cover_resolved } NOT = { has_variable = wc_nathrezim_cover_opening_pending } is_at_war = no }
 		wc_nathrezim_press_cover_demands_effect = yes
 	}
 	if = {
@@ -37,6 +50,7 @@ wc_nathrezim_dispatch_cover_crisis_effect = {
 			has_variable = wc_nathrezim_cover_crisis
 			NOT = { has_variable = wc_nathrezim_cover_resolved }
 			is_at_war = no
+			NOT = { has_variable = wc_nathrezim_cover_opening_pending }
 			NOT = { any_targeting_faction = { has_variable = wc_nathrezim_ultimatum_sent } }
 			OR = {
 				is_imprisoned = yes
@@ -49,6 +63,7 @@ wc_nathrezim_dispatch_cover_crisis_effect = {
 		set_variable = { name = wc_nathrezim_cover_resolved value = yes }
 		remove_character_modifier = wc_nathrezim_contested_identity_modifier
 		remove_variable = wc_nathrezim_cover_investigator
+		remove_variable = wc_nathrezim_cover_approach
 	}
 	if = {
 		limit = {
@@ -65,6 +80,7 @@ wc_nathrezim_dispatch_cover_crisis_effect = {
 			has_variable = wc_nathrezim_cover_crisis
 			NOT = { has_variable = wc_nathrezim_cover_resolved }
 			NOT = { has_variable = wc_nathrezim_cover_investigator }
+			NOT = { has_variable = wc_nathrezim_cover_opening_pending }
 			NOT = { has_variable = wc_nathrezim_cover_negotiation_cooldown }
 			is_at_war = no
 			NOT = { any_targeting_faction = { has_variable = wc_nathrezim_ultimatum_sent } }
@@ -113,6 +129,17 @@ wc_nathrezim_retry_cover_case_effect = {
 		remove_variable = wc_nathrezim_cover_investigator
 		wc_nathrezim_dispatch_cover_crisis_effect = yes
 	}
+	# A dismissed public window releases only its own lock; the pulse retries it.
+	else_if = {
+		limit = {
+			has_variable = wc_nathrezim_public_nature
+			exists = scope:wc_cover_body
+			exists = scope:wc_cover_witness
+			this = scope:wc_cover_body
+			var:wc_nathrezim_cover_investigator ?= scope:wc_cover_witness
+		}
+		remove_variable = wc_nathrezim_cover_investigator
+	}
 }
 
 wc_nathrezim_open_cover_case_effect = {
@@ -121,8 +148,22 @@ wc_nathrezim_open_cover_case_effect = {
 		save_scope_as = wc_cover_witness
 		scope:wc_cover_body = {
 			set_variable = { name = wc_nathrezim_cover_investigator value = scope:wc_cover_witness }
+			if = {
+				limit = {
+					exists = var:wc_nathrezim_cover_approach
+					var:wc_nathrezim_cover_approach = flag:bargain
+					scope:wc_cover_witness = { can_add_hook = { target = scope:wc_cover_body type = favor_hook } }
+				}
+				remove_variable = wc_nathrezim_cover_approach
+				trigger_event = wc_nathrezim_cover.0003
+			}
+			else_if = {
+				limit = { has_variable = wc_nathrezim_cover_approach }
+				remove_variable = wc_nathrezim_cover_approach
+				trigger_event = wc_nathrezim_cover.0002
+			}
+			else = { scope:wc_cover_witness = { trigger_event = wc_nathrezim_cover.0001 } }
 		}
-		trigger_event = wc_nathrezim_cover.0001
 	}
 }
 
@@ -148,82 +189,165 @@ wc_nathrezim_end_cover_effect = {
 	add_character_flag = balnazzar_shed_the_mask
 	remove_dreadlord_disguise_secret_effect = yes
 	remove_character_modifier = wc_nathrezim_contested_identity_modifier
+	remove_variable = wc_nathrezim_cover_opening_pending
+	remove_variable = wc_nathrezim_cover_approach
+	remove_variable = wc_nathrezim_cover_negotiation_cooldown
 	add_character_modifier = { modifier = wc_nathrezim_public_impostor_modifier }
-	save_scope_as = wc_cover_body
+	wc_nathrezim_refresh_public_opposition_effect = yes
+}
+
+# Native faction restrictions can expire after the reveal (truce, war, hooks).
+wc_nathrezim_refresh_public_opposition_effect = {
+	if = {
+		limit = { is_alive = yes has_variable = wc_nathrezim_public_nature }
+		save_scope_as = wc_cover_body
+		wc_nathrezim_dispatch_public_authority_effect = yes
 		every_vassal = {
-		limit = { opinion = { target = scope:wc_cover_body value <= -1 } }
-		scope:wc_cover_body = { add_to_variable_list = { name = wc_nathrezim_imposture_witnesses target = prev } }
-		wc_nathrezim_organize_opposition_effect = yes
+			limit = {
+				OR = {
+					wc_nathrezim_scarlet_rejection_trigger = yes
+					opinion = { target = scope:wc_cover_body value <= -1 }
+				}
+			}
+			scope:wc_cover_body = { add_to_variable_list = { name = wc_nathrezim_imposture_witnesses target = prev } }
+			wc_nathrezim_organize_opposition_effect = yes
+		}
+		wc_nathrezim_press_cover_demands_effect = yes
 	}
-	wc_nathrezim_press_cover_demands_effect = yes
+}
+
+# Public cases reuse the private scenes, but keep their own authority on the body.
+wc_nathrezim_dispatch_public_authority_effect = {
+	# Cancel a dead or former authority's demand, even while the body is at war.
+	if = {
+		limit = {
+			has_variable = wc_nathrezim_public_authority
+			NOT = { var:wc_nathrezim_public_authority ?= { wc_nathrezim_current_authority_trigger = yes } }
+		}
+		remove_variable = wc_nathrezim_public_authority
+		remove_variable = wc_nathrezim_cover_investigator
+		remove_variable = wc_nathrezim_cover_negotiation_cooldown
+	}
+	if = {
+		limit = { NOT = { has_variable = wc_nathrezim_public_authority } }
+		if = {
+			limit = { exists = liege liege = { wc_nathrezim_current_authority_trigger = yes } }
+			set_variable = { name = wc_nathrezim_public_authority value = liege }
+		}
+		else_if = {
+			limit = { exists = court_owner court_owner = { wc_nathrezim_current_authority_trigger = yes } }
+			set_variable = { name = wc_nathrezim_public_authority value = court_owner }
+		}
+	}
+	# Retain an already queued confrontation with this authority on revelation.
+	if = {
+		limit = { exists = var:wc_nathrezim_public_authority }
+		add_to_variable_list = { name = wc_nathrezim_imposture_witnesses target = var:wc_nathrezim_public_authority }
+		add_to_variable_list = { name = wc_nathrezim_demon_witnesses target = var:wc_nathrezim_public_authority }
+	}
+	if = {
+		limit = {
+			has_variable = wc_nathrezim_cover_investigator
+			OR = {
+				NOT = { var:wc_nathrezim_cover_investigator ?= var:wc_nathrezim_public_authority }
+				is_at_war = yes
+				is_imprisoned = yes
+				any_targeting_faction = { has_variable = wc_nathrezim_ultimatum_sent }
+				var:wc_nathrezim_cover_investigator ?= { wc_nathrezim_actionable_witness_trigger = no }
+			}
+		}
+		remove_variable = wc_nathrezim_cover_investigator
+	}
+	if = {
+		limit = {
+			exists = var:wc_nathrezim_public_authority
+			NOT = { has_variable = wc_nathrezim_cover_investigator }
+			NOT = { has_variable = wc_nathrezim_cover_negotiation_cooldown }
+			is_at_war = no
+			is_imprisoned = no
+			NOT = { any_targeting_faction = { has_variable = wc_nathrezim_ultimatum_sent } }
+			var:wc_nathrezim_public_authority = { wc_nathrezim_actionable_witness_trigger = yes }
+		}
+		var:wc_nathrezim_public_authority = { wc_nathrezim_open_cover_case_effect = yes }
+	}
 }
 
 # Informed vassal scope. Respect native faction eligibility, alliances and hooks.
 wc_nathrezim_organize_opposition_effect = {
 	if = {
-		limit = { liege ?= scope:wc_cover_body is_alive = yes is_imprisoned = no }
-		save_scope_as = wc_cover_vassal
-		scope:wc_cover_body = {
-			random_targeting_faction = {
-				limit = {
-					OR = { faction_is_type = liberty_faction faction_is_type = independence_faction }
-					scope:wc_cover_vassal = { can_join_faction = prev }
+		limit = { scope:wc_cover_body = { wc_nathrezim_pressure_allowed_trigger = yes } }
+		if = {
+			limit = { liege ?= scope:wc_cover_body is_alive = yes is_imprisoned = no }
+			save_scope_as = wc_cover_vassal
+			scope:wc_cover_body = {
+				random_targeting_faction = {
+					limit = {
+						OR = { faction_is_type = liberty_faction faction_is_type = independence_faction }
+						scope:wc_cover_vassal = { can_join_faction = prev }
+					}
+					scope:wc_cover_vassal = { join_faction = prev }
 				}
-				scope:wc_cover_vassal = { join_faction = prev }
 			}
 		}
-	}
-	if = {
-		limit = {
-			is_alive = yes
-			is_imprisoned = no
-			liege ?= scope:wc_cover_body
-			can_create_faction = { type = liberty_faction target = scope:wc_cover_body }
-			NOT = { exists = joined_faction }
-		}
-		create_faction = { type = liberty_faction target = scope:wc_cover_body }
-	}
-	else_if = {
-		limit = { liege ?= scope:wc_cover_body NOT = { exists = joined_faction } can_create_faction = { type = independence_faction target = scope:wc_cover_body } }
-		create_faction = { type = independence_faction target = scope:wc_cover_body }
-	}
-	if = {
-		limit = {
-			exists = joined_faction
-			joined_faction = {
-				OR = { faction_is_type = liberty_faction faction_is_type = independence_faction }
-				faction_target = scope:wc_cover_body
+		if = {
+			limit = {
+				is_alive = yes
+				is_imprisoned = no
+				liege ?= scope:wc_cover_body
+				can_create_faction = { type = liberty_faction target = scope:wc_cover_body }
+				NOT = { exists = joined_faction }
 			}
+			create_faction = { type = liberty_faction target = scope:wc_cover_body }
 		}
-		joined_faction = { add_faction_discontent = 25 }
+		else_if = {
+			limit = { liege ?= scope:wc_cover_body NOT = { exists = joined_faction } can_create_faction = { type = independence_faction target = scope:wc_cover_body } }
+			create_faction = { type = independence_faction target = scope:wc_cover_body }
+		}
+		if = {
+			limit = {
+				exists = joined_faction
+				joined_faction = {
+					OR = { faction_is_type = liberty_faction faction_is_type = independence_faction }
+					faction_target = scope:wc_cover_body
+				}
+			}
+			joined_faction = { add_faction_discontent = 25 }
+		}
 	}
 }
 
 # Body scope: the native demand window owns concessions and war resolution.
 wc_nathrezim_press_cover_demands_effect = {
-	every_targeting_faction = {
-		limit = {
-			OR = { faction_is_type = liberty_faction faction_is_type = independence_faction }
-			NOT = { has_variable = wc_nathrezim_ultimatum_sent }
-			faction_power >= faction_power_threshold
-			faction_leader = { is_at_war = no is_imprisoned = no }
-			any_faction_member = { scope:wc_cover_body = { is_target_in_variable_list = { name = wc_nathrezim_imposture_witnesses target = prev } } }
+	if = {
+		limit = { wc_nathrezim_pressure_allowed_trigger = yes }
+		every_targeting_faction = {
+			limit = {
+				OR = { faction_is_type = liberty_faction faction_is_type = independence_faction }
+				NOT = { has_variable = wc_nathrezim_ultimatum_sent }
+				faction_power >= faction_power_threshold
+				faction_leader = { is_at_war = no is_imprisoned = no }
+				any_faction_member = { scope:wc_cover_body = { is_target_in_variable_list = { name = wc_nathrezim_imposture_witnesses target = prev } } }
+			}
+			set_variable = { name = wc_nathrezim_ultimatum_sent value = yes }
+			save_scope_as = faction
+			faction_leader = { save_scope_as = faction_leader }
+			faction_target = { save_scope_as = faction_target }
+			if = {
+				limit = { faction_is_type = liberty_faction }
+				faction_target = { trigger_event = faction_demand.0101 }
+			}
+			else = { faction_target = { trigger_event = faction_demand.0001 } }
 		}
-		set_variable = { name = wc_nathrezim_ultimatum_sent value = yes }
-		save_scope_as = faction
-		faction_leader = { save_scope_as = faction_leader }
-		faction_target = { save_scope_as = faction_target }
-		if = {
-			limit = { faction_is_type = liberty_faction }
-			faction_target = { trigger_event = faction_demand.0101 }
-		}
-		else = { faction_target = { trigger_event = faction_demand.0001 } }
 	}
 }
 
 # Body scope. Only the consenting witness settles; remaining cases continue.
 wc_nathrezim_settle_witness_effect = {
 	add_to_variable_list = { name = wc_nathrezim_settled_witnesses target = scope:wc_cover_witness }
+	if = {
+		limit = { has_variable = wc_nathrezim_public_nature }
+		add_to_variable_list = { name = wc_nathrezim_public_settled_authorities target = scope:wc_cover_witness }
+	}
 	remove_variable = wc_nathrezim_cover_investigator
 	wc_nathrezim_dispatch_cover_crisis_effect = yes
 }
@@ -250,6 +374,11 @@ wc_nathrezim_resist_cover_case_effect = {
 				scope:wc_cover_witness = { save_scope_as = actor }
 				scope:wc_cover_body = { save_scope_as = recipient }
 				imprison_character_effect = { TARGET = scope:wc_cover_body IMPRISONER = scope:wc_cover_witness }
+			}
+			if = {
+				limit = { has_variable = wc_nathrezim_public_nature }
+				# Custody or the native refusal war now owns this authority's demand.
+				add_to_variable_list = { name = wc_nathrezim_public_settled_authorities target = scope:wc_cover_witness }
 			}
 		}
 		else = {
