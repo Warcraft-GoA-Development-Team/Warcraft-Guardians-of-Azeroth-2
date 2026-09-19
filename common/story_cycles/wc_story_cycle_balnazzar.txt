@@ -1,5 +1,5 @@
 ﻿# Balnazzar - Dreadlord personal story
-# Fires when the player picks character:430400 in the Frozen Throne bookmark.
+# Created for character:430400 in the Frozen Throne bookmark, whether human- or AI-controlled.
 # Decision/event-driven chain, not periodic.
 
 story_balnazzar_dreadlord = {
@@ -22,6 +22,9 @@ story_balnazzar_dreadlord = {
 	}
 
 	on_setup = {
+		set_variable = { name = wc_balnazzar_suspicion_v2 value = yes }
+		set_variable = { name = wc_balnazzar_suspicion value = 0 }
+		set_variable = { name = wc_balnazzar_stratholme_migrated value = yes }
 		set_global_variable = { # Anchor, so the world can reference this playthrough's story
 			name = balnazzar_dreadlord_story
 			value = this
@@ -29,6 +32,7 @@ story_balnazzar_dreadlord = {
 	}
 
 	on_end = {
+		wc_scarlet_migrate_crusade_effect = yes
 		remove_global_variable = balnazzar_dreadlord_story
 	}
 
@@ -38,23 +42,98 @@ story_balnazzar_dreadlord = {
 		end_story = yes
 	}
 
+	# One-time conversion, including idle old saves.
+	effect_group = {
+		days = { 1 1 }
+		trigger = { NOT = { has_variable = wc_balnazzar_suspicion_v2 } }
+		triggered_effect = { effect = { wc_balnazzar_migrate_suspicion_effect = yes } }
+	}
+
 	# Age traits trigger on chronological age alone; strip them from the disguise wearer
 	# rather than patch the shared vanilla health system.
 	effect_group = {
 		days = { 30 60 }
 
-		trigger = {
-			story_owner = { has_character_flag = wc_balnazzar_disguise_active }
-		}
-
 		triggered_effect = {
 			effect = {
-				story_owner = {
-					remove_trait = clouded_eyes
-					remove_trait = faltering_heart
-					remove_trait = fragile_bones
-					remove_trait = infirm
-					remove_trait = withering_mind
+				wc_balnazzar_update_stratholme_effect = yes
+				wc_balnazzar_update_renault_effect = yes
+				wc_balnazzar_update_fairbanks_effect = yes
+				if = {
+					limit = { story_owner = { has_character_flag = wc_balnazzar_disguise_active } }
+					if = {
+						limit = {
+							OR = {
+								NOT = { exists = var:wc_balnazzar_possession_body_migrated }
+								NOT = { exists = var:wc_balnazzar_disguise_immunity_migrated }
+							}
+							exists = character:430400
+							character:430400 = { is_alive = yes }
+						}
+						character:430400 = { trigger_event = { id = wc_balnazzar_story.0010 } }
+					}
+					story_owner = {
+						wc_balnazzar_change_suspicion_effect = { CHANGE = 0 }
+						# Also covers ordinary/natural death and a supporter becoming available.
+						# The event rechecks its own character-root eligibility at delivery.
+						if = {
+							limit = {
+								this = character:60021
+								NOT = { has_character_flag = has_formed_the_scarlet_crusade }
+								OR = {
+									character:60017 = { is_alive = no }
+									wc_balnazzar_parricide_trigger = yes
+								}
+								OR = {
+									NOT = { has_character_flag = wc_balnazzar_fairbanks_direct_witness }
+									has_character_flag = wc_balnazzar_fairbanks_accusation_heard
+									# A dead or detained witness cannot leave the foundation window locked.
+									character:high_inquisitor_fairbanks = { is_alive = no }
+									character:high_inquisitor_fairbanks = { is_imprisoned = yes }
+								}
+							}
+							trigger_event = { id = wc_balnazzar_story.1007 }
+						}
+						remove_trait = clouded_eyes
+						remove_trait = faltering_heart
+						remove_trait = fragile_bones
+						remove_trait = infirm
+						remove_trait = withering_mind
+					}
+					wc_balnazzar_witness_pressure_effect = yes
+				}
+			}
+		}
+	}
+
+	# First council: the story timer follows the current body, not a dead recipient.
+	effect_group = {
+		days = { 1 1 }
+		trigger = {
+			exists = var:wc_balnazzar_scarlet_founded
+			NOT = { exists = var:wc_balnazzar_stratholme_resolved }
+			NOT = { exists = var:wc_balnazzar_stratholme_council_resolved }
+		}
+		triggered_effect = {
+			effect = {
+				# Old saves have no foundation date; start their delay on migration.
+				if = {
+					limit = { NOT = { exists = var:wc_balnazzar_stratholme_council_scheduled } }
+					set_variable = wc_balnazzar_stratholme_council_scheduled
+					if = {
+						limit = { exists = var:wc_balnazzar_stratholme_council_open }
+						set_variable = wc_balnazzar_stratholme_council_seen
+					}
+					else = {
+						set_variable = { name = wc_balnazzar_stratholme_council_delay value = yes months = 6 }
+					}
+				}
+				if = {
+					limit = {
+						NOT = { exists = var:wc_balnazzar_stratholme_council_delay }
+					}
+					# Event trigger rechecks peace, ownership, disguise and window lock.
+					story_owner = { trigger_event = { id = wc_balnazzar_story.1015 } }
 				}
 			}
 		}
@@ -84,6 +163,43 @@ story_balnazzar_dreadlord = {
 					}
 				}
 			}
+		}
+	}
+
+	# Appended to preserve existing timer order in saves. Also catches console edits.
+	# Argent liaison: report the historical foundation once; it does not create it.
+	effect_group = {
+		days = { 7 14 }
+		trigger = {
+			story_owner = {
+				is_ai = no
+				this = character:60021
+				has_character_flag = wc_balnazzar_disguise_active
+				has_character_flag = wc_balnazzar_fairbanks_fallout_resolved
+				NOT = { has_character_flag = wc_balnazzar_argent_dawn_notified }
+			}
+			title:e_argent_dawn = { holder = character:60625 }
+		}
+		triggered_effect = {
+			effect = { story_owner = { trigger_event = { id = wc_balnazzar_story.1018 } } }
+		}
+	}
+
+	effect_group = {
+		days = { 1 1 }
+		trigger = {
+			exists = var:wc_balnazzar_suspicion
+			var:wc_balnazzar_suspicion >= 100
+			NOT = { exists = var:wc_balnazzar_exposure_queued }
+			story_owner = {
+				wc_nathrezim_cover_active_trigger = yes
+				NOT = { has_variable = wc_nathrezim_cover_resolved }
+				NOT = { has_variable = wc_nathrezim_cover_opening_seen }
+				NOT = { has_variable = wc_nathrezim_cover_opening_pending }
+			}
+		}
+		triggered_effect = {
+			effect = { story_owner = { wc_balnazzar_begin_cover_crisis_effect = yes } }
 		}
 	}
 }

@@ -2,36 +2,39 @@
 	icon = claim_cb
 	group = claim
 	mutually_exclusive_titles = {
-		NOT = {
-			# If pushing personal claims, you can press multiple claims with the Divine Right innovation (High Medieval Era).
-			trigger_if = {
-				limit = {
-					scope:attacker = scope:claimant
-				}
-				scope:attacker = {
-					OR = {
-						culture = {
-							has_innovation = innovation_chronicle_writing
-						}
-						AND = {
-							government_has_flag = government_is_landless_adventurer
-							has_realm_law = camp_purpose_legitimists
-							has_variable = legitimist_claimed_title
-							var:legitimist_claimed_title = {
-								OR = {
-									holder = scope:defender
-									de_jure_liege.holder = scope:defender
+		OR = {
+			wc_scarlet_stratholme_selected_trigger = yes
+			NOT = {
+				# If pushing personal claims, you can press multiple claims with the Divine Right innovation (High Medieval Era).
+				trigger_if = {
+					limit = {
+						scope:attacker = scope:claimant
+					}
+					scope:attacker = {
+						OR = {
+							culture = {
+								has_innovation = innovation_chronicle_writing
+							}
+							AND = {
+								government_has_flag = government_is_landless_adventurer
+								has_realm_law = camp_purpose_legitimists
+								has_variable = legitimist_claimed_title
+								var:legitimist_claimed_title = {
+									OR = {
+										holder = scope:defender
+										de_jure_liege.holder = scope:defender
+									}
 								}
 							}
 						}
 					}
 				}
-			}
-			# If pushing claims for someone else, you need the Rightful Ownership innovation to press multiple claims (Late Medieval Era).
-			trigger_else = {
-				scope:attacker = {
-					culture = {
-						has_innovation = innovation_divine_right
+				# If pushing claims for someone else, you need the Rightful Ownership innovation to press multiple claims (Late Medieval Era).
+				trigger_else = {
+					scope:attacker = {
+						culture = {
+							has_innovation = innovation_divine_right
+						}
 					}
 				}
 			}
@@ -50,6 +53,21 @@
 	# scope:attacker is the attacker
 	# scope:defender is the defender
 	is_allowed_claim_title = {
+		# This hook supplies claimant and the candidate title; valid_to_start does not.
+		trigger_if = {
+			limit = {
+				wc_scarlet_stratholme_claimant_trigger = yes
+				OR = {
+					this = title:d_stratholme
+					any_in_list = { list = target_titles this = title:d_stratholme }
+				}
+			}
+			custom_description = {
+				text = wc_scarlet_stratholme_single_claim_requirement
+				this = title:d_stratholme
+				NOT = { any_in_list = { list = target_titles NOT = { this = title:d_stratholme } } }
+			}
+		}
 		trigger_if = {
 			limit = {
 				scope:attacker = {
@@ -272,6 +290,15 @@
 	#target_title_tier = all
 
 	on_declaration = {
+		# Persist both outcomes: later succession or institution changes cannot
+		# turn this war into a different kind of claim.
+		if = {
+			limit = { wc_scarlet_stratholme_claim_trigger = yes }
+			scope:war = { set_variable = { name = wc_scarlet_limited_claim value = yes } }
+		}
+		else = {
+			scope:war = { set_variable = { name = wc_scarlet_limited_claim value = no } }
+		}
 		on_declared_war = yes
 		if = {
 			limit = {
@@ -373,6 +400,20 @@
 	}
 
 	on_victory = {
+		if = {
+			limit = {
+				OR = {
+					scope:war.var:wc_scarlet_limited_claim ?= yes
+					# Older active wars have no declaration snapshot; retain their
+					# previous settlement rule without replaying any completed war.
+					AND = {
+						NOT = { scope:war = { has_variable = wc_scarlet_limited_claim } }
+						wc_scarlet_stratholme_claim_trigger = yes
+					}
+				}
+			}
+			save_scope_value_as = { name = wc_stratholme_limited_claim value = yes }
+		}
 		#Grab the higher title tier
 		ordered_in_list = {
 			list = target_titles
@@ -452,6 +493,7 @@
 				limit = {
 					top_liege = this
 					government_allows = administrative
+					NOT = { exists = scope:wc_stratholme_limited_claim }
 					primary_title = { is_in_list = target_titles }
 				}
 				every_held_title = {
@@ -465,22 +507,34 @@
 			ep3_war_loss_adventurer_tt_effect = yes
 		}
 
-		create_title_and_vassal_change = {
-			type = conquest_claim
-			save_scope_as = change
-			add_claim_on_loss = yes
+		if = {
+			limit = { exists = scope:wc_stratholme_limited_claim }
+			# Calculate ordinary war fame without executing the broad claim transfer.
+			setup_claim_cb = {
+				titles = target_titles
+				attacker = scope:attacker
+				defender = scope:defender
+				claimant = scope:claimant
+				victory = no
+			}
+			wc_scarlet_stratholme_victory_effect = yes
 		}
-		
-		# Create a claim CB which is executed to handle title/vassal changes, in addition to being used to calculate Prestige awards for war participants.
-		setup_claim_cb = {
-			titles = target_titles
-			attacker = scope:attacker
-			defender = scope:defender
-			claimant = scope:claimant
-			change = scope:change
+		else = {
+			create_title_and_vassal_change = {
+				type = conquest_claim
+				save_scope_as = change
+				add_claim_on_loss = yes
+			}
+			# Standard claim settlement for every other campaign and claimant.
+			setup_claim_cb = {
+				titles = target_titles
+				attacker = scope:attacker
+				defender = scope:defender
+				claimant = scope:claimant
+				change = scope:change
+			}
+			resolve_title_and_vassal_change = scope:change
 		}
-
-		resolve_title_and_vassal_change = scope:change
 
 		# Landless Ceremonial Liege
 		if = {
