@@ -1,0 +1,184 @@
+﻿namespace = wc_combat_events
+
+##########################
+#       0001-0099		 #
+# Resurrected Combatants #	
+##########################
+
+
+# copied from combat_events.txt
+scripted_effect generate_relevant_slain_combatants_list_effect = {
+	# Initialize the variable we will use to keep track of how many relevant casualties there are.
+	set_variable = {
+		name = num_other_relevant_slain_combatants
+		value = 0
+	}
+
+	# Re-order the combatant list based on who we care about the most.
+	ordered_in_list = {
+		list = $LIST_OF_SLAIN_COMBATANTS$
+		max = 99
+		check_range_bounds = no
+
+		limit = { # We only care about people on the enemy side who matter to us, not generic knights.
+			this != root # Do not send a message about ourselves.
+			trigger_if = {
+				limit = {
+					$LIST_ALL_CHARACTERS$ = no
+				}
+				# Must be relevant to root in some way.
+				OR = {
+					AND = {
+						exists = scope:combat_war
+						root = { is_attacker_in_war = scope:combat_war }
+						this = scope:combat_war.primary_defender
+					}
+					AND = {
+						exists = scope:combat_war
+						root = { is_defender_in_war = scope:combat_war }
+						this = scope:combat_war.primary_attacker
+					}
+				}
+			}
+		}
+
+		order_by = {
+			value = 0
+			if = {
+				limit = {
+					OR = {
+						AND = {
+							exists = scope:combat_war
+							root = { is_attacker_in_war = scope:combat_war }
+							this = scope:combat_war.primary_defender
+						}
+						AND = {
+							exists = scope:combat_war
+							root = { is_defender_in_war = scope:combat_war }
+							this = scope:combat_war.primary_attacker
+						}
+					}
+				}
+				add = 1000
+			}
+			add = slain_combatant_weights_for_root_participant
+		}
+
+		# Add the casualties to a new list tailored to be more relevant to this character.
+		add_to_list = relevant_slain_combatants
+		root = {
+			change_variable = {
+				name = num_other_relevant_slain_combatants
+				add = 1
+			}
+		}
+
+		# The first two casualties on this list (i.e., the most important people to us) should be have their individual scopes saved for use in portraits & localization.
+		if = {
+			limit = {
+				NOT = { exists = scope:primary_deceased }
+			}
+			save_scope_as = primary_deceased
+
+			# Decrement the number of relevant slain combatants, to exclude the primary deceased from the count (for localization).
+			root = {		
+				change_variable = {
+					name = num_other_relevant_slain_combatants
+					add = -1
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = { exists = scope:secondary_deceased }
+			}
+			save_scope_as = secondary_deceased
+		}
+	}
+}
+
+scripted_effect clear_relevant_slain_combatants_list_effect = {
+	every_in_list = {
+		list = relevant_slain_combatants
+		remove_from_list = relevant_slain_combatants
+	}
+	remove_variable = num_other_relevant_slain_combatants
+	clear_saved_scope = primary_deceased
+	clear_saved_scope = secondary_deceased
+}
+
+# Resurrection notification event for combat winner.
+wc_combat_events.0001 = { 
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		# Generate a list of relevant resurrected characters on the enemy's side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = resurrected_combatants
+			LIST_ALL_CHARACTERS = no
+		}	
+		try_to_send_resurrected_message_effect = { TYPE = good TITLE = good DESC = good }
+		clear_relevant_slain_combatants_list_effect = yes
+
+		# Repeat the above, but for casualties on our own side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = victorious_resurrected_combatants
+			LIST_ALL_CHARACTERS = yes
+		}
+		try_to_send_resurrected_message_effect = { TYPE = bad TITLE = bad DESC = bad }
+		clear_relevant_slain_combatants_list_effect = yes
+	}
+}
+
+
+# Resurrection notification event for combat loser.
+wc_combat_events.0002 = { 
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		# Generate a list of relevant resurrected characters on the enemy's side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = victorious_resurrected_combatants
+			LIST_ALL_CHARACTERS = no
+		}	
+		try_to_send_resurrected_message_effect = { TYPE = good TITLE = good DESC = good }
+		clear_relevant_slain_combatants_list_effect = yes
+
+		# Repeat the above, but for resurrected characters on our own side.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = resurrected_combatants
+			LIST_ALL_CHARACTERS = yes
+		}
+		try_to_send_resurrected_message_effect = { TYPE = bad TITLE = bad DESC = bad }
+		clear_relevant_slain_combatants_list_effect = yes
+	}		
+}
+
+# Resurrection notification event for other relevant characters (sends a personalized notification to a player about characters of interest who were captured in battle.)
+wc_combat_events.0003 = { 
+	type = character_event
+	hidden = yes
+
+	immediate = {
+		every_in_list = {
+			list = resurrected_combatants
+			add_to_list = all_slain_combatants
+		}
+		every_in_list = {
+			list = victorious_resurrected_combatants
+			add_to_list = all_slain_combatants
+		}
+
+		# Generate a list of all relevant slain combatants on both sides.
+		generate_relevant_slain_combatants_list_effect = {
+			LIST_OF_SLAIN_COMBATANTS = all_slain_combatants
+			LIST_ALL_CHARACTERS = no
+		}
+		
+		try_to_send_resurrected_message_effect = { TYPE = neutral TITLE = neutral DESC = bad }
+
+		clear_relevant_slain_combatants_list_effect = yes
+	}
+}
