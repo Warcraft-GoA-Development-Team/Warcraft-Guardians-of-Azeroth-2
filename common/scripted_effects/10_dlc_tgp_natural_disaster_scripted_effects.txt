@@ -245,19 +245,11 @@ spawn_flood_in_county_effect = {
 
 		save_scope_value_as = {
 			name = min_severity
-			value = scope:epicenter_county.title_province.natural_disaster_flood_min_severity
+			value = scope:flood_county.title_province.natural_disaster_flood_min_severity
 		}
 		save_scope_value_as = {
 			name = max_severity
-			value = scope:epicenter_county.title_province.natural_disaster_flood_max_severity
-		}
-		# Warcraft - silence error (why tf did they bother w this switch??? they have the same goddamn value)
-		scope:flood_county.title_province ?= { save_scope_value_as = { name = min_severity value = 2 }
-			# switch = {
-			# 	trigger = geographical_region
-			# 	geographical_region:yellow_river_region = { save_scope_value_as = { name = min_severity value = 2 } }
-			# 	geographical_region:nile_river_region = { save_scope_value_as = { name = min_severity value = 2 } }
-			# }
+			value = scope:flood_county.title_province.natural_disaster_flood_max_severity
 		}
 
 		set_variable = {
@@ -345,21 +337,31 @@ natural_disaster_insurance_effect = {
 	}
 	else_if = {
 		limit = {
-			any_liege_or_above = {
-				is_ai = yes
-				treasury > conduct_census_natural_disaster_payout_value
+			any_situation_participant = {
+				any_liege_or_above = {
+					is_ai = yes
+					treasury > conduct_census_natural_disaster_payout_value
+				}
 			}
 		}
-		ordered_liege_or_above = {
-			order_by = {
-				value = highest_held_title_tier
-				multiply = -1
-			}
+		random_situation_participant = {
 			limit = {
-				is_ai = yes
-				treasury > conduct_census_natural_disaster_payout_value
+				any_liege_or_above = {
+					is_ai = yes
+					treasury > conduct_census_natural_disaster_payout_value
+				}
 			}
-			save_scope_as = minister
+			ordered_liege_or_above = {
+				order_by = {
+					value = highest_held_title_tier
+					multiply = -1
+				}
+				limit = {
+					is_ai = yes
+					treasury > conduct_census_natural_disaster_payout_value
+				}
+				save_scope_as = minister
+			}
 		}
 	}
 	every_situation_participant = {
@@ -875,7 +877,7 @@ natural_disaster_save_disaster_province_effect = {
 		}
 		random_in_list = {
 			list = disaster_counties
-			limit = { situation_center_province.county ?= this }
+			limit = { scope:situation.situation_center_province.county ?= this }
 			alternative_limit = { holder ?= scope:disaster_province_ruler }
 			alternative_limit = { holder.liege ?= scope:disaster_province_ruler }
 			alternative_limit = { always = yes }
@@ -984,24 +986,42 @@ natural_disaster_great_project_mandatory_investment_reward_effect = {
 
 natural_disaster_assign_councillor_to_manage_effect = {
 	if = {
-		limit = { government_has_flag = government_is_nomadic }
+		limit = {
+			government_has_flag = government_is_nomadic
+			any_councillor = { is_kurultai_trigger = yes }
+		}
 		random_councillor = {
 			limit = { is_kurultai_trigger = yes }
 			save_scope_as = councillor
 		}
 	}
 	else_if = {
-		limit = { government_has_flag = government_is_landless_adventurer }
-		random_entourage_character = {
+		limit = {
+			government_has_flag = government_is_landless_adventurer
+			any_court_position_holder = { type = second_camp_officer }
+		}
+		random_court_position_holder = {
+			type = second_camp_officer
 			save_scope_as = councillor
 		}
 	}
 	else_if = {
-		limit = { tgp_has_access_to_ministry_trigger = yes }
+		limit = {
+			tgp_has_access_to_ministry_trigger = yes
+			exists = cp:minister_works
+		}
 		cp:minister_works = { save_scope_as = councillor }
 	}
-	else = {
+	else_if = {
+		limit = { exists = cp:councillor_steward }
 		cp:councillor_steward = { save_scope_as = councillor }
+	}
+	else_if = {
+		limit = { any_councillor = {} }
+		random_councillor = { save_scope_as = councillor }
+	}
+	else = {
+		random_courtier = { save_scope_as = councillor }
 	}
 	$GREAT_PROJECT$ = {
 		set_variable = {
@@ -1052,7 +1072,7 @@ natural_disaster_all_counties_investment_modifier_effect = {
 			limit = { holder.top_liege = scope:owner }
 			custom = every_realm_disaster_county_great_project_custom
 			if = { 
-				limit = { exists = $YEARS$ }
+				limit = { $YEARS$ >= 0 }
 				$OPERATION$_county_modifier = {
 					modifier = $MODIFIER$
 					years = $YEARS$
@@ -1071,5 +1091,82 @@ natural_disaster_great_project_save_scopes_effect = {
 	scope:great_project.var:situation ?= {
 		save_scope_as = situation
 		situation_sub_region:disaster_area = { save_scope_as = situation_sub_region }
+	}
+}
+
+# Called from on_contribution_funded of every natural disaster contribution, root is the contributor.
+# AMOUNT: spiritual fulfillment gained, scaled to whether the contribution was mandatory or voluntary.
+tenet_benevolent_governance_disaster_relief_effect = {
+	save_temporary_scope_as = benevolent_governance_contributor
+	# Recorded regardless of tenet, so a later adopter is not reproached for a disaster they did fund
+	if = {
+		limit = { this = scope:owner }
+		scope:great_project ?= {
+			set_variable = {
+				name = benevolent_governance_relief_funded
+				value = yes
+			}
+		}
+	}
+	if = {
+		limit = {
+			has_personal_tenet_flag = tenet_benevolent_governance_disaster_relief_fulfillment
+			exists = scope:great_project
+			scope:great_project = {
+				NOT = {
+					is_target_in_variable_list = {
+						name = benevolent_governance_relief_rewarded_$TIER$
+						target = scope:benevolent_governance_contributor
+					}
+				}
+			}
+		}
+		scope:great_project = {
+			add_to_variable_list = {
+				name = benevolent_governance_relief_rewarded_$TIER$
+				target = scope:benevolent_governance_contributor
+			}
+		}
+		if = {
+			limit = { is_ai = no }
+			send_interface_toast = {
+				type = event_generic_good
+				title = benevolent_governance_disaster_relief_fulfillment_toast
+				left_icon = root
+				change_spiritual_fulfillment = $AMOUNT$
+			}
+		}
+		else = {
+			change_spiritual_fulfillment = $AMOUNT$
+		}
+	}
+}
+
+# Called from the disaster great project's on_complete, root is the project.
+# Expects scope:situation, set by natural_disaster_great_project_save_scopes_effect.
+tenet_benevolent_governance_disaster_neglect_effect = {
+	if = {
+		limit = {
+			exists = scope:situation
+			NOT = { exists = scope:great_project.var:benevolent_governance_relief_funded }
+			scope:owner ?= {
+				has_personal_tenet_flag = tenet_benevolent_governance_disaster_relief_fulfillment
+				tgp_natural_disaster_is_valid_contributor_trigger = yes
+			}
+		}
+		scope:owner = {
+			if = {
+				limit = { is_ai = no }
+				send_interface_toast = {
+					type = event_generic_bad
+					title = benevolent_governance_disaster_neglect_toast
+					left_icon = root
+					change_spiritual_fulfillment = tenet_benevolent_governance_disaster_neglect_loss_value
+				}
+			}
+			else = {
+				change_spiritual_fulfillment = tenet_benevolent_governance_disaster_neglect_loss_value
+			}
+		}
 	}
 }

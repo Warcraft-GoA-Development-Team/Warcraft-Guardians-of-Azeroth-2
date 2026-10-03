@@ -1,0 +1,1592 @@
+﻿# convert_to_rite_with_consequences_effect ( root = Character, RITE )
+
+clean_convert_modifier_effect = {
+	if = {
+		limit = { has_character_modifier = reckless_convert_modifier }
+		remove_character_modifier = reckless_convert_modifier
+	}
+	else_if = {
+		limit = { has_character_modifier = informed_convert_modifier }
+		remove_character_modifier = informed_convert_modifier
+	}
+	else_if = {
+		limit = { has_character_modifier = foolish_convert_modifier }
+		remove_character_modifier = foolish_convert_modifier
+	}
+}
+
+convert_to_rite_with_consequences_effect = {
+	clean_convert_modifier_effect = yes
+	if = {
+		limit = {
+			government_has_flag = government_is_mandala
+			$RITE$ = { rite_has_doctrine = doctrine_monotheist }
+		}
+		custom_description_no_bullet = { text = mandala_monotheist_warning_tt }
+	}
+	if = {
+		limit = {
+			knows_rite_level = {
+				target = $RITE$
+				value < 0.6
+			}
+			NOT = { exists = scope:convert_at_war } # be a bit kinder to forced converts
+		}
+		set_piety_level = {
+			value = 0
+		}
+		add_stress = massive_stress_gain
+		add_piety = {
+			value = piety
+			multiply = -1
+		}
+		add_character_modifier = {
+			modifier = foolish_convert_modifier
+			years = 5
+		}
+	}
+	else_if = {
+		limit = {
+			knows_rite_level = {
+				target = $RITE$
+				value < 0.8
+			}
+		}
+		add_piety_level = -1
+		add_stress = major_stress_gain
+		add_piety = {
+			value = piety
+			multiply = -0.5
+		}
+		add_character_modifier = {
+			modifier = reckless_convert_modifier
+			years = 5
+		}
+	}
+	else = {
+		add_piety = {
+			value = piety
+			multiply = -0.5
+		}
+		add_character_modifier = {
+			modifier = informed_convert_modifier
+			years = 5
+		}
+	}
+
+	# Not set_character_rite_with_conversion: avoids cascade, and this may be a forced conversion
+	set_character_rite = $RITE$
+	add_character_flag = {
+		flag = recent_convert
+		years = 5
+	}
+	#PAM - If a recent_convert in an archdiocese has a baptistery
+	if = {
+		limit = {
+			has_character_flag = recent_convert
+		#Does the archbishopric they reside in have a baptistery? 
+			liege.capital_county.clerical_region_title.holder ?= { 
+				domicile ?= {
+					has_domicile_parameter = estate_baptistery
+				}
+				rite = root.rite
+			}
+			#Does their liege have a baptistery? 
+			liege.domicile ?= { has_domicile_parameter = estate_baptistery }
+		}
+		add_character_modifier = {
+			modifier = pam_recently_baptized_at_domicile_modifier 
+			years = 5
+		}
+	} 
+}
+
+
+# Creates and immediately grants a landless cardinalate to ROOT.
+grant_cardinal_title_effect = {
+	save_scope_as = cardinal_recipient
+	# Government is picked during the title transfer, before change_government below
+	# A theocratic government_base keeps a lowborn from founding a dynasty
+	if = {
+		limit = { rite.head_of_rite ?= { government_has_flag = government_is_theocracy } }
+		rite.head_of_rite = { save_scope_as = cardinal_government_base }
+	}
+	else_if = {
+		limit = { faith.religious_head ?= { government_has_flag = government_is_theocracy } }
+		faith.religious_head = { save_scope_as = cardinal_government_base }
+	}
+	else_if = {
+		limit = { title:k_papal_state.holder ?= { government_has_flag = government_is_theocracy } }
+		title:k_papal_state.holder = { save_scope_as = cardinal_government_base }
+	}
+	else = {
+		save_scope_as = cardinal_government_base
+	}
+	# Grant a vacant cardinalate
+	if = {
+		limit = {
+			pam_can_hold_cardinalate_trigger = yes
+			pam_can_receive_cardinalate_trigger = yes
+			pam_pope_is_head_of_faith_or_rite_trigger = yes
+			any_in_global_list = {
+				variable = roma_cardinalates
+				NOR = {
+					exists = holder
+					AND = {
+						this = title:d_cd_velletri
+						game_start_date >= 1178.1.1
+					}
+				}
+			}
+		}
+		random_in_global_list = {
+			variable = roma_cardinalates
+			limit = {
+				NOR = {
+					exists = holder
+					exists = var:suppressed_cardinalate
+				}
+				any_past_holder = {} # prefer titles which have been used before
+			}
+			alternative_limit = {
+				NOR = {
+					exists = holder
+					exists = var:suppressed_cardinalate
+				}
+			}
+			save_scope_as = cardinalate
+		}
+		scope:cardinalate ?= {
+			# Register before transfer so lay-clergy rites see a clerical elector during gov validation
+			if = {
+				limit = {
+					scope:cardinal_recipient.faith = {
+						NOT = {
+							any_clerical_elector_title = { scope:cardinalate = this }
+						}
+					}
+				}
+				add_clerical_elector = scope:cardinal_recipient.faith
+			}
+			create_title_and_vassal_change = {
+				type = granted
+				save_scope_as = change
+				add_claim_on_loss = no
+			}
+			change_title_holder = {
+				holder = scope:cardinal_recipient
+				change = scope:change
+				government_base = scope:cardinal_government_base
+			}
+			resolve_title_and_vassal_change = scope:change
+		}
+	}
+	# Create a new cardinalate
+	else_if = {
+		limit = {
+			pam_can_hold_cardinalate_trigger = yes
+			pam_can_receive_cardinalate_trigger = yes
+			pam_pope_is_head_of_faith_or_rite_trigger = yes
+		}
+		capital_barony ?= { save_scope_as = capital_barony }
+		$CARDINAL_COUNTY$ ?= { save_scope_as = cardinal_county }
+		if = {
+			limit = {
+				NOT = { exists = scope:cardinal_county }
+				exists = default_location.county
+			}
+			default_location.county = { save_scope_as = cardinal_county }
+		}
+		if = {
+			limit = { exists = scope:cardinal_county }
+			scope:cardinal_county = {
+				random_direct_de_jure_vassal_title = {
+					limit = {
+						title_province = { has_holding_type = church_holding }
+						save_temporary_scope_as = temple_barony
+						NOT = {
+							scope:cardinal_recipient.faith = {
+								any_clerical_elector_title = {
+									var:named_after ?= scope:temple_barony
+								}
+							}
+						}
+					}
+					save_scope_as = cardinal_temple_barony
+				}
+			}
+		}
+		create_dynamic_title = {
+			tier = duchy
+			name = {
+				first_valid = {
+					triggered_desc = {
+						trigger = { exists = scope:cardinal_temple_barony }
+						desc = CE3_CARDINAL_DYNAMIC_TITLE_NAME_TEMPLE
+					}
+					triggered_desc = {
+						trigger = { exists = scope:capital_barony }
+						desc = CE3_CARDINAL_DYNAMIC_TITLE_NAME_CAPITAL_BARONY
+					}
+					triggered_desc = {
+						trigger = { exists = scope:cardinal_county }
+						desc = CE3_CARDINAL_DYNAMIC_TITLE_NAME_COUNTY
+					}
+					desc = CE3_CARDINAL_DYNAMIC_TITLE_NAME_PERSON
+				}
+			}
+			adj = {
+				first_valid = {
+					triggered_desc = {
+						trigger = { exists = scope:cardinal_temple_barony }
+						desc = CE3_CARDINAL_DYNAMIC_TITLE_ADJ_TEMPLE
+					}
+					triggered_desc = {
+						trigger = { exists = scope:capital_barony }
+						desc = CE3_CARDINAL_DYNAMIC_TITLE_ADJ_CAPITAL_BARONY
+					}
+					triggered_desc = {
+						trigger = { exists = scope:cardinal_county }
+						desc = CE3_CARDINAL_DYNAMIC_TITLE_ADJ_COUNTY
+					}
+					desc = CE3_CARDINAL_DYNAMIC_TITLE_ADJ_PERSON
+				}
+			}
+		}
+		scope:new_title ?= {
+			add_clerical_elector = scope:cardinal_recipient.faith
+			set_variable = pam_dynamic_cardinalate
+			save_scope_as = cardinalate
+		}
+		create_title_and_vassal_change = {
+			type = created
+			save_scope_as = change
+			add_claim_on_loss = no
+		}
+		scope:new_title ?= {
+			if = {
+				limit = { exists = scope:cardinal_temple_barony }
+				set_variable = {
+					name = named_after
+					value = scope:cardinal_temple_barony
+				}
+				set_coa = scope:cardinal_temple_barony
+				set_color_from_title = scope:cardinal_temple_barony
+				set_capital_county = scope:cardinal_temple_barony.county
+			}
+			else_if = {
+				limit = { exists = scope:capital_barony }
+				set_coa = scope:capital_barony
+				set_color_from_title = scope:capital_barony
+				set_capital_county = scope:capital_barony.county
+			}
+			else_if = {
+				limit = { exists = scope:cardinal_county }
+				set_coa = scope:cardinal_county
+				set_color_from_title = scope:cardinal_county
+				set_capital_county = scope:cardinal_county
+			}
+			else = {
+				set_coa = scope:cardinal_recipient.rite.head_of_rite.default_location.county
+				set_color_from_title = scope:cardinal_recipient.rite.head_of_rite.default_location.county
+				set_capital_county = scope:cardinal_recipient.rite.head_of_rite.default_location.county
+			}
+			set_landless_title = yes
+			set_destroy_on_succession = yes
+			set_no_automatic_claims = yes
+			set_can_be_named_after_dynasty = no
+			set_can_use_nomadic_naming = no
+			change_title_holder = {
+				holder = scope:cardinal_recipient
+				change = scope:change
+				government_base = scope:cardinal_government_base
+			}
+		}
+		resolve_title_and_vassal_change = scope:change
+	}
+	scope:cardinalate ?= {
+		if = {
+			limit = {
+				NOT = {
+					is_target_in_global_variable_list = {
+						name = roma_cardinalates
+						target = scope:cardinalate
+					}
+				}
+			}
+			add_to_global_variable_list = {
+				name = roma_cardinalates
+				target = scope:cardinalate
+			}
+		}
+	}
+	if = {
+		limit = { exists = scope:cardinalate }
+		scope:cardinal_recipient ?= {
+			change_government = ecclesiastical_government
+			add_character_flag = cardinal_flag
+			if = {
+				limit = {
+					any_held_title = {
+						tier = tier_duchy
+						has_clerical_region = yes
+					}
+				}
+				random_held_title = {
+					limit = {
+						tier = tier_duchy
+						has_clerical_region = yes
+					}
+					save_scope_as = clerical_region_title
+				}
+				set_primary_title_to = scope:clerical_region_title
+			}
+			situation:the_christian_church ?= {
+				add_manual_participant = prev
+			}
+		}
+	}
+}
+
+# Destroys $CARDINALATE$ title. Frees up the location variable to reuse the name it had, if the title is recreated. Removes the character from the situation, if it was their only title.
+pam_destroy_cardinal_title_effect = {
+	if = { # A dynamic cardinalate is deleted outright, so it has to leave the reuse pool with it
+		limit = { $CARDINALATE$ = { exists = var:pam_dynamic_cardinalate } }
+		remove_list_global_variable = {
+			name = roma_cardinalates
+			target = $CARDINALATE$
+		}
+	}
+	remove_character_flag = cardinal_flag
+	destroy_title = $CARDINALATE$
+	if = {
+		limit = {
+			NOR = {
+				exists = clerical_elector_title
+				any_held_title = { has_clerical_region = yes }
+			}
+		}
+		situation:the_christian_church ?= {
+			if = {
+				limit = { is_manual_participant = prev }
+				remove_manual_participant = prev
+			}
+		}
+	}
+}
+
+# A Head of Faith must not sit in the College they preside over.
+pam_vacate_head_of_faith_cardinalate_effect = {
+	if = {
+		limit = {
+			exists = clerical_elector_title
+			pam_holds_church_seat_trigger = yes
+		}
+		clerical_elector_title = { save_temporary_scope_as = pam_vacated_cardinalate }
+		pam_destroy_cardinal_title_effect = { CARDINALATE = scope:pam_vacated_cardinalate }
+	}
+}
+
+# Faith link falls back without the DLC, so this compare also requires it
+# theocratic_lay_clergy_trigger is ecclesiastical_government's can_get_government
+pam_align_theocracy_with_faith_government_effect = {
+	if = {
+		limit = {
+			government_has_flag = government_is_theocracy
+			NOT = { government_has_flag = government_is_ecclesiastical }
+			faith.faith_theocratic_goverment_type = government_type:ecclesiastical_government
+			theocratic_lay_clergy_trigger = yes
+		}
+		change_government = ecclesiastical_government
+	}
+}
+
+# Holy orders stay as they are, since a holy-order primary never moves onto ecclesiastical government
+# Non-rulers stay: a new holder only rules once the transfer resolves
+pam_strip_illegal_cardinalate_effect = {
+	if = {
+		limit = {
+			is_ruler = yes
+			NOR = {
+				government_has_flag = government_is_theocracy
+				government_has_flag = government_is_holy_order
+			}
+			exists = clerical_elector_title
+		}
+		pam_destroy_cardinal_title_effect = { CARDINALATE = clerical_elector_title }
+	}
+}
+
+pam_create_seed_cardinal_effect = {
+	create_character = {
+		location = $LOCATION$
+		age = { 30 55 }
+		gender_female_chance = {
+			if = {
+				limit = { $HOF$.rite = { rite_has_parameter = clergy_must_be_male } }
+				add = 0
+			}
+			else_if = {
+				limit = { $HOF$.rite = { rite_has_parameter = clergy_must_be_female } }
+				add = 100
+			}
+			else = {
+				add = 50
+			}
+		}
+		trait = education_learning_3
+		faith = $FAITH$
+		culture = $HOF$.culture
+		learning = { 12 20 }
+		save_scope_as = pam_new_cardinal
+	}
+}
+
+# ROOT = faith. Fill the College up to 10 so vacancy AI does not spam the HoF on creation.
+pam_seed_cardinals_effect = {
+	if = {
+		limit = {
+			has_pam_dlc_trigger = yes
+			has_doctrine_parameter = has_clerical_electors
+			any_clerical_elector_title = { count < 10 }
+			OR = {
+				exists = religious_head
+				exists = title:k_papal_state.holder
+			}
+		}
+		# Callers fire this from on_actions whose root is a character, so the faith needs its own scope
+		save_scope_as = pam_seed_faith
+		if = {
+			limit = { exists = religious_head }
+			religious_head = { save_scope_as = pam_seed_hof }
+		}
+		else = {
+			title:k_papal_state.holder = { save_scope_as = pam_seed_hof }
+		}
+		scope:pam_seed_hof.capital_county ?= { save_scope_as = pam_seed_cardinal_county }
+		if = {
+			limit = { NOT = { exists = scope:pam_seed_cardinal_county } }
+			title:c_roma = { save_scope_as = pam_seed_cardinal_county }
+		}
+		# One ordered pass - same eligibility as pam_cardinal_vacancy_on_death_effect
+		ordered_clerical_region_title = {
+			limit = {
+				holder ?= {
+					is_alive = yes
+					is_adult = yes
+					is_incapable = no
+					NOT = { has_trait = excommunicated }
+					NOT = { exists = clerical_elector_title }
+					this != scope:pam_seed_hof
+					pam_can_hold_cardinalate_trigger = yes
+					pam_pope_is_head_of_faith_or_rite_trigger = yes
+				}
+			}
+			order_by = holder.piety_level
+			max = 10
+			check_range_bounds = no
+			holder = {
+				if = {
+					limit = {
+						scope:pam_seed_faith = { any_clerical_elector_title = { count < 10 } }
+					}
+					grant_cardinal_title_effect = {
+						CARDINAL_COUNTY = capital_county
+					}
+					add_to_list = pam_seeded_cardinals
+				}
+			}
+		}
+		# Mint only what the promotion pass could not fill (count = 10 is a hard bound)
+		scope:pam_seed_hof = {
+			while = {
+				count = 10
+				limit = {
+					scope:pam_seed_faith = { any_clerical_elector_title = { count < 10 } }
+				}
+				pam_create_seed_cardinal_effect = {
+					HOF = scope:pam_seed_hof
+					LOCATION = scope:pam_seed_cardinal_county.title_province
+					FAITH = scope:pam_seed_faith
+				}
+				scope:pam_new_cardinal ?= {
+					grant_cardinal_title_effect = {
+						CARDINAL_COUNTY = scope:pam_seed_cardinal_county
+					}
+					add_to_list = pam_seeded_cardinals
+				}
+			}
+		}
+		# Seeding at game start is part of the setup, but mid-game it would otherwise be silent
+		if = {
+			limit = {
+				NOT = { current_date_is_start_date_trigger = yes }
+				any_in_list = { list = pam_seeded_cardinals count >= 1 }
+				scope:pam_seed_hof = { is_ai = no }
+			}
+			ordered_in_list = {
+				list = pam_seeded_cardinals
+				order_by = piety_level
+				max = 1
+				check_range_bounds = no
+				save_scope_as = cardinal_candidate
+			}
+			scope:pam_seed_hof = {
+				trigger_event = {
+					id = pam_clergy_events.0042
+					days = 3
+				}
+			}
+		}
+	}
+}
+
+pam_seed_867_college_effect = {
+	if = {
+		limit = {
+			has_pam_dlc_trigger = yes
+			title:k_papal_state.holder ?= {
+				faith ?= { has_doctrine_parameter = has_clerical_electors }
+			}
+		}
+		title:k_papal_state.holder = { save_scope_as = pam_867_pope }
+		every_in_global_list = {
+			variable = roma_cardinalates
+			limit = {
+				exists = holder
+				holder = {
+					this != scope:pam_867_pope
+					pam_can_hold_cardinalate_trigger = yes
+					pam_pope_is_head_of_faith_or_rite_trigger = yes
+				}
+			}
+			add_clerical_elector = scope:pam_867_pope.faith
+			holder = {
+				add_character_flag = cardinal_flag
+				situation:the_christian_church ?= {
+					add_manual_participant = prev
+				}
+			}
+		}
+		title:d_cd_ostia = { pam_seed_867_suburbicarian_see_effect = yes }
+		title:d_cd_porto = { pam_seed_867_suburbicarian_see_effect = yes }
+		title:d_cd_velletri = { pam_seed_867_suburbicarian_see_effect = yes }
+		title:d_cd_frascati = { pam_seed_867_suburbicarian_see_effect = yes }
+		title:d_cd_albano = { pam_seed_867_suburbicarian_see_effect = yes }
+		title:d_cd_palestrina = { pam_seed_867_suburbicarian_see_effect = yes }
+		title:d_cd_sabina = { pam_seed_867_suburbicarian_see_effect = yes }
+	}
+}
+
+pam_seed_867_suburbicarian_see_effect = {
+	if = {
+		limit = { NOT = { exists = holder } }
+		scope:pam_867_pope = {
+			pam_create_seed_cardinal_effect = {
+				HOF = scope:pam_867_pope
+				LOCATION = title:c_roma.title_province
+				FAITH = scope:pam_867_pope.faith
+			}
+		}
+		# Registered before the transfer so a clerical elector exists when the new holder is validated
+		add_clerical_elector = scope:pam_new_cardinal.faith
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+			add_claim_on_loss = no
+		}
+		change_title_holder = {
+			holder = scope:pam_new_cardinal
+			change = scope:change
+			government_base = scope:pam_867_pope
+		}
+		resolve_title_and_vassal_change = scope:change
+		scope:pam_new_cardinal = {
+			set_character_rite = scope:pam_867_pope.rite
+			change_government = ecclesiastical_government
+			add_character_flag = cardinal_flag
+			situation:the_christian_church ?= {
+				add_manual_participant = prev
+			}
+		}
+	}
+}
+
+the_christian_church_add_clerical_title_holders_as_manual_participants_effect = {
+	#if = {
+	#	limit = { exists = situation:the_christian_church }
+	#	religion:christianity_religion = {
+	#		every_faith = {
+	#			every_clerical_elector_title = {
+	#				holder ?= {
+	#					situation:the_christian_church = {
+	#						add_manual_participant = prev
+	#					}
+	#				}
+	#			}
+	#			every_clerical_region_title = {
+	#				holder ?= {
+	#					situation:the_christian_church = {
+	#						add_manual_participant = prev
+	#					}
+	#				}
+	#			}
+	#		}
+	#	}
+	#}
+}
+
+# Recalculated on county faith change and on situation start
+the_christian_church_update_situation_groups_effect = {
+	if = {
+		limit = {
+			exists = situation:the_christian_church
+			situation:the_christian_church = { has_variable = tcc_main_power_faith }
+		}
+		situation:the_christian_church.var:tcc_main_power_faith = {
+			save_temporary_scope_as = tcc_old_main_power_faith
+		}
+	}
+	the_christian_church_set_main_power_faith_effect = yes
+	the_christian_church_recalculate_participant_groups_effect = yes
+	pam_the_christian_church_main_power_faith_changed_catalyst_effect = yes
+}
+
+the_christian_church_set_main_power_faith_effect = {
+	#religion:christianity_religion = {
+	#	ordered_faith = {
+	#		limit = {
+	#			num_county_followers > 0
+	#		}
+	#		order_by = num_county_followers
+	#		save_temporary_scope_as = tcc_iter_faith
+	#		situation:the_christian_church = {
+	#			set_variable = {
+	#				name = tcc_main_power_faith
+	#				value = scope:tcc_iter_faith
+	#			}
+	#		}
+	#	}
+	#}
+}
+
+the_christian_church_recalculate_participant_groups_effect = {
+	if = {
+		limit = {
+			situation:the_christian_church = {
+				has_variable = tcc_main_power_faith
+				var:tcc_main_power_faith = {
+					exists = religious_head
+				}
+			}
+		}
+		situation:the_christian_church.var:tcc_main_power_faith.religious_head = {
+			recalculate_participant_group = situation:the_christian_church
+		}
+	}
+	else = {
+		random_player = {
+			recalculate_participant_group = situation:the_christian_church
+		}
+	}
+}
+
+# used by code, do not rename or remove. DO NOT CHANGE THE GAME STATE OR ADD ARGUMENTS - only set tenet_to_add and tenet_to_remove in scope.
+head_of_faith_set_up_change_core_tenet_effect = {
+	save_scope_as = actor
+	if = { # Players don't swap tenets like this
+		limit = {
+			is_ai = no
+		}
+	}
+	else_if = { # Pious candidates take what feels the best
+		limit = {
+			has_realm_law = theocratic_elective_succession_law
+			pam_is_college_election_candidate_trigger = { SOURCE = theocratic_elective_pious }
+		}
+		ordered_personal_tenet = {
+			limit = {
+				save_temporary_scope_as = tenet_check
+				scope:actor.rite = { rite_can_choose_tenet = scope:tenet_check }
+				NOR = {
+					scope:actor.rite = { rite_has_tenet = scope:tenet_check }
+					scope:actor.faith.main_rite = {
+						has_tenet_status = {
+							tenet = scope:tenet_check
+							status = prohibited
+						}
+					}
+				}
+			}
+			order_by = pam_tenet_popularity_impact_value
+			position = 0
+			save_scope_as = tenet_to_add
+		}
+		# Nothing they personally hold is still available, so settle for whatever else suits them
+		every_desired_tenet = {
+			selection_count = 97
+			only_positive = no
+			limit = {
+				NOT = { exists = scope:tenet_to_add }
+				save_temporary_scope_as = tenet_check
+				scope:actor.rite = { rite_can_choose_tenet = scope:tenet_check }
+				NOR = {
+					scope:actor.rite = { rite_has_tenet = scope:tenet_check }
+					scope:actor.faith.main_rite = {
+						has_tenet_status = {
+							tenet = scope:tenet_check
+							status = prohibited
+						}
+					}
+				}
+			}
+			save_scope_as = tenet_to_add
+		}
+	}
+	else_if = { # Powerful candidates impose their puppeteer's creed, or their own when nobody pulls the strings
+		limit = {
+			pam_is_college_election_candidate_trigger = { SOURCE = theocratic_elective_powerful }
+		}
+		if = {
+			limit = {
+				exists = puppeteer
+			}
+			puppeteer = {
+				save_temporary_scope_as = tenet_patron
+			}
+		}
+		else = {
+			save_temporary_scope_as = tenet_patron
+		}
+		scope:tenet_patron = {
+			# What the patron actually professes comes first
+			ordered_personal_tenet = {
+				limit = {
+					save_temporary_scope_as = tenet_check
+					scope:actor.rite = { rite_can_choose_tenet = scope:tenet_check }
+					NOR = {
+						scope:actor.rite = { rite_has_tenet = scope:tenet_check }
+						scope:actor.faith.main_rite = {
+							has_tenet_status = {
+								tenet = scope:tenet_check
+								status = prohibited
+							}
+						}
+					}
+				}
+				order_by = pam_tenet_popularity_impact_value
+				position = 0
+				save_scope_as = tenet_to_add
+			}
+			# Nothing they personally hold is still available, so settle for whatever else suits them
+			every_desired_tenet = {
+				selection_count = 97
+				only_positive = no
+				limit = {
+					NOT = { exists = scope:tenet_to_add }
+					save_temporary_scope_as = tenet_check
+					scope:actor.rite = { rite_can_choose_tenet = scope:tenet_check }
+					NOR = {
+						scope:actor.rite = { rite_has_tenet = scope:tenet_check }
+						scope:actor.faith.main_rite = {
+							has_tenet_status = {
+								tenet = scope:tenet_check
+								status = prohibited
+							}
+						}
+					}
+				}
+				save_scope_as = tenet_to_add
+			}
+		}
+		# A puppeteer with nothing left to ask for leaves the candidate to his own conscience
+		every_desired_tenet = {
+			selection_count = 97
+			only_positive = no
+			limit = {
+				NOT = { exists = scope:tenet_to_add }
+				save_temporary_scope_as = tenet_check
+				scope:actor.rite = { rite_can_choose_tenet = scope:tenet_check }
+				NOR = {
+					scope:actor.rite = { rite_has_tenet = scope:tenet_check }
+					scope:actor.faith.main_rite = {
+						has_tenet_status = {
+							tenet = scope:tenet_check
+							status = prohibited
+						}
+					}
+				}
+			}
+			save_scope_as = tenet_to_add
+		}
+	}
+	else = { # Populists take a popular tenet
+		ordered_tenet = {
+			limit = {
+				save_temporary_scope_as = tenet_check
+				scope:actor.rite = { rite_can_choose_tenet = scope:tenet_check }
+				NOR = {
+					scope:actor.rite = { rite_has_tenet = scope:tenet_check }
+					scope:actor.faith.main_rite = {
+						has_tenet_status = {
+							tenet = scope:tenet_check
+							status = prohibited
+						}
+					}
+				}
+			}
+			order_by = pam_tenet_popularity_impact_value
+			position = 0
+			save_scope_as = tenet_to_add
+		}
+	}
+	
+	# A Powerful candidate campaigns on his puppeteer's grievance, the same way he takes his puppeteer's preference above
+	if = {
+		limit = {
+			pam_is_college_election_candidate_trigger = { SOURCE = theocratic_elective_powerful }
+			exists = puppeteer
+		}
+		puppeteer = {
+			ordered_undesired_tenet = {
+				limit = {
+					save_temporary_scope_as = tenet_check
+					scope:actor.rite = { rite_has_tenet = scope:tenet_check }
+					this != tenet:tenet_armed_pilgrimages
+				}
+				save_scope_as = tenet_to_remove
+			}
+		}
+	}
+	# Pious candidates, and Powerful ones with nobody pulling the strings, drop what they resent most themselves
+	else_if = {
+		limit = {
+			OR = {
+				pam_is_college_election_candidate_trigger = { SOURCE = theocratic_elective_pious }
+				pam_is_college_election_candidate_trigger = { SOURCE = theocratic_elective_powerful }
+			}
+		}
+		ordered_undesired_tenet = {
+			limit = {
+				this != tenet:tenet_armed_pilgrimages
+			}
+			save_scope_as = tenet_to_remove
+		}
+	}
+
+	# Populists drop whichever of the Rite's core tenets has the lowest popularity
+	if = {
+		limit = { NOT = { exists = scope:tenet_to_remove } }
+		rite = {
+			ordered_rite_tenet = {
+				limit = {
+					this != tenet:tenet_armed_pilgrimages
+				}
+				order_by = pam_tenet_unpopularity_impact_value
+				position = 0
+				save_scope_as = tenet_to_remove
+			}
+		}
+	}
+}
+
+head_of_faith_change_core_tenet_effect = {
+	head_of_faith_set_up_change_core_tenet_effect = yes # Decoupled so it can also be used in the UI
+
+	if = {
+		limit = {
+			exists = scope:tenet_to_add
+			exists = scope:tenet_to_remove
+		}
+		save_scope_as = pam_recast_pope
+		rite = {
+			save_scope_as = pam_recast_rite
+			remove_rite_tenet = scope:tenet_to_remove
+			add_rite_tenet = scope:tenet_to_add
+		}
+		pam_pope_core_tenet_popularity_catalyst_effect = yes
+		# Only an AI Pope reaches this branch
+		every_player = {
+			limit = {
+				rite = scope:pam_recast_rite
+			}
+			trigger_event = pam_clergy_events.0003
+		}
+	}
+}
+
+###############################
+# ECCLESIASTICAL DOMICILE     #
+###############################
+
+add_random_internal_ecclesiastical_domicile_building = {
+	random_list = {
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cathedral_crypt_01 }
+				domicile_building_has_free_internal_slot = ecclesiastical_domicile_main_01
+			}
+			add_domicile_building = cathedral_crypt_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cathedral_belltower_01 }
+				domicile_building_has_free_internal_slot = ecclesiastical_domicile_main_01
+			}
+			add_domicile_building = cathedral_belltower_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cathedral_cantoria_01 }
+				domicile_building_has_free_internal_slot = ecclesiastical_domicile_main_01
+			}
+			add_domicile_building = cathedral_cantoria_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cathedral_masons_lodge_01 }
+				domicile_building_has_free_internal_slot = ecclesiastical_domicile_main_01
+			}
+			add_domicile_building = cathedral_masons_lodge_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cathedral_chapter_house_01 }
+				domicile_building_has_free_internal_slot = ecclesiastical_domicile_main_01
+			}
+			add_domicile_building = cathedral_chapter_house_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cathedral_sacristy_01 }
+				domicile_building_has_free_internal_slot = ecclesiastical_domicile_main_01
+			}
+			add_domicile_building = cathedral_sacristy_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = palace_audience_hall_01 }
+				domicile_building_has_free_internal_slot = episcopal_palace_01
+			}
+			add_domicile_building = palace_audience_hall_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = palace_consistory_court_01 }
+				domicile_building_has_free_internal_slot = episcopal_palace_01
+			}
+			add_domicile_building = palace_consistory_court_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = palace_synodal_hall_01 }
+				domicile_building_has_free_internal_slot = episcopal_palace_01
+			}
+			add_domicile_building = palace_synodal_hall_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = palace_guest_wing_01 }
+				domicile_building_has_free_internal_slot = episcopal_palace_01
+			}
+			add_domicile_building = palace_guest_wing_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = palace_chapel_01 }
+				domicile_building_has_free_internal_slot = episcopal_palace_01
+			}
+			add_domicile_building = palace_chapel_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = baptistery_catechumenon_01 }
+				domicile_building_has_free_internal_slot = baptistery_01
+			}
+			add_domicile_building = baptistery_catechumenon_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = baptistery_holy_font_01 }
+				domicile_building_has_free_internal_slot = baptistery_01
+			}
+			add_domicile_building = baptistery_holy_font_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = baptistery_neophytes_hostel_01 }
+				domicile_building_has_free_internal_slot = baptistery_01
+			}
+			add_domicile_building = baptistery_neophytes_hostel_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = baptistery_chrismarium_01 }
+				domicile_building_has_free_internal_slot = baptistery_01
+			}
+			add_domicile_building = baptistery_chrismarium_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = baptistery_pilgrims_hospice_01 }
+				domicile_building_has_free_internal_slot = baptistery_01
+			}
+			add_domicile_building = baptistery_pilgrims_hospice_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = chancery_registry_01 }
+				domicile_building_has_free_internal_slot = chancery_01
+			}
+			add_domicile_building = chancery_registry_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = chancery_legation_01 }
+				domicile_building_has_free_internal_slot = chancery_01
+			}
+			add_domicile_building = chancery_legation_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = chancery_curial_rota_01 }
+				domicile_building_has_free_internal_slot = chancery_01
+			}
+			add_domicile_building = chancery_curial_rota_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = chancery_notaries_01 }
+				domicile_building_has_free_internal_slot = chancery_01
+			}
+			add_domicile_building = chancery_notaries_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = chancery_seal_office_01 }
+				domicile_building_has_free_internal_slot = chancery_01
+			}
+			add_domicile_building = chancery_seal_office_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = chancery_visitation_01 }
+				domicile_building_has_free_internal_slot = chancery_01
+			}
+			add_domicile_building = chancery_visitation_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cathedral_royal_nave_01 }
+				domicile_building_has_free_internal_slot = ecclesiastical_domicile_main_01
+			}
+			add_domicile_building = cathedral_royal_nave_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = guard_tower_provosts_hall_01 }
+				domicile_building_has_free_internal_slot = church_guard_tower_01
+			}
+			add_domicile_building = guard_tower_provosts_hall_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = guard_tower_warriors_vestry_01 }
+				domicile_building_has_free_internal_slot = church_guard_tower_01
+				owner ?= { clergy_can_fight_check_trigger = yes }
+			}
+			add_domicile_building = guard_tower_warriors_vestry_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = treasury_election_coffers_01 }
+				domicile_building_has_free_internal_slot = church_treasury_01
+			}
+			add_domicile_building = treasury_election_coffers_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = archives_decretals_01 }
+				domicile_building_has_free_internal_slot = church_archives_01
+			}
+			add_domicile_building = archives_decretals_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = school_seminary_01 }
+				domicile_building_has_free_internal_slot = church_school_01
+			}
+			add_domicile_building = school_seminary_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = guard_tower_armory_01 }
+				domicile_building_has_free_internal_slot = church_guard_tower_01
+			}
+			add_domicile_building = guard_tower_armory_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = guard_tower_gatehouse_01 }
+				domicile_building_has_free_internal_slot = church_guard_tower_01
+			}
+			add_domicile_building = guard_tower_gatehouse_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = guard_tower_drill_yard_01 }
+				domicile_building_has_free_internal_slot = church_guard_tower_01
+			}
+			add_domicile_building = guard_tower_drill_yard_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = guard_tower_night_watch_01 }
+				domicile_building_has_free_internal_slot = church_guard_tower_01
+			}
+			add_domicile_building = guard_tower_night_watch_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = guard_tower_toll_house_01 }
+				domicile_building_has_free_internal_slot = church_guard_tower_01
+			}
+			add_domicile_building = guard_tower_toll_house_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cloister_penitential_cells_01 }
+				domicile_building_has_free_internal_slot = cloister_01
+			}
+			add_domicile_building = cloister_penitential_cells_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cloister_oblate_dormitory_01 }
+				domicile_building_has_free_internal_slot = cloister_01
+			}
+			add_domicile_building = cloister_oblate_dormitory_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cloister_confessional_01 }
+				domicile_building_has_free_internal_slot = cloister_01
+			}
+			add_domicile_building = cloister_confessional_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cloister_herbularius_01 }
+				domicile_building_has_free_internal_slot = cloister_01
+			}
+			add_domicile_building = cloister_herbularius_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cloister_brewhouse_01 }
+				domicile_building_has_free_internal_slot = cloister_01
+			}
+			add_domicile_building = cloister_brewhouse_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = cloister_study_cells_01 }
+				domicile_building_has_free_internal_slot = cloister_01
+			}
+			add_domicile_building = cloister_study_cells_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = school_lecture_hall_01 }
+				domicile_building_has_free_internal_slot = church_school_01
+			}
+			add_domicile_building = school_lecture_hall_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = school_disputation_hall_01 }
+				domicile_building_has_free_internal_slot = church_school_01
+			}
+			add_domicile_building = school_disputation_hall_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = school_choir_01 }
+				domicile_building_has_free_internal_slot = church_school_01
+			}
+			add_domicile_building = school_choir_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = school_observatory_01 }
+				domicile_building_has_free_internal_slot = church_school_01
+			}
+			add_domicile_building = school_observatory_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = school_tutors_quarters_01 }
+				domicile_building_has_free_internal_slot = church_school_01
+			}
+			add_domicile_building = school_tutors_quarters_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = treasury_counting_house_01 }
+				domicile_building_has_free_internal_slot = church_treasury_01
+			}
+			add_domicile_building = treasury_counting_house_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = treasury_benefice_registry_01 }
+				domicile_building_has_free_internal_slot = church_treasury_01
+			}
+			add_domicile_building = treasury_benefice_registry_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = treasury_reliquary_vault_01 }
+				domicile_building_has_free_internal_slot = church_treasury_01
+			}
+			add_domicile_building = treasury_reliquary_vault_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = treasury_coronation_regalia_01 }
+				domicile_building_has_free_internal_slot = church_treasury_01
+			}
+			add_domicile_building = treasury_coronation_regalia_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = treasury_alms_house_01 }
+				domicile_building_has_free_internal_slot = church_treasury_01
+			}
+			add_domicile_building = treasury_alms_house_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = archives_scriptorium_01 }
+				domicile_building_has_free_internal_slot = church_archives_01
+			}
+			add_domicile_building = archives_scriptorium_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = archives_homiliary_01 }
+				domicile_building_has_free_internal_slot = church_archives_01
+			}
+			add_domicile_building = archives_homiliary_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = archives_cartulary_vault_01 }
+				domicile_building_has_free_internal_slot = church_archives_01
+			}
+			add_domicile_building = archives_cartulary_vault_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = archives_chronicle_hall_01 }
+				domicile_building_has_free_internal_slot = church_archives_01
+			}
+			add_domicile_building = archives_chronicle_hall_01
+		}
+		10 = {
+			trigger = {
+				NOT = { has_domicile_building_or_higher = archives_bindery_01 }
+				domicile_building_has_free_internal_slot = church_archives_01
+			}
+			add_domicile_building = archives_bindery_01
+		}
+	}
+}
+
+add_random_external_ecclesiastical_domicile_building = {
+	if = {
+		limit = { free_external_domicile_building_slots >= 1 }
+		random_list = {
+			10 = {
+				trigger = { NOT = { has_domicile_building_or_higher = baptistery_01 } }
+				add_domicile_building = baptistery_01
+			}
+			10 = {
+				trigger = { NOT = { has_domicile_building_or_higher = church_school_01 } }
+				add_domicile_building = church_school_01
+			}
+			10 = {
+				trigger = { NOT = { has_domicile_building_or_higher = church_archives_01 } }
+				add_domicile_building = church_archives_01
+			}
+			10 = {
+				trigger = { NOT = { has_domicile_building_or_higher = church_guard_tower_01 } }
+				add_domicile_building = church_guard_tower_01
+			}
+			10 = {
+				trigger = {
+					NOT = { has_domicile_building_or_higher = chancery_01 }
+					owner.culture ?= { has_innovation = innovation_chronicle_writing }
+				}
+				add_domicile_building = chancery_01
+			}
+			10 = {
+				trigger = { NOT = { has_domicile_building_or_higher = church_treasury_01 } }
+				add_domicile_building = church_treasury_01
+			}
+			10 = {
+				trigger = {
+					NOT = { has_domicile_building_or_higher = cloister_01 }
+					owner.capital_county.clerical_region_title ?= {
+						any_county_in_clerical_region = {
+							any_county_province = {
+								barony = { is_leased_out = yes }
+							}
+						}
+					}
+				}
+				add_domicile_building = cloister_01
+			}
+			5 = {
+				trigger = { NOT = { has_domicile_building_or_higher = episcopal_palace_01 } }
+				add_domicile_building = episcopal_palace_01
+			}
+		}
+	}
+}
+
+fill_ecclesiastical_domicile_building_effect = {
+	if = {
+		limit = { free_external_domicile_building_slots >= 3 }
+		add_random_external_ecclesiastical_domicile_building = yes
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = ecclesiastical_domicile_main_02
+			free_external_domicile_building_slots >= 3
+		}
+		add_random_external_ecclesiastical_domicile_building = yes
+	}
+	if = {
+		limit = {
+			has_domicile_building_or_higher = ecclesiastical_domicile_main_03
+			free_external_domicile_building_slots >= 3
+		}
+		add_random_external_ecclesiastical_domicile_building = yes
+	}
+	add_random_internal_ecclesiastical_domicile_building = yes
+	if = {
+		limit = { has_domicile_building_or_higher = ecclesiastical_domicile_main_02 }
+		add_random_internal_ecclesiastical_domicile_building = yes
+	}
+}
+
+setup_cardinalate_list_effect = {
+	# 867
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_ostia }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_porto }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_velletri }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_frascati }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_albano }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_palestrina }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_sabina }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_ciriaco }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_lorenzo }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_cecilia }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_balbina }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_pietro }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_anastasia }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_damaso }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_rufina }
+	# 1066
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_sabina }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_maria }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_prassede }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santi_cosma_e_damiano }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_stefano }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_clemente }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_trastevere }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santi_silvestro_e_martino }
+	# 1178
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santi_nereo_ed_achilleo }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_eustachio }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_maria_nuova }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_teodoro }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_adriano }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_marcello }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_vitale }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_angelo }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_croce }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_portico_octaviae }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_crisogono }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_giorgio }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_cosmedin }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_marco }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santi_apostoli }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_pudenziana }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_eusebio }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santi_sergio_e_bacco }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_nicola }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_prisca }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santi_giovanni_e_paolo }
+	# Extra
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_quattro_coronati }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_agata }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_sisto }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_susanna }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_lucia }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_via }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_apollinare }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_callisto }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_santa_agnese }
+	add_to_global_variable_list = { name = roma_cardinalates target = title:d_cd_san_bartolomeo }
+}
+
+# Court language inherits on succession, so a new Pope can have Latin without knowing it
+enforce_papal_latin_court_language_effect = {
+	if = {
+		limit = {
+			has_royal_court = yes
+			has_dlc_feature = royal_court
+		}
+		if = {
+			limit = { NOT = { has_court_language = language_latin } }
+			set_court_language = language_latin
+		}
+		if = {
+			limit = { NOT = { knows_court_language_of = this } }
+			learn_court_language_of = this
+		}
+	}
+}
+
+# Callers re-run this over a life, so we flag the chance or a forgotten attempt would creep to certainty
+# Two language flags, so a convert still gets one chance at the other
+christian_clergy_learn_liturgical_language_effect = {
+	if = {
+		limit = {
+			NOT = { has_character_flag = pam_latin_schooling_rolled }
+			is_clergy = yes
+			portrait_religious_western_christian_trigger = yes
+		}
+		add_character_flag = pam_latin_schooling_rolled
+		if = {
+			limit = { NOT = { knows_language = language_latin } }
+			random = {
+				chance = pam_clergy_liturgical_language_chance
+				learn_language = language_latin
+			}
+		}
+	}
+	if = {
+		limit = {
+			NOT = { has_character_flag = pam_greek_schooling_rolled }
+			is_clergy = yes
+			portrait_religious_orthodox_trigger = yes
+		}
+		add_character_flag = pam_greek_schooling_rolled
+		if = {
+			limit = { NOT = { knows_language = language_greek } }
+			random = {
+				chance = pam_clergy_liturgical_language_chance
+				learn_language = language_greek
+			}
+		}
+	}
+}
+
+# Looks for a Clerical Region the holder could be translated to when their own one is lost.
+# root = Clerical Region holder. Needs the doomed title in scope:title and its capital in scope:county.
+# $EXCLUDE_RULER_REALM$ = yes rules out any Clerical Region whose capital is held by or vassal to $EXCLUDED_RULER$.
+# Saves scope:translation_see when one exists.
+# Merged-empty regions linger; candidates must still hold a county
+pam_find_translation_clerical_region_effect = {
+	clear_saved_scope = translation_see
+	faith = {
+		if = {
+			limit = {
+				any_clerical_region_title = {
+					this != scope:title
+					clerical_region_size > 0
+					title_preferred_capital_county.rite ?= root.rite
+					trigger_if = {
+						limit = { always = $EXCLUDE_RULER_REALM$ }
+						title_preferred_capital_county = {
+							NOT = {
+								county_held_or_vassal_to_target_trigger = { TARGET = $EXCLUDED_RULER$ }
+							}
+						}
+					}
+					OR = {
+						NOT = { exists = holder }
+						holder ?= {
+							is_ai = yes
+							this != root
+						}
+					}
+				}
+			}
+			ordered_clerical_region_title = {
+				limit = {
+					this != scope:title
+					clerical_region_size > 0
+					title_preferred_capital_county.rite ?= root.rite
+					trigger_if = {
+						limit = { always = $EXCLUDE_RULER_REALM$ }
+						title_preferred_capital_county = {
+							NOT = {
+								county_held_or_vassal_to_target_trigger = { TARGET = $EXCLUDED_RULER$ }
+							}
+						}
+					}
+					OR = {
+						NOT = { exists = holder }
+						holder ?= {
+							is_ai = yes
+							this != root
+						}
+					}
+				}
+				order_by = {
+					value = 0
+					subtract = "title_preferred_capital_county.title_province.squared_distance(scope:county.title_province)"
+					subtract = clerical_region_size
+				}
+				max = 1
+				check_range_bounds = no
+				save_scope_as = translation_see
+			}
+		}
+		else = {
+			ordered_clerical_region_title = {
+				limit = {
+					this != scope:title
+					clerical_region_size > 0
+					trigger_if = {
+						limit = { always = $EXCLUDE_RULER_REALM$ }
+						title_preferred_capital_county = {
+							NOT = {
+								county_held_or_vassal_to_target_trigger = { TARGET = $EXCLUDED_RULER$ }
+							}
+						}
+					}
+					OR = {
+						NOT = { exists = holder }
+						holder ?= {
+							is_ai = yes
+							this != root
+						}
+					}
+				}
+				order_by = {
+					value = 0
+					subtract = "title_preferred_capital_county.title_province.squared_distance(scope:county.title_province)"
+					subtract = clerical_region_size
+				}
+				max = 1
+				check_range_bounds = no
+				save_scope_as = translation_see
+			}
+		}
+	}
+}

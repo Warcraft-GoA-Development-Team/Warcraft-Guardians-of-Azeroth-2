@@ -546,36 +546,75 @@ purchase_truce_interaction_work_out_truce_days_effect = {
 }
 
 purchase_truce_interaction_work_out_purchase_cost_effect = {
-	scope:actor = {
-		# Small cost.
+	scope:puppet_or_actor = {
 		if = {
-			limit = { always = scope:pt_sum_small }
-			pay_short_term_gold = {
-				target = scope:recipient
-				gold = {
-					value = 0
-					add = pt_sum_small_value
+			limit = {
+				has_personal_tenet_flag = tenet_peace_of_god_personal_truce
+			}
+			# Small cost.
+			if = {
+				limit = { always = scope:pt_sum_small }
+				add_piety = {
+					value = pt_sum_small_value
+					multiply = -1
+				}
+				scope:recipient = {
+					add_piety = scope:puppet_or_actor.pt_sum_small_value
+				}
+			}
+			# Large cost.
+			else_if = {
+				limit = { always = scope:pt_sum_large }
+				add_piety = {
+					value = pt_sum_large_value
+					multiply = -1
+				}
+				scope:recipient = {
+					add_piety = scope:puppet_or_actor.pt_sum_large_value
+				}
+			}
+			# Medium cost; we do this last as a fallback.
+			else = {
+				add_piety = {
+					value = pt_sum_medium_value
+					multiply = -1
+				}
+				scope:recipient = {
+					add_piety = scope:puppet_or_actor.pt_sum_medium_value
 				}
 			}
 		}
-		# Large cost.
-		else_if = {
-			limit = { always = scope:pt_sum_large }
-			pay_short_term_gold = {
-				target = scope:recipient
-				gold = {
-					value = 0
-					add = pt_sum_large_value
-				}
-			}
-		}
-		# Medium cost; we do this last as a fallback.
 		else = {
-			pay_short_term_gold = {
-				target = scope:recipient
-				gold = {
-					value = 0
-					add = pt_sum_medium_value
+			# Small cost.
+			if = {
+				limit = { always = scope:pt_sum_small }
+				pay_short_term_gold = {
+					target = scope:recipient
+					gold = {
+						value = 0
+						add = pt_sum_small_value
+					}
+				}
+			}
+			# Large cost.
+			else_if = {
+				limit = { always = scope:pt_sum_large }
+				pay_short_term_gold = {
+					target = scope:recipient
+					gold = {
+						value = 0
+						add = pt_sum_large_value
+					}
+				}
+			}
+			# Medium cost; we do this last as a fallback.
+			else = {
+				pay_short_term_gold = {
+					target = scope:recipient
+					gold = {
+						value = 0
+						add = pt_sum_medium_value
+					}
 				}
 			}
 		}
@@ -603,7 +642,7 @@ purchase_truce_interaction_activate_catalyst_effect = {
 			}
 			activate_struggle_catalyst = {
 				catalyst = catalyst_bought_important_truce
-				character = scope:actor
+				character = scope:puppet_or_actor
 			}
 		}
 	}
@@ -653,6 +692,10 @@ clean_revolt_county_modifiers_from_faction_members_effect = {
 }
 
 generate_troops_from_revolt_county_modifiers_effect = {
+	if = {
+		limit = { NOT = { exists = scope:war } }
+		war ?= { save_scope_as = war }
+	}
 	if = {
 		limit = {
 			scope:attacker = {
@@ -883,11 +926,37 @@ invite_special_guest_to_activity_effect = {
 ##################################################
 
 fp2_struggle_apply_ai_agenda_effect = {
-	# Warcraft - remove effect
+	# Apply effects
+	add_character_flag = {
+		flag = agenda_towards_$INTENT$
+	}
+	root = {
+		change_variable = {
+			name = agents_for_$INTENT$
+			add = 1
+		}
+	}
 }
 
 gifting_leads_towards_friendship_effect = {
-	# Warcraft - remove effect
+	if = {
+		# then verify the right struggle phase
+		limit = {
+			is_diff_faith_or_culture_trigger = {
+				CHAR = scope:puppet_or_actor
+				STATUS = involved
+			}
+			any_character_struggle = {
+				involvement = involved
+				has_struggle_phase_parameter = struggle_gifts_involved_diff_faith_culture_leads_to_friendship
+			}
+		}
+		progress_towards_friend_effect = {
+			REASON = friend_struggle_gift
+			CHARACTER = scope:puppet_or_actor
+			OPINION = 0
+		}
+	}
 }
 
 ##################################################
@@ -901,9 +970,92 @@ gifting_leads_towards_friendship_effect = {
 ##################################################
 
 fp2_lyonese_monk_return_territories_effect = {
+	if = {
+		limit = {
+			scope:acolyte = { is_playable_character = yes }
+		}
+		create_title_and_vassal_change = {
+			type = granted
+			save_scope_as = change
+		}
+		scope:acolyte = {
+			every_held_title = {
+				title_tier >= county
+				change_title_holder = {
+					holder = scope:acolyte_host
+					change = scope:change
+				}
+			}
+			resolve_title_and_vassal_change = scope:change
+		}
+	}
 }
 
 fp2_lyonese_monk_cancel_chain_effect = {
+	if = {
+		limit = {
+			NOT = { exists = scope:acolyte }
+		}
+		scope:story.var:acolyte ?= { save_scope_as = acolyte }
+	}
+	# Tidy up the story.
+	scope:story = { end_story = yes }
+	# Tidy up scope:acolyte.
+	## We do this via some mild scope wizardry.
+	save_scope_value_as = {
+		name = remove_acolyte
+		value = flag:$REMOVAL$
+	}
+	## Either they sod off.
+	if = {
+		limit = { scope:remove_acolyte = flag:banished }
+		fp2_lyonese_monk_return_territories_effect = yes
+		scope:acolyte = {
+			move_to_pool = yes
+			silent_disappearance_effect = yes
+		}
+	}
+	## Or they're killed during apprehension.
+	else_if = {
+		limit = { scope:remove_acolyte = flag:scuffle }
+		fp2_lyonese_monk_return_territories_effect = yes
+		scope:acolyte = {
+			custom_tooltip = fp2_lyonese_monk_cancel_chain_effect.tt
+			hidden_effect = {
+				death = {
+					death_reason = death_scuffle_with_soldiers
+					killer = scope:acolyte_host
+				}
+			}
+		}
+	}
+	## Or else they're given to the Pope.
+	else_if = {
+		limit = {
+			scope:remove_acolyte = flag:pope
+			exists = scope:pope
+		}
+		fp2_lyonese_monk_return_territories_effect = yes
+		# So we walk through the narrative...
+		scope:acolyte = {
+			if = {
+				limit = { is_playable_character = no }
+				select_and_move_to_pool_effect = yes
+			}
+		}
+		rightfully_imprison_character_effect = {
+			TARGET = scope:acolyte
+			IMPRISONER = scope:pope
+		}
+		scope:acolyte = {
+			hidden_effect = {
+				death = {
+					death_reason = death_dungeon
+					killer = scope:pope
+				}
+			}
+		}
+	}
 }
 
 ##################################################
@@ -925,15 +1077,14 @@ fp2_lyonese_monk_cancel_chain_effect = {
 fp2_border_raid_damage_effect = {
 	change_county_control = fp2_border_raid_control_change_value
 	change_development_level = fp2_border_raid_development_change_value
-	if = {
-		limit = { exists = scope:raid_province }
+	scope:raid_province ?= { 
 		show_as_tooltip = { destroy_random_building_effect = yes }
 	}
 	scope:attacker = { add_gold = fp2_border_raid_gold_change_value }
 }
 
 ##################################################
-# Historical Artefacts
+# Historical Artifacts
 ##################################################
 
 create_artifact_goblet_chalice_of_dona_urraca = {
@@ -963,7 +1114,7 @@ create_artifact_various_bells_santiago = {
 	}
 	scope:newly_created_artifact = {
 		set_variable = {
-			name = dlc_potential_court_artefact
+			name = dlc_potential_court_artifact
 			value = yes
 		}
 		set_variable = {
@@ -996,14 +1147,14 @@ create_artifact_fp2_votive_crowns_effect = {
 	}
 	scope:newly_created_artifact = {
 		set_variable = {
-			name = dlc_potential_court_artefact
+			name = dlc_potential_court_artifact
 			value = yes
 		}
 	}
 }
 
 ##################################################
-# Other Artefacts
+# Other Artifacts
 ##################################################
 
 create_artifact_fp2_armillary_sphere_core_effect = {
@@ -1047,7 +1198,7 @@ create_artifact_fp2_armillary_sphere_effect = {
 					$OWNER$ = { has_royal_court = no }
 				}
 				set_variable = {
-					name = dlc_potential_court_artefact
+					name = dlc_potential_court_artifact
 					value = yes
 				}
 			}
@@ -1108,7 +1259,7 @@ create_artifact_fp2_2p_chess_board_effect = {
 	scope:newly_created_artifact = {
 		# Flag this as something that can be reforged for free.
 		set_variable = {
-			name = dlc_potential_court_artefact
+			name = dlc_potential_court_artifact
 			value = yes
 		}
 		# And used in board games.
@@ -1136,7 +1287,7 @@ create_artifact_fp2_4p_chess_board_effect = {
 	scope:newly_created_artifact = {
 		# Flag this as something that can be reforged for free.
 		set_variable = {
-			name = dlc_potential_court_artefact
+			name = dlc_potential_court_artifact
 			value = yes
 		}
 		# And used in board games.
