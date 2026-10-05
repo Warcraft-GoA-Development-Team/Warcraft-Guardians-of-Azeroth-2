@@ -1,29 +1,392 @@
-﻿# A holy order gets a new barony for lease.
-# root = the holy order
-# scope:patron = the current patron of the holy order, if any
-# scope:barony = the new title leased to the holy order
-on_holy_order_new_lease = {
+﻿# Fires once per year for every Holy Order.
+# root = Holy Order
+# scope:founder = the original founder of the Holy Order
+# scope:leader = the current leader of the Holy Order (holder of it's title)
+# scope:province = the current capital of the Holy Order
+# scope:title = the title of the Holy Order
+# scope:rite = the rite of the Holy Order
+#
+yearly_holy_order_pulse = {
 	effect = {
-		if = {
-			limit = {
-				exists = scope:patron
-				NOR = {
-					scope:barony.holder = scope:patron
-					scope:barony.holder.liege = scope:patron
+		#leader should probably have the tenet
+		scope:leader = {
+			if = {
+				limit = {
+					exists = root.order_tenet
+					NOT = {
+						any_personal_tenet = {
+							this = root.order_tenet
+						}
+					}
+					any_desired_tenet = {
+						selection_count = 97
+						only_positive = yes
+						threshold = 1
+						this = root.order_tenet
+					}
+				}
+				random = {
+					chance = {
+						value = 20
+						if = {
+							limit = {
+								root = { num_leased_titles <= 10 }
+							}
+							add = 10
+						}
+						if = {
+							limit = {
+								root = { num_leased_titles <= 5 }
+							}
+							add = 10
+						}
+						if = {
+							limit = {
+								root = { num_leased_titles <= 3 }
+							}
+							add = 10
+						}
+						if = {
+							limit = {
+								root = { num_leased_titles = 1 }
+							}
+							add = 25
+						}
+					}
+					add_character_flag = free_tenet_change
+					force_set_personal_tenet = root.order_tenet
+					remove_character_flag = free_tenet_change
 				}
 			}
-			save_scope_as = holy_order
-			scope:barony.holder = {
-				save_scope_as = former_holder
+		}
+		#Monastic leader gets busy spreading beliefs or increasing development
+		if = {
+			limit = {
+				leader ?= {
+					government_has_flag = government_is_monastic_holy_order
+					OR = {
+						gold >= monastic_tenet_espousing_value
+						gold >= monastic_lease_swapping_value
+					}
+					NAND = {
+						has_character_flag = mon_tenet_cooldown
+						has_character_flag = mon_monastery_gain_cooldown
+					}
+				}
 			}
-			scope:patron = {
-				send_interface_message = {
-					type = holy_order_expanded_message
-					desc = holy_order.new_lease
-					left_icon = scope:barony
-					right_icon = scope:holy_order.leader
-					show_as_tooltip = {
-						scope:barony = { lease_out_to = scope:holy_order }
+			random_list = {
+				#Monastic Order tenet spreading effect
+				1 = {
+					trigger = {
+						leader ?= {
+							NOT = {
+								has_character_flag = mon_tenet_cooldown
+							}
+							gold >= monastic_tenet_espousing_value
+						}
+						exists = order_tenet
+						#Check there is actually a chance of success before spending gold
+						any_leased_title = {
+							OR = {
+								#leases' duchies' counties
+								duchy ?= {
+									any_de_jure_county_holder = {
+										pam_monastic_tenet_spread_target_trigger = { ORDER_LEADER = root.leader }
+									}
+								}
+								#Neighboring counties to leases
+								county ?= {
+									any_neighboring_county = {
+										holder ?= {
+											pam_monastic_tenet_spread_target_trigger = { ORDER_LEADER = root.leader }
+										}
+									}
+								}
+							}
+						}
+					}
+					leader = {
+						random = {
+							chance = {
+								value = 10
+								#Is the kind to evangelize instead of build
+								if = {
+									limit = {
+										ai_zeal > 0
+									}
+									add = ai_zeal
+								}
+								if = {
+									limit = {
+										ai_boldness > 0
+									}
+									add = ai_boldness
+								}
+								#Is puppeted and supposed to be spreading tenet
+								if = {
+									limit = {
+										puppeteer ?= {
+											any_personal_tenet = {
+												this = root.order_tenet
+											}
+										}
+									}
+									add = 10
+								}
+								if = {
+									limit = {
+										puppeteer.rite ?= {
+											this = root.leader.rite
+											has_tenet_status = {
+												tenet = root.order_tenet
+												status = core
+											}
+										}
+									}
+									add = 15
+								}
+								if = {
+									limit = {
+										puppeteer.rite ?= {
+											this = root.leader.rite
+											NOT = {
+												this = faith.main_rite
+											}
+										}
+									}
+									add = 20
+								}
+							}
+							#Make sure there are actually any valid targets before triggering effect and spending gold
+							monastic_belief_spreading_targeting_effect = yes
+							if = {
+								limit = {
+									any_in_list = {
+										list = personal_tenet_targets
+										count >= 1
+									}
+								}
+								remove_short_term_gold = monastic_tenet_espousing_value
+								monastic_tenet_espousing_effect = yes
+							}
+						}
+					}
+				}
+				#Monastic monastery gain
+				1 = {
+					trigger = {
+						exists = holy_order_patron
+						leader ?= {
+							NOT = {
+								has_character_flag = mon_monastery_gain_cooldown
+							}
+							gold >= monastic_lease_swapping_value
+						}
+						num_leased_titles < 20
+						#Why are they able to spread?
+						OR = {
+							#Pious patron
+							holy_order_patron ?= {
+								piety_level >= 4
+							}
+							#New order with momentum
+							AND = {
+								years_from_game_start >= 30
+								leader.primary_title = {
+									NOT = {
+										exists = previous_holder
+									}
+								}
+								NOT = {
+									leader ?= { years_as_ruler >= 30 }
+								}
+							}
+							AND = {
+								years_from_game_start >= 60
+								leader.primary_title = {
+									any_past_holder = {
+										count < 2
+									}
+								}
+								NOT = {
+									leader ?= { years_as_ruler >= 30 }
+								}
+							}
+							#Tenet is popular
+							AND = {
+								exists = order_tenet
+								leader = {
+									"faith.tenet_popularity(root.order_tenet)" > tenet_popularity_very_popular_threshold
+								}
+							}
+							
+							#Rite is not mainline spreading in low fervor faith
+							leader.rite = {
+								NOT = {
+									this = faith.main_rite
+								}
+								faith.fervor <= 40
+							}
+							#Rite is mainline in high fervor faith
+							leader.rite = {
+								this = faith.main_rite
+								faith.fervor >= 75
+							}
+							#Order was split off from another
+							leader = {
+								primary_title = {
+									has_variable = old_order
+									var:old_order = {
+										save_temporary_scope_as = old_order
+									}
+								}
+								faith = {
+									any_faith_holy_order = {
+										this = scope:old_order
+										any_leased_title = {
+											monastic_lease_can_be_suborned_trigger = { ORDER = root }
+										}
+									}
+								}
+							}
+						}
+
+						#Another holy order has a lease within same empire
+						#Holder has this faith's tenet or this order's rite (and local order doesn't have same rite) - or the local county and archbishop match the Order's rite
+						leader.faith = {
+							any_faith_holy_order = {
+								NOT = {
+									this = root
+								}
+								any_leased_title = {
+									monastic_lease_can_be_suborned_trigger = { ORDER = root }
+								}
+							}
+						}
+					}
+					leader = {
+						random = {
+							chance = {
+								value = 10
+								#Is the kind to build
+								if = {
+									limit = {
+										ai_greed > 0
+									}
+									add = {
+										value = ai_greed
+										divide = 2
+									}
+								}
+								if = {
+									limit = {
+										ai_rationality > 0
+									}
+									add = {
+										value = ai_rationality
+										divide = 2
+									}
+								}
+								#Is puppeted and not supposed to be spreading tenet
+								if = {
+									limit = {
+										puppeteer ?= {
+											NOT = {
+												any_personal_tenet = {
+													this = root.order_tenet
+												}
+											}
+										}
+									}
+									value = 10
+								}
+								#Want to make their tenet core
+								if = {
+									limit = {
+										puppeteer.rite ?= {
+											this = root.leader.rite
+										}
+										NOT = {
+											root.leader.rite = {
+												has_tenet_status = {
+													tenet = root.order_tenet
+													status = core
+												}
+											}
+										}
+									}
+									value = 15
+								}
+								#New order with momentum
+								if = {
+									limit = {
+										years_from_game_start >= 30
+										primary_title = {
+											NOT = {
+												exists = previous_holder
+											}
+										}
+										NOT = {
+											years_as_ruler >= 30
+										}
+									}
+									add = 75
+								}
+								if = {
+									limit = {
+										years_from_game_start >= 60
+										primary_title = {
+											any_past_holder = {
+												count < 2
+											}
+										}
+										NOT = {
+											years_as_ruler >= 30
+										}
+									}
+									add = 75
+								}
+								if = {
+									limit = {
+										root = { num_leased_titles < 5 }
+									}
+									add = 15
+								}
+								if = {
+									limit = {
+										root = { num_leased_titles < 3 }
+									}
+									add = 30
+								}
+								if = {
+									limit = {
+										root = { num_leased_titles < 10 }
+									}
+									add = 5
+								}
+								if = {
+									limit = {
+										primary_title = {
+											has_variable = old_order
+											var:old_order = {
+												save_temporary_scope_as = old_order
+											}
+										}
+										faith = {
+											any_faith_holy_order = {
+												this = scope:old_order
+												any_leased_title = {
+													monastic_lease_can_be_suborned_trigger = { ORDER = root }
+												}
+											}
+										}
+									}
+									multiply = 4
+								}
+							}
+							remove_short_term_gold = monastic_lease_swapping_value
+							monastic_lease_swapping_effect = yes
+						}
 					}
 				}
 			}
@@ -31,10 +394,110 @@ on_holy_order_new_lease = {
 	}
 }
 
-# A holy order is hired by a ruler.
-# root = the holy order
-# scope:patron = the current patron of the holy order, if any
-# scope:actor = the character hiring the holy order
+# A Military Order gets a new barony for lease.
+# root = the military order
+# scope:patron = the current patron of the Military Order, if any
+# scope:barony = the new title leased to the Military Order
+on_holy_order_new_lease = {
+	effect = {
+		if = {
+			limit = {
+				OR = {
+					exists = scope:patron
+					exists = leader.puppeteer
+				}
+				NOR = {
+					scope:barony.holder = scope:patron
+					scope:barony.holder.liege = scope:patron
+				}
+				leader ?= {
+					NOT = {
+						has_character_flag = just_swapped_lease
+					}
+				}
+			}
+			save_scope_as = holy_order
+			scope:barony.holder = {
+				save_scope_as = former_holder
+			}
+			scope:patron ?= {
+				if = {
+					limit = {
+						root.leader ?= {
+							government_has_flag = government_is_monastic_holy_order
+						}
+					}
+					send_interface_message = {
+						type = monastic_holy_order_expanded_message
+						desc = holy_order.new_lease
+						left_icon = scope:barony
+						right_icon = scope:holy_order.leader
+						show_as_tooltip = {
+							scope:barony = { lease_out_to_holy_order = scope:holy_order }
+						}
+					}
+				}
+				else = {
+					send_interface_message = {
+						type = holy_order_expanded_message
+						desc = holy_order.new_lease
+						left_icon = scope:barony
+						right_icon = scope:holy_order.leader
+						show_as_tooltip = {
+							scope:barony = { lease_out_to_holy_order = scope:holy_order }
+						}
+					}
+				}
+			}
+			if = {
+				limit = {
+					leader.puppeteer ?= {
+						NOT = {
+							this = scope:patron
+						}
+					}
+				}
+				leader.puppeteer = {
+					if = {
+						limit = {
+							root.leader ?= {
+								government_has_flag = government_is_monastic_holy_order
+								NOT = {
+									has_character_flag = just_swapped_lease
+								}
+							}
+						}
+						send_interface_message = {
+							type = monastic_holy_order_expanded_message
+							desc = holy_order.new_lease
+							left_icon = scope:barony
+							right_icon = scope:holy_order.leader
+							show_as_tooltip = {
+								scope:barony = { lease_out_to_holy_order = scope:holy_order }
+							}
+						}
+					}
+					else = {
+						send_interface_message = {
+							type = holy_order_expanded_message
+							desc = holy_order.new_lease
+							left_icon = scope:barony
+							right_icon = scope:holy_order.leader
+							show_as_tooltip = {
+								scope:barony = { lease_out_to_holy_order = scope:holy_order }
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+# A Military Order is hired by a ruler.
+# root = the Military Order
+# scope:patron = the current patron of the Military Order, if any
+# scope:actor = the character hiring the Military Order
 on_holy_order_hired = {
 	effect = {
 		save_scope_as = holy_order
@@ -62,13 +525,15 @@ on_holy_order_hired = {
 				}
 			}
 		}
+		# PAM - Catalysts
+		pam_the_christian_church_clergy_hired_holy_order_catalyst_effect = yes
 	}
 }
 
-# A holy order has been destroyed.
-# root = the faith the holy order belonged to
-# scope:title = the title of the holy order
-# scope:leader = the leader of the holy order
+# A Military Order has been destroyed.
+# root = the faith the Military Order belonged to
+# scope:title = the title of the Military Order
+# scope:leader = the leader of the Military Order
 on_holy_order_destroyed = {
 	effect = {
 		# If it's the Brotherhood of Northshire, send the full event
@@ -89,7 +554,7 @@ on_holy_order_destroyed = {
 						# We notify everyone of the faith.
 						faith = faith:holy_light
 						# But also just people within diplomatic range.
-						in_diplomatic_range_trigger = { target = scope:leader }
+						in_diplomatic_range = scope:leader
 					}
 					is_from_the_horde_trigger = no
 					title:c_northshire.holder = { is_from_the_horde_trigger = yes }
@@ -108,11 +573,26 @@ on_holy_order_destroyed = {
 					faith = root
 				}
 				send_interface_toast = {
-					type = holy_order_destroyed
+					type = msg_holy_order_destroyed
 					title = holy_order.destroyed_title
-					custom_tooltip = holy_order.destroyed_message
+					desc = holy_order.destroyed_message
 					left_icon = scope:title
 					right_icon = scope:leader
+				}
+			}
+		}
+
+		scope:leader = {
+			if = {
+				limit = {
+					any_in_list = { variable = owes_me_money }
+				}
+				every_in_list = {
+					variable = owes_me_money
+					limit = {
+						is_alive = yes
+					}
+					clear_loanee_variables_effect = yes
 				}
 			}
 		}
