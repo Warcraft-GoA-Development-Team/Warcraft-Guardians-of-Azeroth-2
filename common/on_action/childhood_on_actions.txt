@@ -257,7 +257,7 @@ on_16th_birthday = {
 					nomad_yurt_better_children_education_outcomes_lvl_1 = {
 						random = {
 							chance = {
-								value = warden.learning
+								value = root.warden.learning
 								multiply = 0.5
 							}
 							root = {
@@ -268,7 +268,7 @@ on_16th_birthday = {
 					nomad_yurt_better_children_education_outcomes_lvl_2 = {
 						random = {
 							chance = {
-								value = warden.learning
+								value = root.warden.learning
 							}
 							root = {
 								add_trait = lifestyle_mystic
@@ -384,6 +384,65 @@ on_16th_birthday = {
 				delayed = yes
 			}
 		}
+
+		# PAM Be Fruitful and Multiply tenet effects
+		if = {
+			limit = {
+				any_parent = {
+					rite = { rite_has_tenet = tenet_be_fruitful_and_multiply }
+				}
+				AND = {
+					faith = father.faith
+					faith = mother.faith
+				}
+			}
+			send_interface_message = {
+				type = event_religious_good
+				title = tenet_be_fruitful_and_multiply_birthday_title
+				add_character_modifier = {
+					modifier = tenet_be_fruitful_and_multiply_child_modifier
+					years = 2
+				}
+			}	
+			father = {
+				send_interface_message = {
+					type = event_religious_good
+					title = tenet_be_fruitful_and_multiply_birthday_title
+					left_icon = prev
+					add_character_modifier = {
+						modifier = tenet_be_fruitful_and_multiply_parent_modifier
+						years = 2
+					}
+					show_as_tooltip = {
+						prev = {
+							add_character_modifier = {
+								modifier = tenet_be_fruitful_and_multiply_child_modifier
+								years = 2
+							}
+						}
+					}
+				}
+			}
+			mother = {
+				send_interface_message = {
+					type = event_religious_good
+					title = tenet_be_fruitful_and_multiply_birthday_title
+					left_icon = prev
+					add_character_modifier = {
+						modifier = tenet_be_fruitful_and_multiply_parent_modifier
+						years = 2
+					}
+					show_as_tooltip = {
+						prev = {
+							add_character_modifier = {
+								modifier = tenet_be_fruitful_and_multiply_child_modifier
+								years = 2
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -399,11 +458,6 @@ on_action_add_sexuality = {
 }
 
 on_birthday_education_events = {
-	trigger = {
-		is_adult = no
-		age >= childhood_education_start_age
-	}
-
 	effect = {
 		save_scope_as = child
 		court_owner ?= {
@@ -595,6 +649,88 @@ on_birthday_education_events = {
 					}
 				}
 			}
+
+			# Chance to gain extra skills if child resides in an archdiocese with a Cathedral School
+			liege.capital_county.clerical_region_title.holder ?= {
+				if = {
+					limit = {
+						domicile ?= {
+							OR = {
+								has_domicile_parameter = estate_cathedral_school_1
+								has_domicile_parameter = estate_cathedral_school_2
+								has_domicile_parameter = estate_cathedral_school_3
+							}
+						}
+						rite = scope:court_owner.rite
+						scope:child = {
+							NOT = { has_character_flag = cathedral_school_skill_recently_gained }
+						}
+					}
+					save_scope_as = domicile_holder
+				}	
+			}
+			#If domicile holder (and therefore baptistery exists) boost skill learning 
+			scope:domicile_holder ?= {
+				random = {
+					chance = {
+						value = 5
+						add = {
+							value = learning
+							multiply = 3
+						}
+					}
+					scope:domicile_holder = {
+						random_list = {
+							1 = {
+								modifier = {
+									add = 1
+									diplomacy > decent_skill_rating
+								}
+								save_temporary_scope_as = diplomacy_tutor
+							}
+							1 = {
+								modifier = {
+									add = 1
+									stewardship > decent_skill_rating
+								}
+								save_temporary_scope_as = stewardship_tutor
+							}
+							1 = {
+								modifier = {
+									add = 1
+									learning > decent_skill_rating
+								}
+								save_temporary_scope_as = learning_tutor
+							}
+						}
+					}
+					scope:court_owner ?= {
+						send_interface_toast = {
+							type = event_childhood_good
+							title = estate_cathedral_teach_kids_title
+							left_icon = scope:child
+							right_icon = scope:domicile_holder
+							if = {
+								limit = { this = scope:child }
+								custom_tooltip = estate_cathedral_teach_kids_notification_desc_you
+							}
+							else = { custom_tooltip = estate_cathedral_teach_kids_notification_desc }
+							scope:child = {
+								switch = {
+									trigger = exists
+									scope:diplomacy_tutor = { add_diplomacy_skill = 1 }
+									scope:stewardship_tutor = { add_stewardship_skill = 1 }
+									scope:learning_tutor = { add_learning_skill = 1 }
+								}
+								add_character_flag = {
+									flag = cathedral_school_skill_recently_gained
+									years = 3
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -623,11 +759,6 @@ childhood_education_boost = {
 
 #To gain education points
 childhood_education = {
-	trigger = {
-		is_adult = no
-		age >= childhood_education_start_age
-	}
-
 	events = {
 		childhood_education.9002
 		childhood_education.1001
@@ -784,7 +915,15 @@ on_ward_arrive_at_guardian = {
 		# Clean up variables
 		remove_variable = ward_travelling_to_guardian
 		remove_variable = character_making_education_request
-		scope:guardian ?= { remove_variable = guardian_waiting_for_ward }
+		scope:guardian ?= {
+			if = {
+				limit = {
+					is_alive = yes # A guardian who died mid-journey keeps no variables to clear
+					has_variable = guardian_waiting_for_ward
+				}
+				remove_variable = guardian_waiting_for_ward
+			}
+		}
 	}
 }
 
@@ -990,7 +1129,10 @@ on_adoptee_depart_travel_planner_exit = {}
 on_adoptee_arrive_at_adopter = {
 	effect = {
 		if = {
-			limit = { exists = scope:adopter }
+			limit = {
+				exists = scope:adopter
+				NOT = { scope:adoptee.court_owner ?= scope:adopter }
+			}
 			scope:adopter = {
 				send_interface_message = {
 					type = event_toast_effect_neutral

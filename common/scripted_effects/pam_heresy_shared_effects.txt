@@ -1,0 +1,729 @@
+﻿####################################
+# Heresy system - shared effects   #
+####################################
+# Reusable building blocks for heresy_pulse.0001 router and the three component event chains (light, dangerous-rite, historical).
+
+# Faith scope. Sets the cooldown variable that gates faith_heresy_events_pulse.
+pam_heresy_set_pulse_cooldown_effect = {
+	set_variable = {
+		name = current_heresy
+		value = yes
+		days = pam_heresy_pulse_cooldown_days
+	}
+}
+
+# Faith scope. Resets fervor to the tiered component target.
+# COMPONENT = 1, 2, or 3.
+pam_heresy_fervor_reset_effect = {
+	if = {
+		limit = { $COMPONENT$ = 1 }
+		change_fervor = {
+			value = pam_heresy_fervor_reset_component_1_value
+			desc = pam_heresy_fervor_reset_component_1_desc
+		}
+	}
+	else_if = {
+		limit = { $COMPONENT$ = 2 }
+		change_fervor = {
+			value = pam_heresy_fervor_reset_component_2_value
+			desc = pam_heresy_fervor_reset_component_2_desc
+		}
+	}
+	else = {
+		change_fervor = {
+			value = pam_heresy_fervor_reset_component_3_value
+			desc = pam_heresy_fervor_reset_component_3_desc
+		}
+	}
+}
+
+# Christian Situation catalyst
+pam_heresy_push_catalyst_effect = {
+	if = {
+		limit = { like_christianity_religion_trigger = yes }
+		situation:the_christian_church ?= {
+			trigger_situation_catalyst = $CATALYST$
+		}
+	}
+}
+
+# Faith scope.
+# Snapshots the rite's current tenets and the HoR's known rite doctrines.
+# The pam_heresy_c1_resolve_differences_effect can later identify what the divergence swapped in.
+pam_heresy_c1_snapshot_pre_divergence_state_effect = {
+	scope:diverging_rite = {
+		every_rite_tenet = {
+			add_to_list = c1_pre_divergence_tenets
+		}
+	}
+	if = {
+		limit = { exists = scope:hor }
+		scope:hor = {
+			every_character_doctrine = {
+				rite_filter = scope:diverging_rite
+				add_to_list = c1_pre_divergence_doctrines
+			}
+		}
+	}
+}
+
+# Faith scope (called after change_rite_divergence has been applied).
+# Saves scope:differing_tenet / scope:differing_doctrine for the C1 flavour text.
+# C1 narrates a within-rite shift, so the comparison must be against the pre-divergence snapshot of scope:diverging_rite - not against the parent faith's main rite (which would surface pre-existing differences like Mozarabic's Communion).
+# C2/C3 keep using rite_growth_resolve_differences_effect because there the mainline-vs-new-rite delta is the relevant story.
+pam_heresy_c1_resolve_differences_effect = {
+	clear_saved_scope = differing_tenet
+	clear_saved_scope = differing_doctrine
+
+	scope:diverging_rite = {
+		random_rite_tenet = {
+			limit = {
+				NOT = { is_in_list = c1_pre_divergence_tenets }
+			}
+			save_scope_as = differing_tenet
+		}
+	}
+
+	if = {
+		limit = {
+			NOT = { exists = scope:differing_tenet }
+			exists = scope:hor
+		}
+		scope:hor = {
+			random_character_doctrine = {
+				rite_filter = scope:diverging_rite
+				limit = {
+					NOT = { is_in_list = c1_pre_divergence_doctrines }
+				}
+				save_scope_as = differing_doctrine
+			}
+		}
+	}
+}
+
+# Faith scope. Picks the rite to diverge in Component 1.
+# Saves scope:diverging_rite.
+# Filters: exclude mainline, damper insular_celtic / mozarabic_church to factor 0.1.
+# Weighted by current divergence so already-divergent rites are more likely.
+pam_heresy_c1_pick_diverging_rite_effect = {
+	clear_saved_scope = diverging_rite
+
+	random_faith_rite = {
+		limit = {
+			this != faith.main_rite
+			rite_counties >= 1
+			exists = head_of_rite
+		}
+
+		weight = {
+			base = 5
+			# More divergent rites are more likely to deepen further.
+			modifier = {
+				add = 10
+				"divergence(faith.main_rite)" >= 25
+			}
+			modifier = {
+				add = 20
+				"divergence(faith.main_rite)" >= 50
+			}
+			modifier = {
+				add = 20
+				"divergence(faith.main_rite)" >= 75
+			}
+			# Pluralism-resistant rites are less prone to lurching toward heresy.
+			modifier = {
+				factor = 0.5
+				rite_has_parameter = pluralism_pluralistic_resistant_to_heresy
+			}
+			# Insular Celtic and Mozarabic are doctrinally weird but historically not the seedbed for heresy outbreaks; dampen without excluding outright.
+			modifier = {
+				factor = 0.1
+				OR = {
+					this = rite:insular_celtic
+					this = rite:mozarabic_church
+				}
+			}
+		}
+
+		save_scope_as = diverging_rite
+	}
+}
+
+# Character scope (an AI ruler being swept into a new rite by Component 2 / 3 spread).
+# Mirrors rite_growth_convert_ruler_to_new_rite_effect, but uses a heresy flag.
+pam_heresy_convert_ruler_to_new_rite_effect = {
+	if = {
+		limit = { rite != scope:new_rite }
+		set_character_rite_with_conversion = scope:new_rite
+	}
+	every_held_title = {
+		limit = {
+			tier = tier_county
+			rite = scope:source_rite
+		}
+		set_county_rite = scope:new_rite
+	}
+	add_character_flag = {
+		flag = recently_converted_by_heresy
+		years = 10
+	}
+	# Mirror rite_growth_convert_ruler_to_new_rite_effect
+	rite_growth_convert_court_to_new_rite_effect = yes
+	
+	# Archbishop clerical-region cascade.
+	if = {
+		limit = { any_held_title = { has_clerical_region = yes } }
+		every_held_title = {
+			limit = { has_clerical_region = yes }
+			save_temporary_scope_as = title_check
+			every_county_in_clerical_region = {
+				limit = {
+					rite = scope:source_rite
+					OR = {
+						this = scope:title_check.title_capital_county
+						any_neighboring_county = {
+							this = scope:title_check.title_capital_county
+						}
+					}
+				}
+				set_county_rite = scope:new_rite
+				holder = {
+					if = {
+						limit = { is_eligible_rite_growth_target_trigger = yes }
+						pam_heresy_convert_ruler_to_new_rite_effect = yes
+					}
+				}
+			}
+		}
+	}
+}
+
+# Character scope, an AI ruler pulled into the declared heresy faith by the third component's spread
+# Faith-conversion equivalent of pam_heresy_convert_ruler_to_new_rite_effect
+pam_heresy_convert_ruler_to_heresy_faith_effect = {
+	if = {
+		limit = { faith != scope:heresy_faith }
+		set_character_faith_with_conversion = scope:heresy_faith
+	}
+	every_held_title = {
+		limit = {
+			tier = tier_county
+			faith = scope:origin_faith
+		}
+		set_county_faith = scope:heresy_faith
+	}
+	add_character_flag = {
+		flag = recently_converted_by_heresy
+		years = 10
+	}
+	# Faith-side mirror of rite_growth_convert_court_to_new_rite_effect.
+	every_courtier_or_guest = {
+		limit = {
+			is_physically_able_ai = yes
+			faith = scope:origin_faith
+			NOT = { has_character_flag = ai_will_not_convert }
+		}
+		set_character_faith = scope:heresy_faith
+	}
+	every_courtier_away = {
+		limit = {
+			is_physically_able_ai = yes
+			faith = scope:origin_faith
+			NOT = { has_character_flag = ai_will_not_convert }
+		}
+		set_character_faith = scope:heresy_faith
+	}
+	every_pool_character = {
+		province = capital_province
+		limit = {
+			is_physically_able_ai = yes
+			faith = scope:origin_faith
+			NOT = { has_character_flag = ai_will_not_convert }
+		}
+		set_character_faith = scope:heresy_faith
+	}
+	# Faith-side mirror of the rite cascade in pam_heresy_convert_ruler_to_new_rite_effect.
+	if = {
+		limit = { any_held_title = { has_clerical_region = yes } }
+		every_held_title = {
+			limit = { has_clerical_region = yes }
+			save_temporary_scope_as = title_check
+			every_county_in_clerical_region = {
+				limit = {
+					faith = scope:origin_faith
+					OR = {
+						this = scope:title_check.title_capital_county
+						any_neighboring_county = {
+							this = scope:title_check.title_capital_county
+						}
+					}
+				}
+				set_county_faith = scope:heresy_faith
+				holder = {
+					if = {
+						limit = { is_eligible_rite_growth_target_trigger = yes }
+						pam_heresy_convert_ruler_to_heresy_faith_effect = yes
+					}
+				}
+			}
+		}
+	}
+}
+
+# Character scope. Unlocks every perk in all three Learning lifestyle trees.
+pam_heresy_unlock_all_learning_perks_effect = {
+	add_perk = faithful_perk
+	add_perk = zealous_proselytizer_perk
+	add_perk = religious_icon_perk
+	add_perk = prophet_perk
+	add_perk = clerical_justifications_perk
+	add_perk = church_and_state_perk
+	add_perk = radiant_perk
+	add_perk = defender_of_the_faith_perk
+	add_perk = theologian_perk
+	add_perk = pedagogy_perk
+	add_perk = open_minded_perk
+	add_perk = apostate_perk
+	add_perk = scientific_perk
+	add_perk = planned_cultivation_perk
+	add_perk = scholarly_circles_perk
+	add_perk = learn_on_the_job_perk
+	add_perk = sanctioned_loopholes_perk
+	add_perk = erudite_perk
+	add_perk = anatomical_studies_perk
+	add_perk = carefree_perk
+	add_perk = mental_resilience_perk
+	add_perk = restraint_perk
+	add_perk = know_thyself_perk
+	add_perk = wash_your_hands_perk
+	add_perk = iron_constitution_perk
+	add_perk = healthy_perk
+	add_perk = whole_of_body_perk
+}
+
+# Character scope, and this expects scope:new_rite, or omit it for the historical split path
+pam_heresy_finalise_founder_effect = {
+	add_character_flag = ai_will_not_convert
+	if = {
+		limit = { NOT = { has_trait = heresiarch } }
+		add_trait = heresiarch
+	}
+	# Brief flag mirroring add_heresiarch_trait_effect to prevent removal on conversion.
+	add_character_flag = {
+		flag = new_heresiarch
+		days = 3
+	}
+	if = {
+		limit = { NOT = { exists = inspiration } }
+		create_inspiration = religious_inspiration
+	}
+	pam_heresy_unlock_all_learning_perks_effect = yes
+	if = {
+		limit = { exists = scope:new_rite }
+		every_courtier_or_guest = {
+			limit = {
+				is_physically_able = yes
+				faith = scope:new_rite.faith
+				rite != scope:new_rite
+				NOT = { has_character_flag = ai_will_not_convert }
+			}
+			set_character_rite = scope:new_rite
+		}
+	}
+}
+
+######################################################
+# Heresy system - Component 3 setup effects          #
+######################################################
+# Faith / character scope helpers used only by heresy_historical.0001 and 0011.
+
+# --- Epicenter ruler picker (faith scope) ---
+# Picks scope:epicenter_ruler. Game rule controls geography:
+#   strict_regional_heresy: prefers the holder of scope:heresy_strict_capital;
+#       falls back to a default-region pick if that holder is unsuitable.
+#   relaxed_regional_heresy: any same-faith duke+ AI ruler in the world.
+#   default_regional_heresy / fallback: a same-faith duke+ AI ruler whose
+#       capital sits inside the heresy's regional trigger.
+pam_heresy_pick_epicenter_ruler_effect = {
+	clear_saved_scope = epicenter_ruler
+
+	# Strict: try the historical capital's holder first.
+	if = {
+		limit = {
+			pam_heresy_strict_rule_trigger = yes
+			exists = scope:heresy_strict_capital
+			scope:heresy_strict_capital.holder ?= {
+				faith = root
+				is_landed = yes
+				is_ai = yes
+				highest_held_title_tier >= tier_duchy
+				NOR = {
+					this = root.religious_head
+					has_trait = heresiarch
+					has_trait = herald
+					recently_converted_faith_trigger = yes
+				}
+			}
+		}
+		scope:heresy_strict_capital.holder = { save_scope_as = epicenter_ruler }
+	}
+
+	# Default / fallback: regional duke+ holder.
+	if = {
+		limit = { NOT = { exists = scope:epicenter_ruler } }
+		random_faith_ruler = {
+			limit = {
+				is_eligible_heresy_epicenter_ruler_trigger = yes
+				OR = {
+					pam_heresy_relaxed_rule_trigger = yes
+					AND = {
+						# Default: must be in heresy region.
+						pam_heresy_default_rule_trigger = yes
+						exists = capital_county
+						capital_county.title_province = {
+							pam_heresy_capital_in_heresy_region_trigger = yes
+						}
+					}
+					AND = {
+						# Strict but historical capital not held by an eligible ruler:
+						# fall back to default-region behaviour rather than skipping.
+						pam_heresy_strict_rule_trigger = yes
+						exists = capital_county
+						capital_county.title_province = {
+							pam_heresy_capital_in_heresy_region_trigger = yes
+						}
+					}
+				}
+			}
+			weight = {
+				base = 100
+				modifier = {
+					factor = 2
+					highest_held_title_tier >= tier_kingdom
+				}
+				modifier = {
+					factor = 1.5
+					OR = {
+						has_trait = zealous
+						has_trait = lifestyle_mystic
+						has_trait = lifestyle_scholar
+						has_trait = theologian
+					}
+				}
+				modifier = {
+					factor = 0.5
+					opinion = {
+						target = root.religious_head
+						value >= 75
+					}
+				}
+			}
+			save_scope_as = epicenter_ruler
+		}
+	}
+}
+
+# --- Founder spawn dispatcher (any scope) ---
+# Calls the matching per-heresy founder template based on scope:heresy_faith
+# and the resurgence stage. Saves scope:founder at scope:birth_location.
+#
+# Stage logic (named historical heresies):
+#   first outbreak:                spawn the primary historical figure
+#   second outbreak (resurgence):  spawn the named secondary historical figure
+#   third+ outbreak:               spawn the per-heresy anonymous resurgence
+#
+# Always-anonymous heresies (Paulician, Iconoclast, Adoptionist, Messalian) always use their single anonymous template.
+pam_heresy_dispatch_founder_spawn_effect = {
+	if = {
+		limit = { scope:heresy_faith = faith:lollard }
+		if = {
+			limit = { exists = scope:is_resurgence }
+			if = {
+				limit = { NOT = { exists = global_var:pam_heresy_lollard_secondary_fired } }
+				pam_heresy_spawn_lollard_secondary_founder_effect = yes
+				set_global_variable = { name = pam_heresy_lollard_secondary_fired value = yes }
+			}
+			else = {
+				pam_heresy_spawn_lollard_resurgence_founder_effect = yes
+			}
+		}
+		else = {
+			pam_heresy_spawn_lollard_founder_effect = yes
+		}
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:hussite }
+		if = {
+			limit = { exists = scope:is_resurgence }
+			if = {
+				limit = { NOT = { exists = global_var:pam_heresy_hussite_secondary_fired } }
+				pam_heresy_spawn_hussite_secondary_founder_effect = yes
+				set_global_variable = { name = pam_heresy_hussite_secondary_fired value = yes }
+			}
+			else = {
+				pam_heresy_spawn_hussite_resurgence_founder_effect = yes
+			}
+		}
+		else = {
+			pam_heresy_spawn_hussite_founder_effect = yes
+		}
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:joachimite }
+		if = {
+			limit = { exists = scope:is_resurgence }
+			if = {
+				limit = { NOT = { exists = global_var:pam_heresy_joachimite_secondary_fired } }
+				pam_heresy_spawn_joachimite_secondary_founder_effect = yes
+				set_global_variable = { name = pam_heresy_joachimite_secondary_fired value = yes }
+			}
+			else = {
+				pam_heresy_spawn_joachimite_resurgence_founder_effect = yes
+			}
+		}
+		else = {
+			pam_heresy_spawn_joachimite_founder_effect = yes
+		}
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:cathar }
+		if = {
+			limit = { exists = scope:is_resurgence }
+			if = {
+				limit = { NOT = { exists = global_var:pam_heresy_cathar_secondary_fired } }
+				pam_heresy_spawn_cathar_secondary_founder_effect = yes
+				set_global_variable = { name = pam_heresy_cathar_secondary_fired value = yes }
+			}
+			else = {
+				pam_heresy_spawn_cathar_resurgence_founder_effect = yes
+			}
+		}
+		else = {
+			pam_heresy_spawn_cathar_founder_effect = yes
+		}
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:waldensian }
+		if = {
+			limit = { exists = scope:is_resurgence }
+			if = {
+				limit = { NOT = { exists = global_var:pam_heresy_waldensian_secondary_fired } }
+				pam_heresy_spawn_waldensian_secondary_founder_effect = yes
+				set_global_variable = { name = pam_heresy_waldensian_secondary_fired value = yes }
+			}
+			else = {
+				pam_heresy_spawn_waldensian_resurgence_founder_effect = yes
+			}
+		}
+		else = {
+			pam_heresy_spawn_waldensian_founder_effect = yes
+		}
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:bogomilist }
+		if = {
+			limit = { exists = scope:is_resurgence }
+			if = {
+				limit = { NOT = { exists = global_var:pam_heresy_bogomilist_secondary_fired } }
+				pam_heresy_spawn_bogomilist_secondary_founder_effect = yes
+				set_global_variable = { name = pam_heresy_bogomilist_secondary_fired value = yes }
+			}
+			else = {
+				pam_heresy_spawn_bogomilist_resurgence_founder_effect = yes
+			}
+		}
+		else = {
+			pam_heresy_spawn_bogomilist_founder_effect = yes
+		}
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:paulician }
+		pam_heresy_spawn_paulician_founder_effect = yes
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:iconoclast }
+		pam_heresy_spawn_iconoclast_founder_effect = yes
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:adoptionist }
+		pam_heresy_spawn_adoptionist_founder_effect = yes
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:messalian }
+		pam_heresy_spawn_messalian_founder_effect = yes
+	}
+}
+
+# --- Per-heresy 50-year cooldown setter (faith scope on origin_faith) ---
+pam_heresy_set_per_heresy_cooldown_effect = {
+	if = {
+		limit = { scope:heresy_faith = faith:lollard }
+		set_global_variable = { name = pam_heresy_lollard_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:hussite }
+		set_global_variable = { name = pam_heresy_hussite_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:joachimite }
+		set_global_variable = { name = pam_heresy_joachimite_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:cathar }
+		set_global_variable = { name = pam_heresy_cathar_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:waldensian }
+		set_global_variable = { name = pam_heresy_waldensian_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:bogomilist }
+		set_global_variable = { name = pam_heresy_bogomilist_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:paulician }
+		set_global_variable = { name = pam_heresy_paulician_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:iconoclast }
+		set_global_variable = { name = pam_heresy_iconoclast_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:adoptionist }
+		set_global_variable = { name = pam_heresy_adoptionist_cooldown value = yes years = 50 }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:messalian }
+		set_global_variable = { name = pam_heresy_messalian_cooldown value = yes years = 50 }
+	}
+}
+
+# --- Pre-declaration setup (faith scope) ---
+pam_heresy_c3_pre_declaration_setup_effect = {
+	scope:founder = {
+		pam_heresy_dispatch_create_pre_declaration_rite_effect = yes
+	}
+
+	# Save scope:source_rite so downstream spread helpers filter by the parent-faith mainline rite
+	scope:origin_faith.main_rite = { save_scope_as = source_rite }
+
+	# Only the rite splits off
+	if = {
+		limit = {
+			exists = scope:new_rite
+			exists = scope:epicenter_ruler.capital_county
+		}
+		scope:epicenter_ruler.capital_county = {
+			set_county_rite = scope:new_rite
+		}
+		scope:epicenter_ruler.capital_county = {
+			every_neighboring_county = {
+				limit = {
+					faith = scope:origin_faith
+					holder.faith ?= scope:origin_faith
+				}
+				set_county_rite = scope:new_rite
+			}
+		}
+	}
+}
+
+# create_rite_from_type takes a literal rite type key, so dispatch on heresy_faith.
+pam_heresy_dispatch_create_pre_declaration_rite_effect = {
+	if = {
+		limit = { scope:heresy_faith = faith:lollard }
+		create_rite_from_type = { type = lollard_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:hussite }
+		create_rite_from_type = { type = hussite_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:joachimite }
+		create_rite_from_type = { type = joachimite_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:cathar }
+		create_rite_from_type = { type = cathar_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:waldensian }
+		create_rite_from_type = { type = waldensian_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:bogomilist }
+		create_rite_from_type = { type = bogomilist_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:paulician }
+		create_rite_from_type = { type = paulician_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:iconoclast }
+		create_rite_from_type = { type = iconoclast_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:adoptionist }
+		create_rite_from_type = { type = adoptionist_rite save_scope_as = new_rite convert = yes }
+	}
+	else_if = {
+		limit = { scope:heresy_faith = faith:messalian }
+		create_rite_from_type = { type = messalian_rite save_scope_as = new_rite convert = yes }
+	}
+}
+
+# --- Already-declared setup (faith scope) ---
+pam_heresy_c3_already_declared_setup_effect = {
+	# A heresy already declared at game start never passed through the bull that flips its rite type's convert = no.
+	scope:heresy_faith.main_rite = {
+		set_can_convert_to_rite = yes
+	}
+	scope:founder = {
+		set_character_faith_with_conversion = scope:heresy_faith
+	}
+
+	if = {
+		limit = { exists = scope:epicenter_ruler.capital_county }
+		scope:epicenter_ruler.capital_county = {
+			set_county_faith = scope:heresy_faith
+		}
+		scope:epicenter_ruler.capital_county = {
+			every_neighboring_county = {
+				limit = {
+					faith = scope:origin_faith
+				}
+				set_county_faith = scope:heresy_faith
+			}
+		}
+	}
+}
+
+pam_seek_communion_reconcile_faith_effect = {
+	custom_tooltip = pam_seek_communion_reconcile_faith_effect_tt
+	faith = {
+		if = {
+			limit = { NOT = { has_doctrine = special_doctrine_ecumenical_christian } }
+			add_doctrine = special_doctrine_ecumenical_christian
+		}
+	}
+	custom_tooltip = {
+		text = pam_seek_communion_absolve_faith_tt
+		faith = {
+			every_faith_character = {
+				limit = {
+					OR = {
+						has_trait = heresiarch
+						has_trait = excommunicated
+					}
+				}
+				if = {
+					limit = { has_trait = heresiarch }
+					remove_trait = heresiarch
+				}
+				else = {
+					remove_trait = excommunicated
+				}
+			}
+		}
+	}
+}

@@ -1,11 +1,460 @@
 ﻿#On actions related to religion
 
-# Code on-action: character creates a faith
-# Root is the creator
+# Code on-action: a new faith is created (character create/convert, or a rite detaching into its own faith)
+# Root is the new faith; its head/leader is root.main_rite.head_of_rite (use it for faith-setup effects)
+# scope:founder is the acting character that triggered the creation (creator/converter, heresy declarer, or on a divergence the head of the diverging rite)
+# scope:founder can be absent - the game creates faiths with no acting character, so it is entered with ?=
 # scope:old_faith is the faith they used to have
+# scope:old_rite is the rite they used to have
+# scope:diverged (true/false) optional scope, true if the faith was created because of a Rite diverging too much. Notice create a 100+ divergence heresy at the start does not count.
 on_faith_created = {
 	effect = {
+		main_rite = { force_refresh_head_of_rite = yes }
+		# Faiths created by a rite diverging too far start at 0 fervor
+		if = {
+			limit = {
+				scope:diverged ?= yes
+			}
+			diverged_faith_starting_fervor_effect = yes
+		}
+		# Sanctification is per faith
+		if = {
+			limit = {
+				exists = scope:old_faith
+				scope:old_faith.religion = religion
+			}
+			every_artifact = {
+				limit = { is_sanctified_for_faith = scope:old_faith }
+				add_sanctified_for_faith = root
+			}
+		}
+		# Remove Antipopes
+		if = {
+			limit = {
+				scope:diverged ?= yes
+				any_faith_character = { has_character_flag = antipope_flag }
+			}
+			ordered_faith_character = {
+				limit = { has_character_flag = antipope_flag }
+				order_by = head_of_faith_selection_weight
+				save_scope_as = pam_diverged_antipope
+			}
+			every_faith_character = {
+				limit = { has_character_flag = antipope_flag }
+				pam_strip_antipope_office_effect = yes
+			}
+			scope:pam_diverged_antipope = {
+				if = {
+					limit = { faith = { has_doctrine = doctrine_temporal_head } }
+					set_up_dynamic_temporal_hof_title_effect = { NEW_HOLDER = scope:pam_diverged_antipope }
+				}
+				else_if = {
+					limit = { faith = { has_doctrine = doctrine_spiritual_head } }
+					set_up_dynamic_spiritual_hof_title_effect = { CREATOR = scope:pam_diverged_antipope }
+				}
+			}
+		}
+		scope:founder ?= {
+			if = {
+				limit = { faith = root }
+				pam_on_conversion_effect = yes
+				remove_character_modifier = religious_reformer_modifier
+				# If you have a legend maybe we change it?
+				if = {
+					limit = {
+						has_legend_chapter_trigger = { CHAPTER = opening }
+						promoted_legend ?= {
+							exists = legend_property:faith
+							exists = legend_property:religion
+						}
+						NOT = {
+							promoted_legend ?= {
+								has_legend_chapter = {
+									name = opening
+									localization_key = legend_chapter_opening_new_faith
+								}
+							}
+						}
+					}
+					send_interface_toast = {
+						title = legend_chapter_change_toast
+						left_icon = scope:founder
+						promoted_legend = {
+							set_legend_chapter = {
+								name = opening
+								localization_key = legend_chapter_opening_new_faith
+							}
+						}
+					}
+				}
+				else_if = {
+					limit = {
+						has_legend_chapter_trigger = { CHAPTER = opening }
+					}
+					random = {
+						chance = 75
+						send_interface_toast = {
+							title = legend_chapter_change_toast
+							left_icon = scope:founder
+							promoted_legend = {
+								set_legend_chapter = {
+									name = opening
+									localization_key = legend_chapter_opening_new_faith_generic
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		scope:old_faith = {
+			if = {
+				limit = { has_doctrine_parameter = unreformed }
+				set_variable = { name = has_been_reformed }
+				root = {
+					if = {
+						limit = { has_doctrine = unreformed_faith_doctrine }
+						remove_doctrine = unreformed_faith_doctrine
+					}
+					if = {
+						limit = { has_doctrine = west_african_unreformed_faith_doctrine }
+						remove_doctrine = west_african_unreformed_faith_doctrine
+					}
+				}
+				# Use the new faith's head for state faith, never scope:founder (may not follow)
+				root.main_rite.head_of_rite ?= {
+					if = {
+						limit = {
+							government_allows = state_faith
+							liege = this
+							primary_title.state_rite.faith = scope:old_faith
+						}
+						primary_title = {
+							set_state_rite = rite
+							pam_tenet_popularity_boost_rite_effect = { RITE = state_rite }
+						}
+					}
+				}
+				scope:founder ?= {
+					if = {
+						limit = {
+							faith = root
+							NOT = { has_character_flag = reformer_legend }
+							has_dlc_feature = legends
+							NOT = { has_game_rule = historical_legends_only }
+						}
+						add_character_flag = reformer_legend
+						create_legend_seed = {
+							type = holy
+							quality = famed
+							chronicle = new_faith_legend
+							properties = {
+								reformer = scope:founder
+								faith = root
+								religion = root.religion
+								reason = flag:pagan_reformation
+							}
+						}
+					}
+				}
+				every_faith_character = {
+					limit = {
+						has_character_flag = forced_conversion_on_reform
+					}
+					set_character_faith = root
+					every_vassal_or_below = {
+						limit = { faith = scope:old_faith }
+						random = {
+							chance = 75
+							set_character_faith = root
+						}
+					}
+					every_sub_realm_county = {
+						limit = { faith = scope:old_faith }
+						random = {
+							chance = 75
+							set_county_faith = root
+						}
+					}
+				}
+				# The founding wave (founder and vassals who already accepted) brings their courts, as with a new rite
+				# Listed first, since the conversions below add characters to the faith being iterated
+				if = {
+					limit = {
+						NOT = { scope:diverged ?= yes }
+					}
+					root = {
+						every_faith_character = {
+							limit = { is_ruler = yes }
+							add_to_temporary_list = pam_reform_founding_wave
+						}
+					}
+					every_in_list = {
+						list = pam_reform_founding_wave
+						pam_convert_court_to_faith_effect = {
+							FAITH = root
+							OLD_FAITH = scope:old_faith
+						}
+					}
+				}
+			}
+			else = {
+				scope:founder ?= {
+					if = {
+						limit = {
+							faith = root
+							NOT = { has_character_flag = reformer_legend }
+							has_dlc_feature = legends
+							NOT = { has_game_rule = historical_legends_only }
+						}
+						add_character_flag = reformer_legend
+						create_legend_seed = {
+							type = holy
+							quality = famed
+							chronicle = new_faith_legend
+							properties = {
+								reformer = scope:founder
+								faith = root
+								religion = root.religion
+								reason = flag:new_faith
+							}
+						}
+					}
+				}
+			}
+
+			scope:founder ?= { play_music_cue = "mx_cue_faith_conversion" }
+		}
+		# A faith founded during the game may reshape its holy sites three times for free.
+		set_variable = {
+			name = free_holy_site_actions
+			value = 3
+		}
+		# Clear the old faith's holy-site lock so it cannot use up the free actions
+		# Locks sit on the founder, so swapping puppets cannot skip the cooldown
+		scope:founder ?= {
+			if = {
+				limit = { faith = root }
+				set_variable = has_created_a_faith
+				remove_variable = holy_site_creation_cooldown
+				remove_decision_cooldown = elevate_holy_site_decision
+				remove_decision_cooldown = demote_holy_site_decision
+				remove_decision_cooldown = abandon_holy_site_decision
+				remove_decision_cooldown = adopt_holy_site_decision
+				check_for_equal_doctrine_effect = yes
+			}
+		}
+		# Set up diff-faith HoFs.
+		# If we have a diff-faith HoF, we want to account for that.
+		## Islamic use-case: we want same-Mohammad's Succession faiths to keep following their appropriate caliphs.
+		if = {
+			limit = {
+				# Are we in the correct religion?
+				religion = religion:islam_religion
+				# Faiths with no HoF or a spiritual head aren't relevant for these calculations.
+				has_doctrine = doctrine_temporal_head
+			}
+			# We save_scope_as = reformer for tooltip loc, because the events complain about root
+			root.main_rite.head_of_rite ?= { save_scope_as = reformer }
+			# Sunni path.
+			if = {
+				limit = { main_rite = { rite_has_doctrine = muhammad_succession_sunni_doctrine } }
+				root.main_rite.head_of_rite ?= { trigger_event = head_of_faith.0001 }
+			}
+			# Shia path.
+			else_if = {
+				limit = { main_rite = { rite_has_doctrine = muhammad_succession_shia_doctrine } }
+				root.main_rite.head_of_rite ?= { trigger_event = head_of_faith.0011 }
+			}
+			# Muhakkima path.
+			else_if = {
+				limit = { main_rite = { rite_has_doctrine = muhammad_succession_muhakkima_doctrine } }
+				root.main_rite.head_of_rite ?= { trigger_event = head_of_faith.0021 }
+			}
+			# Zandaqa path.
+			else_if = {
+				limit = { main_rite = { rite_has_doctrine = muhammad_succession_zandaqa_doctrine } }
+				root.main_rite.head_of_rite ?= { trigger_event = head_of_faith.0031 }
+			}
+		}
+		# PAM - Christian Situation, add them to the correct group
+		if = {
+			limit = {
+				exists = situation:the_christian_church
+				religion = religion:christianity_religion
+			}
+			root.main_rite.head_of_rite ?= { recalculate_participant_group = situation:the_christian_church }
+		}
+		# Faiths with a College (Catholicism) need a seeded College or AI vacancy spam follows
+		hidden_effect = {
+			if = {
+				limit = { has_doctrine_parameter = has_clerical_electors }
+				pam_seed_cardinals_effect = yes
+			}
+		}
+		# Achievements - evaluated on the acting character, as add_achievement_* gate on is_ai.
+		scope:founder ?= {
+			if = {
+				limit = { faith = root }
+				add_achievement_flag_effect = { FLAG = achievement_its_not_a_cult_flag }
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = west_african_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_siguic
+						VALUE = yes
+					}
+				}
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = west_african_orisha_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_orisha
+						VALUE = yes
+					}
+				}
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = west_african_bori_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_bori
+						VALUE = yes
+					}
+				}
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = west_african_roog_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_roog_sene
+						VALUE = yes
+					}
+				}
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = akom_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_akom
+						VALUE = yes
+					}
+				}
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = kushitism_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_kushitism
+						VALUE = yes
+					}
+				}
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = waaqism_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_waaqism
+						VALUE = yes
+					}
+				}
+				if = {
+					limit = {
+						scope:old_faith = {
+							religion_tag = north_african_religion
+							has_doctrine_parameter = unreformed
+						}
+					}
+					add_achievement_global_variable_effect = {
+						VARIABLE = achievement_mother_of_us_all_achamanism
+						VALUE = yes
+					}
+				}
+			}
+		}
+		# These events need a character, so they fire on the new faith's head, never a founder outside the faith
+		root.main_rite.head_of_rite ?= {
+			trigger_event = faith_conversion.0001 # Convert capital county
+			trigger_event = faith_conversion.0006 # Same-religion capital joins the new faith
+			trigger_event = faith_conversion.0003 # Convert close family
+			trigger_event = faith_creation.0001 # Temporal rel head setup
+			trigger_event = faith_creation.0002 # Spiritual rel head setup
+			trigger_event = faith_creation.0003 # Faith flags
+		}
+		# Notifications go to the acting character.
+		scope:founder ?= {
+			if = {
+				limit = { faith = root }
+				trigger_event = faith_creation.1000 # Notification event
+				trigger_event = faith_creation.1002 # Notification event - rite diverged into a new faith
+			}
+		}
+	}
+}
+
+# Code on-action: character creates a rite
+# Root is the creator
+# scope:old_faith is the faith they used to have
+# scope:old_rite is the rite they used to have
+on_rite_created = {
+	effect = {
+		pam_on_conversion_effect = yes
 		remove_character_modifier = religious_reformer_modifier
+		# The rite is brand new, so everyone already holding it (creator, realm priest, AI vassals who accepted the code-sent offer) is part of the founding wave and brings their court and domain along
+		faith = {
+			every_faith_character = {
+				limit = {
+					rite = root.rite
+				}
+				pam_convert_court_to_rite_effect = { RITE = root.rite }
+				if = {
+					limit = {
+						is_landed = yes
+						highest_held_title_tier >= tier_county
+					}
+					pam_convert_domain_counties_to_rite_effect = { RITE = root.rite }
+				}
+			}
+		}
+		# Same grace var as rite_growth and heresy events, since create_dynamic_rite skips this on-action
+		rite = {
+			set_variable = {
+				name = pam_rite_grace_period
+				value = yes
+				days = rite_growth_grace_period_days
+			}
+		}
+		# Vassals answering the creation-time conversion offer later (players) also bring their court and domain; checked in pam_sway_to_rite_on_accept_effect
+		rite = {
+			set_variable = {
+				name = pam_rite_founding_window
+				value = yes
+				years = 1
+			}
+		}
 		# If you have a legend maybe we change it?
 		if = {
 			limit = {
@@ -56,15 +505,17 @@ on_faith_created = {
 			if = {
 				limit = { has_doctrine_parameter = unreformed }
 				set_variable = { name = has_been_reformed }
-				root = {
+				root.faith = {
 					if = {
-						limit = {
-							government_allows = state_faith
-							liege = this
-							primary_title.state_faith = scope:old_faith
-						}
-						primary_title = { set_state_faith = faith }
+						limit = { has_doctrine = unreformed_faith_doctrine }
+						remove_doctrine = unreformed_faith_doctrine
 					}
+					#if = {
+					#	limit = { has_doctrine = west_african_unreformed_faith_doctrine }
+					#	remove_doctrine = west_african_unreformed_faith_doctrine
+					#}
+				}
+				root = {
 					if = {
 						limit = {
 							NOT = { has_character_flag = reformer_legend }
@@ -129,7 +580,7 @@ on_faith_created = {
 					}
 				}
 			}
-		
+
 			root = { play_music_cue = "mx_cue_faith_conversion" }
 		}
 		set_variable = {
@@ -193,17 +644,141 @@ on_faith_created = {
 	events = {
 		faith_conversion.0001 # Convert capital county
 		faith_conversion.0003 # Convert close family
-		faith_creation.0001 # Temporal rel head setup
-		faith_creation.0002 # Spiritual rel head setup
-		faith_creation.0003 # Faith flags
-		faith_creation.1000 # Notification event
+		faith_creation.1020 # Notification event - player founded a new rite
+	}
+}
+
+# Code on-action: rite has been changed
+# root is the rite being changed
+# scope:changed_tenets_or_doctrines is set when tenets or doctrines changed (not set on aesthetic-only changes)
+# scope:consume_rite_edit_token is set only when the player edited the rite via the interface (not by scripted effects)
+# scope:added_tenets / scope:removed_tenets are lists of the tenets this change added to / removed from the rite (iterate with every_in_list = { list = added_tenets ... })
+# scope:added_doctrines / scope:removed_doctrines are lists of the doctrines this change added to / removed from the rite
+# Use these lists to inform adherents of exactly what changed in their rite
+on_rite_updated = {
+	events = {
+	}
+
+	effect = {
+		root = {
+			save_scope_as = rite
+		}
+
+		if = { # slient it for EC since EC has unique evvent to inform
+			limit = {
+				exists = scope:changed_tenets_or_doctrines
+				OR = {
+					NOT = {
+						faith = { has_variable = ecumenical_council_ongoing }
+					}
+					exists = scope:consume_rite_edit_token
+				}
+			}
+
+			# The message icon slot must never be left unset, hence the fall-through to the rite itself
+			if = {
+				limit = { any_in_list = { list = added_tenets count >= 1 } }
+				every_in_list = {
+					list = added_tenets
+					save_scope_as = rite_change_icon
+				}
+			}
+			else_if = {
+				limit = { any_in_list = { list = added_doctrines count >= 1 } }
+				every_in_list = {
+					list = added_doctrines
+					save_scope_as = rite_change_icon
+				}
+			}
+			else_if = {
+				limit = { any_in_list = { list = removed_tenets count >= 1 } }
+				every_in_list = {
+					list = removed_tenets
+					save_scope_as = rite_change_icon
+				}
+			}
+			else_if = {
+				limit = { any_in_list = { list = removed_doctrines count >= 1 } }
+				every_in_list = {
+					list = removed_doctrines
+					save_scope_as = rite_change_icon
+				}
+			}
+			else = {
+				root = { save_scope_as = rite_change_icon }
+			}
+
+			every_player = {
+				limit = {
+					OR = {
+						rite = root
+						AND = {
+							faith = root.faith
+							root.faith.main_rite = root
+						}
+					}
+				}
+				send_interface_message = {
+					type = msg_rite_updated
+					title = msg_rite_updated
+					left_icon = scope:rite_change_icon
+
+					show_as_tooltip = {
+						every_in_list = {
+							list = removed_doctrines
+							root = { remove_rite_doctrine = prev }
+						}
+						every_in_list = {
+							list = added_doctrines
+							root = { add_rite_doctrine = prev }
+						}
+						every_in_list = {
+							list = removed_tenets
+							root = { remove_rite_tenet = prev }
+						}
+						every_in_list = {
+							list = added_tenets
+							root = { add_rite_tenet = prev }
+						}
+					}
+				}
+			}
+		}
+
+		head_of_rite ?= {
+			trigger_event = faith_creation.0004 # Update HoF succession law
+			trigger_event = faith_creation.0001 # Temporal rel head setup
+			trigger_event = faith_creation.0002 # Spiritual rel head setup
+			trigger_event = faith_creation.0011 # Restore Temporal rel head
+			trigger_event = faith_creation.0012 # Restore Spiritual rel head
+			trigger_event = faith_creation.1100 # Destroy HoF title if no longer valid
+		}
+	}
+}
+
+# Code on-action: an interface rite edit was committed that changed tenets or doctrines
+# root is the rite that was edited
+# Unlike on_rite_updated (delayed), this fires immediately when the edit is applied, so the
+# once-per-lifetime edit lock is set before the player can reopen the rite editor.
+# WARNING: Please do not misuse this! (use on_rite_updated instead)
+on_rite_edited = {
+	events = {
+	}
+
+	effect = {
+		head_of_rite ?= {
+			set_variable = {
+				name = has_edited_a_rite
+			}
+		}
 	}
 }
 
 # Code on-action: character converts faith. Only fired when using the convert window, or the script effect that uses the same logic
 # Root is the converted character
 # scope:old_faith is the faith they used to have
-# scope:actor is the character instigating the conversion
+# scope:old_rite is the rite they used to have
+# scope:founder is the character instigating the conversion
 on_faith_conversion = {
 	events = {
 		faith_conversion.0001	# Convert capital county
@@ -213,6 +788,14 @@ on_faith_conversion = {
 	}
 
 	effect = {
+		set_variable = {
+			name = old_rite
+			value = scope:old_rite
+			days = 30
+		}
+		pam_on_conversion_effect = yes
+		pam_remove_forbidden_personal_tenet_secret_if_invalid_effect = yes
+		update_syncretism_personal_tenet_effect = yes
 		# Warcraft
 		ascension_checker_effect = { SOURCE = faith_change }
 		# EP3 - State Faith
@@ -255,25 +838,46 @@ on_faith_conversion = {
 				}
 			}
 
-			# Character is converted to state faith and gains influence
+			# Character is converted to state rite and gains influence
 			if = {
 				limit = {
-					faith = top_liege.primary_title.state_faith
-					government_allows = administrative
+					rite = top_liege.primary_title.state_rite
+					government_has_flag = government_has_influence
 				}
 				change_influence = minor_influence_gain
 				hidden_effect = {
-					faith = { save_scope_as = old_faith }
-					top_liege.faith = { save_scope_as = new_faith }
+					top_liege.primary_title.state_rite = { save_scope_as = new_rite }
 					create_character_memory = { type = adopted_state_faith_memory }
 					scope:new_memory = {
+						if = {
+							limit = { exists = scope:old_rite }
+							set_variable = {
+								name = old_rite
+								value = scope:old_rite
+							}
+							# Savegame and non-English loc compatibility; do not rename or remove
+							set_variable = {
+								name = old_faith
+								value = scope:old_rite.faith
+							}
+						}
+						else = {
+							set_variable = {
+								name = old_rite
+								value = root.rite
+							}
+							set_variable = {
+								name = old_faith
+								value = root.faith
+							}
+						}
 						set_variable = {
-							name = old_faith
-							value = scope:old_faith
+							name = new_rite
+							value = scope:new_rite
 						}
 						set_variable = {
 							name = new_faith
-							value = scope:new_faith
+							value = scope:new_rite.faith
 						}
 						set_variable = {
 							name = title
@@ -283,19 +887,60 @@ on_faith_conversion = {
 				}
 			}
 		}
+		# PAM Acts of Apostles tenet Effects
+		if = {
+			limit = {
+				exists = scope:founder
+				scope:founder.rite = { rite_has_parameter = tenet_acts_of_apostles_legitimacy_from_converts }
+			}
+			scope:founder = {
+				send_interface_message = {
+					type = event_religious_good
+					title = tenet_acts_of_apostles_toast_conversion_title
+					left_icon = root
+					if = {
+						limit = { exists = root.primary_title }
+						add_legitimacy = {
+							value = minor_legitimacy_gain
+							multiply = root.primary_title.tier
+						}
+					}
+					else = {
+						add_legitimacy = minor_legitimacy_gain
+					}
+					if = {
+						limit = { is_playable_character = yes }
+						change_spiritual_fulfillment = medium_spiritual_fulfillment_value
+					}
+				}
+			}
+		}
+		# Antipope removal
+		pam_remove_sponsored_antipope_effect = {
+			SPONSOR = root
+			FAITH = scope:old_faith
+		}
 	}
 }
 
-# Code on-action: character changes faith. Not called when a character gets a faith on birth, creation, and similar
+# Code on-action: character changes faith or rite. Not called when a character gets a faith on birth, creation, and similar
 # Root is the character
 # scope:old_faith is the faith they used to have
-on_character_faith_change = {
+# scope:old_rite is the rite they used to have (can be equal to current rite)
+on_rite_change = {
 	effect = {
+		pam_on_conversion_effect = yes
+		christian_clergy_learn_liturgical_language_effect = yes
+		pam_remove_forbidden_personal_tenet_secret_if_invalid_effect = yes
 		check_for_equal_doctrine_effect = yes
 		every_held_title = {
 			update_dynamic_coa = yes
 		}
 
+		add_character_flag = changed_rite_flag
+
+		# Conversion memories
+		create_conversion_memory_effect = yes
 		# Warcraft
 		# Struggle Catalyst: heir changes culture while under age
 		# Local conversion
@@ -320,12 +965,90 @@ on_character_faith_change = {
 
 		#Lose Mandala if you change to a monotheist faith
 		mandala_no_longer_polytheist_effect = yes
+		#Invalidate Military Order creation
+		if = {
+			limit = {
+				any_held_title = {
+					tier = tier_county
+					any_county_province = {
+						has_variable = monastic_order_capital
+						var:monastic_order_capital = { save_temporary_scope_as = faith_temp }
+					}
+				}
+				NOT = {
+					faith = scope:faith_temp
+				}
+			}
+			random_held_title = {
+			 	limit = {
+			 		tier = tier_county
+					any_county_province = {
+						has_variable = monastic_order_capital
+					}
+			 	}
+				random_county_province = {
+					limit = {
+						has_variable = monastic_order_capital
+					}
+					remove_variable = monastic_order_capital
+				}
+			}
+		}
+		# PAM - Catalysts
+		if = {
+			limit = {
+				has_pam_dlc_trigger = yes
+				exists = situation:the_christian_church
+			}
+			if = {
+				limit = {
+					highest_held_title_tier >= tier_county
+					scope:old_faith ?= {
+						religion = religion:christianity_religion
+					}
+					religion != religion:christianity_religion
+					situation:the_christian_church ?= {
+						situation_top_has_catalyst = catalyst_the_christian_church_ruler_converted_from_christianity
+					}
+				}
+				situation:the_christian_church = {
+					trigger_situation_catalyst = catalyst_the_christian_church_ruler_converted_from_christianity
+				}
+			}
+			if = {
+				limit = {
+					highest_held_title_tier >= tier_county
+					scope:old_faith ?= {
+						religion != religion:christianity_religion
+					}
+					religion = religion:christianity_religion
+					situation:the_christian_church ?= {
+						situation_top_has_catalyst = catalyst_the_christian_church_ruler_converted_to_christianity
+					}
+				}
+				situation:the_christian_church = {
+					trigger_situation_catalyst = catalyst_the_christian_church_ruler_converted_to_christianity
+				}
+			}
+			# Great Schism: kings+ and landed prelates crossing between the schism-pair rites face a confrontation
+			pam_schism_rite_conversion_dissent_effect = yes
+			pam_offer_great_schism_stance_effect = yes
+		}
+		# Tenet popularity
+		pam_tenet_popularity_on_rite_change_effect = yes
+
+		if = {
+			limit = {
+				exists = clerical_elector_title
+				rite = { NOT = { rite_has_parameter = has_clerical_electors } }
+			}
+			pam_destroy_cardinal_title_effect = { CARDINALATE = clerical_elector_title }
+		}
+
 	}
 	events = {
-		# Warcraft
-		WCGOV.10 # Check if you can change governments
-		# End of Warcraft
-		
+		faith_conversion.0001 # convert capital
+		faith_conversion.0003 # Convert close family
 		faith_conversion.0002 # Remove obsolete modifiers
 		faith_conversion.0004 # Convert Theocracies
 		faith_conversion.0005 # Update marriage opinions
@@ -335,6 +1058,9 @@ on_character_faith_change = {
 		great_holy_war.0084 # Replace fallback ghw recipient
 		great_holy_war.0085 # Remove pledged vassals upon conversion of their liege.
 		war_event.3100		# Handles invalidation of religious wars
+		# Warcraft
+		WCGOV.10 # Check if you can change governments
+		# End of Warcraft
 	}
 }
 
@@ -342,11 +1068,14 @@ on_character_faith_change = {
 # Root is the faith
 on_faith_monthly = {
 	on_actions = {
+		update_main_rite_action
 		faith_holy_order_land_acquisition_pulse
-		delay = { days = { 5 10 }}
+		delay = { days = { 5 10 } }
+		faith_rite_growth_pulse
+		delay = { days = { 15 20 } }
+		faith_rite_additional_growth_chance_pulse
+		delay = { days = { 25 30 } }
 		faith_heresy_events_pulse
-		delay = { days = { 15 20 }}
-		faith_fervor_events_pulse
 	}
 	events = {
 		#hajj.0010 #Someone changed their capital to Mecca without having the Hajjaj trait
@@ -359,15 +1088,15 @@ on_faith_monthly = {
 		# Religious migrants created by the County Conversion council task move somewhere safe
 		random = {
 			chance = 4 # Roughly once every 2 years
-			save_scope_as = target_faith
-			if = {
+			every_faith_rite = {
 				limit = {
 					exists = var:converted_development
 					var:converted_development >= 1
 					NOT = {
-						has_doctrine_parameter = unreformed
+						rite_has_parameter = unreformed
 					}
 				}
+				save_scope_as = target_rite
 				# Save all suitable rulers
 				random = {
 					chance = var:converted_development
@@ -377,18 +1106,18 @@ on_faith_monthly = {
 							is_landed = yes
 							NOT = { government_has_flag = government_is_herder }
 							# A very large area - enough for a province in north-western india to reach all of Borneo
-							"this.capital_province.squared_distance(root.var:associated_county.title_province)" <= squared_distance_mega
+							"this.capital_province.squared_distance(scope:target_rite.var:associated_county.title_province)" <= squared_distance_mega
 							any_sub_realm_county = {
 								faith = prev.faith
 							}
 							trigger_if = {
 								limit = {
-									has_variable_list = faiths_converted_in_counties
+									has_variable_list = rites_converted_in_counties
 								}
 								NOT = {
 									is_target_in_variable_list = {
-										name = faiths_converted_in_counties
-										target = scope:target_faith
+										name = rites_converted_in_counties
+										target = scope:target_rite
 									}
 								}
 							}
@@ -403,12 +1132,12 @@ on_faith_monthly = {
 								}
 								trigger_if = {
 									limit = {
-										has_variable_list = faiths_converted_in_counties
+										has_variable_list = rites_converted_in_counties
 									}
 									NOT = {
 										is_target_in_variable_list = {
-											name = faiths_converted_in_counties
-											target = scope:target_faith
+											name = rites_converted_in_counties
+											target = scope:target_rite
 										}
 									}
 								}
@@ -422,38 +1151,40 @@ on_faith_monthly = {
 							NOT = { government_has_flag = government_is_herder }
 							NOT = { is_in_list = migration_targets }
 							# A vary large area - enough for a province in north-western india to reach all of Borneo
-							"this.capital_province.squared_distance(root.var:associated_county.title_province)" <= squared_distance_mega
+							"this.capital_province.squared_distance(scope:target_rite.var:associated_county.title_province)" <= squared_distance_mega
 							any_sub_realm_county = {
 								faith = prev.faith
 							}
 							trigger_if = {
 								limit = {
-									has_variable_list = faiths_converted_in_counties
+									has_variable_list = rites_converted_in_counties
 								}
 								NOT = {
 									is_target_in_variable_list = {
-										name = faiths_converted_in_counties
-										target = scope:target_faith
+										name = rites_converted_in_counties
+										target = scope:target_rite
 									}
 								}
 							}
 						}
 						add_to_list = migration_targets
 					}
-					# If the faith is still large, they only want to move to same-faith rulers
+					# If the rite is still large, they only want to move to same-rite rulers
 					if = {
 						limit = {
-							num_county_followers >= 40
+							scope:target_rite = {
+								num_rite_county_followers >= 40
+							}
 						}
 						random_in_list = {
 							list = migration_targets
 							limit = {
-								faith = root
+								rite = scope:target_rite
 								any_sub_realm_county = {
-									faith = root
+									rite = scope:target_rite
 								}
 								# Do NOT go within the same realm as you were converted from
-								top_liege != scope:target_faith.var:associated_county.holder.top_liege
+								top_liege != scope:target_rite.var:associated_county.holder.top_liege
 							}
 							weight = {
 								base = 1
@@ -470,14 +1201,14 @@ on_faith_monthly = {
 									highest_held_title_tier >= tier_kingdom
 								}
 								modifier = {
-									add = root.var:converted_development
+									add = scope:target_rite.var:converted_development
 									NOT = { government_has_flag = government_is_nomadic }
 									any_sub_realm_county = {
 										count >= {
-											value = root.var:converted_development
+											value = scope:target_rite.var:converted_development
 											divide = 2
 										}
-										faith = root
+										rite = scope:target_rite
 									}
 								}
 								modifier = {
@@ -490,7 +1221,7 @@ on_faith_monthly = {
 								}
 							}
 							save_scope_as = ruler_target
-							save_scope_as = seeking_same_faith_counties
+							save_scope_as = seeking_same_rite_counties
 							trigger_event = global_religion.1000
 						}
 					}
@@ -500,20 +1231,20 @@ on_faith_monthly = {
 							list = migration_targets
 							limit = {
 								NOR = {
-									top_liege = scope:target_faith.var:associated_county.holder.top_liege # Do NOT go within the same realm as you were converted from
-									faith = { has_doctrine = doctrine_pluralism_fundamentalist }
+									top_liege = scope:target_rite.var:associated_county.holder.top_liege # Do NOT go within the same realm as you were converted from
+									rite = { rite_has_doctrine = doctrine_pluralism_fundamentalist }
 									culture = { has_cultural_tradition = tradition_zealous_people }
 								}
 								OR = {
-									faith = {
-										faith_hostility_level = {
-											target = root
+									rite = {
+										rite_hostility_level = {
+											target = scope:target_rite
 											value <= faith_astray_level
 										}
 									}
-									faith = { has_doctrine = tenet_adaptive }
-									faith = { has_doctrine_parameter = unreformed }
-									faith = { has_doctrine = doctrine_pluralism_pluralistic }
+									rite = { rite_has_tenet = tenet_adaptive }
+									rite = { rite_has_parameter = unreformed }
+									rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
 									culture = { has_cultural_tradition = tradition_religion_blending }
 									culture = { has_cultural_parameter = less_likely_to_force_conversion }
 									has_trait = nomadic_philosophy
@@ -527,12 +1258,12 @@ on_faith_monthly = {
 									faith = prev.faith
 									trigger_if = {
 										limit = {
-											has_variable_list = faiths_converted_in_the_county
+											has_variable_list = rites_converted_in_the_county
 										}
 										NOT = {
 											is_target_in_variable_list = {
-												name = faiths_converted_in_the_county
-												target = scope:target_faith
+												name = rites_converted_in_the_county
+												target = scope:target_rite
 											}
 										}
 									}
@@ -563,11 +1294,11 @@ on_faith_monthly = {
 									highest_held_title_tier >= tier_kingdom
 								}
 								modifier = {
-									add = root.var:converted_development
+									add = scope:target_rite.var:converted_development
 									NOT = { government_has_flag = government_is_nomadic }
 									any_sub_realm_county = {
 										count >= {
-											value = root.var:converted_development
+											value = scope:target_rite.var:converted_development
 											divide = 2
 										}
 										faith = prev.faith
@@ -596,7 +1327,7 @@ on_faith_monthly = {
 faith_holy_order_land_acquisition_pulse = {
 	trigger = {
 		any_faith_holy_order = {
-			always = yes
+			is_military_order_trigger = yes
 		}
 	}
 
@@ -617,6 +1348,7 @@ faith_holy_order_land_acquisition_pulse = {
 				limit = {
 					NOT = {
 						any_faith_holy_order = {
+							is_military_order_trigger = yes
 							num_leased_titles < holy_order_barony_number_soft_threshold
 						}
 					}
@@ -630,6 +1362,44 @@ faith_holy_order_land_acquisition_pulse = {
 	}
 }
 
+faith_monastic_order_land_acquisition_pulse = {
+	trigger = {
+		any_faith_holy_order = {
+			is_monastic_order_trigger = yes
+		}
+	}
+
+	random_events = {
+		chance_to_happen = 17 # ~1 every six months
+		chance_of_no_event = {
+			value = 100
+			every_faith_holy_order = {
+				subtract = 5
+			}
+			every_ruler = {
+				limit = {
+					holy_order_1010_request_target_trigger = yes
+				}
+				subtract = 5
+			}
+			if = {
+				limit = {
+					NOT = {
+						any_faith_holy_order = {
+							is_monastic_order_trigger = yes
+							num_leased_titles < holy_order_barony_number_soft_threshold
+						}
+					}
+				}
+				add = 80
+			}
+			min = 30
+		}
+		100 = 0
+		600 = holy_order.1010
+	}
+}
+
 faith_heresy_events_pulse = {
 	trigger = {
 		fervor <= 40
@@ -640,40 +1410,11 @@ faith_heresy_events_pulse = {
 	}
 
 	random_events = {
-		chance_to_happen = 25
-		chance_of_no_event = {
-			if = {
-				limit = { fervor > 30 }
-				value = 90
-			}
-			else_if = {
-				limit = { fervor > 20 }
-				value = 70
-			}
-			else_if = {
-				limit = { fervor > 10 }
-				value = 40
-			}
-		}
-		100 = heresy.0001
-		
-		# Warcraft
-		# 100 = heresy.0005
-	}
-}
-
-faith_fervor_events_pulse = {
-	trigger = {
-		NOR = {
-			has_doctrine_parameter = unreformed
-			has_variable = recent_fervor_event
-		}
-	}
-
-	random_events = {
-		chance_to_happen = 6 # ~53% chance of occurring within a given year. 90% chance within 3 years, 99.8% chance within 5.
-		100 = fervor.1001
-		100 = fervor.2001
+		# Sharp curve via chance_of_no_event weight:
+		# with event weight 1 the per-month probability is roughly 1/(no_event + 1) - approximately 1/3/8/30 % across the fervor band
+		# modified by Christian Situation phase.
+		chance_of_no_event = pam_heresy_pulse_no_event_value
+		1 = heresy_pulse.0001
 	}
 }
 
@@ -773,7 +1514,7 @@ on_great_holy_war_invalidation = {
 # Code on-action: when the GHW's war launch countdown hits zero. If a war is not started at this point, the GHW will invalidate, bypassing on_potential_great_holy_war_invalidation but not on_great_holy_war_invalidation
 # Root is the great holy war
 on_great_holy_war_countdown_end = {
-	trigger = { #Only launch the holy war if attacker strength is above one third of defender. 
+	trigger = { #Only launch the holy war if attacker strength is above one third of defender.
 		ghw_attackers_strength >= third_of_defenders_strength
 	}
 	events = {
@@ -788,5 +1529,357 @@ on_great_holy_war_countdown_end = {
 on_great_holy_war_participant_replaced = {
 	events = {
 		great_holy_war.0027 #Refresh Beneficiary for AI.
+	}
+}
+
+# Code on-action: when a character selects a new personal tenet successfully this onaction is called.
+# Root is character picking the tenet
+# scope:tenet is the tenet they just picked
+on_personal_tenet_gain = {
+	effect = {
+		if = {
+			limit = {
+				faith.main_rite = {
+					has_tenet_status = {
+						tenet = scope:tenet
+						status = prohibited
+					}
+				}
+			}
+			custom_tooltip = {
+				text = on_personal_tenet_gain_secret_gain_effect_tt
+				on_personal_tenet_gain_secret_gain_effect = yes
+			}
+		}
+		# Ora et Labora Gardener trait gain
+		ora_et_labora_gardener_gain_effect = yes
+		# Asceticism Inappetetic trait gain
+		asceticism_inappetetic_gain_effect = yes
+		# Mortification of the Flesh Scarred trait gain
+		mortification_holy_scars_gain_effect = yes
+		# Unrelenting Faith Blademaster trait gain
+		unrelenting_faith_blademaster_gain_effect = yes
+		# Hedonistic Reveler trait gain
+		hedonistic_reveler_gain_effect = yes
+		hedonistic_obesity_modifier_sync_effect = yes
+		# Vows of Poverty cannot be claimed for an activity that is already running
+		pam_vows_of_poverty_block_ongoing_activity_effect = yes
+		# Takamin Hunter trait gain
+		pam_tenet_takamin_hunter_gain_effect = yes
+		# Religious Law Scholar trait gain
+		pam_tenet_religious_law_scholar_gain_effect = yes
+		# Sacred Mountains Rough Terrain Expert trait gain
+		pam_tenet_mountain_worship_rough_terrain_expert_gain_effect = yes
+		# Exaltation of Pain Flagellant trait gain
+		exaltation_of_pain_flagellant_gain_effect = yes
+		# Literalism Scholar trait gain
+		literalism_scholar_gain_effect = yes
+		# Scholasticism Scholar trait gain
+		scholasticism_scholar_gain_effect = yes
+		# Miles Christi Holy Warrior trait gain
+		miles_christi_holy_warrior_gain_effect = yes
+		# Astrology Mystic trait gain
+		astrology_mystic_gain_effect = yes
+		# Anachoresis Mystic trait gain
+		anachoresis_mystic_gain_effect = yes
+		# Righteous Rebirth Aggressive Attacker trait gain
+		pure_land_aggressive_attacker_gain_effect = yes
+		# Righteous Rebirth Prestige Level loss
+		pure_land_prestige_level_loss_effect = yes
+		reincarnation_piety_courage_gain_effect = yes
+		# Divine Liturgy Tenet - the officiating chaplain
+		if = {
+			limit = {
+				has_personal_tenet_flag = tenet_divine_liturgy_well_sung_liturgy
+			}
+			pam_tenet_divine_liturgy_officiant_effect = yes
+		}
+		# Tenet popularity
+		pam_tenet_popularity_on_personal_tenet_gain_effect = yes
+	}
+}
+
+# Code on-action: when a character swaps out or removes a new personal tenet successfully this onaction is called.
+# Root is character picking the tenet
+# scope:tenet is the tenet they just dropped
+on_personal_tenet_loss = {
+	effect = {
+		if = {
+			limit = {
+				is_ai = no
+				NOT = { has_fulfillment_parameter = default_sf_personal_tenet_change_no_stress }
+			}
+			add_stress = major_stress_gain
+		}
+		hedonistic_obesity_modifier_sync_effect = yes
+		if = {
+			limit = {
+				NOT = { has_personal_tenet_flag = tenet_divine_liturgy_well_sung_liturgy }
+				has_character_modifier = tenet_divine_liturgy_officiant_modifier
+			}
+			remove_character_modifier = tenet_divine_liturgy_officiant_modifier
+		}
+		pam_remove_forbidden_personal_tenet_secret_if_invalid_effect = yes
+		# Tenet popularity
+		pam_tenet_popularity_on_personal_tenet_loss_effect = yes
+	}
+}
+
+update_main_rite_action = {
+	# you should win your position via the antipope system if there is a religious head,
+	trigger = {
+		NOT = { exists = religious_head }
+	}
+	effect = {
+		main_rite = {
+			save_scope_as = main_rite
+			save_scope_value_as = { name = rite_counties value = rite_counties }
+			save_scope_value_as = { name = rite_holy_sites value = rite_holy_sites }
+		}
+		if = {
+			limit = {
+				any_faith_rite = {
+					this != scope:main_rite
+					rite_counties > scope:rite_counties
+					rite_holy_sites >= scope:rite_holy_sites
+				}
+			}
+			ordered_faith_rite = {
+				limit = {
+					this != scope:main_rite
+					rite_holy_sites >= scope:rite_holy_sites
+				}
+				order_by = rite_counties
+				save_scope_as = new_main_rite
+				every_player = {
+					limit = { faith = root }
+					send_interface_message = {
+						title = msg_faith_main_rite_changed.title
+						desc = msg_faith_main_rite_changed.desc
+						right_icon = scope:new_main_rite
+
+						show_as_tooltip = {
+							scope:new_main_rite = {
+								set_main_rite = yes
+							}
+						}
+					}
+				}
+				set_main_rite = yes
+			}
+		}
+	}
+}
+
+############################
+# Faith Rite Growth System #
+############################
+
+# Faith scope. Once a month per faith.
+# Slowly spawns new rites until the faith reaches its target rite count: floor(counties / X) - 1
+# branched rites besides the mainline, so the first branched rite arrives at 2 * X counties.
+# Cooldown and target count live in game/common/script_values/02_religion_values.txt.
+
+faith_rite_growth_pulse = {
+	trigger = {
+		NOR = {
+			has_doctrine_parameter = unreformed
+			has_game_rule = none_branched_rite_frequency
+			exists = var:rite_growth_recent_spawn
+			exists = var:rite_growth_recent_heresy
+		}
+		rite_growth_rites_needed > 0
+		years_from_game_start >= 2
+	}
+	random_events = {
+		chance_to_happen = 3
+		chance_of_no_event = {
+			value = 0
+			if = {
+				limit = { fervor >= 25 }
+				value = fervor
+				max = 90
+			}
+			if = {
+				limit = { rite_growth_rites_needed >= 5 }
+				max = 40
+			}
+			else_if = {
+				limit = { rite_growth_rites_needed >= 3 }
+				max = 60
+			}
+		}
+		100 = rite_growth.0001
+	}
+}
+
+faith_rite_additional_growth_chance_pulse = {
+	trigger = {
+		NOR = {
+			has_doctrine_parameter = unreformed
+			has_game_rule = none_branched_rite_frequency
+			# Shorter cooldown than the primary pulse so a faith at target can still trickle an extra rite
+			exists = var:rite_growth_recent_spawn_fallback
+			exists = var:rite_growth_recent_heresy
+		}
+		rite_growth_active_rite_count < rite_growth_rites_soft_max_cap
+		num_county_followers >= rite_growth_fallback_min_counties
+		years_from_game_start >= 2
+	}
+	random_events = {
+		chance_to_happen = 1
+		chance_of_no_event = 90
+		100 = rite_growth.0001
+	}
+}
+
+# Called after Holy Site is added for a faith
+#
+# Root scope: Faith holy site is added for
+# scope:title - barony title of location where holy site is created
+# scope:holy_site - holy site being added (warning! may not be set, if generating description, and holy site is new)
+# scope:is_eminent_site - if the holy site is eminent (else it is regular)
+# scope:is_new_holy_site - if the holy site was newly created (else it was adopted)
+# scope:actor - character responsible, only set when a character drove the change
+on_faith_holy_site_added = {
+	effect = {
+		if = {
+			limit = {
+				scope:holy_site ?= {
+					any_holy_site_faith = { count = 1 }
+				}
+			}
+			record_dynamic_holy_site_kingdom_effect = { BARONY = scope:title }
+		}
+		# Send Toasts
+		if = {
+			limit = { scope:is_new_holy_site = yes }
+			notify_faith_of_holy_site_change_effect = {
+				MESSAGE = msg_holy_site_created
+				MESSAGE_BY_ACTOR = msg_holy_site_created_by_character
+			}
+		}
+		else = {
+			notify_faith_of_holy_site_change_effect = {
+				MESSAGE = msg_holy_site_adopted
+				MESSAGE_BY_ACTOR = msg_holy_site_adopted_by_character
+			}
+		}
+		# CE3 achievement: Father's best side — record the founding dynasty on runtime-created holy sites
+		if = {
+			limit = {
+				scope:is_new_holy_site = yes
+				exists = scope:actor.dynasty
+			}
+			scope:title = {
+				set_variable = {
+					name = ce3_holy_site_founder_dynasty
+					value = scope:actor.dynasty
+				}
+			}
+		}
+	}
+}
+
+# Called after Holy Site is removed for a faith
+#
+# Root scope: Faith holy site is removed for
+# scope:title - barony title of location where holy site was
+# scope:holy_site - holy site being removed
+# scope:is_eminent_site - if the holy site was eminent (else it was regular)
+# scope:actor - character responsible, only set when a character drove the change
+on_faith_holy_site_removed = {
+	effect = {
+		release_dynamic_holy_site_kingdom_effect = { BARONY = scope:title }
+		# We record the last faith left on a shared site here, since no add fires for them
+		scope:holy_site ?= {
+			if = {
+				limit = { any_holy_site_faith = { count = 1 } }
+				random_holy_site_faith = {
+					record_dynamic_holy_site_kingdom_effect = { BARONY = scope:title }
+				}
+			}
+		}
+		# Send Toasts
+		notify_faith_of_holy_site_change_effect = {
+			MESSAGE = msg_holy_site_abandoned
+			MESSAGE_BY_ACTOR = msg_holy_site_abandoned_by_character
+		}
+	}
+}
+
+# Called after a Holy Site of a faith becomes eminent, or stops being eminent
+#
+# Root scope: Faith the holy site belongs to
+# scope:title - barony title of location where the holy site is
+# scope:holy_site - holy site changing eminence
+# scope:is_eminent_site - if the holy site is now eminent (else it is now regular)
+# scope:actor - character responsible, only set when a character drove the change
+on_faith_holy_site_eminence_changed = {
+	effect = {
+		if = {
+			limit = { scope:is_eminent_site = yes }
+			notify_faith_of_holy_site_change_effect = {
+				MESSAGE = msg_holy_site_elevated
+				MESSAGE_BY_ACTOR = msg_holy_site_elevated_by_character
+			}
+		}
+		else = {
+			notify_faith_of_holy_site_change_effect = {
+				MESSAGE = msg_holy_site_demoted
+				MESSAGE_BY_ACTOR = msg_holy_site_demoted_by_character
+			}
+		}
+	}
+}
+
+# Called when a Character creates a new Holy Site.
+# Note: Also used to show effects in GUI before creation
+#
+# Root scope: Character creating holy site
+# scope:title - barony title of location where holy site is created
+# scope:holy_site_type - holy site type being created
+# scope:faith - Faith the holy site is created for
+# scope:artifacts - List of artifacts being enshrined
+on_character_holy_site_created = {
+	effect = {
+		# Same holy-site slot rules as game start
+		scope:title.title_province = {
+			add_holy_site_fallback_special_building_slot_effect = { FAITH = scope:faith }
+		}
+		hidden_effect = {
+			if = {
+				limit = { scope:faith = { faith_has_free_holy_site_action_trigger = yes } }
+				scope:faith = { consume_free_holy_site_action_effect = yes }
+			}
+			else = {
+				set_variable = {
+					name = holy_site_creation_cooldown
+					years = holy_site_action_cooldown_years
+				}
+			}
+		}
+		# CE3 achievement: Father's best side — a relic from a saint of the actor's family, enshrined in a holy site the actor's dynasty founded
+		if = {
+			limit = {
+				exists = dynasty
+				scope:title.var:ce3_holy_site_founder_dynasty ?= dynasty
+				any_in_list = {
+					list = artifacts
+					exists = var:pam_saint_relic_saint
+					save_temporary_scope_as = relic_temp
+					root = {
+						OR = {
+							is_close_or_extended_family_of = scope:relic_temp.var:pam_saint_relic_saint
+							scope:relic_temp.var:pam_saint_relic_saint.dynasty ?= dynasty
+						}
+					}
+				}
+			}
+			add_achievement_global_variable_effect = {
+				VARIABLE = ce3_06_fathers_best_side_achievement_unlocked
+				VALUE = yes
+			}
+		}
 	}
 }
