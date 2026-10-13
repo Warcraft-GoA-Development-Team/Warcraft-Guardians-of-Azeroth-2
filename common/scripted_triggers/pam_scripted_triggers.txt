@@ -405,25 +405,46 @@ is_clerical_appointment_valid_trigger = {
 }
 
 # Secular crowns only reach sees in their realm, while ecclesiastical and Head of Rite are unrestricted
+pam_clerical_candidacy_reach_limited_trigger = {
+	scope:actor = {
+		NOR = {
+			government_has_flag = government_is_ecclesiastical
+			this = faith.main_rite.head_of_rite
+			AND = {
+				is_landless_adventurer = yes
+				scope:secondary_recipient ?= this
+			}
+		}
+	}
+}
+
 influence_clerical_candidacy_reach_trigger = {
 	trigger_if = {
 		limit = {
-			scope:actor = {
-				NOR = {
-					government_has_flag = government_is_ecclesiastical
-					this = faith.main_rite.head_of_rite
-				}
-			}
+			pam_clerical_candidacy_reach_limited_trigger = yes
 		}
 		custom_tooltip = {
 			text = influence_clerical_candidacy_outside_realm_tt
 			scope:target = {
-				holder ?= {
-					OR = {
-						this = scope:actor
-						target_is_liege_or_above = scope:actor
-					}
+				holder ?= { target_is_same_character_or_above = scope:actor }
+			}
+		}
+	}
+}
+
+influence_clerical_candidacy_any_valid_title_trigger = {
+	scope:actor.faith ?= {
+		any_clerical_region_title = {
+			OR = {
+				has_title_law = clerical_appointment_law
+				holder ?= { has_realm_law = clerical_appointment_law }
+			}
+			NOT = { holder ?= scope:secondary_recipient }
+			trigger_if = {
+				limit = {
+					pam_clerical_candidacy_reach_limited_trigger = yes
 				}
+				holder ?= { target_is_same_character_or_above = scope:actor }
 			}
 		}
 	}
@@ -478,6 +499,10 @@ is_clerical_appointment_valid_base_trigger = {
 				is_clergy = yes
 				rite = { rite_has_parameter = lay_clergy } # HoF cannot be temporal if you have Theocratic clergy, so no need to check for that
 				this = scope:top_liege_temp.player_heir # Designated Theocratic Heir
+				AND = {
+					is_landless_adventurer = yes
+					this = scope:top_liege_temp
+				}
 			}
 		}
 		custom_tooltip = { # Only theocracies
@@ -500,6 +525,18 @@ is_clerical_appointment_valid_base_trigger = {
 
 # Expects interaction scopes actor/target/secondary_recipient
 pam_clerical_self_candidacy_restriction_trigger = {
+	trigger_if = {
+		limit = {
+			exists = scope:secondary_recipient
+			scope:actor = {
+				is_landless_adventurer = yes
+				this = scope:secondary_recipient
+			}
+		}
+		scope:actor = {
+			employs_court_position = camp_priest_camp_officer
+		}
+	}
 	trigger_if = {
 		limit = {
 			exists = scope:target
@@ -797,6 +834,27 @@ pam_cathedral_project_requirements_trigger = {
 	has_spiritual_fulfillment_type = christian_fulfillment
 }
 
+# Landless clerical titles: title_capital_county is the holder's current location, not the fixed see
+is_valid_cathedral_clerical_region_capital_trigger = {
+	trigger_if = {
+		limit = { exists = county.clerical_region_title }
+		custom_tooltip = {
+			text = great_project_cathedral_clerical_region_capital_tt
+			county.clerical_region_title.title_domicile.domicile_location ?= this
+		}
+	}
+	trigger_else_if = {
+		limit = { root = { pam_is_clerical_region_holder_trigger = yes } }
+		custom_tooltip = {
+			text = great_project_cathedral_clerical_region_holder_capital_tt
+			always = no
+		}
+	}
+	trigger_else = {
+		always = yes
+	}
+}
+
 is_valid_cathedral_spot_in_province_trigger = {
 	custom_tooltip = {
 		text = no_under_construction_or_same_level_great_project_cathedral_building_tt
@@ -918,12 +976,13 @@ has_accessible_cathedral_tier_3_upgrade_site_trigger = {
 
 is_valid_cathedral_master_mason_contributor_trigger = {
 	OR = {
-		trigger_if = {
-			limit = { is_ai = yes }
+		AND = {
+			is_ai = yes
 			this = scope:founder
 		}
 		has_trait = architect
 		employs_court_position = royal_architect_court_position
+		stewardship >= $STEWARDSHIP_THRESHOLD$
 		any_courtier = {
 			OR = {
 				has_trait = architect
@@ -1343,6 +1402,29 @@ can_manage_faith_holy_sites_without_hof_trigger = {
 	}
 }
 
+can_create_faith_holy_site_trigger = {
+	OR = {
+		can_manage_faith_holy_sites_trigger = yes
+		AND = {
+			is_independent_ruler = yes
+			highest_held_title_tier >= tier_kingdom
+			piety_level >= 4
+			save_temporary_scope_as = holy_site_creator
+			$BARONY$.holder ?= {
+				target_is_same_character_or_above = scope:holy_site_creator
+			}
+			$BARONY$.county.holder.faith ?= faith
+			exists = faith.religious_head
+			faith.religious_head = {
+				opinion = {
+					target = scope:holy_site_creator
+					value > 0
+				}
+			}
+		}
+	}
+}
+
 holy_site_free_action_show_usage_trigger = {
 	trigger_if = {
 		limit = { faith_has_free_holy_site_action_trigger = yes  }
@@ -1427,9 +1509,12 @@ pam_not_antipope_when_recipient_is_hof_tt = {
 			scope:recipient ?= $CHARACTER$.faith.religious_head
 		}
 		$CHARACTER$ = {
-			custom_tooltip = {
-				text = is_antipope_tt
-				pam_is_antipope_trigger = no
+			trigger_if = {
+				limit = { pam_is_antipope_trigger = yes }
+				custom_tooltip = {
+					text = is_antipope_blocked_tt
+					always = no
+				}
 			}
 		}
 	}
@@ -1832,6 +1917,14 @@ pam_sway_to_rite_adjacent_prelate_candidate_trigger = {
 		religious_head_or_challenger ?= this
 	}
 	any_held_title = { has_clerical_region = yes }
+}
+
+# A Head of Faith on the mainline rite may call other Heads of Rite back to it, which Sway to Rite otherwise forbids
+pam_sway_to_rite_head_of_faith_reclaims_trigger = {
+	$ACTOR$ = {
+		faith.religious_head ?= this
+		faith.main_rite ?= rite
+	}
 }
 
 # Sway to Rite reach lane: petitioning a fellow prelate.
@@ -2881,16 +2974,19 @@ pam_ai_mountain_capital_actor_trigger = {
 	}
 }
 
-# title_preferred_capital_county is the de jure capital even if k_papal_state is uncreated
+# title_preferred_capital_county is the de jure capital even if holy_light_church is uncreated
 pam_catholic_hof_weak_papal_state_control_trigger = {
 	has_pam_dlc_trigger = yes
-	title:k_papal_state = {
+	title:k_holy_light_church = {
 		title_preferred_capital_county = {
 			holder ?= {
 				is_alive = yes
-				NOR = {
-					like_catholic_faith_trigger = yes
-					like_christian_faith_trigger = yes
+				faith = {
+					NOR = {
+						#has_doctrine = special_doctrine_ecumenical_christian
+						like_catholic_faith_trigger = yes
+						like_christian_faith_trigger = yes
+					}
 				}
 			}
 		}
@@ -2980,6 +3076,20 @@ pam_is_western_christian_trigger = {
 # Character scope. The College is a faith-locked doctrine (Catholicism).
 pam_can_hold_cardinalate_trigger = {
 	faith ?= { has_doctrine_parameter = has_clerical_electors }
+	trigger_if = {
+		limit = { NOT = { has_global_variable = pam_great_schism_decision_taken } }
+		#NOT = { has_title = title:d_et_constantinople }
+	}
+}
+
+# Character scope. Before the Great Schism, AI only chooses Western candidates.
+pam_ai_cardinal_candidate_is_immersive_trigger = {
+	OR = {
+		has_global_variable = pam_great_schism_decision_taken
+		rite = {
+			NOT = { rite_has_doctrine = special_doctrine_is_eastern_christian_faith }
+		}
+	}
 }
 
 # Character scope. The seat carries no government of its own, so a lay ruler handed one stays lay.
@@ -2989,6 +3099,7 @@ pam_can_receive_cardinalate_trigger = {
 		government_has_flag = government_is_holy_order
 		is_ruler = no
 	}
+	pam_is_antipope_trigger = no
 }
 
 # Held title scope. Any faith's cardinalate - faith.any_clerical_elector_title only lists its own.
@@ -3556,18 +3667,18 @@ pam_cardinal_order_convert_faith_neighboring_county_trigger = {
 }
 
 pam_any_christian_holy_site_not_under_christian_control_trigger = {
-	like_catholic_faith_trigger = yes = {
+	faith:holy_light = { #Warcraft
 		any_holy_site_barony = {
-			holder.top_liege.faith.like_christianity_religion_trigger = no
+			holder.top_liege.faith.religion != religion:tyrism_religion
 		}
 	}
 }
 
 pam_any_muslim_holy_site_not_under_muslim_control_trigger = {
-	like_islam_religion_trigger = yes = {
+	religion:noor_religion = { #Warcraft
 		any_faith = {
 			any_holy_site_barony = {
-				holder.top_liege.faith.religion = like_islam_religion_trigger = no
+				holder.top_liege.faith.religion != religion:noor_religion
 			}
 		}
 	}
@@ -3584,7 +3695,7 @@ pam_is_the_christian_church_main_power_trigger = {
 
 pam_ai_can_proclaim_armed_pilgrimages_core_trigger = {
 	faith = {
-		this = like_catholic_faith_trigger = yes
+		like_catholic_faith_trigger = yes
 		has_doctrine = doctrine_spiritual_head
 		main_rite = {
 			NOT = {
@@ -3599,7 +3710,7 @@ pam_ai_can_proclaim_armed_pilgrimages_core_trigger = {
 
 pam_ai_can_proclaim_struggle_submission_core_trigger = {
 	faith.religion = {
-		this = like_islam_religion_trigger = yes
+		like_islam_religion_trigger = yes
 		exists = var:variable_ghw_unlocked # You've entered the Age of Crusades
 	}
 	faith = {
@@ -3968,7 +4079,7 @@ has_tenet_popularity_trigger = {
 	like_christianity_religion_trigger = yes
 }
 has_papacy_trigger = {
-	this = like_catholic_faith_trigger = yes
+	like_catholic_faith_trigger = yes
 }
 valid_holy_war_incited_attacker_trigger = {
 	highest_held_title_tier >= tier_county
@@ -4278,7 +4389,7 @@ pam_valid_excommunication_target_trigger = {
 	save_temporary_scope_as = target_char
 	$EXCOMMUNICATOR$ = { save_temporary_scope_as = excommunicator }
 	trigger_if = {
-		limit = { has_title = title:k_papal_state }
+		limit = { has_title = title:k_holy_light_church }
 		custom_tooltip = {
 			text = cannot_excommunicate_pope_without_patriarch_or_antipope_tt
 			liege ?= $EXCOMMUNICATOR$
@@ -4921,6 +5032,7 @@ pam_request_white_peace_enemy_trigger = {
 pam_request_white_peace_war_with_enemy_trigger = {
 	has_valid_casus_belli = yes
 	is_white_peace_possible = yes
+	war_days >= 730
 	NOR = {
 		using_cb = undirected_great_holy_war
 		using_cb = directed_great_holy_war
@@ -5315,21 +5427,22 @@ pam_evangelize_personal_tenet_send_option_valid_trigger = {
 }
 
 pam_college_of_cardinals_election_active_trigger = {
-	exists = title:k_papal_state
-	title:k_papal_state.holder ?= {
+	exists = title:k_holy_light_church #Warcraft replacing Catholic Pope with Holy Light Archbishop
+	title:k_holy_light_church.holder ?= {
 		has_realm_law = theocratic_elective_succession_law
 	}
 }
 
 pam_leads_college_of_cardinals_trigger = {
-	has_title = title:k_papal_state
+	has_title = title:k_holy_light_church
 	pam_college_of_cardinals_election_active_trigger = yes
 }
 
 pam_pope_is_head_of_faith_or_rite_trigger = {
 	OR = {
-		rite.head_of_rite ?= { has_title = title:k_papal_state }
-		faith.religious_head ?= { has_title = title:k_papal_state }
+		rite.head_of_rite ?= { has_title = title:k_holy_light_church }
+		faith.main_rite.head_of_rite ?= { has_title = title:k_holy_light_church }
+		faith.religious_head ?= { has_title = title:k_holy_light_church }
 	}
 }
 
@@ -5351,7 +5464,7 @@ pam_cardinal_is_nepotistic_appointment_trigger = {
 # Rome is named directly: headless Chalcedonianism has no religious_head_title to compare
 pam_title_is_church_seat_trigger = {
 	OR = {
-		$TITLE$ = title:k_papal_state
+		$TITLE$ = title:k_holy_light_church
 		AND = {
 			exists = faith.religious_head_title
 			$TITLE$ = faith.religious_head_title
@@ -5360,22 +5473,23 @@ pam_title_is_church_seat_trigger = {
 }
 
 pam_holds_christian_patriarch_title_trigger = {
-	OR = {
-		has_title = title:d_et_constantinople
-		has_title = title:k_orthodox
-		has_title = title:d_et_alexandria
-		has_title = title:d_et_antioch
-		has_title = title:d_et_jerusalem
-		has_title = title:d_et_aquileia
-		has_title = title:d_et_armenia
-	}
+	#OR = {
+	#	has_title = title:d_et_constantinople
+	#	has_title = title:k_orthodox
+	#	has_title = title:d_et_alexandria
+	#	has_title = title:d_et_antioch
+	#	has_title = title:d_et_jerusalem
+	#	has_title = title:d_et_aquileia
+	#	has_title = title:d_et_armenia
+	#}
+	always = no
 }
 
 # While Chalcedonianism is headless the Pope heads it as head of rite
 pam_holds_church_seat_trigger = {
 	OR = {
 		any_held_title = { is_head_of_faith = yes }
-		has_title = title:k_papal_state
+		has_title = title:k_holy_light_church #Warcraft replacing Catholic Pope with Holy Light Archbishop
 	}
 }
 
@@ -5386,7 +5500,7 @@ pam_college_election_title_has_electors_trigger = {
 		faith.religious_head_title = { any_elector = {} }
 	}
 	trigger_else = {
-		title:k_papal_state = { any_elector = {} }
+		title:k_holy_light_church = { any_elector = {} }
 	}
 }
 
@@ -5396,7 +5510,7 @@ pam_college_election_title_is_theocratic_elective_trigger = {
 		faith.religious_head_title.holder ?= { has_realm_law = theocratic_elective_succession_law }
 	}
 	trigger_else = {
-		title:k_papal_state.holder ?= { has_realm_law = theocratic_elective_succession_law }
+		title:k_holy_light_church.holder ?= { has_realm_law = theocratic_elective_succession_law }
 	}
 }
 
@@ -5419,7 +5533,7 @@ pam_is_college_election_candidate_trigger = {
 		}
 		trigger_else = {
 			is_candidate_from_set = {
-				title = title:k_papal_state
+				title = title:k_holy_light_church #Warcraft replacing Catholic Pope with Holy Light Archbishop
 				source = $SOURCE$
 			}
 		}
@@ -5520,6 +5634,50 @@ pam_ec_doctrine_is_graded_trigger = {
 pam_ec_doctrine_is_change_trigger = {
 	scope:host.faith ?= {
 		NOT = { has_doctrine = scope:doctrine }
+	}
+}
+
+# The AI Conservative named to oppose the host in this debate; stands down while a player argues the Conservative side
+pam_ec_is_active_counterplayer_trigger = {
+	is_ai = yes
+	is_in_guest_subset = { name = conservative }
+	involved_activity ?= {
+		exists = var:ec_counterplayer
+		var:ec_counterplayer = prev
+		NOT = {
+			any_attending_character = {
+				is_ai = no
+				is_in_guest_subset = { name = conservative }
+			}
+		}
+	}
+}
+
+# AI proposers who may skip the nearest-step rule at an Ecumenical Council
+pam_ec_doctrine_extremist_proposer_trigger = {
+	OR = {
+		has_trait = herald
+		has_trait = heresiarch
+		has_trait = lunatic_1
+		has_trait = lunatic_genetic
+		has_trait = possessed_1
+		has_trait = possessed_genetic
+	}
+}
+
+# The proposed scope:ec_step_to is the closest step from the held scope:ec_step_from that the rite can choose
+pam_ec_doctrine_is_nearest_step_trigger = {
+	NOT = {
+		root = {
+			any_character_doctrine = {
+				doctrine_in_same_group = scope:ec_step_from
+				this != scope:ec_step_from
+				this != scope:ec_step_to
+				save_temporary_scope_as = ec_step_other
+				root.faith.main_rite = { rite_can_choose_doctrine = scope:ec_step_other }
+				"doctrine_divergence(scope:ec_step_from)" < ecumenical_council_doctrine_change_divergence_value
+			}
+		}
 	}
 }
 
@@ -6761,7 +6919,7 @@ eligible_for_pam_legacy_trigger = {
 		game_rule_unrestricted_dynasty_legacies_trigger = yes
 		dynasty = {
 			OR = {
-				dynast = { faith.like_christianity_religion_trigger = yes }
+				dynast = { faith = { like_christianity_religion_trigger = yes } }
 				has_dynasty_perk = pam_legacy_1
 			}
 		}
@@ -6862,7 +7020,7 @@ pam_papal_ruling_rite_has_parameter_trigger = {
 		faith.religious_head_title.holder.rite ?= { rite_has_parameter = $PARAMETER$ }
 	}
 	trigger_else = {
-		title:k_papal_state.holder.rite ?= { rite_has_parameter = $PARAMETER$ }
+		title:k_holy_light_church.holder.rite ?= { rite_has_parameter = $PARAMETER$ }
 	}
 }
 
@@ -6876,8 +7034,10 @@ pam_papabile_barred_by_clerical_gender_trigger = {
 	}
 }
 
+# Divergent rites only: an Ecumenical Council can give the main rite Lay Clergy, and its College must still have candidates
 pam_papabile_barred_by_lay_clergy_trigger = {
 	rite ?= { rite_has_doctrine = doctrine_theocracy_lay_clergy }
+	rite != faith.main_rite
 }
 
 # Only the patron's own personal tenets may be imposed, and not one the order already advocates.
@@ -6940,5 +7100,155 @@ pam_study_rite_tenet_bonus_trigger = {
 	OR = {
 		rite ?= { rite_has_parameter = $PARAM$ }
 		has_personal_tenet_flag = $PARAM$
+	}
+}
+
+can_send_make_external_ruler_puppet_trigger = {
+	custom_tooltip = {
+		text = make_external_ruler_puppet_tt
+		OR = {
+			$ACTOR$ = {
+				is_clergy = yes
+				is_vassal_of = $RECIPIENT$
+			}
+			AND = {
+				$ACTOR$ = {
+					has_trait = seducer
+				}
+				trigger_if = {
+					limit = {
+						$RECIPIENT$ = {
+							highest_held_title_tier >= tier_kingdom
+						}
+					}
+					$RECIPIENT$ = {
+						has_relation_soulmate = $ACTOR$
+					}
+				}
+				trigger_else = {
+					$RECIPIENT$ = {
+						has_relation_lover = $ACTOR$
+					}
+				}
+			}
+			AND = {
+				$ACTOR$ = {
+					has_trait = torturer
+				}
+				$RECIPIENT$ = {
+					is_imprisoned_by = $ACTOR$
+					is_in_prison_type = dungeon
+				}
+			}
+			AND = {
+				$ACTOR$ = {
+					has_trait = family_first
+				}
+				$RECIPIENT$ = {
+					is_close_family_of = $ACTOR$
+				}
+			}
+			$ACTOR$ = {
+				has_trait = schemer
+				trigger_if = {
+					limit = {
+						$RECIPIENT$ = {
+							highest_held_title_tier >= tier_kingdom
+						}
+					}
+					has_strong_hook = $RECIPIENT$
+				}
+				trigger_else = {
+					has_hook = $RECIPIENT$
+				}
+			}
+			$ACTOR$ = {
+				has_trait = diplomat
+				is_allied_to = $RECIPIENT$
+			}
+			AND = {
+				$ACTOR$ = {
+					has_trait = gallant
+				}
+				$RECIPIENT$ = {
+					is_spouse_of = $ACTOR$
+				}
+			}
+			AND = {
+				$ACTOR$ = {
+					is_diarch_of_target = $RECIPIENT$
+				}
+				$RECIPIENT$ = {
+					has_diarchy_parameter = diarchy_type_is_entrenched_regency
+				}
+			}
+			AND = {
+				exists = $RECIPIENT$.religious_head_or_challenger
+				$RECIPIENT$.religious_head_or_challenger = $ACTOR$
+			}
+			AND = {
+				exists = $RECIPIENT$.rite.head_of_rite
+				$RECIPIENT$.rite.head_of_rite = $ACTOR$
+			}
+		}
+	}
+	$ACTOR$ = {
+		trigger_if = {
+			limit = {
+				$RECIPIENT$ = {
+					highest_held_title_tier >= tier_empire
+				}
+			}
+			custom_tooltip = {
+				text = pam_empire_dread_or_strong_hook_tt
+				OR = {
+					has_strong_hook = $RECIPIENT$
+					$RECIPIENT$ = {
+						has_dread_level_towards = {
+							target = $ACTOR$
+							level >= 2
+						}
+					}
+					$RECIPIENT$.religious_head_or_challenger ?= $ACTOR$
+				}
+			}
+		}
+		trigger_else_if = {
+			limit = {
+				$RECIPIENT$ = {
+					highest_held_title_tier >= tier_kingdom
+				}
+			}
+			custom_tooltip = {
+				text = piety_level_4_dread_or_strong_hook_tt
+				OR = {
+					piety_level >= 4
+					has_strong_hook = $RECIPIENT$
+					$RECIPIENT$ = {
+						has_dread_level_towards = {
+							target = $ACTOR$
+							level >= 2
+						}
+					}
+					$RECIPIENT$.religious_head_or_challenger ?= $ACTOR$
+				}
+			}
+		}
+		trigger_else = {
+			custom_tooltip = {
+				text = piety_level_3_dread_or_hook_tt
+				OR = {
+					piety_level >= 3
+					has_hook = $RECIPIENT$
+					$RECIPIENT$ = {
+						has_dread_level_towards = {
+							target = $ACTOR$
+							level >= 2
+						}
+					}
+					$RECIPIENT$.religious_head_or_challenger ?= $ACTOR$
+				}
+			}
+		}
 	}
 }
