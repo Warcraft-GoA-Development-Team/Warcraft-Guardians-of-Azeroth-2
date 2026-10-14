@@ -521,12 +521,32 @@ PixelShader =
 		Output = "PS_COLOR_SSAO"
 		Code
 		[[
+			void DitheredOpacity( in float Opacity, in float2 NoiseCoordinate )
+			{
+				const float4x4 ThresholdMatrix =
+				{
+					0.0588235f, 0.5294117f, 0.1764705f, 0.6470588f,
+					0.7647058f, 0.2941176f, 0.8823529f, 0.4117647f,
+					0.2352941f, 0.7058823f, 0.1176470f, 0.5882352f,
+					0.9411764f, 0.4705882f, 0.8235294f, 0.3529411f
+				};
+				int2 Coordinate = (int2)NoiseCoordinate & 3;
+				float Factor = ThresholdMatrix[Coordinate.x][Coordinate.y];
+				clip( Opacity - Factor );
+			}
+
 			PDX_MAIN
 			{
 				PS_COLOR_SSAO Out;
 
 				float2 UV0 = Input.UV0;
 				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );
+
+				#ifdef DITHERED_OPACITY
+					DitheredOpacity( Diffuse.a, Input.Position.xy );
+					Diffuse.a = 1.0f;
+				#endif
+
 				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
 				float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
 				#ifdef DOUBLE_SIDED_ENABLED
@@ -1216,7 +1236,6 @@ Effect portrait_attachment_alpha
 	PixelShader = "PS_attachment"
 	BlendState = "hair_alpha_blend"
 	DepthStencilState = "hair_alpha_blend"
-
 }
 
 Effect portrait_attachment_alphaShadow
