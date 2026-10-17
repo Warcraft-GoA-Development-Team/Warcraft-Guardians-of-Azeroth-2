@@ -21,6 +21,10 @@
 # flag:faction_demand
 # flag:swear_fealty
 # flag:stepped_down
+# flag:appointment
+# flag:appointment_succession
+# flag:migration
+# flag:confederation
 
 # A title is destroyed
 # root = the holder before destruction
@@ -28,10 +32,13 @@
 # Does *not* provide scope:transfer_type
 on_title_destroyed = {
 	effect = {
+		scope:landed_title.var:administrative_ui_special_title ?= {
+			owner = { destroy_title = prev }
+		}
 		# If the title of an independent admin ruler is destroyed, let's make sure we handle any stray admin vassals
 		if = {
 			limit = {
-				government_allows = administrative
+				government_has_mechanic = administrative
 				top_liege = this
 				administrative_counts_can_be_independent = no
 				NOT = {
@@ -58,15 +65,29 @@ on_title_destroyed = {
 				target = scope:landed_title
 			}
 		}
+		# Empire Faith Gate: remove holder from empire-holders list when they lose their last empire.
+		else_if = {
+			limit = {
+				scope:landed_title = { tier >= tier_empire }
+				root = { NOT = { any_held_title = { tier >= tier_empire } } }
+			}
+			root = {
+				remove_list_global_variable = {
+					name = efg_empire_holders
+					target = this
+				}
+				efg_remove_contested_empire_modifiers_effect = yes
+			}
+		}
 		# Warcraft
 		wc_spell_title_destruction_effect = yes 
 		#Notify folks the latin empire has fallen
-		# if = {
+		# else_if = {
 		# 	limit = { scope:landed_title = title:e_latin_empire }
 		# 	frankokratia_latin_emp_end_msg_effect = yes
 		# }
 		#Create byz collapse variable that defines anarchy period
-		if = {
+		else_if = {
 			limit = { # Warcraft
 				scope:landed_title = title:h_pandaria
 			}
@@ -139,6 +160,15 @@ on_title_destroyed = {
                 }
             }
         }
+		# Empire Faith Gate: refresh contested-empire modifiers immediately when an empire is destroyed.
+		if = {
+			limit = {
+				empire_faith_gate_enabled_trigger = yes
+				scope:landed_title = { tier >= tier_empire }
+			}
+			root = { efg_recalculate_contested_empire_for_faith_effect = yes }
+		}
+
 		if = {
 			limit = {
 				scope:landed_title = {
@@ -156,6 +186,21 @@ on_title_destroyed = {
 					has_character_modifier = coronated_confed_modifier
 				}
 				remove_character_modifier = coronated_confed_modifier
+			}
+		}
+
+		#########
+		#  PAM  #
+		#########
+		if = {
+			limit = {
+				scope:landed_title = {
+					has_clerical_region = yes
+					root = { religion = religion:christianity_religion }
+				}
+			}
+			situation:the_christian_church.situation_sub_region:core = {
+				remove_clerical_realm_from_sub_region = scope:landed_title
 			}
 		}
         # Warcraft
@@ -197,7 +242,168 @@ on_title_gain = {
 		ascension_checker_effect = { SOURCE = title_gain }
 		# Warcraft
         set_long_lived_lifestyle_xp_slowdown_delayed_event_effect = yes
-		
+        
+		# refresh the state rite if conquered in a GHW, otherwise crusader kings will follow muslim faith in egypt.
+		if = {
+			limit = {
+				scope:transfer_type = flag:conquest_holy_war
+				exists = scope:title.state_rite
+			}
+			scope:title = {
+				set_state_rite = root.rite
+			}
+		}
+		if = {
+			limit = { clerical_elector_title ?= scope:title }
+			pam_strip_illegal_cardinalate_effect = yes
+		}
+		if = {
+			limit = {
+				exists = clerical_elector_title
+				scope:title = clerical_elector_title
+			}
+			add_character_flag = cardinal_flag
+			situation:the_christian_church ?= {
+				add_manual_participant = prev
+			}
+		}
+		# Unconditional: also catches a sitting Head of Faith who is handed a cardinalate
+		pam_vacate_head_of_faith_cardinalate_effect = yes
+		if = {
+			limit = {
+				scope:title = { has_clerical_region = yes }
+				like_christianity_religion_trigger = yes
+			}
+			situation:the_christian_church ?= {
+				add_manual_participant = prev
+			}
+		}
+		#if = {
+		#	limit = {
+		#		OR = {
+		#			scope:title = title:d_coptic_papacy
+		#			scope:title = title:d_apostolic_church
+		#		}
+		#	}
+		#	change_government = ecclesiastical_government
+		#}
+		pam_align_theocracy_with_faith_government_effect = yes
+		#if = {
+		#	limit = { scope:title = title:d_benedictine_order }
+		#	set_variable = { name = benedictine }
+		#}
+		#if = {
+		#	limit = { scope:title = title:k_papal_state }
+		#	enforce_papal_latin_court_language_effect = yes
+		#	# PAM - track how many Popes in a row have been of the same dynasty
+		#	pam_the_christian_church_papal_dynasty_capture_catalyst_effect = yes
+		#	if = {
+		#		limit = {
+		#			faith = { has_doctrine_parameter = has_clerical_electors }
+		#			NOT = { has_realm_law = theocratic_elective_succession_law }
+		#		}
+		#		add_realm_law_skip_effects = theocratic_elective_succession_law
+		#	}
+		#}
+		# Move a county+ Realm Priest Puppet to Clerical Ruler while the puppeteer slot is still free
+		if = {
+			limit = {
+				is_clergy = yes
+				scope:title.tier >= tier_county
+				highest_held_title_tier = scope:title.tier
+				exists = puppeteer
+				is_puppet_of_type = theological_agent_puppet
+			}
+			pam_make_clerical_ruler_puppet_effect = { PUPPETEER = puppeteer }
+		}
+		scope:previous_holder ?= {
+			if = {
+				limit = {
+					NOT = { exists = clerical_elector_title }
+					is_alive = yes
+				}
+				remove_character_flag = cardinal_flag
+			}
+			if = {
+				limit = {
+					is_alive = yes
+					OR = {
+						scope:title = { has_clerical_region = yes }
+						root.clerical_elector_title ?= scope:title
+					}
+					NOR = {
+						exists = clerical_elector_title
+						any_held_title = { has_clerical_region = yes }
+					}
+				}
+				situation:the_christian_church ?= {
+					if = {
+						limit = { is_manual_participant = prev }
+						remove_manual_participant = prev
+					}
+				}
+			}
+		}
+		# An inherited antipope title carries its Flavourization flag to the heir
+		if = {
+			limit = {
+				scope:title.tier = tier_kingdom
+				pam_is_antipope_trigger = yes
+			}
+			add_character_flag = antipope_flag
+		}
+		scope:previous_holder ?= {
+			if = {
+				limit = {
+					is_alive = yes
+					has_character_flag = antipope_flag
+					pam_is_antipope_trigger = no
+				}
+				remove_character_flag = antipope_flag
+			}
+		}
+		# PAM: a player's kin takes a great office of the Church
+		# pam_establish_antipope_effect waits for this
+		# The challenger registers only after the title change
+		if = {
+			limit = {
+				religion = religion:christianity_religion
+				pam_title_is_church_seat_trigger = { TITLE = scope:title }
+			}
+			pam_family_becomes_prelate_effect = {
+				TITLE = scope:title
+				KIND = flag:head_of_faith
+			}
+		}
+		else_if = {
+			limit = {
+				religion = religion:christianity_religion
+				scope:title = { has_clerical_region = yes }
+				NOT = {
+					any_held_title = {
+						has_clerical_region = yes
+						this != scope:title
+					}
+				}
+			}
+			pam_family_becomes_prelate_effect = {
+				TITLE = scope:title
+				KIND = flag:archbishop
+			}
+		}
+
+		# PAM - a Christian prelate takes a landed title outside the clerical regions
+		pam_the_christian_church_clergy_gained_landed_title_catalyst_effect = yes
+		if = {
+			limit = {
+				like_christianity_religion_trigger = yes
+				scope:title = { has_clerical_region = yes }
+				exists = scope:previous_holder
+			}
+			pam_react_to_new_archbishop_effect = { TITLE = scope:title }
+		}
+		pam_offer_great_schism_stance_effect = yes
+
 		######################
 		# COUNTY-TIER TITLES #
 		######################
@@ -393,8 +599,33 @@ on_title_gain = {
 							}
 							title_domicile = {
 								add_domicile_building = yurt_main_02
-								add_domicile_building = yurt_main_03
-								add_domicile_building = yurt_main_04
+								if = {
+									limit = {
+										has_domicile_building = yurt_main_02
+										owner ?= {
+											OR = {
+												has_realm_law = nomadic_authority_2
+												has_realm_law = nomadic_authority_3
+												has_realm_law = nomadic_authority_4
+												has_realm_law = nomadic_authority_5
+											}
+										}
+									}
+									add_domicile_building = yurt_main_03
+									if = {
+										limit = {
+											has_domicile_building = yurt_main_03
+											owner ?= {
+												OR = {
+													has_realm_law = nomadic_authority_3
+													has_realm_law = nomadic_authority_4
+													has_realm_law = nomadic_authority_5
+												}
+											}
+										}
+										add_domicile_building = yurt_main_04
+									}
+								}
 								add_random_yurt_external_building_effect = yes
 								add_random_yurt_external_building_effect = yes
 								add_random_yurt_external_building_effect = yes
@@ -411,8 +642,33 @@ on_title_gain = {
 							}
 							title_domicile = {
 								add_domicile_building = yurt_main_02
-								add_domicile_building = yurt_main_03
-								add_domicile_building = yurt_main_04
+								if = {
+									limit = {
+										has_domicile_building = yurt_main_02
+										owner ?= {
+											OR = {
+												has_realm_law = nomadic_authority_2
+												has_realm_law = nomadic_authority_3
+												has_realm_law = nomadic_authority_4
+												has_realm_law = nomadic_authority_5
+											}
+										}
+									}
+									add_domicile_building = yurt_main_03
+									if = {
+										limit = {
+											has_domicile_building = yurt_main_03
+											owner ?= {
+												OR = {
+													has_realm_law = nomadic_authority_3
+													has_realm_law = nomadic_authority_4
+													has_realm_law = nomadic_authority_5
+												}
+											}
+										}
+										add_domicile_building = yurt_main_04
+									}
+								}
 								add_random_yurt_external_building_effect = yes
 								add_random_yurt_external_building_effect = yes
 								add_random_yurt_external_building_effect = yes
@@ -698,6 +954,25 @@ on_title_gain = {
 			}
 
 			###########
+			# PAM - New holder of a county with an ancestral Khachkar
+			###########
+			if = {
+				limit = {
+					has_pam_dlc_trigger = yes
+					pam_remove_khachkar_new_holder_trigger = {
+						TITLE = scope:title
+						PREVIOUS_HOLDER = scope:previous_holder
+						NEW_HOLDER = root
+					}
+				}
+				scope:title = {
+					remove_county_modifier = pam_khachkar_ancestral_county
+					remove_variable = pam_khachkar_ancestor
+					remove_variable = pam_khachkar_commissioner
+				}
+			}
+
+			###########
 			# EP3 ADVENTURERS BECOMING LANDED
 			###########
 			if = {
@@ -757,9 +1032,10 @@ on_title_gain = {
 				if = {
 					limit = {
 						scope:title = { is_noble_family_title = yes }
-						NOT = { government_has_flag = government_is_administrative }
+						NOT = { government_has_mechanic = administrative }
+						top_liege ?= { government_has_mechanic = administrative }
 					}
-					change_government = administrative_government
+					change_government = top_liege.government_type
 				}
 			}
 		}
@@ -964,9 +1240,28 @@ on_title_gain = {
 				limit = {
 					scope:title = { is_holy_order = yes }
 					NOT = { has_trait = order_member }
-					government_has_flag = government_is_holy_order
+					government_has_flag = government_is_military_holy_order
 				}
 				add_trait = order_member
+			}
+			else_if = {
+				limit = {
+					scope:title = { is_holy_order = yes }
+					NOT = { has_trait = devoted }
+					government_has_flag = government_is_monastic_holy_order
+				}
+				# Full monastic vows supersede a deacon's ordination
+				remove_trait = cleric
+				add_trait = devoted
+			}
+
+			# Ordained court clergy who rise to lay rule set the office aside
+			if = {
+				limit = {
+					has_trait = cleric
+					NOT = { pam_is_clergy_ruler_trigger = yes }
+				}
+				remove_trait = cleric
 			}
 
             # Warcraft
@@ -1958,7 +2253,6 @@ on_title_gain = {
 					top_liege = this
 					highest_held_title_tier >= tier_kingdom
 					scope:title = root.primary_title
-					has_ep3_dlc_trigger = yes
 					#Checks so this event doesn't fire after character creation, although it's not really a problem if it does
 					current_date_is_start_date_trigger = no
 				}
@@ -2040,10 +2334,11 @@ on_title_gain = {
 					primary_title.tier <= scope:title.tier
 					NOT = { has_character_flag = admin_title_gain_notification_sent }
 					exists = house
+					NOT = { exists = scope:title.var:ceremonial_title }
 					any_player = {
 						house ?= root.house
 						top_liege = root.top_liege
-						government_allows = administrative
+						government_has_mechanic = administrative
 						this != root
 					}
 				}
@@ -2056,9 +2351,8 @@ on_title_gain = {
 					limit = {
 						house ?= root.house
 						top_liege = root.top_liege
-						government_allows = administrative
+						government_has_mechanic = administrative
 						this != scope:title_gainer
-						#scope:title != title:k_chrysanthemum_throne
 					}
 					send_interface_message = {
 						type = msg_admin_title_gained
@@ -2129,13 +2423,13 @@ on_title_gain = {
 					}
 				}
 			}
-			
+
 			# Merit based candidate score bonus is removed when successfully getting a new governorship
 			if = {
 				limit = {
-					OR = {
-						has_variable = merit_civilian_career_score_bonus
-						has_variable = merit_military_career_score_bonus
+					has_variable = {
+						name = merit_civilian_career_score_bonus
+						name = merit_military_career_score_bonus
 					}
 					is_landed = yes
 					scope:title.tier >= primary_title.tier
@@ -2258,7 +2552,7 @@ on_title_gain = {
 						var:homage_liege_scope ?= scope:previous_holder
 						NOT = { has_character_flag = currently_invalidating_petition_liege_travel }
 					}
-					current_travel_plan = { 
+					current_travel_plan = {
 						if = {
 							limit = { can_cancel = yes }
 							cancel_travel_plan = yes
@@ -2281,7 +2575,7 @@ on_title_gain = {
 						var:pledge_loyalty_to_liege_scope ?= scope:previous_holder
 						NOT = { has_character_flag = currently_invalidating_petition_liege_travel }
 					}
-					current_travel_plan = { 
+					current_travel_plan = {
 						if = {
 							limit = { can_cancel = yes }
 							cancel_travel_plan = yes
@@ -2315,7 +2609,7 @@ on_title_gain = {
 						}
 					}
 				}
-				scope:previous_holder.house_head = { save_scope_as = house_feud_rival }
+				scope:previous_holder.house.house_head = { save_scope_as = house_feud_rival }
 				trigger_event = bp1_house_feud.7000
 			}
 		}
@@ -2378,8 +2672,7 @@ on_title_gain = {
 		# Update CoAs
 		scope:title = { update_dynamic_coa = yes }
 
-		### MEMORIES - SHOULD STAY AT BOTTOM ###
-        if = { # Warcraft
+		if = { # Warcraft
             limit = {
                 exists = scope:previous_holder
                 scope:previous_holder = { has_variable_list = coalition_members }
@@ -2393,6 +2686,7 @@ on_title_gain = {
             }
             try_to_inherit_coalition_as_member_effect = { PREV_HOLDER = scope:previous_holder }
         }
+		### MEMORIES - SHOULD STAY AT BOTTOM ###
 		# Ascended to the throne
 		if = {
 			limit = {
@@ -2400,7 +2694,7 @@ on_title_gain = {
 					is_ruler = no
 					highest_held_title_tier <= scope:title.tier
 					government_has_flag = government_is_landless_adventurer
-					government_allows = administrative
+					government_has_mechanic = administrative
 				}
 			}
 			if = {
@@ -2480,6 +2774,57 @@ on_title_gain = {
 			}
 			scope:bloc = { add_confederation_member = scope:bloc_joiner }
 		}
+		# Empire Faith Gate: maintain global list of independent empire-tier rulers for perf.
+		if = {
+			limit = {
+				scope:title = { tier >= tier_empire }
+				root = { is_independent_ruler = yes }
+				NOT = {
+					is_target_in_global_variable_list = {
+						name = efg_empire_holders
+						target = root
+					}
+				}
+			}
+			add_to_global_variable_list = {
+				name = efg_empire_holders
+				target = root
+			}
+		}
+		if = {
+			limit = {
+				scope:title = { tier >= tier_empire }
+				scope:previous_holder ?= {
+					NOT = { any_held_title = { tier >= tier_empire } }
+				}
+			}
+			scope:previous_holder ?= {
+				remove_list_global_variable = {
+					name = efg_empire_holders
+					target = this
+				}
+				efg_remove_contested_empire_modifiers_effect = yes
+			}
+		}
+		# Empire Faith Gate: refresh contested-empire modifiers immediately for affected faith groups.
+		if = {
+			limit = {
+				empire_faith_gate_enabled_trigger = yes
+				scope:title = { tier >= tier_empire }
+				NOT = { scope:transfer_type = flag:created }
+			}
+			root = { efg_recalculate_contested_empire_for_faith_effect = yes }
+			if = {
+				limit = {
+					scope:previous_holder ?= {
+						NOT = { faith = root.faith }
+					}
+				}
+				scope:previous_holder ?= { efg_recalculate_contested_empire_for_faith_effect = yes }
+			}
+		}
+		# Empire Faith Gate: contested-empire legitimacy is handled by
+		# empire_faith_gate.0001 in the events section below.
 		#Coronation modifier is lost
 		if = {
 			limit = {
@@ -2650,13 +2995,176 @@ on_title_gain = {
 				is_independent_ruler = yes
 				government_has_flag = government_is_celestial
 				scope:title ?= {
-					tier >= tier_kingdom
 					has_custom_title_name = yes
 					this != root.primary_title
 				}
 			}
 			scope:title = {
 				reset_title_name = yes
+			}
+		}
+		#Invalidate holy order creation
+		if = {
+			limit = {
+				scope:title = {
+					tier = tier_county
+					any_county_province = {
+						has_variable = monastic_order_capital
+						var:monastic_order_capital = { save_temporary_scope_as = faith_temp }
+					}
+				}
+				NOT = {
+					faith = scope:faith_temp
+				}
+			}
+			scope:title = {
+				random_county_province = {
+					limit = {
+						has_variable = monastic_order_capital
+					}
+					remove_variable = monastic_order_capital
+				}
+			}
+		}
+
+
+		#########
+		#  PAM  #
+		#########
+		if = {
+			limit = { has_pam_dlc_trigger = yes }
+			if = {
+				# title is a clerical region now held by a christian ruler (archbishop)
+				limit = {
+					scope:title = {
+						has_clerical_region = yes
+					}
+					religion = religion:christianity_religion
+				}
+
+				# flip county rite to the holder to initiate spread if they are of the same faith as current faith of county
+				if = {
+					limit = {
+						scope:title.title_capital_county.faith = root.faith
+					}
+					scope:title.title_capital_county = { set_county_rite = root.rite }
+				}
+
+				situation:the_christian_church ?= {
+					situation_sub_region:core = {
+						add_clerical_realm_to_sub_region = scope:title
+					}
+				}
+			}
+			# Clerical Christian appointment succession to a holder from the same house as the previous holder
+			if = {
+				limit = {
+					exists = scope:previous_holder
+					scope:previous_holder != root
+					OR = {
+						scope:title = { has_title_law = clerical_appointment_law }
+						scope:previous_holder = { has_realm_law = clerical_appointment_law }
+					}
+					scope:previous_holder = {
+						like_christianity_religion_trigger = yes
+						exists = house
+						house = root.house
+					}
+					root = { like_christianity_religion_trigger = yes }
+					situation:the_christian_church ?= {
+						situation_top_has_catalyst = catalyst_clergy_appointed_from_same_family
+					}
+				}
+				situation:the_christian_church = {
+					trigger_situation_catalyst = catalyst_clergy_appointed_from_same_family
+				}
+			}
+			#if = {
+			#	limit = {
+			#		scope:title = title:c_jerusalem
+			#		religion = religion:christianity_religion
+			#		scope:previous_holder ?= {
+			#			NOT = { religion = religion:christianity_religion }
+			#		}
+			#		NOR = {
+			#			scope:transfer_type = flag:created
+			#			scope:transfer_type = flag:inheritance
+			#		}
+			#		any_character_situation = {
+			#			situation_type = the_christian_church
+			#			situation_top_has_catalyst = catalyst_the_christian_church_jerusalem_reclaimed
+			#		}
+			#	}
+			#	situation:the_christian_church = {
+			#		trigger_situation_catalyst = catalyst_the_christian_church_jerusalem_reclaimed
+			#	}
+			#}
+			#if = {
+			#	limit = {
+			#		scope:title.tier = tier_county
+			#		NOT = { scope:title = title:c_jerusalem }
+			#		religion = religion:christianity_religion
+			#		scope:previous_holder ?= {
+			#			NOT = { religion = religion:christianity_religion }
+			#		}
+			#		NOR = {
+			#			scope:transfer_type = flag:created
+			#			scope:transfer_type = flag:inheritance
+			#		}
+			#		religion:christianity_religion = {
+			#			any_faith = {
+			#				save_temporary_scope_as = faith_check
+			#				scope:title = {
+			#					any_county_province = {
+			#						barony = { is_holy_site_of = scope:faith_check }
+			#					}
+			#				}
+			#			}
+			#		}
+			#		any_character_situation = {
+			#			situation_type = the_christian_church
+			#			situation_top_has_catalyst = catalyst_the_christian_church_christian_holy_site_reclaimed
+			#		}
+			#	}
+			#	situation:the_christian_church = {
+			#		trigger_situation_catalyst = catalyst_the_christian_church_christian_holy_site_reclaimed
+			#	}
+			#}
+		}
+		if = {
+			limit = {
+				house ?= {
+					has_variable = cleric_support
+					var:cleric_support = {
+						is_alive = yes
+						is_ruler = yes
+					}
+				}
+				NOT = {
+					has_variable = recent_cleric_support_bonus
+				}
+			}
+			set_variable = {
+				name = recent_cleric_support_bonus
+				days = 15
+			}
+			save_scope_as = house_person
+			house.var:cleric_support = {
+				send_interface_message = {
+					type = msg_cleric_support_title_gain
+					title = cleric_support_title_gained.tt
+					desc = cleric_support_title_gained.desc
+					left_icon = root
+					right_icon = scope:title
+					add_prestige = {
+						value = minor_prestige_gain
+						multiply = scope:title.tier
+					}
+					add_piety = {
+						value = minor_piety_gain
+						multiply = scope:title.tier
+					}
+				}
 			}
 		}
 	}
@@ -2673,6 +3181,7 @@ on_title_gain = {
 		# If we weren't already in a diarchy but should be, put us in one.
 		diarchy.0011
 		ep3_emperor_yearly.2020		# EP3: The Patriarch refuses to crown you as new emperor because you have a criminal trait
+		empire_faith_gate.0001		# Empire Faith Gate: contested-empire legitimacy on empire gain
 	}
 }
 
@@ -2686,33 +3195,72 @@ on_title_gain_inheritance = {
 		# Try to end inherited entrenched regencies automatically — we need to launder this by a day to make sure the AI realises they've inherited a diarchy.
 		diarchy.0113
 	}
-    # Warcraft
-    # effect = {
-    # 	if = {
-    # 		limit = {
-    # 			scope:title = {
-    # 				OR = {
-    # 					this = title:e_mongol_empire
-    # 					AND = {
-    # 						exists = global_var:greatest_of_khans_title
-    # 						this = global_var:greatest_of_khans_title
-    # 					}
-    # 				}
-    # 			}
-    # 			has_character_flag = gain_mongol_succession_dread
-    # 		}
-    # 		add_dread = 50
-    # 	}
-    # 	else_if = {
-    # 		limit = {
-    # 			OR = {
-    # 				scope:title = title:h_roman_empire
-    # 				scope:title = title:h_eastern_roman_empire
-    # 			}
-    # 		}
-    # 		set_variable = uses_custom_caesar_flavourization
-    # 	}
-    # }
+	effect = {
+		#if = { # Warcraft
+		#	limit = {
+		#		scope:title = {
+		#			OR = {
+		#				this = title:e_mongol_empire
+		#				AND = {
+		#					exists = global_var:greatest_of_khans_title
+		#					this = global_var:greatest_of_khans_title
+		#				}
+		#			}
+		#		}
+		#		has_character_flag = gain_mongol_succession_dread
+		#	}
+		#	add_dread = 50
+		#}
+		#else_if = {
+		#	limit = {
+		#		OR = {
+		#			scope:title = title:h_roman_empire
+		#			scope:title = title:h_eastern_roman_empire
+		#		}
+		#	}
+		#	set_variable = uses_custom_caesar_flavourization
+		#}
+
+		if = {
+			limit = {
+				scope:title = { is_noble_family_title = yes }
+			}
+			every_close_family_member = {
+				limit = {
+					is_ruler = no
+					NOT = {
+						liege_or_court_owner ?= root
+					}
+					OR = {
+						NOT = { exists = liege_or_court_owner }
+						NOR = {
+							is_councillor = yes
+							has_any_court_position = yes
+							has_any_scripted_relation = liege_or_court_owner
+							any_consort = {
+								OR = {
+									this = liege_or_court_owner
+									liege_or_court_owner = prev.liege_or_court_owner
+								}
+							}
+						}
+					}
+				}
+				root = { add_courtier = prev }
+			}
+		}
+		# CE3 achievement: Where There's a Will — inherited from the murdered cleric
+		if = {
+			limit = {
+				exists = var:ce3_will_victim
+				scope:previous_holder ?= var:ce3_will_victim
+			}
+			add_achievement_global_variable_effect = {
+				VARIABLE = ce3_13_where_theres_a_will_achievement_unlocked
+				VALUE = yes
+			}
+		}
+	}
 }
 
 # A title is usurped by a character
@@ -2831,6 +3379,7 @@ on_title_lost = {
 				#If they've ventured far outside Europe, they're unlikely to come back, so we don't #want them.
 				scope:title = {
 					tier = tier_county
+					exists = title_province
 					title_province = {
 						# Warcraft
                         scandi_adventurer_region_trigger = yes
@@ -2919,7 +3468,7 @@ on_title_lost = {
 
 					custom_tooltip = msg_rival_dethroned_desc
 
-					stress_impact = {
+					stress_and_fulfillment_impact = {
 						base = medium_stress_loss
 						vengeful = medium_stress_loss
 					}
@@ -3210,6 +3759,7 @@ on_title_lost = {
 		if = {
 			limit = {
 				scope:title.tier > tier_barony
+				NOT = { exists = scope:title.var:ceremonial_title }
 				trigger_if = { # Prevent msg spam when rulers give away or lose lower tier titles
 					limit = {
 						is_landed = yes
@@ -3218,7 +3768,7 @@ on_title_lost = {
 				}
 				is_alive = yes
 				NOT = { has_character_flag = admin_title_loss_notification_sent }
-				government_allows = administrative
+				government_has_mechanic = administrative
 				house ?= {
 					any_house_member = {
 						is_ai = no
@@ -3226,7 +3776,7 @@ on_title_lost = {
 							limit = { exists = root.top_liege }
 							top_liege = root.top_liege
 						}
-						government_allows = administrative
+						government_has_mechanic = administrative
 						this != root
 					}
 				}
@@ -3244,7 +3794,7 @@ on_title_lost = {
 							limit = { exists = root.top_liege }
 							top_liege = root.top_liege
 						}
-						government_allows = administrative
+						government_has_mechanic = administrative
 						this != scope:title_loser
 					}
 					send_interface_message = {
@@ -3517,6 +4067,22 @@ on_title_lost = {
 			}
 		}
 
+		#########
+		#  PAM  #
+		#########
+		if = {
+			limit = {
+				scope:title = {
+					has_clerical_region = yes
+					root = { religion = religion:christianity_religion }
+					scope:new_holder = { NOT = { religion = religion:christianity_religion } }
+				}
+			}
+			situation:the_christian_church.situation_sub_region:core = {
+				remove_clerical_realm_from_sub_region = scope:landed_title
+			}
+		}
+
 		# Warcraft - This fixes the player becoming unlanded (not even an adventurer) after the scourge invasion
 		if = {
 			limit = {
@@ -3582,7 +4148,7 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 		# EP3 - Ensure Emperor keeps old realm capital in admin realms
 		if = {
 			limit = {
-				government_allows = administrative
+				government_has_mechanic = administrative
 				NOT = { has_variable = laamp_invasion_flag }
 				top_liege = this
 				trigger_if = {
@@ -3615,15 +4181,15 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 				is_ai = no
 				primary_title.tier >= tier_kingdom
 				has_realm_law = uncrowned
-				NOR = {
-					has_variable = crowned_king_var
-					has_variable = crowned_emperor_var
+				has_none_of_variables = {
+					name = crowned_king_var
+					name = crowned_emperor_var
 				}
 				NOR = {
 					has_character_flag = had_coronation_reminder
 					any_sponsored_inspiration = { has_inspiration_type = smith_inspiration }
 				}
-				is_available_adult = yes	
+				is_available_adult = yes
 			}
 			trigger_event = {
 				id = ach_yearly_events.1005
@@ -3676,7 +4242,7 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 			limit = {
 				is_ai = no
 				is_landed = yes
-				highest_held_title_tier = tier_empire
+				highest_held_title_tier >= tier_empire
 			}
 			add_achievement_global_variable_effect = {
 				VARIABLE = rags_to_riches_to_rags_to_riches_first_empire
@@ -3687,7 +4253,7 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 			limit = {
 				is_ai = no
 				is_landed = yes
-				highest_held_title_tier = tier_empire
+				highest_held_title_tier >= tier_empire
 				exists = global_var:rags_to_riches_to_rags_to_riches_adventurer
 			}
 			add_achievement_global_variable_effect = {
@@ -3730,7 +4296,7 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 		if = {
 			limit = {
 				is_independent_ruler = yes
-				government_allows = administrative
+				government_has_mechanic = administrative
 				scope:title ?= {
 					any_title_maa_regiment = {
 						count >= 1
@@ -3747,7 +4313,6 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 				is_independent_ruler = yes
 				government_has_flag = government_is_celestial
 				scope:title ?= {
-					tier >= tier_kingdom
 					has_custom_title_name = yes
 				}
 				primary_title = {
@@ -3815,6 +4380,9 @@ on_rank_up = { # Will not fire during history execution or for dying characters
 			}
 			resolve_title_and_vassal_change = scope:change
 		}
+
+		# Clear tier-based HoF interaction blockers
+		remove_character_flag = hof_request_cooldown
 		
 		# Warcraft
 		start_yearly_dark_frenzy_pulse_effect = yes
@@ -3863,13 +4431,13 @@ on_rank_down = { # Will not fire during history execution or for dying character
 				}
 			}
 		}
-		
+
 		# Additional Flavor Title
 		additional_flavor_check_effect = yes
-		
+
 		# ACH - Remove variables if they are going below certain ranks
 		coronation_reset_realm_law_variable_effect = yes
-		
+
 		# ACH - if you are below king tier, remove all oaths
 		if = {
 			limit = {
@@ -3894,7 +4462,7 @@ on_rank_down = { # Will not fire during history execution or for dying character
 			}
 
 			if = {
-				limit = { 
+				limit = {
 					exists = scope:new_wedding_host
 					has_variable = promised_grand_wedding_to
 				}
@@ -4003,10 +4571,12 @@ on_vassal_gained = {
 # It is also fired for rulers gaining independence, those can be identified by checking current liege
 on_vassal_change = {
 	effect = {
+		# usually, diarch must be vassal or courtier
+		diarchy_validation_check_effect = yes
 		### If a admin duke-tier character becomes the top-liege's direct vassal, ensure that they have a noble family title
 		if = {
 			limit = {
-				government_allows = administrative
+				government_allows = noble_families
 				is_house_head = yes
 				trigger_if = {
 					# This trigger is intentionally different from the similar effect in on_title_gain up above. We want all direct vassals of the top liege to have a family title if they can
@@ -4016,7 +4586,7 @@ on_vassal_change = {
 				trigger_else = { highest_held_title_tier >= tier_duchy }
 				liege = {
 					top_liege = this
-					government_allows = administrative
+					government_allows = noble_families
 				}
 				NOR = {
 					any_held_title = { is_noble_family_title = yes }
@@ -4033,10 +4603,10 @@ on_vassal_change = {
 		### If an admin ruler becomes independent...
 		if = {
 			limit = {
-				government_has_flag = government_is_administrative
+				government_has_mechanic = administrative
 			}
 			if = {
-				limit = { 
+				limit = {
 					liege = root # I.e. root is independent
 				}
 				# And is not of a high enough rank, change government
@@ -4049,10 +4619,9 @@ on_vassal_change = {
 				# If they can be independent, make sure they have a noble family title
 				else_if = {
 					limit = {
+						government_allows = noble_families
 						NOT = {
-							any_held_title = {
-								is_noble_family_title = yes
-							}
+							exists = house.noble_family
 						}
 					}
 					create_noble_family_effect = { GOVERNMENT_GIVER = this }
@@ -4062,6 +4631,7 @@ on_vassal_change = {
 			# Byz admin landless NF should always be direct vassal of top liege
 			else_if = {
 				limit = {
+					government_has_flag = government_is_administrative
 					liege != top_liege
 					primary_title = {
 						is_noble_family_title = yes
@@ -4078,6 +4648,43 @@ on_vassal_change = {
 				}
 				resolve_title_and_vassal_change = scope:change
 			}
+		}
+		# Empire Faith Gate: sync the empire-holders list when an empire-tier ruler gains or loses independence.
+		if = {
+			limit = {
+				empire_faith_gate_enabled_trigger = yes
+				highest_held_title_tier >= tier_empire
+			}
+			if = {
+				limit = { liege = root }
+				if = {
+					limit = {
+						NOT = {
+							is_target_in_global_variable_list = {
+								name = efg_empire_holders
+								target = root
+							}
+						}
+					}
+					add_to_global_variable_list = {
+						name = efg_empire_holders
+						target = root
+					}
+				}
+			}
+			else_if = {
+				limit = {
+					is_target_in_global_variable_list = {
+						name = efg_empire_holders
+						target = root
+					}
+				}
+				remove_list_global_variable = {
+					name = efg_empire_holders
+					target = root
+				}
+			}
+			root = { efg_recalculate_contested_empire_for_faith_effect = yes }
 		}
 		### Independent Celestial rulers who become direct vassals of a top liege adopt Military obligations if they have title troops - Everyone else will default to Standard.
 		if = {
@@ -4098,7 +4705,7 @@ on_vassal_change = {
 			}
 			vassal_contract_set_obligation_level = { type = celestial_provinces level = 3 }
 		}
-		
+
 		### If a minister becomes independent we destroy the ministry title
 		if = {
 			limit = {
@@ -4155,7 +4762,7 @@ on_vassal_change = {
 				reset_title_name = yes
 			}
 		}
-		
+
 		# Destroy ceremonial titles of vassalized realms
 		if = {
 			limit = {
@@ -4175,7 +4782,7 @@ on_vassal_change = {
 				remove_trait = former_emperor
 			}
 		}
-		
+
 		# Bloc
 		if = {
 			# Let code trigger this if this is due to succession
@@ -4206,10 +4813,17 @@ on_baron_found_or_created_for_title = {
 # Called when realm capital changes. It can be manual move, loss in conquest, move after inheritance,
 # move when granted a better title, becoming landed for the first time
 # root: New realm capital barony
+# scope:holder character changing capital. The same character can change capital multiple times at once
+#	depending on what is happening, so check if the holders match.
 # scope:old_capital - previous capital barony. Can be empty, can be owned by someone else
 on_realm_capital_change = {
 	effect = {
 		holder ?= {
+			# Landed-only royal court: landless Pope re-lands with a culture-derived one on_title_gain never sees
+			#if = {
+			#	limit = { has_title = title:k_papal_state }
+			#	enforce_papal_latin_court_language_effect = yes
+			#}
 			# Do we need to refresh their vizier's modifiers?
 			if = {
 				limit = { has_diarchy_parameter = diarchy_is_vizierate }
@@ -4349,13 +4963,10 @@ on_realm_capital_change = {
 
 			# Move ministers to realm capital.
 			if = {
-				limit = {
-					tgp_has_access_to_ministry_trigger = yes
-				}
+				limit = { tgp_has_access_to_ministry_trigger = yes }
+				capital_province = { save_scope_as = capital_province }
 				every_vassal = {
-					limit = {
-						tgp_has_minister_title = yes
-					}
+					limit = { tgp_has_minister_title = yes }
 					every_held_title = {
 						limit = {
 							OR = {
@@ -4363,13 +4974,10 @@ on_realm_capital_change = {
 								tgp_is_minister_title = yes
 							}
 						}
-						set_capital_county = ROOT.county
+						set_capital_county = scope:capital_province.county
 					}
-					if = {
-						limit = { is_ai = yes }
-						domicile ?= {
-							move_domicile = ROOT.title_province
-						}
+					domicile ?= {
+						move_domicile = scope:capital_province
 					}
 					# don't move them in such cases
 					if = {

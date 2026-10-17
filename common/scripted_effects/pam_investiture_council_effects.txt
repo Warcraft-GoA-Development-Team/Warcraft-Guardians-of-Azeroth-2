@@ -1,0 +1,783 @@
+﻿############################################################################################
+# Investiture Council effects: stance-based guest sort, vote tally, and crisis resolution for
+# activity_investiture_council. Reuses the ecumenical-council helpers, leaving the shipped one untouched.
+############################################################################################
+
+# Puppets inherit their controller's stance
+pam_sort_investiture_council_groups_effect = {
+	scope:activity = {
+		clear_variable_list = major_innovator
+		clear_variable_list = major_conservative
+		every_guest_subset = {
+			name = innovator
+			scope:activity = {
+				remove_from_guest_subset = {
+					name = innovator
+					target = prev
+				}
+			}
+		}
+		every_guest_subset = {
+			name = conservative
+			scope:activity = {
+				remove_from_guest_subset = {
+					name = conservative
+					target = prev
+				}
+			}
+		}
+
+		# The host always champions Spiritual.
+		every_attending_character = {
+			limit = { this = scope:host }
+			add_to_list = innovator
+		}
+
+		# AI voters: assigned by stance.
+		every_attending_character = {
+			limit = {
+				is_ai = yes
+				this != scope:host
+				pam_valid_ecumenical_council_voter_trigger = yes
+				pam_investiture_council_voter_supports_spiritual_trigger = yes
+			}
+			add_to_list = innovator
+		}
+		# Players with a committed Spiritual stance: auto-assign.
+		every_attending_character = {
+			limit = {
+				is_ai = no
+				this != scope:host
+				pam_valid_ecumenical_council_voter_trigger = yes
+				pam_investiture_council_voter_has_locked_stance_trigger = yes
+				pam_investiture_council_voter_supports_spiritual_trigger = yes
+			}
+			add_to_list = innovator
+		}
+		# Everyone else decided (AI, or a committed-Temporal player) -> conservative.
+		every_attending_character = {
+			limit = {
+				this != scope:host
+				pam_valid_ecumenical_council_voter_trigger = yes
+				NOT = { is_in_list = innovator }
+				OR = {
+					is_ai = yes
+					AND = {
+						is_ai = no
+						pam_investiture_council_voter_has_locked_stance_trigger = yes
+					}
+				}
+			}
+			add_to_list = conservative
+		}
+
+		every_in_list = {
+			list = conservative
+			scope:activity = {
+				add_to_guest_subset = {
+					name = conservative
+					target = prev
+				}
+			}
+		}
+		every_in_list = {
+			list = innovator
+			limit = {
+				NOT = { is_in_list = conservative }
+			}
+			scope:activity = {
+				add_to_guest_subset = {
+					name = innovator
+					target = prev
+				}
+			}
+		}
+
+		if = {
+			limit = {
+				any_in_list = { list = innovator }
+			}
+			ordered_in_list = {
+				list = innovator
+				max = 3
+				order_by = ecumenical_council_innovator_sort_value
+				scope:activity = {
+					add_to_variable_list = {
+						name = major_innovator
+						target = prev
+					}
+				}
+			}
+		}
+		if = {
+			limit = {
+				any_in_list = { list = conservative }
+			}
+			ordered_in_list = {
+				list = conservative
+				max = 3
+				order_by = ecumenical_council_conservative_sort_value
+				scope:activity = {
+					add_to_variable_list = {
+						name = major_conservative
+						target = prev
+					}
+				}
+			}
+		}
+
+		# Uncommitted players choose their side.
+		every_attending_character = {
+			limit = {
+				is_ai = no
+				this != scope:host
+				pam_valid_ecumenical_council_voter_trigger = yes
+				NOT = { pam_investiture_council_voter_has_locked_stance_trigger = yes }
+			}
+			trigger_event = pam_investiture_council_events.$NEXT_EVENT$
+		}
+		# Secular player attendees don't vote, but may sway the council (bribe / convince either side).
+		every_attending_character = {
+			limit = {
+				is_ai = no
+				this != scope:host
+				NOT = { pam_valid_ecumenical_council_voter_trigger = yes }
+			}
+			trigger_event = pam_investiture_council_events.0033
+		}
+	}
+}
+
+# Run on the host from the debate phase on_end
+pam_investiture_council_tally_effect = {
+	# The outcome letters (0060/0061) render after the activity is torn down; save the host now for their desc.
+	scope:host = { save_scope_as = investiture_conclusion_host }
+	scope:activity = {
+		every_guest_subset = {
+			name = innovator
+			add_to_list = ec_innovators
+		}
+		every_guest_subset = {
+			name = conservative
+			add_to_list = ec_conservatives
+		}
+		# Activity vars so the conclusion window can read them after guests disperse
+		# AI-only so the viewing player isn't staged twice
+		if = {
+			limit = { any_attending_character = { is_ai = yes this != scope:host is_in_guest_subset = { name = innovator } } }
+			random_attending_character = {
+				limit = { is_ai = yes this != scope:host is_in_guest_subset = { name = innovator } }
+				save_scope_as = investiture_rep_church
+			}
+			set_variable = { name = investiture_conclusion_innovator value = scope:investiture_rep_church }
+		}
+		if = {
+			limit = { any_attending_character = { is_ai = yes this != scope:host is_in_guest_subset = { name = conservative } } }
+			random_attending_character = {
+				limit = { is_ai = yes this != scope:host is_in_guest_subset = { name = conservative } }
+				save_scope_as = investiture_rep_crown
+			}
+			set_variable = { name = investiture_conclusion_conservative value = scope:investiture_rep_crown }
+		}
+	}
+	# Activity keeps the outcome for the conclusion page
+	# Host keeps a two-month copy for letters 0060 and 0061, situation for 0051 and 0054
+	if = {
+		limit = { list_size:ec_innovators >= list_size:ec_conservatives }
+		scope:activity = {
+			set_variable = {
+				name = third_debate_resolution
+				value = flag:passed
+			}
+		}
+		scope:host = {
+			set_variable = { name = investiture_conclusion_outcome value = flag:passed days = 60 }
+		}
+		# Log entry so the ruling shows as the conclusion "Effects from ..." (hunt idiom)
+		scope:activity = {
+			add_activity_log_entry = {
+				key = pam_investiture_council_concluded_spiritual_log
+				score = 100
+				tags = { complete good }
+				character = scope:host
+				show_in_conclusion = yes
+				# EFFECT
+				scope:host.faith = {
+					pam_resolve_investiture_crisis_effect = { WINNER = spiritual DOCTRINE = doctrine_clerical_succession_spiritual_fixed_appointment }
+				}
+			}
+		}
+		# Crisis-phase guard so a later council for another faith can't re-transition
+		situation:the_christian_church ?= {
+			if = {
+				limit = { has_situation_top_phase_parameter = the_christian_church_investiture_controversy }
+				trigger_situation_catalyst = catalyst_investiture_council_settled_spiritual
+				set_variable = { name = pam_investiture_last_outcome value = flag:spiritual days = 60 }
+			}
+		}
+	}
+	else = {
+		scope:activity = {
+			set_variable = {
+				name = third_debate_resolution
+				value = flag:failed
+			}
+		}
+		scope:host = {
+			set_variable = { name = investiture_conclusion_outcome value = flag:failed days = 60 }
+		}
+		# The ruling as a conclusion log entry - see the passed branch.
+		scope:activity = {
+			add_activity_log_entry = {
+				key = pam_investiture_council_concluded_temporal_log
+				score = 100
+				tags = { complete bad }
+				character = scope:host
+				show_in_conclusion = yes
+				# EFFECT
+				scope:host.faith = {
+					pam_resolve_investiture_crisis_effect = { WINNER = temporal DOCTRINE = doctrine_clerical_succession_spiritual_appointment }
+				}
+			}
+		}
+		# Temporal victory -> Fragile Unity, same council-only rule as above.
+		situation:the_christian_church ?= {
+			if = {
+				limit = { has_situation_top_phase_parameter = the_christian_church_investiture_controversy }
+				trigger_situation_catalyst = catalyst_investiture_council_settled_temporal
+				# Short-lived marker so the Fragile Unity entry event (0051) can explain it followed a Temporal ruling.
+				set_variable = { name = pam_investiture_last_outcome value = flag:temporal days = 60 }
+			}
+		}
+	}
+	# Letter to a player Head of Faith who didn't attend, the moment it is decided.
+	scope:host.faith.religious_head ?= {
+		if = {
+			limit = {
+				is_ai = no
+				this != scope:host
+				NOT = { involved_activity ?= scope:activity }
+			}
+			trigger_event = pam_investiture_council_events.0060
+		}
+	}
+	# Non-attending faith player hears the outcome from their court chaplain
+	every_player = {
+		limit = {
+			is_ai = no
+			faith = scope:host.faith
+			NOT = { faith.religious_head = this }
+			NOT = { involved_activity ?= scope:activity }
+			exists = cp:councillor_court_chaplain
+			any_character_situation = { this = situation:the_christian_church }
+		}
+		cp:councillor_court_chaplain = { save_scope_as = investiture_report_chaplain }
+		trigger_event = pam_investiture_council_events.0061
+	}
+	# Attendees see the ruling on the activity's conclusion page; only non-attending players need letters here.
+}
+
+############################################################################################
+# Post-choice persuasion (player only): a chain of skill-duel attempts (up to
+# pam_investiture_persuade_max_attempts, +50% cost each) whose tier flips opposite-side AI voters.
+# Shared by the clergy voter (0032) and the secular attendee (0033).
+############################################################################################
+
+# Expects scope:activity, root = the acting player
+pam_investiture_flip_voters_effect = {
+	scope:activity = {
+		# We use ordered_* with a maximum to limit how many we pick
+		# A counter in the limit of every_* errors in the tooltip preview
+		# Highest target-side sort first so prominent voters flip and show in the Major list
+		ordered_attending_character = {
+			limit = {
+				is_ai = yes
+				this != root
+				pam_valid_ecumenical_council_voter_trigger = yes
+				NOT = { is_in_guest_subset = { name = $SIDE$ } }
+			}
+			order_by = ecumenical_council_$SIDE$_sort_value
+			max = $COUNT$
+			# Inside scope:activity a bare this is the activity
+			save_scope_as = pam_flip_target
+			ecumenical_council_become_$SIDE$_effect = { CHARACTER = scope:pam_flip_target }
+			root = { change_variable = { name = investiture_swayed_count add = 1 } }
+		}
+	}
+}
+
+# SIDE is a parameter, not a var, so it resolves in the option tooltip preview
+pam_investiture_persuade_flip_effect = {
+	hidden_effect = {
+		pam_investiture_flip_voters_effect = { SIDE = $SIDE$ COUNT = $COUNT$ }
+	}
+}
+
+# $SKILL_A$ / $SKILL_B$ / $SIDE$ / $OPPOSITE$ are option parameters, not vars
+pam_investiture_persuade_duel_effect = {
+	# Reset the trackers the feedback toast reads.
+	set_variable = { name = investiture_swayed_count value = 0 }
+	set_variable = { name = investiture_persuade_result value = flag:swayed }
+	save_scope_as = investiture_persuader
+	duel = {
+		skills = { $SKILL_A$ $SKILL_B$ }
+		value = pam_investiture_persuade_difficulty
+		8 = {
+			compare_modifier = { value = scope:duel_value multiplier = 0.5 min = -8 }
+			custom_tooltip = pam_investiture_persuade_tt_great_$SIDE$
+			set_variable = { name = investiture_persuade_result value = flag:swayed }
+			pam_investiture_persuade_flip_effect = { SIDE = $SIDE$ COUNT = pam_investiture_persuade_flip_great }
+		}
+		12 = {
+			compare_modifier = { value = scope:duel_value multiplier = 0.2 min = -12 }
+			custom_tooltip = pam_investiture_persuade_tt_good_$SIDE$
+			set_variable = { name = investiture_persuade_result value = flag:swayed }
+			pam_investiture_persuade_flip_effect = { SIDE = $SIDE$ COUNT = pam_investiture_persuade_flip_good }
+		}
+		12 = {
+			custom_tooltip = pam_investiture_persuade_tt_modest_$SIDE$
+			set_variable = { name = investiture_persuade_result value = flag:swayed }
+			pam_investiture_persuade_flip_effect = { SIDE = $SIDE$ COUNT = pam_investiture_persuade_flip_modest }
+		}
+		10 = {
+			compare_modifier = { value = scope:duel_value multiplier = -0.6 min = -10 }
+			custom_tooltip = pam_investiture_persuade_tt_backfire_$OPPOSITE$
+			set_variable = { name = investiture_persuade_result value = flag:backfired }
+			pam_investiture_persuade_flip_effect = { SIDE = $OPPOSITE$ COUNT = pam_investiture_persuade_flip_backfire }
+		}
+	}
+	# Tooltip preview runs these limits inside hidden_effect
+	# Both flags compared so neither is set but unused
+	hidden_effect = {
+		if = {
+			limit = {
+				has_variable = investiture_persuade_result
+				var:investiture_persuade_result = flag:swayed
+			}
+			send_interface_toast = {
+				title = pam_investiture_persuade_toast_title
+				left_icon = root
+				custom_tooltip = pam_investiture_persuade_toast_swayed_tt
+			}
+		}
+		else_if = {
+			limit = {
+				has_variable = investiture_persuade_result
+				var:investiture_persuade_result = flag:backfired
+			}
+			send_interface_toast = {
+				title = pam_investiture_persuade_toast_title
+				left_icon = root
+				custom_tooltip = pam_investiture_persuade_toast_backfired_tt
+			}
+		}
+	}
+}
+
+# Tally and fallback both use this on the faith
+pam_resolve_investiture_crisis_effect = {
+	# Swap hidden so the conclusion "Effects from ..." readout shows only the "Replaced X with Y" tooltip below.
+	hidden_effect = {
+		if = { limit = { has_doctrine = doctrine_clerical_succession_conditional } remove_doctrine = doctrine_clerical_succession_conditional }
+		add_doctrine = $DOCTRINE$
+		# add_doctrine hits only the main rite
+		every_faith_rite = {
+			limit = { rite_has_doctrine = doctrine_clerical_succession_conditional }
+			change_rite_doctrine = $DOCTRINE$
+		}
+	}
+	custom_tooltip = pam_investiture_resolution_$WINNER$_tt
+
+	# Bookkeeping hidden too, so the conclusion readout shows only the ruling above, not the faith-wide cleanup.
+	hidden_effect = {
+		# Clear committed stances (kowtow / CB) and the kowtow modifier across the faith.
+		every_faith_character = {
+			limit = {
+				OR = {
+					has_variable = investiture_stance
+					has_character_modifier = pam_kowtowed_to_pope_modifier
+				}
+			}
+			if = { limit = { has_variable = investiture_stance } remove_variable = investiture_stance }
+			if = { limit = { has_character_modifier = pam_kowtowed_to_pope_modifier } remove_character_modifier = pam_kowtowed_to_pope_modifier }
+		}
+
+		# Clear the pending-council signal so the situation no longer nudges a host.
+		if = { limit = { has_variable = investiture_council_pending } remove_variable = investiture_council_pending }
+	}
+
+	# Does not move the situation phase (only the tally does) so the fallback cannot change the chapter
+}
+
+pam_investiture_maybe_end_crisis_effect = {
+	situation:the_christian_church ?= {
+		if = {
+			limit = {
+				has_situation_top_phase_parameter = the_christian_church_investiture_controversy
+				pam_investiture_crisis_has_contested_faith_trigger = no
+			}
+			change_top_phase = { phase = reform_phase }
+			if = { limit = { has_variable = investiture_awaiting_council } remove_variable = investiture_awaiting_council }
+		}
+	}
+}
+
+pam_investiture_end_uncontested_crisis_effect = {
+	situation:the_christian_church ?= {
+		if = {
+			limit = {
+				has_situation_top_phase_parameter = the_christian_church_investiture_controversy
+				pam_main_power_faith_conditional_appointment_trigger = no
+			}
+			change_top_phase = { phase = reform_phase }
+			if = { limit = { has_variable = investiture_awaiting_council } remove_variable = investiture_awaiting_council }
+		}
+	}
+}
+
+pam_investiture_block_crisis_progress_effect = {
+	situation:the_christian_church ?= {
+		if = {
+			limit = {
+				OR = {
+					situation_current_phase = fragile_unity
+					situation_current_phase = reform_phase
+				}
+				pam_investiture_crisis_has_contested_faith_trigger = no
+			}
+			situation_top_sub_region = {
+				while = {
+					limit = { phase_takeover_points:investiture_crisis >= 100 }
+					add_takeover_phase_points = { phase = investiture_crisis points = -100 }
+				}
+				while = {
+					limit = { phase_takeover_points:investiture_crisis >= 10 }
+					add_takeover_phase_points = { phase = investiture_crisis points = -10 }
+				}
+				while = {
+					limit = { phase_takeover_points:investiture_crisis >= 1 }
+					add_takeover_phase_points = { phase = investiture_crisis points = -1 }
+				}
+			}
+		}
+	}
+}
+
+# When the timer runs out we fire this from the situation on_monthly
+pam_start_investiture_council_effect = {
+	religion:tyrism_religion = { #Warcraft
+		every_faith = {
+			limit = {
+				has_doctrine = doctrine_clerical_succession_conditional
+				exists = religious_head
+				NOT = { has_variable = investiture_council_pending }
+			}
+			# Self-clearing flag: if the backstop mis-fires, a later crisis can still convene a fresh council.
+			set_variable = { name = investiture_council_pending value = yes days = 1095 }
+			# $FAITH$ substitutes literally, so this would resolve to the player below without a saved scope
+			save_temporary_scope_as = investiture_pending_faith
+			pam_investiture_fire_event_for_participant_players_effect = {
+				EVENT = pam_the_christian_church.0058
+				FAITH = scope:investiture_pending_faith
+			}
+			pam_nudge_investiture_council_host_effect = yes
+		}
+	}
+}
+
+# Pulls the character off another activity without cancelling it
+pam_investiture_free_for_council_effect = {
+	save_temporary_scope_as = investiture_free_char
+	# remove_from_activity only works on attendees
+	# Hosts are skipped because their activity is invalidated separately
+	if = {
+		limit = {
+			exists = involved_activity
+			NOT = { involved_activity = { has_activity_type = activity_investiture_council } }
+			NOT = { involved_activity = { activity_host = scope:investiture_free_char } }
+		}
+		remove_from_activity = involved_activity
+	}
+	# can_cancel skips plans that cannot be cancelled, already cancelled or hosting the destination
+	if = {
+		limit = {
+			is_travelling = yes
+			current_travel_plan ?= { can_cancel = yes }
+		}
+		current_travel_plan = { cancel_travel_plan = yes }
+	}
+}
+
+# Busy or travelling players get event 0004 instead of being moved, while this stays on the faith
+pam_investiture_prepare_voters_effect = {
+	every_faith_character = {
+		limit = {
+			pam_valid_ecumenical_council_voter_trigger = yes
+			NOT = { this = faith.religious_head }
+		}
+		if = {
+			limit = { is_ai = yes }
+			pam_investiture_free_for_council_effect = yes
+			# Inside location = { } faith.religious_head is the province
+			if = {
+				limit = {
+					exists = scope:investiture_hof_capital
+					location ?= { squared_distance = { target = scope:investiture_hof_capital value > squared_distance_large } }
+				}
+				return_home = yes
+			}
+		}
+		else = {
+			if = {
+				limit = {
+					OR = {
+						is_travelling = yes
+						exists = involved_activity
+					}
+				}
+				trigger_event = pam_investiture_council_events.0004
+			}
+		}
+	}
+}
+
+# Activity scope, if it is not grand, invites only reach nearby people
+pam_investiture_council_force_gather_effect = {
+	scope:host.faith = {
+		every_faith_character = {
+			# We leave landless clergy to the normal invitation so they do not fill the guest list
+			limit = {
+				this != scope:host
+				is_ai = yes
+				is_adult = yes
+				is_healthy = yes
+				NOT = { government_has_flag = government_is_republic }
+				NOT = { government_has_flag = government_is_landless_adventurer }
+				NOT = { government_has_flag = government_is_mercenary }
+				OR = {
+					# Landed county+ prelates (see the trigger), heads of rite, and committed kowtow / CB voters.
+					pam_is_investiture_landed_prelate_trigger = yes
+					rite.head_of_rite ?= this
+					has_variable = investiture_stance
+				}
+			}
+			# is_available_adult excludes anyone already here, and adding an invitee mid-acceptance errors
+			pam_investiture_free_for_council_effect = yes
+			save_temporary_scope_as = investiture_gather_char
+			if = {
+				limit = {
+					is_available_adult = yes
+					NOT = {
+						scope:activity = {
+							any_invited_character = { this = scope:investiture_gather_char }
+						}
+					}
+				}
+				add_to_activity = scope:activity
+			}
+		}
+	}
+}
+
+# On the faith we use hosts' involved_activity rather than every_activity
+# every_activity also enumerates half-torn-down activities whose triggers error
+pam_investiture_cancel_competing_councils_effect = {
+	every_faith_character = {
+		limit = {
+			exists = involved_activity
+			involved_activity = { has_activity_type = activity_ecumenical_council }
+			involved_activity.activity_host ?= this
+			# Skip councils already cancelled by an earlier call this tick.
+			involved_activity = { NOT = { has_variable = investiture_cancelled } }
+		}
+		involved_activity = {
+			set_variable = { name = investiture_cancelled value = yes }
+			invalidate_activity = this
+		}
+	}
+}
+
+# Faith remains the working scope
+pam_nudge_investiture_council_host_effect = {
+	if = {
+		limit = { exists = religious_head.capital_province }
+		religious_head.capital_province = { save_scope_as = investiture_hof_capital }
+	}
+	if = {
+		# Preferred path: an available AI Head of Faith hosts (blocked ones fall through to an archbishop)
+		limit = {
+			religious_head = { pam_available_investiture_hof_ai_trigger = yes }
+		}
+		pam_investiture_cancel_competing_councils_effect = yes
+		religious_head = {
+			pam_investiture_free_for_council_effect = yes
+			add_character_flag = { flag = investiture_council_nominated years = 3 }
+			ai_attempt_to_host_activity = activity_investiture_council
+			# Retry until the council starts (or the backstop fires).
+			trigger_event = { id = pam_investiture_council_events.0091 days = pam_investiture_council_host_retry_days }
+		}
+		# Arm the ~2y backstop on the Head of Faith in case no council convenes.
+		religious_head = { trigger_event = { id = pam_investiture_council_events.0090 days = 730 } }
+	}
+	else_if = {
+		# When the Head of Faith is a player or truly unavailable, a landed AI archbishop hosts
+		# The host trigger leaves out the Head of Faith
+		limit = {
+			any_faith_character = { pam_valid_investiture_council_host_trigger = yes }
+		}
+		pam_investiture_cancel_competing_councils_effect = yes
+		ordered_faith_character = {
+			limit = { pam_valid_investiture_council_host_trigger = yes }
+			order_by = pam_investiture_council_host_score_value
+			max = 1
+			# Named in the player-HoF letter (0050) fired below.
+			save_scope_as = investiture_nominee_host
+			# We free them first, or a nominee still travelling or attending fails the first host attempt and idles
+			pam_investiture_free_for_council_effect = yes
+			add_character_flag = { flag = investiture_council_nominated years = 3 }
+			ai_attempt_to_host_activity = activity_investiture_council
+			# Retry until the council starts (or the backstop fires).
+			trigger_event = { id = pam_investiture_council_events.0091 days = pam_investiture_council_host_retry_days }
+		}
+		# Inform a player Head of Faith that the council is being convened on their behalf.
+		if = {
+			limit = { religious_head = { is_ai = no } }
+			religious_head = { trigger_event = pam_investiture_council_events.0050 }
+		}
+		# Arm the ~2y backstop on the Head of Faith.
+		religious_head = { trigger_event = { id = pam_investiture_council_events.0090 days = 730 } }
+	}
+	else = {
+		# No eligible host at all: resolve in absentia and notify players so the crisis always ends.
+		pam_investiture_council_backstop_effect = yes
+	}
+	# Ready the voters to attend (skipped if the crisis was just resolved in absentia, which clears pending).
+	if = {
+		limit = { has_variable = investiture_council_pending }
+		pam_investiture_prepare_voters_effect = yes
+	}
+}
+
+# What the Investiture panel expects from committed and default leanings, not the council tally
+pam_investiture_update_vote_estimate_effect = {
+	situation:the_christian_church ?= {
+		set_variable = { name = investiture_est_spiritual value = 0 }
+		set_variable = { name = investiture_est_temporal value = 0 }
+	}
+	religion:tyrism_religion = { #Warcraft
+		every_faith = {
+			limit = { has_doctrine = doctrine_clerical_succession_conditional }
+			every_faith_character = {
+				limit = { pam_valid_ecumenical_council_voter_trigger = yes }
+				if = {
+					limit = { pam_investiture_supports_spiritual_revocable_trigger = yes }
+					situation:the_christian_church ?= { change_variable = { name = investiture_est_spiritual add = 1 } }
+				}
+				else = {
+					situation:the_christian_church ?= { change_variable = { name = investiture_est_temporal add = 1 } }
+				}
+			}
+		}
+	}
+}
+
+# We decide in absentia for spiritual appointment so the crisis always ends, on the faith
+pam_investiture_council_backstop_effect = {
+	pam_resolve_investiture_crisis_effect = { WINNER = spiritual DOCTRINE = doctrine_clerical_succession_spiritual_fixed_appointment }
+	every_faith_character = {
+		limit = {
+			is_ai = no
+			is_landed = yes
+		}
+		send_interface_toast = {
+			title = pam_investiture_crisis_lapsed_toast
+			left_icon = this
+			custom_tooltip = pam_investiture_crisis_lapsed_tt
+		}
+	}
+}
+
+############################################################################################
+# Investiture open-conflict CB resolution (pam_investiture_conflict_cb). The losing side is forced onto the
+# winner's Clerical Appointment stance, which the end-of-crisis council reads as a locked vote.
+############################################################################################
+
+# Attacker won, and scope:war is guarded because the tooltip preview is built before a war exists
+pam_investiture_conflict_victory_effect = {
+	if = {
+		limit = { exists = scope:war }
+		scope:war = {
+			every_war_defender = {
+				limit = {
+					is_landed = yes
+					faith = scope:attacker.faith
+				}
+				add_to_list = pam_investiture_conflict_losers
+			}
+		}
+	}
+	pam_investiture_conflict_apply_forced_stance_effect = { WINNER = scope:attacker }
+}
+
+# Attacker lost, and scope:war is guarded because the tooltip preview is built before a war exists
+pam_investiture_conflict_defeat_effect = {
+	if = {
+		limit = { exists = scope:war }
+		scope:war = {
+			every_war_attacker = {
+				limit = {
+					is_landed = yes
+					faith = scope:defender.faith
+				}
+				add_to_list = pam_investiture_conflict_losers
+			}
+		}
+	}
+	pam_investiture_conflict_apply_forced_stance_effect = { WINNER = scope:defender }
+}
+
+# Locks the losers' council vote to $WINNER$'s stance
+pam_investiture_conflict_apply_forced_stance_effect = {
+	every_in_list = {
+		list = pam_investiture_conflict_losers
+		if = {
+			limit = { $WINNER$ = { pam_investiture_supports_spiritual_revocable_trigger = yes } }
+			set_variable = {
+				name = investiture_stance
+				value = flag:spiritual_revocable
+			}
+		}
+		else = {
+			set_variable = {
+				name = investiture_stance
+				value = flag:temporal_revocable
+			}
+		}
+		if = {
+			limit = { is_ai = no }
+			send_interface_toast = {
+				title = pam_investiture_conflict_forced_stance_toast
+				left_icon = $WINNER$
+				custom_tooltip = pam_investiture_conflict_forced_stance_tt
+			}
+		}
+	}
+}
+
+# Own path: the shared helper stands down on Saeculum Obscurum start while Great Schism is open
+# We tell only $FAITH$'s players, because the shared helper would tell every Christian player
+pam_investiture_fire_event_for_participant_players_effect = {
+	every_player = {
+		limit = {
+			faith = $FAITH$
+			OR = {
+				government_has_flag = government_is_theocracy
+				years_from_game_start >= 1
+			}
+			any_character_situation = {
+				this = situation:the_christian_church
+			}
+		}
+		trigger_event = $EVENT$
+	}
+}

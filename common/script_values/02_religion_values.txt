@@ -60,22 +60,6 @@ hostility_multiplier_righteous = 1
 hostility_multiplier_fundamentalist = 2
 hostility_multiplier_reduction_adaptive = -0.25
 
-heretical_defector_fervor_gain = 15 # How much fervor Old Faith gains when a ruler splits off to a New Heresy
-
-regional_heresy_factor = {
-	if = {
-		limit = { has_game_rule = default_regional_heresy }
-		value = 5
-	}
-	else_if = {
-		limit = { has_game_rule = strict_regional_heresy }
-		value = 200
-	}
-	else = {
-		value = 1
-	}
-}
-
 meditation_duration = 185 # In days
 
 local_shrine_duration = 14
@@ -99,14 +83,14 @@ head_of_faith_selection_weight = {
 	# Strong weight for preferred gender
 	if = {
 		limit = {
-			faith = { has_doctrine = doctrine_gender_male_dominated }
+			rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 			is_male = yes
 		}
 		add = 50
 	}
 	else_if = {
 		limit = {
-			faith = { has_doctrine = doctrine_gender_female_dominated }
+			rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 			is_female = yes
 		}
 		add = 50
@@ -164,26 +148,61 @@ demand_conversion_fervor_difference = {
 	subtract = faith.fervor
 }
 
+# Within the same faith we favour the mainline at high fervor and the others at low
+# Stays at 0 across faiths
+demand_conversion_rite_fervor_difference = {
+	value = 0
+	if = {
+		limit = {
+			scope:actor.faith = faith
+			scope:actor.rite != rite
+		}
+		if = {
+			limit = {
+				scope:actor = { rite = faith.main_rite }
+			}
+			add = {
+				value = scope:actor.faith.fervor
+				subtract = 50
+				divide = 2
+			}
+		}
+		else = {
+			subtract = {
+				value = scope:actor.faith.fervor
+				subtract = 50
+				divide = 2
+			}
+		}
+	}
+}
+
 demand_conversion_tenet_impact = {
 	value = 0
 	if = {
 		limit = {
-			faith = {
-				has_doctrine_parameter = sanctioned_false_conversion
-				NOT = { has_doctrine_parameter = unattractive_for_character_conversions }
+			rite = {
+				rite_has_parameter = sanctioned_false_conversion
+				NOT = { rite_has_parameter = unattractive_for_character_conversions }
 			}
 		}
 		add = -20
 	}
 	if = {
 		limit = {
-			faith = { has_doctrine_parameter = tenet_adaptive_conversion_resistance }
+			rite = { rite_has_parameter = tenet_adaptive_conversion_resistance }
 		}
 		add = -20
 	}
 	if = {
 		limit = {
-			faith = { has_doctrine_parameter = unattractive_for_character_conversions }
+			rite = { rite_has_parameter = tenet_literalism_conversion_resistance }
+		}
+		add = -20
+	}
+	if = {
+		limit = {
+			rite = { rite_has_parameter = unattractive_for_character_conversions }
 		}
 		add = 20
 	}
@@ -195,6 +214,9 @@ demand_conversion_likelihood_calculation = {
 
 	#Calculate each faith's fervor
 	add = demand_conversion_fervor_difference
+
+	#Within-faith rite spread (mainline benefits at high fervor, non-mainline at low fervor; zero across faith boundaries)
+	add = demand_conversion_rite_fervor_difference
 
 	#Calculate various Doctrines and Tenets
 	add = demand_conversion_tenet_impact
@@ -247,6 +269,18 @@ demand_conversion_likelihood_calculation = {
 			scope:actor = { has_trait = divine_blood }
 		}
 		add = 15
+	}
+	if = {
+		limit = {
+			scope:actor = { has_fulfillment_parameter = sp_easier_conversion }
+		}
+		add = spiritual_fulfillment_easier_conversion_value
+	}
+	if = {
+		limit = {
+			scope:actor = { has_fulfillment_parameter = sp_harder_conversion }
+		}
+		add = spiritual_fulfillment_harder_conversion_value
 	}
 	
 	if = {
@@ -376,6 +410,14 @@ claim_piety_value = {
 			}
 			multiply = 8
 		}
+		if = {
+			limit = {
+				scope:target = {
+					tier = tier_hegemony
+				}
+			}
+			multiply = 16
+		}
 		add = {
 			value = scope:actor.sub_realm_size
 			multiply = 10
@@ -430,8 +472,8 @@ great_holy_war_target_kingdom_weight = {
 		# For every county with a GHWable liege...
 		limit = {
 			tier = tier_county
-			scope:the_faith = {
-				is_hostile_enough_for_holy_war_trigger = { FAITH = prev.holder.top_liege.faith }
+			scope:the_faith.main_rite = {
+				is_hostile_enough_for_holy_war_trigger = { RITE = prev.holder.top_liege.rite }
 			}
 		}
 		# ... Add 1 to the weighting.
@@ -655,14 +697,14 @@ great_holy_war_target_kingdom_weight = {
 	# If the HoF is landed, use them.
 	if = {
 		limit = {
-			scope:the_faith.religious_head = { is_landed = yes }
+			scope:the_faith.religious_head = { is_playable_character = yes }
 		}
 		if = {
 			limit = {
 				title_capital_county = {
-					squared_distance >= {
+					squared_distance = {
 						target = scope:the_faith.religious_head.capital_county
-						value = ghw_target_distance_03_threshold
+						value >= ghw_target_distance_03_threshold
 					}
 				}
 			}
@@ -719,8 +761,8 @@ great_holy_war_target_kingdom_weight = {
 							target = scope:the_faith
 						}
 					}
-					scope:the_faith = {
-						is_hostile_enough_for_holy_war_trigger = { FAITH = top_liege.faith }
+					scope:the_faith.main_rite = {
+						is_hostile_enough_for_holy_war_trigger = { RITE = prev.top_liege.rite }
 					}
 				}
 			}
@@ -800,6 +842,29 @@ holy_war_defensive_join_value = {
 			value = 200
 		}
 	}
+
+	if = {
+		limit = {
+			scope:defender = {
+				government_has_flag = government_uses_church_authority
+			}
+			scope:attacker = {
+				NOT = { government_has_flag = government_uses_church_authority }
+			}
+		}
+		add = {
+			desc = "same_faith_theocracy"
+			value = 200
+		}
+	}
+
+	if = {
+		limit = { same_faith_clergy_war_trigger = yes }
+		add = {
+			desc = "same_faith_clergy_dispute"
+			value = -100
+		}
+	}
 	
 	if = {
 		limit = {
@@ -843,18 +908,20 @@ holy_war_defensive_join_value = {
 faith_conversion_fervor_mult = {
 	value = define:NFaith|MAX_FERVOR
 	subtract = fervor
-	multiply = define:NFaith|FAITH_CREATION_FERVOR_DISCOUNT_PER_MISSING_FERVOR
-	max = define:NFaith|FAITH_CREATION_FERVOR_DISCOUNT_MAX
+	multiply = define:NRite|RITE_CREATION_FERVOR_DISCOUNT_PER_MISSING_FERVOR
+	max = define:NRite|RITE_CREATION_FERVOR_DISCOUNT_MAX
 	divide = define:NFaith|MAX_FERVOR
 }
 
 # Modify (multiply) the doctrine cost when creating a faith.
 # The returned value is interpreted as a multiplicative modifier (e.g. 0.5 means +50% cost).
 # scope:character = the creation character
+# scope:old_rite = the rite the character had before creating
 # scope:old_faith = the faith the character is converting from
-faith_creation_cost_mult = {
+rite_creation_cost_mult = {
 	subtract = {
 		value = scope:old_faith.faith_conversion_fervor_mult
+		multiply = 0.5
 		desc = "faith_creation_cost_fervor_impact"
 		format = "BREAKDOWN_FORMAT_PIETY_PERCENTAGE_POSITIVE_IS_BAD"
 	}
@@ -929,8 +996,8 @@ faith_conversion_cost_mult = {
 	# Pluralistic faiths have it easier converting to each other
 	if = {
 		limit = {
-			scope:new_faith = { has_doctrine = doctrine_pluralism_pluralistic }
-			scope:character.faith = { has_doctrine = doctrine_pluralism_pluralistic }
+			scope:new_faith.main_rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
+			scope:character.rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
 		}
 		multiply = {
 			value = 1
@@ -944,7 +1011,7 @@ faith_conversion_cost_mult = {
 	# Pluralistic faiths have it easier converting
 	else_if = {
 		limit = {
-			scope:character.faith = { has_doctrine = doctrine_pluralism_pluralistic }
+			scope:character.rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
 		}
 		multiply = {
 			value = 1
@@ -1150,15 +1217,9 @@ faith_conversion_cost_mult = {
 	if = {
 		limit = {
 			scope:new_faith = {
-				NOT = {
-					has_doctrine_parameter = unreformed
-				}
+				NOT = { has_doctrine_parameter = unreformed }
 			}
-			scope:character = {
-				faith = {
-					has_doctrine_parameter = unreformed
-				}
-			}
+			scope:character.faith = { has_doctrine_parameter = unreformed }
 		}
 		multiply = {
 			value = 1
@@ -1404,30 +1465,6 @@ faith_conversion_cost_mult = {
 			}
 		}
 	}
-	# Warcraft
-	# if = {
-	#	limit = {
-	#		scope:new_faith = {
-	#			religion = { is_in_family = rf_pagan }
-	#		}
-	#		scope:character = {
-	#			faith = {
-	#				religion = {
-	#					is_in_family = rf_pagan
-	#					NOT = { this = scope:new_faith.religion}
-	#				}
-	#			}
-	#		}
-	#	}
-	#	multiply = {
-	#		value = 1
-	#		add = {
-	#			desc = faith_conversion_cost_inside_religion_family
-	#			format = "BREAKDOWN_FORMAT_PIETY_PERCENTAGE_POSITIVE_IS_BAD"
-	#			value = 1
-	#		}
-	#	}
-	# }
 
 	#######################################
 	# Misc penalties #
@@ -2044,7 +2081,9 @@ faith_conversion_cost_mult = {
 					}
 				}
 				scope:new_faith = {
-					has_doctrine = tenet_pacifism 
+					main_rite = {
+						rite_has_tenet = tenet_pacifism 
+					}
 				}
 			}
 		}
@@ -2091,6 +2130,101 @@ reincarnation_chance = 4
 holy_sites_to_create_temporal_head_of_faith = 1
 holy_sites_to_create_spiritual_head_of_faith = 1 
 
+create_hof_non_mainline_rite_cost_mult = 2
+create_hof_no_eminent_holy_site_cost_mult = 1.5
+create_hof_ai_cost_mult = 0
+
+# ROOT = the character establishing the Head of Faith
+create_hof_piety_cost = {
+	value = 0
+	if = {
+		limit = {
+			faith = { has_doctrine_parameter = temporal_head_of_faith }
+		}
+		if = {
+			limit = {
+				rite = {
+					OR = {
+						rite_has_doctrine = muhammad_succession_sunni_doctrine
+						rite_has_doctrine = muhammad_succession_shia_doctrine
+					}
+				}
+			}
+			# Very expensive for a non-sayyid to become Caliph, free otherwise
+			if = {
+				limit = { NOT = { has_trait = sayyid } }
+				add = massive_piety_value
+			}
+		}
+		else = {
+			add = major_piety_value
+		}
+	}
+	else_if = {
+		limit = {
+			faith = { has_doctrine_parameter = spiritual_head_of_faith }
+		}
+		add = 200
+		# The mainline rite gets an edge, but wealthy non-mainline rites are not locked out
+		if = {
+			limit = {
+				NOT = { rite = faith.main_rite }
+			}
+			multiply = create_hof_non_mainline_rite_cost_mult
+		}
+		if = {
+			limit = {
+				faith = {
+					NOT = {
+						any_eminent_holy_site = {
+							holy_site_county = {
+								is_holy_site_controlled_by = root
+								holder.faith = root.faith
+							}
+						}
+					}
+				}
+			}
+			multiply = create_hof_no_eminent_holy_site_cost_mult
+		}
+	}
+	if = {
+		limit = { is_ai = yes }
+		multiply = create_hof_ai_cost_mult
+	}
+}
+
+# ROOT = the character establishing the Head of Faith
+create_hof_gold_cost = {
+	value = 0
+	if = {
+		limit = {
+			faith = { has_doctrine_parameter = spiritual_head_of_faith }
+		}
+		add = medium_gold_max_value
+		multiply = 0.5
+		if = {
+			limit = {
+				faith = {
+					NOT = {
+						any_eminent_holy_site = {
+							holy_site_county = {
+								is_holy_site_controlled_by = root
+								holder.faith = root.faith
+							}
+						}
+					}
+				}
+			}
+			multiply = create_hof_no_eminent_holy_site_cost_mult
+		}
+	}
+	if = {
+		limit = { is_ai = yes }
+		multiply = create_hof_ai_cost_mult
+	}
+}
+
 faith_military_strength = {
 	every_ruler = {
 		limit = {
@@ -2107,20 +2241,30 @@ ask_to_take_vows_piety_cost = {
 	value = {
 		add = medium_piety_value
 		if = {
-			limit = { exists = scope:actor }
+			limit = { exists = scope:puppet_or_actor }
 			if = {
 				limit = {
 					OR = {
-						is_child_of = scope:actor
-						"scope:actor.primary_title.place_in_line_of_succession(scope:recipient)" <= 3
+						is_child_of = scope:puppet_or_actor
+						"scope:puppet_or_actor.primary_title.place_in_line_of_succession(scope:recipient)" <= 3
 					}
 				}
 				add = major_piety_value
 			}
 		}
 		else_if = {
-			limit = { is_close_family_of = scope:actor }
+			limit = {
+				exists = scope:puppet_or_actor
+				is_close_family_of = scope:puppet_or_actor
+			}
 			add = medium_piety_value
+		}
+		if = {
+			limit = {
+				exists = scope:puppet_or_actor
+				scope:puppet_or_actor = { has_character_modifier = pam_oblate_patron_modifier }
+			}
+			multiply = 0.5
 		}
 	}
 }
@@ -2210,8 +2354,8 @@ great_holy_war_target_kingdom_weight_simplified = {
 							target = scope:the_faith
 						}
 					}
-					scope:the_faith = {
-						is_hostile_enough_for_holy_war_trigger = { FAITH = top_liege.faith }
+					scope:the_faith.main_rite = {
+						is_hostile_enough_for_holy_war_trigger = { RITE = prev.top_liege.rite }
 					}
 				}
 			}
@@ -2223,7 +2367,7 @@ great_holy_war_target_kingdom_weight_simplified = {
 holy_site_reform_tracker_value = {
 	value = 0
 	faith = {
-		every_holy_site = {
+		every_holy_site_barony = {
 			limit = {
 				county = {
 					save_temporary_scope_as = current_holy_site
@@ -2241,6 +2385,368 @@ holy_site_reform_tracker_value = {
 					holder.faith = root.faith
 				}
 			}
+			add = 1
+		}
+	}
+}
+
+############################
+# Faith Rite Growth System #
+############################
+
+@rite_growth_counties_per_rite = 70
+@rite_growth_min_cooldown_years = 3
+@rite_growth_max_cooldown_years = 18
+@rite_growth_fallback_cooldown_years = 5
+@rite_growth_grace_period_years = 10
+@rite_growth_heresy_cooldown_years = 3
+@rite_growth_fallback_min_counties = 50
+@rite_growth_soft_cap_overshoot = 2
+
+# @constants above are the Default branched_rite frequency/amount settings
+# Frequency scales spawn and heresy cooldowns
+# Amount scales target count and the minimum size
+rite_growth_counties_per_rite = {
+	if = {
+		limit = { has_game_rule = much_fewer_branched_rite_amount }
+		value = 140
+	}
+	else_if = {
+		limit = { has_game_rule = fewer_branched_rite_amount }
+		value = 100
+	}
+	else_if = {
+		limit = { has_game_rule = more_branched_rite_amount }
+		value = 50
+	}
+	else_if = {
+		limit = { has_game_rule = much_more_branched_rite_amount }
+		value = 35
+	}
+	else = {
+		value = @rite_growth_counties_per_rite
+	}
+}
+
+rite_growth_min_cooldown_years = {
+	if = {
+		limit = { has_game_rule = much_less_branched_rite_frequency }
+		value = 8
+	}
+	else_if = {
+		limit = { has_game_rule = less_branched_rite_frequency }
+		value = 5
+	}
+	else_if = {
+		limit = { has_game_rule = more_branched_rite_frequency }
+		value = 2
+	}
+	else_if = {
+		limit = { has_game_rule = much_more_branched_rite_frequency }
+		value = 1
+	}
+	else = {
+		value = @rite_growth_min_cooldown_years
+	}
+}
+
+rite_growth_max_cooldown_years = {
+	if = {
+		limit = { has_game_rule = much_less_branched_rite_frequency }
+		value = 45
+	}
+	else_if = {
+		limit = { has_game_rule = less_branched_rite_frequency }
+		value = 27
+	}
+	else_if = {
+		limit = { has_game_rule = more_branched_rite_frequency }
+		value = 12
+	}
+	else_if = {
+		limit = { has_game_rule = much_more_branched_rite_frequency }
+		value = 8
+	}
+	else = {
+		value = @rite_growth_max_cooldown_years
+	}
+}
+
+# In faith scope, how many counties the fallback pulse needs
+rite_growth_fallback_min_counties = {
+	if = {
+		limit = { has_game_rule = much_fewer_branched_rite_amount }
+		value = 150
+	}
+	else_if = {
+		limit = { has_game_rule = fewer_branched_rite_amount }
+		value = 100
+	}
+	else_if = {
+		limit = { has_game_rule = more_branched_rite_amount }
+		value = 40
+	}
+	else_if = {
+		limit = { has_game_rule = much_more_branched_rite_amount }
+		value = 30
+	}
+	else = {
+		value = @rite_growth_fallback_min_counties
+	}
+}
+
+# An archbishop needs a see at least this big to found a rite, since a tiny one cannot spread it
+rite_growth_min_clerical_region_size = 5
+
+# Faith scope. How many distinct rites the faith should support.
+rite_growth_target_rite_count = {
+	value = -1 # The mainline rite doesn't count
+	add = {
+		value = num_county_followers
+		divide = rite_growth_counties_per_rite
+	}
+	floor = yes
+	min = 0
+}
+
+# Faith scope. Number of rites currently present on the map (>=1 county).
+rite_growth_active_rite_count = {
+	value = -1 # The mainline rite doesn't count
+	every_faith_rite = {
+		limit = { rite_counties >= 1 }
+		add = 1
+	}
+	min = 0
+}
+
+# Faith scope. How many more rites the faith still needs to reach target.
+rite_growth_rites_needed = {
+	value = rite_growth_target_rite_count
+	subtract = rite_growth_active_rite_count
+	min = 0
+}
+
+# Faith scope. A sort of 'soft cap' for rites.
+rite_growth_rites_soft_max_cap = {
+	value = rite_growth_rites_needed
+	if = {
+		limit = { has_game_rule = much_fewer_branched_rite_amount }
+		add = 0
+	}
+	else_if = {
+		limit = { has_game_rule = fewer_branched_rite_amount }
+		add = 1
+	}
+	else_if = {
+		limit = { has_game_rule = more_branched_rite_amount }
+		add = 3
+	}
+	else_if = {
+		limit = { has_game_rule = much_more_branched_rite_amount }
+		add = 4
+	}
+	else = {
+		add = @rite_growth_soft_cap_overshoot
+	}
+}
+
+# After a spawn in faith scope, cooldown is shorter when more rites are needed
+# Never below a few years and never above the default
+rite_growth_cooldown_days = {
+	value = rite_growth_max_cooldown_years
+	divide = {
+		value = rite_growth_rites_needed
+		min = 1
+	}
+	min = rite_growth_min_cooldown_years
+	max = rite_growth_max_cooldown_years
+	multiply = 365
+}
+
+# Shorter cooldown for faith_rite_additional_growth_chance_pulse so at-target faiths can still trickle
+rite_growth_fallback_cooldown_days = {
+	if = {
+		limit = { has_game_rule = much_less_branched_rite_frequency }
+		value = 12
+	}
+	else_if = {
+		limit = { has_game_rule = less_branched_rite_frequency }
+		value = 8
+	}
+	else_if = {
+		limit = { has_game_rule = more_branched_rite_frequency }
+		value = 3
+	}
+	else_if = {
+		limit = { has_game_rule = much_more_branched_rite_frequency }
+		value = 2
+	}
+	else = {
+		value = @rite_growth_fallback_cooldown_years
+	}
+	multiply = 365
+}
+
+# Grace days a new rite is shielded from chaplain conversion, missionaries, and sway
+rite_growth_grace_period_days = {
+	value = @rite_growth_grace_period_years
+	multiply = 365
+}
+
+# After a heresy splits off we wait, otherwise the pulse just fills the gap again within a year
+rite_growth_heresy_cooldown_days = {
+	if = {
+		limit = { has_game_rule = much_less_branched_rite_frequency }
+		value = 8
+	}
+	else_if = {
+		limit = { has_game_rule = less_branched_rite_frequency }
+		value = 5
+	}
+	else_if = {
+		limit = { has_game_rule = more_branched_rite_frequency }
+		value = 2
+	}
+	else_if = {
+		limit = { has_game_rule = much_more_branched_rite_frequency }
+		value = 1
+	}
+	else = {
+		value = @rite_growth_heresy_cooldown_years
+	}
+	multiply = 365
+}
+
+# Rite scope: post-spawn doctrinal push, stepped by current divergence
+rite_growth_spawn_doctrine_divergence = {
+	value = 5
+	if = {
+		limit = { faith = { has_doctrine_parameter = no_head_of_faith } }
+		add = 15
+	}
+	if = {
+		limit = { faith.main_rite = { rite_has_parameter = pluralism_pluralistic_resistant_to_heresy } }
+		add = 10
+	}
+	if = {
+		limit = {
+			OR = {
+				faith = { has_doctrine_parameter = no_head_of_faith }
+				faith.main_rite = { rite_has_parameter = pluralism_pluralistic_resistant_to_heresy }
+			}
+		}
+		add = 5
+	}
+	if = {
+		limit = { "divergence(faith.main_rite)" >= 10 }
+		add = 5
+	}
+	if = {
+		limit = { "divergence(faith.main_rite)" >= 20 }
+		add = 5
+	}
+	if = {
+		limit = { "divergence(faith.main_rite)" >= 30 }
+		add = 5
+	}
+	# Held back so a new rite cannot be founded already past the heresy threshold
+	max = {
+		value = faith.heresy_threshold
+		subtract = "divergence(faith.main_rite)"
+		subtract = 5
+	}
+	min = 0
+}
+
+# Founding sweep budget rolls for rite_growth.0010 (kings consume 3 points, dukes 2, counts 1).
+rite_growth_spread_budget_roll_1 = 20
+rite_growth_spread_budget_roll_2 = 25
+rite_growth_spread_budget_roll_3 = 30
+rite_growth_spread_budget_roll_4 = 35
+rite_growth_spread_budget_roll_5 = 40
+
+# Fervor for a faith created by a rite diverging too far (kindled from 0 on creation, matches BASE_FERVOR)
+diverged_faith_starting_fervor_value = 50
+
+# Examples (heresy_threshold): 50 -> 50; 80 -> 80.
+faith_heresy_threshold = {
+	value = faith.heresy_threshold
+}
+
+# Examples (heresy_threshold): 50 -> 5; 80 -> 8.
+faith_heresy_threshold_divided_by_10 = {
+	value = faith.heresy_threshold
+	divide = 10
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 10; 80 -> 16.
+faith_heresy_threshold_divided_by_5 = {
+	value = faith.heresy_threshold
+	divide = 5
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 15; 80 -> 24.
+faith_heresy_threshold_times_3_over_10 = {
+	value = faith.heresy_threshold
+	multiply = 3
+	divide = 10
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 20; 80 -> 32.
+faith_heresy_threshold_times_2_over_5 = {
+	value = faith.heresy_threshold
+	multiply = 2
+	divide = 5
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 25; 80 -> 40.
+faith_heresy_threshold_divided_by_2 = {
+	value = faith.heresy_threshold
+	divide = 2
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 30; 80 -> 48.
+faith_heresy_threshold_times_3_over_5 = {
+	value = faith.heresy_threshold
+	multiply = 3
+	divide = 5
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 35; 80 -> 56.
+faith_heresy_threshold_times_7_over_10 = {
+	value = faith.heresy_threshold
+	multiply = 7
+	divide = 10
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 40; 80 -> 64.
+faith_heresy_threshold_times_4_over_5 = {
+	value = faith.heresy_threshold
+	multiply = 4
+	divide = 5
+	floor = yes
+}
+
+# Examples (heresy_threshold): 50 -> 65; 80 -> 104.
+faith_heresy_threshold_times_13_over_10 = {
+	value = faith.heresy_threshold
+	multiply = 13
+	divide = 10
+	floor = yes
+}
+
+rite_holy_sites = {
+	save_temporary_scope_as = temp_rite
+	faith = {
+		every_holy_site = {
+			limit = { holy_site_county.holder.rite = scope:temp_rite }
 			add = 1
 		}
 	}

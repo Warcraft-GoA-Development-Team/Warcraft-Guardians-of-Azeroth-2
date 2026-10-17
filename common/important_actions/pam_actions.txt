@@ -1,0 +1,1574 @@
+﻿# PAM player alerts for excommunication.
+#
+# action_excommunicated_recovery - shown while excommunicated. Click opens the right absolution path local bishop (Declaration of Repentance) OR travel-to-Rome petition (Lift Excommunication).
+# action_excommunication_at_risk - warns the player they may be excommunicated soon.
+# action_losing_realm_to_clerical_region - warns the player they may lose their current land if inheriting a region
+#
+action_excommunicated_recovery = {
+	type = alert
+	icon = action_take_decision
+	priority = 900
+
+	check_create_action = {
+		if = {
+			limit = {
+				has_pam_dlc_trigger = yes
+				has_trait = excommunicated
+			}
+			# Find a local bishop for the Declaration of Repentance path (skipped if player must petition Rome).
+			excommunicated_recovery_find_cleric_effect = yes
+			if = {
+				limit = {
+					exists = scope:repentance_cleric
+				}
+				try_create_important_action = {
+					important_action_type = action_excommunicated_recovery
+					actor = root
+					recipient = scope:repentance_cleric
+				}
+			}
+			# Still show the alert even with no bishop found; description explains other options.
+			else = {
+				try_create_important_action = {
+					important_action_type = action_excommunicated_recovery
+					actor = root
+				}
+			}
+		}
+	}
+
+	effect = {
+		# Year of penance: no absolution yet; tell the player to wait.
+		if = {
+			limit = {
+				has_character_modifier = recent_excommunication
+			}
+			send_interface_toast = {
+				type = event_toast_text_bad
+				title = action_excommunicated_recovery_penance_toast
+				desc = action_excommunicated_recovery_penance_toast_desc
+				left_icon = root
+			}
+		}
+		# Must petition the Head of Faith (kings+, or anyone the Head of Faith excommunicated personally)
+		# We save religious_head_or_challenger, not religious_head
+		# Antipope followers opened an empty window otherwise
+		else_if = {
+			limit = {
+				petition_head_of_faith_repentance_requires_petition_trigger = yes
+			}
+			petition_head_of_faith_save_religious_authority_effect = { SCOPE = petition_religious_authority }
+			open_interaction_window = {
+				interaction = petition_head_of_faith_repentance_setup_interaction
+				actor = root
+				recipient = scope:petition_religious_authority
+			}
+		}
+		# Local excommunication: open Declaration of Repentance with the bishop we found earlier.
+		else_if = {
+			limit = {
+				exists = scope:recipient
+			}
+			open_interaction_window = {
+				interaction = declaration_of_repentance_interaction
+				actor = scope:actor
+				recipient = scope:recipient
+			}
+		}
+		# Fallback if no bishop was stored on the alert when it was created.
+		else = {
+			excommunicated_recovery_find_cleric_effect = yes
+			if = {
+				limit = {
+					exists = scope:repentance_cleric
+				}
+				open_interaction_window = {
+					interaction = declaration_of_repentance_interaction
+					actor = root
+					recipient = scope:repentance_cleric
+				}
+			}
+			else = {
+				send_interface_toast = {
+					type = event_toast_text_bad
+					title = action_excommunicated_recovery_no_cleric_toast
+					desc = action_excommunicated_recovery_no_cleric_toast_desc
+					left_icon = root
+				}
+			}
+		}
+	}
+}
+
+# Warns the player before excommunication lands: hostile Pope, or a neighbor who could request it.
+action_excommunication_at_risk = {
+	priority = 400
+	combine_into_one = yes
+	is_dangerous = yes
+	type = action
+	icon = action_take_decision
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				exists = faith.religious_head
+				NOR = {
+					has_trait = excommunicated
+					faith.religious_head = root
+				}
+				faith = { faith_has_sacraments_central_trigger = yes }
+				faith = faith.religious_head.faith
+				# No warning for an antipope's obedience, which the Pope they rejected cannot excommunicate
+				NOT = {
+					pam_antipope_protected_from_excommunication_trigger = { EXCOMMUNICATOR = faith.religious_head }
+				}
+				OR = {
+					has_relation_rival = faith.religious_head
+					has_relation_nemesis = faith.religious_head
+					is_at_war_with = faith.religious_head
+					AND = {
+						opinion = {
+							target = faith.religious_head
+							value < 0
+						}
+						any_neighboring_top_liege_realm_owner = {
+							faith = root.faith
+							NOT = { this = root }
+							OR = {
+								has_relation_rival = root
+								has_relation_nemesis = root
+								is_at_war_with = root
+							}
+							root = { save_temporary_scope_as = secondary_recipient }
+							save_temporary_scope_as = puppet_or_actor
+							piety >= request_excommunication_piety_cost_value
+						}
+					}
+				}
+				NOR = {
+					AND = {
+						opinion = {
+							target = faith.religious_head
+							value >= 50
+						}
+						NOR = {
+							has_relation_rival = faith.religious_head
+							has_relation_nemesis = faith.religious_head
+							is_at_war_with = faith.religious_head
+						}
+					}
+				}
+			}
+			# Pope may excommunicate you directly.
+			if = {
+				limit = {
+					OR = {
+						has_relation_rival = faith.religious_head
+						has_relation_nemesis = faith.religious_head
+						is_at_war_with = faith.religious_head
+					}
+				}
+				try_create_important_action = {
+					important_action_type = action_excommunication_at_risk
+					actor = root
+					recipient = faith.religious_head
+					secondary_recipient = faith.religious_head
+				}
+			}
+			# A hostile neighbor with enough piety could request your excommunication.
+			if = {
+				limit = {
+					opinion = {
+						target = faith.religious_head
+						value < 0
+					}
+				}
+				every_neighboring_top_liege_realm_owner = {
+					limit = {
+						faith = root.faith
+						NOT = { this = root }
+						OR = {
+							has_relation_rival = root
+							has_relation_nemesis = root
+							is_at_war_with = root
+						}
+						root = { save_temporary_scope_as = secondary_recipient }
+						save_temporary_scope_as = puppet_or_actor
+						piety >= request_excommunication_piety_cost_value
+					}
+					try_create_important_action = {
+						important_action_type = action_excommunication_at_risk
+						actor = root
+						recipient = this
+						secondary_recipient = root.faith.religious_head
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		if = {
+			limit = { exists = scope:secondary_recipient }
+			scope:secondary_recipient = {
+				open_view_data = {
+					view = character
+					player = scope:actor
+				}
+			}
+		}
+	}
+}
+
+# warns the player they may lose their current land if inheriting a region
+action_losing_realm_to_clerical_region = {
+	priority = 450
+	combine_into_one = no
+	is_dangerous = yes
+	type = alert
+	icon = action_take_decision
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				is_in_line_for_external_clerical_region = yes
+			}
+			try_create_important_action = {
+				important_action_type = action_losing_realm_to_clerical_region
+				actor = root
+			}
+		}
+	}
+
+	effect = {
+		faith = {
+			random_clerical_region_title = {
+				limit = {
+					not = {
+						root = {
+							has_clerical_region_in_realm = prev
+						}
+					}
+					any_title_heir = {
+						this = root
+					}
+					"place_in_line_of_succession(root)" = 1
+				}
+				open_view_data = { view = title_view_window }
+			}
+		}
+	}
+}
+
+action_in_line_for_local_clerical_region = {
+	type = action
+	icon = action_take_decision
+	priority = 300
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				is_landed = yes
+				government_has_flag = government_is_theocracy
+				capital_county ?= {
+					clerical_region_title ?= {
+						is_local_clerical_region_succession_notification_trigger = { CHARACTER = root }
+					}
+				}
+			}
+			capital_county.clerical_region_title = {
+				try_create_important_action = {
+					important_action_type = action_in_line_for_local_clerical_region
+					actor = root
+					recipient = holder
+					landed_title = this
+				}
+			}
+		}
+	}
+
+	effect = {
+		scope:landed_title = {
+			open_view_data = { view = title_view_window }
+		}
+	}
+}
+
+action_can_request_new_clerical_region = {
+	type = action
+	icon = action_take_decision
+	priority = 400
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				government_has_flag = government_is_ecclesiastical
+				is_landed = yes
+				faith = { has_doctrine_parameter = has_clerical_regions }
+				NOT = {
+					any_held_title = {
+						has_clerical_region = yes
+					}
+				}
+				capital_county ?= {
+					NOT = { exists = clerical_region_title }
+				}
+			}
+			if = {
+				limit = { exists = religious_head_or_challenger }
+				religious_head_or_challenger = {
+					save_temporary_scope_as = clerical_region_authority
+				}
+			}
+			else_if = {
+				limit = { exists = faith.main_rite.head_of_rite }
+				faith.main_rite.head_of_rite = {
+					save_temporary_scope_as = clerical_region_authority
+				}
+			}
+			if = {
+				limit = { exists = scope:clerical_region_authority }
+				ordered_held_title = {
+					order_by = {
+						value = tier
+						if = {
+							limit = { title_capital_county = root.capital_county }
+							add = 100
+						}
+					}
+					max = 1
+					check_range_bounds = no
+					limit = {
+						pam_valid_new_clerical_region_anchor_trigger = { PETITIONER = root }
+						save_temporary_scope_as = clerical_region_anchor_candidate
+						root = {
+							is_character_interaction_potentially_accepted = {
+								interaction = request_ecclesiastical_title_creation_interaction
+								recipient = scope:clerical_region_authority
+								target_title = scope:clerical_region_anchor_candidate
+							}
+						}
+					}
+					save_temporary_scope_as = clerical_region_anchor
+					root = {
+						try_create_important_action = {
+							important_action_type = action_can_request_new_clerical_region
+							actor = root
+							recipient = scope:clerical_region_authority
+							target_title = scope:clerical_region_anchor
+						}
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = request_ecclesiastical_title_creation_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+			target_title = scope:target_title
+		}
+	}
+}
+
+action_can_request_clerical_region_expansion = {
+	type = action
+	icon = action_take_decision
+	priority = 400
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				is_landed = yes
+				pam_government_is_religious_playable_trigger = yes
+				faith = { has_doctrine_parameter = has_clerical_regions }
+				NOT = { pam_is_clerical_title_authority_trigger = yes }
+				capital_county ?= {
+					clerical_region_title ?= {
+						has_clerical_region = yes
+						is_head_of_faith = no
+						holder ?= root
+					}
+				}
+			}
+			if = {
+				limit = { exists = religious_head_or_challenger }
+				religious_head_or_challenger = {
+					save_temporary_scope_as = clerical_region_authority
+				}
+			}
+			else_if = {
+				limit = { exists = faith.main_rite.head_of_rite }
+				faith.main_rite.head_of_rite = {
+					save_temporary_scope_as = clerical_region_authority
+				}
+			}
+			if = {
+				limit = {
+					exists = scope:clerical_region_authority
+					scope:clerical_region_authority != root
+				}
+				capital_county.clerical_region_title = {
+					save_temporary_scope_as = acting_clerical_region
+					every_county_in_clerical_region = {
+						every_neighboring_county = {
+							limit = {
+								exists = duchy
+								NOT = { clerical_region_title ?= scope:acting_clerical_region }
+							}
+							duchy = {
+								if = {
+									limit = {
+										NOR = {
+											is_in_list = preferred_clerical_region_expansion_targets
+											is_in_list = clerical_region_expansion_targets
+										}
+										save_temporary_scope_as = clerical_region_expansion_candidate
+										root = {
+											has_variable_list = clergy_expands
+											any_in_list = {
+												variable = clergy_expands
+												this = scope:clerical_region_expansion_candidate
+											}
+										}
+									}
+									add_to_temporary_list = preferred_clerical_region_expansion_targets
+								}
+								else_if = {
+									limit = {
+										NOR = {
+											is_in_list = preferred_clerical_region_expansion_targets
+											is_in_list = clerical_region_expansion_targets
+										}
+									}
+									add_to_temporary_list = clerical_region_expansion_targets
+								}
+							}
+						}
+					}
+				}
+				ordered_in_list = {
+					list = preferred_clerical_region_expansion_targets
+					max = 1
+					check_range_bounds = no
+					limit = {
+						save_temporary_scope_as = clerical_region_expansion_candidate
+						root = {
+							is_character_interaction_potentially_accepted = {
+								interaction = request_ecclesiastical_title_expansion_interaction
+								recipient = scope:clerical_region_authority
+								target_title = scope:clerical_region_expansion_candidate
+							}
+						}
+					}
+					save_temporary_scope_as = clerical_region_expansion_target
+				}
+				if = {
+					limit = { NOT = { exists = scope:clerical_region_expansion_target } }
+					ordered_in_list = {
+						list = clerical_region_expansion_targets
+						max = 1
+						check_range_bounds = no
+						limit = {
+							save_temporary_scope_as = clerical_region_expansion_candidate
+							root = {
+								is_character_interaction_potentially_accepted = {
+									interaction = request_ecclesiastical_title_expansion_interaction
+									recipient = scope:clerical_region_authority
+									target_title = scope:clerical_region_expansion_candidate
+								}
+							}
+						}
+						save_temporary_scope_as = clerical_region_expansion_target
+					}
+				}
+				if = {
+					limit = { exists = scope:clerical_region_expansion_target }
+					try_create_important_action = {
+						important_action_type = action_can_request_clerical_region_expansion
+						actor = root
+						recipient = scope:clerical_region_authority
+						target_title = scope:clerical_region_expansion_target
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = request_ecclesiastical_title_expansion_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+			target_title = scope:target_title
+		}
+	}
+}
+
+action_can_request_enforce_succession = {
+	type = action
+	icon = action_take_decision
+	priority = 400
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				is_ruler = yes
+				like_christianity_religion_trigger = yes
+				NOT = {
+					government_has_flag = government_is_theocracy
+				}
+				has_legitimacy = yes
+				legitimacy_level >= 3
+				any_claim = { }
+				capital_county.clerical_region_title ?= {
+					exists = holder
+					holder != root
+				}
+			}
+			capital_county.clerical_region_title.holder = {
+				save_temporary_scope_as = local_archbishop
+			}
+			every_claim = {
+				limit = {
+					save_temporary_scope_as = enforce_succession_title_candidate
+					pam_valid_enforce_succession_title_trigger = {
+						TITLE = scope:enforce_succession_title_candidate
+						ACTOR = root
+					}
+					root = {
+						is_character_interaction_potentially_accepted = {
+							interaction = request_enforce_succession_interaction
+							recipient = scope:local_archbishop
+							target_title = scope:enforce_succession_title_candidate
+						}
+					}
+				}
+				try_create_important_action = {
+					important_action_type = action_can_request_enforce_succession
+					actor = root
+					recipient = scope:local_archbishop
+					landed_title = this
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = request_enforce_succession_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+			target_title = scope:landed_title
+		}
+	}
+}
+
+action_can_demand_church_succession = {
+	type = action
+	icon = action_take_decision
+	priority = 400
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				government_has_flag = government_is_theocracy
+				is_landed = yes
+				is_available_adult = yes
+				piety_level >= medium_piety_level
+				piety >= massive_piety_value
+				treasury_or_gold >= medium_treasury_or_gold_value
+				NOR = {
+					has_trait = excommunicated
+					faith.religious_head ?= this
+				}
+			}
+			every_neighboring_top_liege_realm_owner = {
+				limit = {
+					pam_demand_church_succession_cs_candidate_trigger = { ACTOR = root }
+					NOT = { is_in_list = demand_church_succession_cs_candidates }
+				}
+				add_to_temporary_list = demand_church_succession_cs_candidates
+			}
+			if = {
+				limit = {
+					exists = liege
+					liege != this
+				}
+				liege = {
+					every_vassal = {
+						limit = {
+							character_is_realm_neighbor = root
+							pam_demand_church_succession_cs_candidate_trigger = { ACTOR = root }
+							NOT = { is_in_list = demand_church_succession_cs_candidates }
+						}
+						add_to_temporary_list = demand_church_succession_cs_candidates
+					}
+				}
+			}
+			every_held_title = {
+				limit = { has_clerical_region = yes }
+				every_county_in_clerical_region = {
+					limit = {
+						holder ?= {
+							pam_demand_church_succession_cs_candidate_trigger = { ACTOR = root }
+							NOT = { is_in_list = demand_church_succession_cs_candidates }
+						}
+					}
+					holder = {
+						add_to_temporary_list = demand_church_succession_cs_candidates
+					}
+				}
+			}
+			every_in_list = {
+				list = demand_church_succession_cs_candidates
+				limit = {
+					save_temporary_scope_as = demand_church_succession_target
+					root = {
+						is_character_interaction_potentially_accepted = {
+							interaction = demand_church_succession_interaction
+							recipient = scope:demand_church_succession_target
+						}
+					}
+				}
+				add_to_temporary_list = demand_church_succession_cs_valid
+			}
+			ordered_in_list = {
+				list = demand_church_succession_cs_valid
+				max = 3
+				check_range_bounds = no
+				order_by = highest_held_title_tier
+				try_create_important_action = {
+					important_action_type = action_can_demand_church_succession
+					actor = root
+					recipient = this
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = demand_church_succession_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+		}
+	}
+}
+
+action_pam_decision_confession = {
+	type = alert
+	icon = action_take_decision
+
+	check_create_action = {
+		if = {
+			limit = {
+				has_pam_dlc_trigger = yes
+				spiritual_fulfillment < 0
+				can_execute_decision = pam_decision_confession
+			}
+			try_create_important_action = {
+				important_action_type = action_pam_decision_confession
+				actor = root
+			}
+		}
+	}
+
+	effect = {
+		decision:pam_decision_confession = { open_view_data = decision_detail }
+	}
+}
+
+# Can select a personal tenet
+action_can_select_personal_tenet = {
+	type = alert
+	icon = action_can_select_personal_tenet
+
+	check_create_action = {
+		if = {
+			limit = {
+				free_personal_tenet_slots > 0
+			}
+
+			try_create_important_action = {
+				important_action_type = action_can_select_personal_tenet
+			}
+		}
+	}
+
+	effect = {
+		root.rite = {
+			open_view_data = {
+				view = personal_beliefs_window
+				data = root
+				player = root
+			}
+		}
+	}
+}
+
+action_can_request_preach_legitimacy = {
+	type = action
+	icon = legitimacy
+	combine_into_one = yes
+
+	check_create_action = {
+
+		if = {
+			limit = {
+				has_pam_dlc_trigger = yes
+				has_legitimacy = yes
+				NOT = { has_trait = excommunicated }
+				OR = {
+					any_powerful_vassal = {
+						NOT = {
+							root = {
+								meets_legitimacy_expectation_of = prev
+							}
+						}
+					}
+					any_vassal = {
+						NOT = {
+							root = {
+								meets_legitimacy_expectation_of = prev
+							}
+						}
+					}
+				}
+				OR = {
+					#One of your vassals that would accept
+					any_vassal_or_below = {
+						highest_held_title_tier >= tier_duchy
+						pam_request_legitimacy_priest_trigger = { CHARACTER = root }
+						add_to_temporary_list = possible_priests
+					}
+					#Bishop in same area
+					primary_title ?= {
+						any_clerical_region_in_dejure_title = {
+							holder ?= {
+								highest_held_title_tier >= tier_duchy
+								pam_request_legitimacy_priest_trigger = { CHARACTER = root }
+								
+								add_to_temporary_list = possible_priests
+							}
+						}
+					}
+					#Head of faith
+					religious_head_or_challenger ?= {
+						highest_held_title_tier >= tier_duchy
+						pam_request_legitimacy_priest_trigger = { CHARACTER = root }
+						add_to_temporary_list = possible_priests
+					}
+				}
+				
+				any_in_list = {
+					list = possible_priests
+					root = {
+						is_character_interaction_potentially_accepted = {
+							recipient = prev
+							interaction = request_legitimacy_interaction
+						}
+					}
+					
+					save_temporary_scope_as = target_priest
+				}
+			}
+			try_create_important_action = {
+				important_action_type = action_can_request_preach_legitimacy
+				actor = root
+				recipient = scope:target_priest
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = request_legitimacy_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+		}
+	}
+}
+
+action_targeted_by_mass_rite_conversion = {
+	type = alert
+	icon = action_being_raided
+	soundeffect = "event:/SFX/UI/War/sfx_ui_war_declare_war"
+	check_create_action = {
+		if = {
+			limit = {
+				any_great_project = {
+					save_temporary_scope_as = great_project
+					great_project_type = pam_mass_rite_conversion
+        			great_project_owner != root
+        			great_project_location = {
+            			province_owner.top_liege = {
+							OR = {
+								any_liege_or_above = {
+									this = root
+        						}
+        						this = root
+        					}
+            			}
+					}
+				}
+				NOR = {
+					any_character_war = {
+						using_non_ghw_holy_war_cb_trigger = yes
+					}
+					is_vassal_or_below_of = scope:great_project.great_project_owner
+				}
+			}
+			scope:great_project = {
+				try_create_important_action = {
+					important_action_type = action_targeted_by_mass_rite_conversion
+					actor = root
+					great_project = scope:great_project
+				}
+			}
+		}
+	}
+
+	effect = {
+		scope:great_project = {
+			open_view_data = {
+				view = great_project
+				player = scope:actor
+			}
+		}
+	}
+}
+
+action_sanctify_artifact = {
+	icon = generic_reactive_advice
+
+	check_create_action = {
+		if = {
+			limit = {
+				faith.religious_head ?= { this != root }
+				is_character_interaction_valid = {
+					recipient = faith.religious_head
+					interaction = sanctify_artifact_interaction
+				}
+			}
+			try_create_important_action = {
+				important_action_type = action_sanctify_artifact
+				actor = root
+				recipient = faith.religious_head
+			}
+		}
+		else_if = {
+			limit = {
+				NOT = { exists = faith.religious_head }
+				cp:councillor_court_chaplain ?= {
+					this != root
+					faith = root.faith
+				}
+				is_character_interaction_valid = {
+					recipient = cp:councillor_court_chaplain
+					interaction = sanctify_artifact_interaction
+				}
+			}
+			try_create_important_action = {
+				important_action_type = action_sanctify_artifact
+				actor = root
+				recipient = cp:councillor_court_chaplain
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = sanctify_artifact_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+		}
+	}
+}
+
+# Grabs the 5 Archbishops with the highest piety
+action_can_appoint_cardinals = {
+	priority = 400
+	icon = action_take_decision
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				has_pam_dlc_trigger = yes
+				is_adult = yes
+				is_incapable = no
+				like_christianity_religion_trigger = yes
+				pam_leads_college_of_cardinals_trigger = yes
+				faith = {
+					has_doctrine_parameter = has_clerical_electors
+					any_clerical_elector_title = {
+						count < 15
+					}
+				}
+			}
+			faith = {
+				ordered_clerical_region_title = {
+					limit = {
+						holder ?= {
+							this != root
+							is_incapable = no
+							NOT = { has_trait = excommunicated }
+							NOT = { exists = clerical_elector_title } # Not already a cardinal
+							pam_can_hold_cardinalate_trigger = yes
+							pam_pope_is_head_of_faith_or_rite_trigger = yes
+						}
+					}
+					order_by = holder.piety_level
+					max = 5
+					check_range_bounds = no
+					holder = {
+						try_create_important_action = {
+							important_action_type = action_can_appoint_cardinals
+							actor = root
+							recipient = this
+						}
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = appoint_cardinal_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+			secondary_actor = scope:actor
+		}
+	}
+}
+
+action_can_make_clerical_puppet = {
+	type = action
+	icon = theological_agent_puppet
+
+	check_create_action = {
+		if = {
+			limit = {
+				can_have_realm_priest_puppet_trigger = yes  # is_character_interaction_potentially_accepted does not check is_available for now
+				cp:councillor_court_chaplain ?= {
+					root = {
+						is_character_interaction_potentially_accepted = {
+							recipient = prev
+							interaction = make_clerical_puppet_interaction
+						}
+					}
+				}
+			}
+			try_create_important_action = {
+				important_action_type = action_can_make_clerical_puppet
+				actor = root
+				recipient = cp:councillor_court_chaplain
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = make_clerical_puppet_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+		}
+	}
+}
+
+action_can_make_external_clerical_puppet = {
+	type = action
+	icon = external_theological_agent_puppet
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				can_have_theological_agent_puppet_trigger = yes
+			}
+			faith = {
+				ordered_faith_playable_ruler = {
+					max = 30
+					check_range_bounds = no
+					order_by = highest_held_title_tier
+					limit = {
+						save_temporary_scope_as = clergy_temp
+						is_clergy = yes
+						NOT = { this = root }
+						trigger_if = {
+							limit = {
+								root = { is_clergy = yes }
+							}
+							highest_held_title_tier >= root.highest_held_title_tier_minus_one
+							OR = {
+								root.faith.religious_head ?= this
+								root.cp:councillor_court_chaplain.superior ?= this
+								exists = clerical_elector_title
+								AND = {
+									any_held_title = {
+										has_clerical_region = yes
+										any_county_in_clerical_region = {
+											holder.top_liege = root.top_liege
+										}
+									}
+								}
+								top_liege = root.top_liege
+								top_liege = {
+									any_character_to_title_neighboring_county = {
+										holder = {
+											target_is_same_character_or_above = root
+										}
+									}
+								}
+								root = { has_hook = scope:clergy_temp }
+								AND = {
+									exists = house
+									house.house_head = root
+								}
+								has_any_moderate_good_relationship_with_character_trigger = { CHARACTER = root }
+								is_imprisoned_by = root
+								AND = {
+									has_variable_list = puppeteers
+									any_in_list = {
+										variable = puppeteers
+										this = root
+									}
+								}
+							}
+						}
+						root = {
+							is_character_interaction_potentially_accepted = {
+								recipient = prev
+								interaction = make_external_clerical_puppet_interaction
+							}
+						}
+					}
+					try_create_important_action = {
+						important_action_type = action_can_make_external_clerical_puppet
+						actor = root
+						recipient = this
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = make_external_clerical_puppet_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+		}
+	}
+}
+
+action_can_make_external_ruler_puppet = {
+	type = action
+	icon = external_ruler_puppet
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				can_have_external_ruler_puppet_trigger = yes
+			}
+			faith = {
+				ordered_faith_playable_ruler = {
+					order_by = highest_held_title_tier
+					max = 30
+					check_range_bounds = no
+					limit = {
+						save_temporary_scope_as = external_ruler_puppet_candidate
+						NOT = { this = root }
+						is_landed = yes
+						is_clergy = no
+						highest_held_title_tier >= root.highest_held_title_tier_minus_one
+						trigger_if = {
+							limit = { root.highest_held_title_tier < tier_kingdom }
+							OR = {
+								top_liege = root.top_liege
+								root = {
+									is_landed = yes
+									any_character_to_title_neighboring_county = {
+										holder.top_liege = scope:external_ruler_puppet_candidate
+									}
+								}
+								root = {
+									any_held_title = {
+										has_clerical_region = yes
+										any_county_in_clerical_region = {
+											OR = {
+												holder ?= {
+													target_is_same_character_or_above = scope:external_ruler_puppet_candidate
+												}
+												any_neighboring_county = {
+													holder ?= {
+														target_is_same_character_or_above = scope:external_ruler_puppet_candidate
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+						root = {
+							is_character_interaction_potentially_accepted = {
+								recipient = prev
+								interaction = make_external_ruler_puppet_interaction
+							}
+						}
+					}
+					try_create_important_action = {
+						important_action_type = action_can_make_external_ruler_puppet
+						actor = root
+						recipient = this
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = make_external_ruler_puppet_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+		}
+	}
+}
+
+action_opportunity_to_study_scripture = {
+	type = action
+	priority = 500
+
+	check_create_action = {
+		if = {
+			limit = {
+				can_execute_decision = pam_study_scripture_decision
+				stress_level < 1
+			}
+			try_create_important_action = {
+				important_action_type = action_opportunity_to_study_scripture
+				actor = root
+			}
+		}
+	}
+
+	effect = {
+		decision:pam_study_scripture_decision = { open_view_data = decision_detail }
+	}
+}
+
+action_can_upgrade_great_cathedral = {
+	type = action
+
+	check_create_action = {
+		if = {
+			limit = {
+				root = {
+					pam_cathedral_project_requirements_trigger = yes
+					OR = {
+						can_plan_great_project = great_project_type:pam_cathedral_01
+						can_plan_great_project = great_project_type:pam_cathedral_02
+						can_plan_great_project = great_project_type:pam_cathedral_03
+					}
+				}
+			}
+			try_create_important_action = {
+				important_action_type = action_can_upgrade_great_cathedral
+				actor = root
+				recipient = this
+			}
+		}
+	}
+
+	effect = {
+		open_view_data = {
+			view = decisions
+			data = flag:great_projects
+		}
+	}
+}
+
+action_can_plan_mass_conversion = {
+	type = action
+
+	check_create_action = {
+		if = {
+			limit = {
+				root = {
+					pam_mass_rite_conversion_requirements_trigger = yes
+					can_plan_great_project = great_project_type:pam_mass_rite_conversion
+				}
+			}
+			try_create_important_action = {
+				important_action_type = action_can_plan_mass_conversion
+				actor = root
+				recipient = this
+			}
+		}
+	}
+
+	effect = {
+		open_view_data = {
+			view = decisions
+			data = flag:great_projects
+		}
+	}
+}
+
+# Holdouts of another rite in the archbishop's own diocese, split by whether a petition can be sent
+# is_character_interaction_potentially_accepted with no ai_accept is a send check
+action_can_sway_ruler_to_rite = {
+	type = action
+	priority = 450
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				NOT = { has_trait = excommunicated }
+				faith = { has_doctrine_parameter = has_clerical_regions }
+				any_held_title = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+			}
+			every_held_title = {
+				limit = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+				every_county_in_clerical_region = {
+					limit = {
+						exists = holder
+						holder = { save_temporary_scope_as = sway_to_rite_target }
+						scope:sway_to_rite_target = {
+							pam_sway_to_rite_diocese_candidate_trigger = { ARCHBISHOP = root }
+						}
+						pam_sway_to_rite_variant_can_send_trigger = {
+							ARCHBISHOP = root
+							TARGET = scope:sway_to_rite_target
+						}
+					}
+					holder = { save_scope_as = sway_to_rite_candidate }
+					root = {
+						try_create_important_action = {
+							important_action_type = action_can_sway_ruler_to_rite
+							actor = root
+							recipient = scope:sway_to_rite_candidate
+						}
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		pam_open_sway_to_rite_variant_effect = yes
+	}
+}
+
+action_can_ask_subordinates_for_gold = {
+	type = action
+	priority = 400
+	icon = action_tax_collector
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				is_adult = yes
+				pam_is_clerical_comprehensive_trigger = yes
+			}
+			every_subordinate = {
+				limit = {
+					save_temporary_scope_as = ask_subordinates_for_gold_target
+					root = {
+						is_character_interaction_potentially_accepted = {
+							recipient = scope:ask_subordinates_for_gold_target
+							interaction = pam_ask_subordinates_for_gold_interaction
+						}
+					}
+				}
+				save_scope_as = ask_subordinates_for_gold_candidate
+				root = {
+					try_create_important_action = {
+						important_action_type = action_can_ask_subordinates_for_gold
+						actor = root
+						recipient = scope:ask_subordinates_for_gold_candidate
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		open_interaction_window = {
+			interaction = pam_ask_subordinates_for_gold_interaction
+			actor = scope:actor
+			recipient = scope:recipient
+		}
+	}
+}
+
+action_sway_ruler_to_rite_unlikely = {
+	type = action
+	priority = 449
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				NOT = { has_trait = excommunicated }
+				faith = { has_doctrine_parameter = has_clerical_regions }
+				any_held_title = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+			}
+			every_held_title = {
+				limit = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+				every_county_in_clerical_region = {
+					limit = {
+						exists = holder
+						holder = { save_temporary_scope_as = sway_to_rite_target }
+						scope:sway_to_rite_target = {
+							pam_sway_to_rite_diocese_candidate_trigger = { ARCHBISHOP = root }
+						}
+						NOT = {
+							pam_sway_to_rite_variant_can_send_trigger = {
+								ARCHBISHOP = root
+								TARGET = scope:sway_to_rite_target
+							}
+						}
+					}
+					holder = { save_scope_as = sway_to_rite_candidate }
+					root = {
+						try_create_important_action = {
+							important_action_type = action_sway_ruler_to_rite_unlikely
+							actor = root
+							recipient = scope:sway_to_rite_candidate
+						}
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		pam_open_sway_to_rite_variant_effect = yes
+	}
+}
+
+# Prelates of adjacent dioceses who follow another rite, split by whether the petition can be sent
+# check_create_action allows interface effects only
+# try_create_important_action skips repeat hits
+action_can_sway_prelate_to_rite = {
+	type = action
+	priority = 448
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				NOT = { has_trait = excommunicated }
+				faith = { has_doctrine_parameter = has_clerical_regions }
+				piety_level >= high_piety_level
+				any_held_title = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+			}
+			every_held_title = {
+				limit = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+				save_temporary_scope_as = pam_sway_own_region
+				every_county_in_clerical_region = {
+					every_neighboring_county = {
+						limit = {
+							exists = clerical_region_title
+							NOT = { clerical_region_title = scope:pam_sway_own_region }
+							exists = clerical_region_title.holder
+							clerical_region_title.holder = { save_temporary_scope_as = pam_sway_prelate_target }
+							scope:pam_sway_prelate_target = {
+								pam_sway_to_rite_adjacent_prelate_candidate_trigger = { ARCHBISHOP = root }
+							}
+							pam_sway_to_rite_variant_can_send_trigger = {
+								ARCHBISHOP = root
+								TARGET = scope:pam_sway_prelate_target
+							}
+						}
+						clerical_region_title.holder = { save_scope_as = pam_sway_prelate_candidate }
+						root = {
+							try_create_important_action = {
+								important_action_type = action_can_sway_prelate_to_rite
+								actor = root
+								recipient = scope:pam_sway_prelate_candidate
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		pam_open_sway_to_rite_variant_effect = yes
+	}
+}
+
+action_sway_prelate_to_rite_unlikely = {
+	type = action
+	priority = 447
+	combine_into_one = yes
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_ai = no
+				has_pam_dlc_trigger = yes
+				NOT = { has_trait = excommunicated }
+				faith = { has_doctrine_parameter = has_clerical_regions }
+				any_held_title = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+			}
+			every_held_title = {
+				limit = {
+					has_clerical_region = yes
+					is_head_of_faith = no
+				}
+				save_temporary_scope_as = pam_sway_own_region
+				every_county_in_clerical_region = {
+					every_neighboring_county = {
+						limit = {
+							exists = clerical_region_title
+							NOT = { clerical_region_title = scope:pam_sway_own_region }
+							exists = clerical_region_title.holder
+							clerical_region_title.holder = { save_temporary_scope_as = pam_sway_prelate_target }
+							scope:pam_sway_prelate_target = {
+								pam_sway_to_rite_adjacent_prelate_candidate_trigger = { ARCHBISHOP = root }
+							}
+							NOT = {
+								pam_sway_to_rite_variant_can_send_trigger = {
+									ARCHBISHOP = root
+									TARGET = scope:pam_sway_prelate_target
+								}
+							}
+						}
+						clerical_region_title.holder = { save_scope_as = pam_sway_prelate_candidate }
+						root = {
+							try_create_important_action = {
+								important_action_type = action_sway_prelate_to_rite_unlikely
+								actor = root
+								recipient = scope:pam_sway_prelate_candidate
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	effect = {
+		pam_open_sway_to_rite_variant_effect = yes
+	}
+}
+
+action_can_found_holy_site_in_capital = {
+	type = action
+	priority = 400
+	icon = action_take_decision
+
+	check_create_action = {
+		if = {
+			limit = {
+				is_landed = yes
+				NOT = { has_variable = holy_site_creation_cooldown }
+				capital_barony ?= {
+					is_leased_out = no
+					is_holy_site = no
+				}
+				can_manage_faith_holy_sites_trigger = yes
+				faith = {
+					list_size:holy_site < religion.holy_sites_max
+					faith_holy_site_kingdom_unused_trigger = { BARONY = root.capital_barony }
+				}
+				OR = {
+					any_character_artifact = {
+						is_equipped = no
+						is_holy_relic_for = root.faith
+						rarity_level >= famed
+					}
+					AND = {
+						any_character_artifact = {
+							is_equipped = no
+							is_holy_relic_for = root.faith
+							rarity_level >= masterwork
+						}
+						any_character_artifact = {
+							count >= 2
+							is_equipped = no
+							is_holy_relic_for = root.faith
+						}
+					}
+					any_character_artifact = {
+						count >= 3
+						is_equipped = no
+						is_holy_relic_for = root.faith
+					}
+				}
+			}
+			try_create_important_action = {
+				important_action_type = action_can_found_holy_site_in_capital
+				actor = root
+				landed_title = capital_county
+			}
+		}
+	}
+
+	effect = {
+		scope:actor.faith = {
+			open_view_data = {
+				view = holy_site_creation
+				player = scope:actor
+			}
+		}
+	}
+}

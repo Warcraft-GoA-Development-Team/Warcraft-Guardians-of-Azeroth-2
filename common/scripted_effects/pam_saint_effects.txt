@@ -1,0 +1,846 @@
+﻿############################################
+# Canonizing Saints - scripted effects
+# pam_commit_canonization_effect
+# pam_canonize_saint_effect
+# pam_pick_actor_consecration_province_effect
+# pam_pick_founder_burial_province_effect
+# pam_grant_dulia_canonization_faith_bonus_effect
+# pam_extract_relic_from_saint_effect
+# create_relic_artifact_effect
+# create_appropriate_relic_artifact_from_character_effect
+# pam_add_dulia_extra_relic_modifier_effect
+# pam_grant_dulia_relic_dynasty_prestige_effect
+# pam_show_dulia_relic_blessing_effect
+############################################
+
+# Canonizer is root, and this expects scope:saint_candidate and consecration_province already saved
+pam_commit_canonization_effect = {
+	if = {
+		limit = { pam_needs_hof_approval_for_canonization_trigger = yes }
+		faith.religious_head = { save_scope_as = petition_recipient }
+		# Pick the wording here so saint_candidate / consecration_province / petition_recipient stay reachable in the loc key (SelectLocalization would drop them).
+		if = {
+			limit = { faith.religion = religion:tyrism_religion } #Warcraft
+			custom_tooltip = pam_canonize_saint_petition_sent_tt_saint
+		}
+		else = {
+			custom_tooltip = pam_canonize_saint_petition_sent_tt_va
+		}
+		# Players acknowledge via event 0001, whose option starts the HoF's clock (0002 -> 0003/0004). The AI never sees that event, so schedule the HoF decision directly for it.
+		if = {
+			limit = { is_ai = no }
+			trigger_event = pam_saint_events.0001
+		}
+		else = {
+			hidden_effect = {
+				scope:petition_recipient = {
+					trigger_event = {
+						id = pam_saint_events.0002
+						days = 30
+					}
+				}
+			}
+		}
+	}
+	else = {
+		custom_tooltip = pam_canonize_saint_decision_canonize_tt
+		pam_canonize_saint_effect = {
+			CANONIZER = root
+			CANDIDATE = scope:saint_candidate
+			CONSECRATION_PROVINCE = scope:consecration_province
+			PRESET = no
+		}
+		# No HoF (or self-HoF): canonization is done, so show the finalization event now (players only).
+		if = {
+			limit = { is_ai = no }
+			trigger_event = pam_saint_events.0003
+		}
+	}
+}
+
+# The actual canonization.
+# CANONIZER - the ruler putting the saint forward (not root; also run from the HoF approval event).
+# CANDIDATE - the dead character being canonized.
+# CONSECRATION_PROVINCE - where they are consecrated / buried.
+# PRESET - yes for history burials, so the tomb gives the lighter travel homage.
+pam_canonize_saint_effect = {
+	$CANDIDATE$ = {
+		add_trait = saint
+	}
+	# Register on the canonizer's faith for the Saints-list UI and faith-split; add_saint needs the saint trait (added above) and a burial province with a holding.
+	$CANONIZER$.faith ?= {
+		hidden_effect = {
+			add_saint = {
+				character = $CANDIDATE$
+				burial_province = $CONSECRATION_PROVINCE$
+			}
+		}
+	}
+
+	if = {
+		limit = {
+			$CANDIDATE$ = {
+				is_alive = no
+				has_dead_character_variable = no_corpse_left
+			}
+		}
+		$CONSECRATION_PROVINCE$ = {
+			set_variable = no_corpse_left
+		}
+	}
+
+	# The engine's saint registry (add_saint, above) owns the saint->province link (saint_burial_location) and the relic charges (remaining_saint_relics). All we keep is the buried-saint travel PoI, plus a thin province list the PoI builder iterates.
+	$CONSECRATION_PROVINCE$ = {
+		# Only readable through the tomb PoI, so skip provinces that will never get one
+		if = {
+			limit = {
+				$PRESET$ = yes
+				NOT = { has_variable = hide_location_for_saint }
+			}
+			set_variable = pam_preset_buried_saint
+		}
+		if = {
+			limit = {
+				NOR = {
+					has_variable = hide_location_for_saint
+					has_travel_point_of_interest = poi_buried_saint
+				}
+			}
+			add_to_global_variable_list = {
+				name = pam_buried_saint_poi_list
+				target = $CONSECRATION_PROVINCE$
+			}
+			add_travel_point_of_interest = poi_buried_saint
+		}
+	}
+
+	if = {
+		limit = {
+			$CANONIZER$ = { is_alive = yes }
+			$CANONIZER$.rite ?= { rite_has_parameter = tenet_dulia_canonization_faith_bonus }
+		}
+		pam_grant_dulia_canonization_faith_bonus_effect = {
+			CANONIZER = $CANONIZER$
+			CANDIDATE = $CANDIDATE$
+		}
+	}
+
+	# Cost of the next canonization scales with how many saints the dynasty has.
+	$CANDIDATE$.dynasty ?= {
+		if = {
+			limit = { has_variable = pam_dynasty_saint_count }
+			change_variable = {
+				name = pam_dynasty_saint_count
+				add = 1
+			}
+		}
+		else = {
+			set_variable = {
+				name = pam_dynasty_saint_count
+				value = 1
+			}
+		}
+	}
+}
+
+# Character scope. Saves consecration_province from a free cathedral, holy site, or adjacent county capital.
+pam_pick_actor_consecration_province_effect = {
+	save_scope_as = pam_burial_site_actor
+	if = {
+		limit = { pam_has_free_primary_site_trigger = yes }
+		if = {
+			limit = { pam_faith_uses_cathedrals_trigger = yes }
+			if = {
+				limit = {
+					pam_character_has_cathedral_trigger = yes
+					domicile ?= { domicile_location = { pam_province_is_free_burial_site_trigger = yes } }
+				}
+				domicile = { domicile_location = { save_scope_as = consecration_province } }
+			}
+			else = {
+				random_realm_province = {
+					limit = {
+						pam_province_is_free_burial_site_trigger = yes
+						any_province_domicile = { owner = { pam_character_has_cathedral_trigger = yes } }
+					}
+					save_scope_as = consecration_province
+				}
+			}
+		}
+		else = {
+			random_realm_province = {
+				limit = {
+					barony ?= { is_holy_site_of = scope:pam_burial_site_actor.faith }
+					pam_province_is_free_burial_site_trigger = yes
+				}
+				save_scope_as = consecration_province
+			}
+		}
+	}
+	else_if = {
+		limit = { pam_has_free_adjacent_site_trigger = yes }
+		random_realm_province = {
+			limit = {
+				is_county_capital = yes
+				pam_province_is_free_burial_site_trigger = yes
+				county = {
+					any_neighboring_county = {
+						pam_county_has_actor_primary_site_trigger = { ACTOR = scope:pam_burial_site_actor }
+					}
+				}
+			}
+			save_scope_as = consecration_province
+		}
+	}
+}
+
+# Root = the dying monastic founder. Saves consecration_province if a free burial site exists.
+pam_pick_founder_burial_province_effect = {
+	if = {
+		limit = {
+			exists = capital_province
+			capital_province = { pam_province_is_free_burial_site_trigger = yes }
+		}
+		capital_province = { save_scope_as = consecration_province }
+	}
+	if = {
+		limit = {
+			NOT = { exists = scope:consecration_province }
+			exists = location
+			location = { pam_province_is_free_burial_site_trigger = yes }
+		}
+		location = { save_scope_as = consecration_province }
+	}
+	if = {
+		limit = {
+			NOT = { exists = scope:consecration_province }
+			faith = {
+				any_faith_holy_order = {
+					leader = root
+					holy_order_patron ?= { is_alive = yes }
+				}
+			}
+		}
+		faith = {
+			random_faith_holy_order = {
+				limit = {
+					leader = root
+					holy_order_patron ?= { is_alive = yes }
+				}
+				holy_order_patron = { save_scope_as = pam_founder_burial_patron }
+			}
+		}
+		scope:pam_founder_burial_patron ?= {
+			pam_pick_actor_consecration_province_effect = yes
+		}
+	}
+	if = {
+		limit = {
+			NOT = { exists = scope:consecration_province }
+			faith = {
+				any_holy_site_barony = {
+					title_province ?= { pam_province_is_free_burial_site_trigger = yes }
+				}
+			}
+		}
+		faith = {
+			random_holy_site_barony = {
+				limit = {
+					title_province ?= { pam_province_is_free_burial_site_trigger = yes }
+				}
+				title_province = { save_scope_as = consecration_province }
+			}
+		}
+	}
+}
+
+# CANONIZER - the ruler whose faith gains the saint.
+# CANDIDATE - the newly canonized saint, shown as the message's portrait.
+pam_grant_dulia_canonization_faith_bonus_effect = {
+	$CANDIDATE$ = { save_scope_as = pam_new_saint }
+	custom_tooltip = {
+		text = pam_dulia_canonization_faith_bonus_tt
+		$CANONIZER$.faith ?= {
+			every_faith_character = {
+				limit = { is_ruler = yes }
+				add_character_modifier = {
+					modifier = pam_dulia_new_saint_modifier
+					years = 5
+				}
+				if = {
+					limit = { this != $CANONIZER$ }
+					send_interface_message = {
+						type = msg_pam_new_saint_canonized
+						title = pam_dulia_new_saint_message_t
+						desc = pam_dulia_new_saint_message_desc
+						left_icon = $CANDIDATE$
+						show_as_tooltip = {
+							add_character_modifier = {
+								modifier = pam_dulia_new_saint_modifier
+								years = 5
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+create_relic_artifact_effect = {
+	create_artifact = {	
+		name = pam_saint_relic_$NAME$_name
+		description = pam_saint_relic_$NAME$_desc
+		visuals = $VISUAL$
+		type = $TYPE$
+		creator = scope:creator
+		template = pam_saint_relic_template
+		modifier = artifact_placeholder_modifier
+		save_scope_as = newly_created_artifact
+		wealth = scope:wealth
+		quality = scope:quality
+	}
+	scope:relic_site = { set_variable = pam_relic_drawn_$NAME$ }
+}
+
+create_appropriate_relic_artifact_from_character_effect = {
+	$CREATOR$ = { save_scope_as = creator }
+	$OWNER$ = { save_scope_as = owner }
+	get_artifact_quality_effect = yes
+	get_artifact_wealth_effect = yes
+	$OWNER$ = {
+		random_list = {
+			20 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						OR = { #Warcraft
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+							like_buddhism_religion_trigger = yes
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_finger } }
+				}
+				create_relic_artifact_effect = { NAME = finger TYPE = pedestal VISUAL = reliquary }
+			}
+			15 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+							like_buddhism_religion_trigger = yes
+						}
+					}
+					scope:relic_site = {
+						has_none_of_variables = {
+							name = pam_relic_drawn_tooth
+							name = pam_relic_drawn_tooth_buddhism
+						}
+					}
+				}
+				if = {
+					limit = { like_buddhism_religion_trigger = yes }
+					create_relic_artifact_effect = { NAME = tooth_buddhism TYPE = pedestal VISUAL = reliquary }
+				}
+				else = {
+					create_relic_artifact_effect = { NAME = tooth TYPE = pedestal VISUAL = reliquary }
+				}
+			}
+			15 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						OR = { #Warcraft
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+							like_buddhism_religion_trigger = yes
+							like_pagan_religion_trigger = yes
+							rite_has_parameter = cremation_funeral
+							AND = {
+								like_zoroastrianism_religion_trigger = yes
+								rite_has_doctrine = doctrine_polytheist
+							}
+						}
+					}
+					scope:relic_site = {
+						has_none_of_variables = {
+							name = pam_relic_drawn_rib
+							name = pam_relic_drawn_rib_buddhism
+						}
+					}
+				}
+				if = {
+					limit = { like_buddhism_religion_trigger = yes }
+					create_relic_artifact_effect = { NAME = rib_buddhism TYPE = pedestal VISUAL = reliquary }
+				}
+				else = {
+					create_relic_artifact_effect = { NAME = rib TYPE = pedestal VISUAL = reliquary }
+				}
+			}
+			15 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_buddhism_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_hair } }
+				}
+				create_relic_artifact_effect = { NAME = hair TYPE = pedestal VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					rite = {
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_vestment } }
+				}
+				create_relic_artifact_effect = { NAME = vestment TYPE = pedestal VISUAL = reliquary }
+			}
+			8 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						NOT = { rite_has_parameter = cremation_funeral }
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_hand } }
+				}
+				create_relic_artifact_effect = { NAME = hand TYPE = pedestal VISUAL = reliquary }
+			}
+			8 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						NOT = { rite_has_parameter = cremation_funeral }
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_arm } }
+				}
+				create_relic_artifact_effect = { NAME = arm TYPE = pedestal VISUAL = reliquary }
+			}
+			5 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_buddhism_religion_trigger = yes
+							like_pagan_religion_trigger = yes
+							rite_has_parameter = cremation_funeral
+							AND = {
+								like_zoroastrianism_religion_trigger = yes
+								rite_has_doctrine = doctrine_polytheist
+							}
+						}
+					}
+					scope:relic_site = {
+						has_none_of_variables = {
+							name = pam_relic_drawn_skull
+							name = pam_relic_drawn_skull_buddhism
+						}
+					}
+				}
+				if = {
+					limit = { like_buddhism_religion_trigger = yes }
+					create_relic_artifact_effect = { NAME = skull_buddhism TYPE = pedestal VISUAL = reliquary }
+				}
+				else = {
+					create_relic_artifact_effect = { NAME = skull TYPE = pedestal VISUAL = reliquary }
+				}
+			}
+			3 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+							rite_has_parameter = mummification_funeral
+						}
+						NOT = { rite_has_parameter = cremation_funeral }
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_blood } }
+				}
+				create_relic_artifact_effect = { NAME = blood TYPE = pedestal VISUAL = reliquary }
+			}
+			1 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						NOT = { rite_has_parameter = cremation_funeral }
+						OR = {
+							like_christianity_religion_trigger = yes
+							like_dualism_religion_trigger = yes
+							like_yazidi_religion_trigger = yes
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_heart } }
+				}
+				create_relic_artifact_effect = { NAME = heart TYPE = pedestal VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					like_buddhism_religion_trigger = yes
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_sarira } }
+				}
+				create_relic_artifact_effect = { NAME = sarira TYPE = pedestal VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					rite = {
+						OR = {
+							like_confucianism_religion_trigger = yes
+							like_islam_religion_trigger = yes
+							like_judaism_religion_trigger = yes
+							rite_has_tenet = tenet_pursuit_of_knowledge
+							rite_has_tenet = tenet_scholasticism
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_letter } }
+				}
+				create_relic_artifact_effect = { NAME = letter TYPE = pedestal VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					rite = {
+						OR = {
+							like_confucianism_religion_trigger = yes
+							rite_has_tenet = tenet_pursuit_of_knowledge
+						}
+					}
+					faith_is_aniconic_trigger = no
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_drawing } }
+				}
+				create_relic_artifact_effect = { NAME = drawing TYPE = wall_small VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					rite = {
+						OR = {
+							like_confucianism_religion_trigger = yes
+							rite_has_tenet = tenet_pursuit_of_knowledge
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_stationery } }
+				}
+				create_relic_artifact_effect = { NAME = stationery TYPE = pedestal VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						rite_has_parameter = cremation_funeral
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_ash } }
+				}
+				create_relic_artifact_effect = { NAME = ash TYPE = pedestal VISUAL = urn }
+			}
+			10 = {
+				trigger = {
+					scope:creator = { has_corpse_trigger = yes }
+					rite = {
+						rite_has_parameter = mummification_funeral
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_canopic_jar } }
+				}
+				create_relic_artifact_effect = { NAME = canopic_jar TYPE = pedestal VISUAL = urn }
+			}
+			10 = {
+				trigger = {
+					OR = {
+						broadly_dharmic_faith_trigger = yes
+						rite = { rite_has_tenet = tenet_mendicant_preachers }
+						scope:creator = { has_trait = pilgrim }
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_staff } }
+				}
+				create_relic_artifact_effect = { NAME = staff TYPE = pedestal VISUAL = spear_court }
+			}
+			10 = {
+				trigger = {
+					OR = {
+						broadly_dharmic_faith_trigger = yes
+						rite = { rite_has_tenet = tenet_mendicant_preachers }
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_water_filter } }
+				}
+				create_relic_artifact_effect = { NAME = water_filter TYPE = pedestal VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					OR = {
+						broadly_dharmic_faith_trigger = yes
+						rite = { rite_has_tenet = tenet_mendicant_preachers }
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_bowl } }
+				}
+				create_relic_artifact_effect = { NAME = bowl TYPE = pedestal VISUAL = bowl }
+			}
+			10 = {
+				trigger = {
+					broadly_dharmic_faith_trigger = yes
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_robe } }
+				}
+				create_relic_artifact_effect = { NAME = robe TYPE = pedestal VISUAL = reliquary }
+			}
+			1 = {
+				trigger = {
+					rite = {
+						OR = {
+							like_taoism_religion_trigger = yes
+							NOT = { rite_has_parameter = pacifist }
+						}
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_sword } }
+				}
+				modifier = {
+					add = 5
+					rite = { rite_has_parameter = sanctify_artifacts_weapons }
+				}
+				modifier = {
+					add = 9
+					like_taoism_religion_trigger = yes
+				}
+				create_relic_artifact_effect = { NAME = sword TYPE = pedestal VISUAL = sword_court }
+			}
+			10 = {
+				trigger = {
+					like_taoism_religion_trigger = yes
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_talisman } }
+				}
+				create_relic_artifact_effect = { NAME = talisman TYPE = pedestal VISUAL = reliquary }
+			}
+			10 = {
+				trigger = {
+					like_taoism_religion_trigger = yes
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_pellet } }
+				}
+				create_relic_artifact_effect = { NAME = pellet TYPE = pedestal VISUAL = flask }
+			}
+			10 = {
+				trigger = {
+					like_islam_religion_trigger = yes
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_footprint } }
+				}
+				create_relic_artifact_effect = { NAME = footprint TYPE = pedestal VISUAL = rock }
+			}
+			10 = {
+				trigger = {
+					faith_is_aniconic_trigger = no
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_effigy } }
+				}
+				if = {
+					limit = {
+						religion = {
+							like_pagan_religion_trigger yes
+							this != like_hellenism_religion_trigger = yes
+						}
+						rite = {
+							rite_has_doctrine = unreformed_faith_doctrine
+						}
+					}
+					create_relic_artifact_effect = { NAME = effigy TYPE = pedestal VISUAL = statue }
+				}
+				else = {
+					create_relic_artifact_effect = { NAME = effigy TYPE = pedestal VISUAL = statue_roman_woman }
+				}
+			}
+			10 = {
+				trigger = {
+					like_zoroastrianism_religion_trigger = yes
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_afarganyu } }
+				}
+				create_relic_artifact_effect = { NAME = afarganyu TYPE = pedestal VISUAL = urn }
+			}
+			10 = {
+				trigger = {
+					OR = {
+						like_zoroastrianism_religion_trigger = yes # zorostrian seal
+						like_yazidi_religion_trigger = yes
+						rite = { rite_has_parameter = sanctify_artifacts_luxurious }
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_ring } }
+				}
+				create_relic_artifact_effect = { NAME = ring TYPE = pedestal VISUAL = ring_court }
+			}
+			10 = {
+				trigger = {
+					OR = {
+						like_zoroastrianism_religion_trigger = yes
+						like_yazidi_religion_trigger = yes
+						rite = { rite_has_parameter = sanctify_artifacts_luxurious }
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_bracelet } }
+				}
+				create_relic_artifact_effect = { NAME = bracelet TYPE = pedestal VISUAL = oxus_bracelet }
+			}
+			10 = {
+				trigger = {
+					OR = {
+						like_judaism_religion_trigger = yes
+						rite = { rite_has_tenet = tenet_scholasticism }
+					}
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_commentary } }
+				}
+				create_relic_artifact_effect = { NAME = commentary TYPE = pedestal VISUAL = book }
+			}
+			10 = {
+				trigger = {
+					like_judaism_religion_trigger = yes
+					NOT = { scope:relic_site = { has_variable = pam_relic_drawn_tzitzit } }
+				}
+				create_relic_artifact_effect = { NAME = tzitzit TYPE = pedestal VISUAL = reliquary }
+			}
+			# the final fallback. should never pick this at least in vanilla game
+			0 = {
+				create_relic_artifact_effect = { NAME = relic TYPE = pedestal VISUAL = reliquary }
+			}
+		}
+		hidden_effect_new_object = {
+			if = {
+				limit = { has_royal_court = no }
+				scope:newly_created_artifact = { reforge_artifact = { type = miscellaneous quality = scope:quality wealth = scope:wealth } }
+			}
+			scope:newly_created_artifact = {
+				set_variable = { name = relic_religion value = scope:relic_creator_saint.religion }
+				add_scaled_artifact_modifier_piety_effect = yes
+				add_scaled_artifact_modifier_devotion_effect = yes
+				add_scaled_artifact_modifier_grandeur_small_effect = yes
+				remove_artifact_modifier = artifact_placeholder_modifier
+			}
+		}
+	}
+}
+# Run from the extracting ruler (root)
+# $SITE$ is the burial province to extract from
+pam_extract_relic_from_saint_effect = {
+	$SITE$ = {
+		save_scope_as = relic_site
+		saint_in_province = { save_scope_as = relic_creator_saint }
+	}
+	save_scope_as = extractor
+	# Set the relic's tier from the saint before the charge is spent.
+	scope:relic_creator_saint = {
+		save_scope_value_as = {
+			name = quality
+			value = pam_saint_relic_quality_value
+		}
+	}
+	# Spend one of the saint's relic charges; the engine checks faith, realm and remaining charges.
+	hidden_effect = { consume_saint_relic_charge = scope:relic_creator_saint }
+	# Religion-appropriate relic creation (hidden_effect_new_object; saves scope:newly_created_artifact).
+	create_appropriate_relic_artifact_from_character_effect = {
+		OWNER = scope:extractor
+		CREATOR = scope:relic_creator_saint
+	}
+	# Surface + rename the drawn relic (no repeated type per saint).
+	if = {
+		limit = { exists = scope:newly_created_artifact }
+		hidden_effect_new_object = {
+			scope:newly_created_artifact = { save_scope_as = relic_artifact }
+			scope:relic_artifact = {
+				# Stamped onto the artifact because relic_creator_saint is only in scope during extraction.
+				set_variable = {
+					name = pam_saint_relic_saint
+					value = scope:relic_creator_saint
+				}
+			}
+		}
+
+		# Dulia: relics carry one extra blessing. Hidden so the on-site option tooltip doesn't pre-spoil the random roll.
+		if = {
+			limit = { rite = { rite_has_parameter = tenet_dulia_extra_relic_modifier } }
+			hidden_effect = { pam_add_dulia_extra_relic_modifier_effect = yes }
+		}
+		# Dulia: a relic from one's own dynast glorifies the house.
+		if = {
+			limit = {
+				rite = { rite_has_parameter = tenet_dulia_dynasty_prestige_from_relics }
+				exists = dynasty
+				exists = scope:relic_creator_saint.dynasty
+				scope:relic_creator_saint.dynasty = dynasty
+			}
+			pam_grant_dulia_relic_dynasty_prestige_effect = yes
+		}
+	}
+}
+
+# Dulia: grants dynasty prestige for a kin relic so events can echo it via show_as_tooltip
+pam_grant_dulia_relic_dynasty_prestige_effect = {
+	custom_tooltip = pam_dulia_relic_dynasty_prestige_tt
+	dynasty = { add_dynasty_prestige = medium_dynasty_prestige_gain }
+}
+
+# Rolls one random blessing (even odds across seven) onto a freshly drawn relic (scope:relic_artifact). Dulia only.
+pam_add_dulia_extra_relic_modifier_effect = {
+	scope:relic_artifact = {
+		random_list = {
+			10 = { add_artifact_modifier = pam_dulia_relic_piety_level_impact_modifier }
+			10 = { add_artifact_modifier = pam_dulia_relic_piety_per_dread_modifier }
+			10 = { add_artifact_modifier = pam_dulia_relic_piety_per_knight_modifier }
+			10 = { add_artifact_modifier = pam_dulia_relic_stress_loss_per_piety_modifier }
+			10 = { add_artifact_modifier = pam_dulia_relic_piety_per_legitimacy_modifier }
+			10 = { add_artifact_modifier = pam_dulia_relic_learning_per_piety_modifier }
+			10 = { add_artifact_modifier = pam_dulia_relic_monthly_piety_modifier }
+		}
+	}
+}
+
+# Tooltip-only echo of the blessing already rolled onto the relic; reads the relic's actual modifier so the exact rolled effect shows.
+pam_show_dulia_relic_blessing_effect = {
+	scope:relic_artifact = {
+		if = {
+			limit = { has_artifact_modifier = pam_dulia_relic_piety_level_impact_modifier }
+			show_as_tooltip = { add_artifact_modifier = pam_dulia_relic_piety_level_impact_modifier }
+		}
+		else_if = {
+			limit = { has_artifact_modifier = pam_dulia_relic_piety_per_dread_modifier }
+			show_as_tooltip = { add_artifact_modifier = pam_dulia_relic_piety_per_dread_modifier }
+		}
+		else_if = {
+			limit = { has_artifact_modifier = pam_dulia_relic_piety_per_knight_modifier }
+			show_as_tooltip = { add_artifact_modifier = pam_dulia_relic_piety_per_knight_modifier }
+		}
+		else_if = {
+			limit = { has_artifact_modifier = pam_dulia_relic_stress_loss_per_piety_modifier }
+			show_as_tooltip = { add_artifact_modifier = pam_dulia_relic_stress_loss_per_piety_modifier }
+		}
+		else_if = {
+			limit = { has_artifact_modifier = pam_dulia_relic_piety_per_legitimacy_modifier }
+			show_as_tooltip = { add_artifact_modifier = pam_dulia_relic_piety_per_legitimacy_modifier }
+		}
+		else_if = {
+			limit = { has_artifact_modifier = pam_dulia_relic_learning_per_piety_modifier }
+			show_as_tooltip = { add_artifact_modifier = pam_dulia_relic_learning_per_piety_modifier }
+		}
+		else_if = {
+			limit = { has_artifact_modifier = pam_dulia_relic_monthly_piety_modifier }
+			show_as_tooltip = { add_artifact_modifier = pam_dulia_relic_monthly_piety_modifier }
+		}
+	}
+}
