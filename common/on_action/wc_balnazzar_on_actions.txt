@@ -1,38 +1,8 @@
 ﻿# Raw effect {} blocks for the same on_action don't merge across files - only the most-recently-loaded survives.
 # Use on_actions = { list } to accumulate instead.
 
-# Stratholme taken by conquest while disguised triggers wc_balnazzar_story.1008.
-on_title_gain = {
-	on_actions = {
-		wc_balnazzar_on_title_gain_actions
-	}
-}
-
-wc_balnazzar_on_title_gain_actions = {
-	effect = {
-		if = {
-			limit = {
-				has_character_flag = wc_balnazzar_disguise_active
-				scope:title = title:c_stratholme
-				OR = {
-					scope:transfer_type = flag:conquest
-					scope:transfer_type = flag:conquest_holy_war
-					scope:transfer_type = flag:conquest_claim
-					scope:transfer_type = flag:conquest_populist
-				}
-			}
-			trigger_event = {
-				id = wc_balnazzar_story.1008
-				days = 3
-			}
-		}
-	}
-}
-
-# Losing Lordaeron is the entry point toward becoming Dathrohan, but only gets Balnazzar
-# to landless adventurer status - balnazzar_become_dathrohan_decision (adventurer-only)
-# is what the player actually clicks, on their own schedule. Redirect pattern avoids
-# clobbering other on_title_lost hooks.
+# Losing Lordaeron makes Balnazzar landless; the separate adventurer decision
+# controls when he takes Dathrohan. Redirecting preserves other hooks.
 on_title_lost = {
 	on_actions = {
 		wc_balnazzar_on_title_lost_actions
@@ -46,18 +16,18 @@ wc_balnazzar_on_title_lost_actions = {
 				scope:title = title:c_lordaeron
 				exists = global_var:balnazzar_dreadlord_story
 				global_var:balnazzar_dreadlord_story = { story_owner = root }
+				NOT = { has_character_flag = wc_balnazzar_staged_death }
 				NOT = { has_character_flag = wc_balnazzar_disguise_active }
 				NOT = { has_character_flag = balnazzar_became_dathrohan }
 				is_landless_ruler = no
 			}
-			balnazzar_become_landless_adventurer_effect = yes
+			wc_balnazzar_relinquish_realm_effect = { RECIPIENT = scope:new_holder }
 		}
 	}
 }
 
-# on_title_lost misses vassalization at kingdom/empire tier (losing Lordaeron by being
-# forced to swear fealty rather than by a title changing hands directly). on_vassal_change's
-# root is the vassal, filtered with exists = liege.
+# on_title_lost misses forced vassalization at kingdom/empire tier.
+# on_vassal_change supplies the vassal as root.
 on_vassal_change = {
 	on_actions = {
 		wc_balnazzar_on_vassal_change_actions
@@ -71,28 +41,65 @@ wc_balnazzar_on_vassal_change_actions = {
 				exists = liege
 				exists = global_var:balnazzar_dreadlord_story
 				global_var:balnazzar_dreadlord_story = { story_owner = root }
+				NOT = { has_character_flag = wc_balnazzar_staged_death }
 				NOT = { has_character_flag = wc_balnazzar_disguise_active }
 				NOT = { has_character_flag = balnazzar_became_dathrohan }
 				is_landless_ruler = no
 			}
-			balnazzar_become_landless_adventurer_effect = yes
+			wc_balnazzar_relinquish_realm_effect = { RECIPIENT = liege }
 		}
 	}
 }
 
-# Alexandros dying while marked advances the story to .1007, whatever actually kills him -
-# Renault's hijacked scheme is the expected path, but any violent death while he's marked
-# reads as Balnazzar's opening either way (exists = scope:killer rules out natural/disease
-# deaths). The marker gets cleared on a failed or cancelled scheme too
-# (murder_failure_pre_filter_on_action), so a stale flag can't misfire on some unrelated death later.
+# Any marked violent death advances .1007; scope:killer excludes natural deaths.
+# Failed or cancelled schemes clear the marker to prevent later false matches.
 on_death = {
 	on_actions = {
 		wc_balnazzar_on_death_actions
+		wc_balnazzar_witness_death
 	}
+}
+
+sway_success = { on_actions = { wc_balnazzar_witness_sway } }
+
+wc_balnazzar_witness_sway = {
+	trigger = {
+		exists = scope:owner
+		exists = scope:target
+		scope:target = {
+			is_alive = yes
+			wc_balnazzar_pending_witness_trigger = yes
+			var:wc_balnazzar_witness_body = scope:owner
+		}
+	}
+	effect = { scope:target = { wc_balnazzar_resolve_witness_effect = { CHANGE = -12 } } }
+}
+
+wc_balnazzar_witness_death = {
+	trigger = {
+		wc_balnazzar_pending_witness_trigger = yes
+		exists = scope:killer
+		scope:killer = var:wc_balnazzar_witness_body
+		has_variable = wc_balnazzar_witness_murder
+	}
+	effect = { wc_balnazzar_resolve_witness_effect = { CHANGE = -18 } }
 }
 
 wc_balnazzar_on_death_actions = {
 	effect = {
+		if = {
+			limit = { this = character:60021 }
+			wc_scarlet_end_personal_agreements_effect = yes
+		}
+		# The Risen are Balnazzar's personal slaves, not an inherited state.
+		if = {
+			limit = {
+				this = character:430400
+				has_title = title:d_the_risen
+			}
+			destroy_title = title:d_the_risen
+		}
+
 		if = {
 			limit = {
 				this = character:60017 # Alexandros Mograine
@@ -101,8 +108,20 @@ wc_balnazzar_on_death_actions = {
 			}
 			remove_character_flag = wc_balnazzar_alexandros_marked_for_murder
 			if = {
-				limit = { exists = global_var:balnazzar_dreadlord_story }
-				global_var:balnazzar_dreadlord_story.story_owner = {
+				limit = {
+					exists = global_var:balnazzar_dreadlord_story
+					character:60021 = {
+						is_alive = yes
+						has_character_flag = wc_balnazzar_disguise_active
+					}
+					global_var:balnazzar_dreadlord_story = { story_owner = character:60021 }
+				}
+				character:60021 = { save_scope_as = wc_balnazzar_dathrohan_mask }
+				scope:wc_balnazzar_dathrohan_mask = {
+					# No pact delivery here: on_death can fire inside .1006's own
+					# resolution and consume the one-shot pact flag before .1006 can
+					# corrupt the Ashbringer. The story-cycle maintenance pulse
+					# (wc_story_cycle_balnazzar) honours the pact instead.
 					trigger_event = {
 						id = wc_balnazzar_story.1007
 						days = { 3 7 }
@@ -110,17 +129,5 @@ wc_balnazzar_on_death_actions = {
 				}
 			}
 		}
-	}
-}
-
-# Same recover_from_all_diseases_event_effect pattern every other immortal/magical
-# being transformation in this mod uses for can_not_get_sick - a disguised dreadlord
-# never had the trait (modifiers can't carry can_not_get_sick), so cure yearly instead.
-wc_balnazzar_disguise_disease_immunity_pulse = {
-	trigger = {
-		has_character_flag = wc_balnazzar_disguise_active
-	}
-	effect = {
-		recover_from_all_diseases_event_effect = yes
 	}
 }
