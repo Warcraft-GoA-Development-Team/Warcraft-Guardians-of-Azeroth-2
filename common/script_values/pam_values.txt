@@ -2750,6 +2750,79 @@ activity_tenet_pick_score = {
 	}
 }
 
+# How big the debated change is, from 0 (minor) to 3 (radical)
+# Tenets by how far their standing moves, doctrines by the divergence the change adds; one tier more for what Christians hold an abomination
+ecumenical_council_sway_change_tier_value = {
+	value = 0
+	if = {
+		limit = {
+			scope:activity = { has_current_phase = ecumenical_council_phase_third_debate }
+		}
+		if = {
+			limit = {
+				exists = scope:activity.var:current_topic
+				exists = scope:activity.var:third_debate_proposal
+			}
+			scope:activity.var:current_topic = { save_temporary_scope_as = ec_step_from }
+			scope:activity.var:third_debate_proposal = {
+				save_temporary_scope_as = ec_step_to
+				save_temporary_scope_as = doctrine
+			}
+			add = ecumenical_council_doctrine_change_divergence_value
+			divide = 10
+			floor = yes
+			if = {
+				limit = { ecumenical_council_doctrine_christian_offence_delta_value > 0 }
+				add = 1
+			}
+		}
+	}
+	else_if = {
+		limit = {
+			exists = scope:activity.var:current_topic
+			exists = scope:activity.var:current_debate_proposal
+		}
+		scope:activity.var:current_topic = { save_temporary_scope_as = tenet }
+		add = ecumenical_council_proposal_change_magnitude_value
+		subtract = 1
+		if = {
+			limit = {
+				pam_ec_tenet_is_christian_abomination_trigger = yes
+				ecumenical_council_proposal_direction_value > 0
+			}
+			add = 1
+		}
+	}
+	min = 0
+	max = 3
+}
+
+# Swaying attendees toward the change costs half a base cost more per tier
+ecumenical_council_sway_change_cost_multiplier_value = {
+	value = scope:ec_sway_change_tier
+	multiply = 0.5
+	add = 1
+}
+
+# Free trait-based sways toward the change win over a quarter fewer attendees per tier
+ecumenical_council_sway_free_max_conservatives_value = {
+	value = 1
+	subtract = {
+		value = scope:ec_sway_change_tier
+		multiply = 0.25
+	}
+	multiply = scope:feature_conservatives_size
+	ceiling = yes
+}
+
+# Duels to sway attendees toward the change get harder from tier 2
+ecumenical_council_sway_duel_penalty_value = {
+	value = scope:ec_sway_change_tier
+	subtract = 1
+	min = 0
+	multiply = 8
+}
+
 # Costs of the Ecumenical Council sway options
 
 ecumenical_council_sway_piety_cost_conservatives_value = {
@@ -3552,6 +3625,53 @@ ecumenical_council_doctrine_attendee_support_value = {
 			min = -30
 			max = 30
 		}
+	}
+}
+
+# Divergence a change from scope:ec_step_from to scope:ec_step_to adds to a rite
+ecumenical_council_doctrine_change_divergence_value = {
+	value = 0
+	scope:ec_step_to = {
+		add = "doctrine_divergence(scope:ec_step_from)"
+	}
+}
+
+# Desire at or above this lets an AI propose a doctrine past the nearest step
+ecumenical_council_doctrine_extremist_desire_value = 75
+
+# AI host weight for proposing scope:doctrine in the third debate
+# Only the nearest step from the held doctrine counts, unless the host is an extremist or wants this doctrine badly
+ecumenical_council_doctrine_host_pick_value = {
+	value = ecumenical_council_doctrine_desire_value
+	if = {
+		limit = { exists = scope:ec_debate_topic_3 }
+		scope:doctrine = { save_temporary_scope_as = ec_step_to }
+		scope:ec_debate_topic_3 = { save_temporary_scope_as = ec_step_from }
+		if = {
+			limit = {
+				ecumenical_council_doctrine_desire_value < ecumenical_council_doctrine_extremist_desire_value
+				pam_ec_doctrine_is_nearest_step_trigger = no
+				pam_ec_doctrine_extremist_proposer_trigger = no
+			}
+			add = -1000
+		}
+	}
+}
+
+# activity_doctrine_pick_score only: desire for scope:ec_desire_target, counted only if the planner would propose it from the held scope:ec_pick_candidate
+ecumenical_council_doctrine_pick_step_desire_value = {
+	value = 0
+	scope:ec_desire_target = { save_temporary_scope_as = ec_step_to }
+	scope:ec_pick_candidate = { save_temporary_scope_as = ec_step_from }
+	if = {
+		limit = {
+			OR = {
+				pam_ec_doctrine_is_nearest_step_trigger = yes
+				pam_ec_doctrine_extremist_proposer_trigger = yes
+				ecumenical_council_doctrine_desire_core_value >= ecumenical_council_doctrine_extremist_desire_value
+			}
+		}
+		add = ecumenical_council_doctrine_desire_core_value
 	}
 }
 
@@ -9051,6 +9171,13 @@ ecumenical_council_sort_value = {
 
 }
 
+# Picks the AI Conservative who leads the opposition at an Ecumenical Council: rank first, then learning
+ecumenical_council_counterplayer_sort_value = {
+	value = highest_held_title_tier
+	multiply = 100
+	add = learning
+}
+
 # Used to pick the top 3 innovators at an Ecumenical Council
 # (attendees who support the planner-selected tenet/doctrine change).
 ecumenical_council_innovator_sort_value = {
@@ -9623,6 +9750,17 @@ pam_ask_subordinates_for_gold_value = {
 			max = 150
 		}
 	}
+}
+
+pam_ask_subordinates_for_gold_piety_cost_value = {
+	value = medium_piety_value
+	multiply = {
+		value = scope:recipient.pam_ask_subordinates_for_gold_value
+		divide = scope:actor.minor_treasury_or_gold_value
+	}
+	min = medium_piety_value
+	max = major_piety_value
+	round = yes
 }
 
 pam_strengthen_claim_cost_value = {
@@ -10364,4 +10502,24 @@ monastic_order_movement_prestige_value = {
 
 pam_knows_rite_level = {
 	value = "knows_rite_level(scope:rite)"
+}
+
+schism_mainline_supporters_gui = {
+	every_situation_group_participant = {
+		limit = {
+			has_variable = pam_schism_stance
+			var:pam_schism_stance = flag:mainline
+		}
+		add = 1
+	}
+}
+
+schism_competitor_supporters_gui = {
+	every_situation_group_participant = {
+		limit = {
+			has_variable = pam_schism_stance
+			var:pam_schism_stance = flag:competitor
+		}
+		add = 1
+	}
 }
