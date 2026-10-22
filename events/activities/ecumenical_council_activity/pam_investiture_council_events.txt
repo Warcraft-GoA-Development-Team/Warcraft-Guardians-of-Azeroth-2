@@ -1,0 +1,605 @@
+﻿######################################################################################################
+# Investiture Council events
+#
+# Dedicated debate/guest/tally events for activity_investiture_council (the shipped ecumenical council
+# events are phase-keyed to that activity, so these are bespoke; they reuse only the helper effects).
+#
+# 0001 - Arrival flavor (guest)
+# 0003 - Pre-debate flavour (guest)
+# 0004 - Player interrupt: busy/travelling voter summoned to the council
+# 0002 - The council convenes (host, summons phase)
+# 0010 - The debate: host champions Spiritual (host, debate phase)
+# 0031 - The debate: guest picks a side (players without a locked stance)
+# 0032 - Post-choice persuasion (clergy voter): Piety + Diplomacy/Learning duel to sway the assembly
+# 0033 - Post-choice persuasion (secular attendee): bribe/convince either side
+# 0060 - Outcome letter to a non-attending player HoF (from the host)
+# 0061 - Outcome letter to a non-attending secular player (from their court chaplain)
+# 0050 - Inform a player HoF an archbishop will host in their stead
+# 0091 - Hidden retry nudge (re-attempt hosting until the council starts; hands off if the nominee is blocked)
+# 0092 - Hidden delayed force-gather (a month after start, once invitations are processed)
+# 0090 - Hidden backstop check
+#
+# The vote tally runs from the debate phase on_end (pam_investiture_council_tally_effect).
+######################################################################################################
+
+namespace = pam_investiture_council_events
+
+# Arrival: the host welcomes the newly-arrived guest to the council. Not shown to the host themselves.
+pam_investiture_council_events.0001 = {
+	type = activity_event
+	title = pam_investiture_council_events.0001.t
+	desc = pam_investiture_council_events.0001.desc
+	theme = pam_investiture_council
+
+	immediate = {
+		# scope:host is not provided in these arrival events, so take the host from the activity.
+		scope:activity.activity_host = { save_scope_as = arrival_host }
+	}
+
+	left_portrait = {
+		character = scope:arrival_host
+		animation = personality_content
+	}
+	right_portrait = {
+		character = root
+		animation = admiration
+	}
+
+	option = {
+		name = pam_investiture_council_events.0001.a
+		custom_tooltip = pam_investiture_council_events.0001.a.tt
+	}
+}
+
+# Pre-debate flavour (guest), fired as the activity settles into the Debate phase - distinct from the arrival
+# event (0001) so guests do not see the same welcome twice.
+pam_investiture_council_events.0003 = {
+	type = activity_event
+	title = pam_investiture_council_events.0003.t
+	desc = pam_investiture_council_events.0003.desc
+	theme = pam_investiture_council
+
+	immediate = {
+		# scope:host is not provided in these arrival events, so take the host from the activity.
+		scope:activity.activity_host = { save_scope_as = arrival_host }
+	}
+
+	left_portrait = {
+		character = scope:arrival_host
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = root
+		animation = thinking
+	}
+
+	option = {
+		name = pam_investiture_council_events.0003.a
+	}
+}
+
+# The council formally convenes (host-facing).
+pam_investiture_council_events.0002 = {
+	type = activity_event
+	title = pam_investiture_council_events.0002.t
+	desc = pam_investiture_council_events.0002.desc
+	theme = pam_investiture_council
+	left_portrait = {
+		character = scope:host
+		animation = personality_zealous
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_councils_judgement"
+	}
+
+	option = {
+		name = pam_investiture_council_events.0002.a
+	}
+}
+
+# The debate opens. The host champions the Church's sole right to invest clergy (Spiritual); this fixed
+# proposal stands and the stance-seeded vote decides the outcome.
+pam_investiture_council_events.0010 = {
+	type = activity_event
+	title = pam_investiture_council_events.0010.t
+	desc = pam_investiture_council_events.0010.desc
+	theme = pam_investiture_council
+	left_portrait = {
+		character = scope:host
+		animation = personality_zealous
+	}
+
+	immediate = {
+		ecumenical_council_busy_effect = yes
+	}
+
+	option = {
+		name = pam_investiture_council_events.0010.a
+		ai_will_select = { value = 100 }
+	}
+
+	after = {
+		ecumenical_council_ready_effect = yes
+		pam_sort_investiture_council_groups_effect = { NEXT_EVENT = 0031 }
+	}
+}
+
+# Guest picks a side. Only sent to players without a locked stance; committed voters are auto-assigned by
+# the sort effect.
+pam_investiture_council_events.0031 = {
+	type = activity_event
+	title = pam_investiture_council_events.0031.t
+	desc = pam_investiture_council_events.0031.desc
+	theme = pam_investiture_council
+	left_portrait = {
+		character = scope:host
+		animation = personality_zealous
+	}
+	right_portrait = {
+		character = root
+		animation = thinking
+	}
+
+	immediate = {
+		ecumenical_council_busy_effect = yes
+	}
+
+	# Support the Head of Faith: Spiritual
+	option = {
+		name = pam_investiture_council_events.0031.a
+		ecumenical_council_become_innovator_effect = { CHARACTER = root }
+		set_variable = { name = investiture_swaying_for value = flag:innovator }
+		trigger_event = { id = pam_investiture_council_events.0032 days = 1 }
+	}
+	# Uphold the secular right of appointment: Temporal
+	option = {
+		name = pam_investiture_council_events.0031.b
+		ecumenical_council_become_conservative_effect = { CHARACTER = root }
+		set_variable = { name = investiture_swaying_for value = flag:conservative }
+		trigger_event = { id = pam_investiture_council_events.0032 days = 1 }
+	}
+
+	after = {
+		ecumenical_council_ready_effect = yes
+	}
+}
+
+# Post-choice persuasion (clergy voter): a Diplomacy + Learning duel paid in Piety flips opposite-side AI voters
+# (a poor result costs a vote). Chains up to the cap (+50% each); only offered while an opposite-side voter exists.
+pam_investiture_council_events.0032 = {
+	type = activity_event
+	title = pam_investiture_council_events.0032.t
+	desc = pam_investiture_council_events.0032.desc
+	theme = pam_investiture_council
+	left_portrait = {
+		character = root
+		animation = personality_bold
+	}
+	right_portrait = {
+		character = scope:investiture_persuade_face
+		animation = contemplating
+	}
+
+	trigger = {
+		exists = var:investiture_swaying_for
+		scope:activity ?= {
+			any_attending_character = {
+				is_ai = yes
+				this != root
+				pam_valid_ecumenical_council_voter_trigger = yes
+				trigger_if = {
+					limit = { root.var:investiture_swaying_for = flag:innovator }
+					is_in_guest_subset = { name = conservative }
+				}
+				trigger_else = {
+					is_in_guest_subset = { name = innovator }
+				}
+			}
+		}
+	}
+
+	immediate = {
+		# First attempt of the chain: start the counter the scaled costs read (each attempt +50% of the base).
+		if = {
+			limit = { NOT = { has_variable = investiture_persuade_attempts } }
+			set_variable = { name = investiture_persuade_attempts value = 1 days = 365 }
+		}
+		# Put a face to the opposing camp the player is trying to win over.
+		scope:activity ?= {
+			random_attending_character = {
+				limit = {
+					this != root
+					pam_valid_ecumenical_council_voter_trigger = yes
+					trigger_if = {
+						limit = { root.var:investiture_swaying_for = flag:innovator }
+						is_in_guest_subset = { name = conservative }
+					}
+					trigger_else = {
+						is_in_guest_subset = { name = innovator }
+					}
+				}
+				save_scope_as = investiture_persuade_face
+			}
+		}
+	}
+
+	# Sway the assembly - pay Piety and roll the Diplomacy + Learning duel.
+	option = {
+		name = pam_investiture_council_events.0032.a
+		trigger = { piety >= pam_investiture_persuade_piety_cost_scaled }
+		add_piety = {
+			value = pam_investiture_persuade_piety_cost_scaled
+			multiply = -1
+		}
+		# The clergy voter's side was chosen in 0031; pass it (and its opposite) to the shared duel.
+		if = {
+			limit = { var:investiture_swaying_for = flag:innovator }
+			pam_investiture_persuade_duel_effect = { SKILL_A = diplomacy SKILL_B = learning SIDE = innovator OPPOSITE = conservative }
+		}
+		else = {
+			pam_investiture_persuade_duel_effect = { SKILL_A = diplomacy SKILL_B = learning SIDE = conservative OPPOSITE = innovator }
+		}
+		# Chain the next, dearer attempt until the cap (the event's own trigger re-checks targets remain).
+		hidden_effect = {
+			change_variable = { name = investiture_persuade_attempts add = 1 }
+			if = {
+				limit = { var:investiture_persuade_attempts <= pam_investiture_persuade_max_attempts }
+				trigger_event = { id = pam_investiture_council_events.0032 days = 1 }
+			}
+		}
+	}
+	# Leave it be.
+	option = {
+		name = pam_investiture_council_events.0032.b
+	}
+}
+
+# Post-choice persuasion (secular attendee, non-voter): Bribe (Gold; Intrigue + Stewardship) or Convince
+# (Prestige; Diplomacy + Learning) to flip AI voters either way. Chains up to the cap (+50% each); can backfire.
+pam_investiture_council_events.0033 = {
+	type = activity_event
+	title = pam_investiture_council_events.0033.t
+	desc = pam_investiture_council_events.0033.desc
+	theme = pam_investiture_council
+	left_portrait = {
+		character = root
+		animation = personality_bold
+	}
+	right_portrait = {
+		character = scope:investiture_persuade_face
+		animation = disbelief
+	}
+
+	# Only worth offering while any AI voter remains to be swayed.
+	trigger = {
+		scope:activity ?= {
+			any_attending_character = {
+				is_ai = yes
+				this != root
+				pam_valid_ecumenical_council_voter_trigger = yes
+			}
+		}
+	}
+
+	immediate = {
+		# First attempt of the chain: start the counter the scaled costs read (each attempt +50% of the base).
+		if = {
+			limit = { NOT = { has_variable = investiture_persuade_attempts } }
+			set_variable = { name = investiture_persuade_attempts value = 1 days = 365 }
+		}
+		# Put a face to the assembled voters the player is trying to move.
+		scope:activity ?= {
+			random_attending_character = {
+				limit = {
+					this != root
+					is_ai = yes
+					pam_valid_ecumenical_council_voter_trigger = yes
+				}
+				save_scope_as = investiture_persuade_face
+			}
+		}
+	}
+
+	# Bribe the assembly toward the Church (Spiritual).
+	option = {
+		name = pam_investiture_council_events.0033.a
+		trigger = {
+			gold >= pam_investiture_persuade_gold_cost_scaled
+			custom_description = {
+				text = pam_investiture_persuade_target_spiritual_tt
+				scope:activity ?= {
+					any_attending_character = {
+						is_ai = yes
+						this != root
+						pam_valid_ecumenical_council_voter_trigger = yes
+						NOT = { is_in_guest_subset = { name = innovator } }
+					}
+				}
+			}
+		}
+		remove_short_term_gold = pam_investiture_persuade_gold_cost_scaled
+		pam_investiture_persuade_duel_effect = { SKILL_A = intrigue SKILL_B = stewardship SIDE = innovator OPPOSITE = conservative }
+		# Chain the next, dearer attempt until the cap (the event's own trigger re-checks targets remain).
+		hidden_effect = {
+			change_variable = { name = investiture_persuade_attempts add = 1 }
+			if = {
+				limit = { var:investiture_persuade_attempts <= pam_investiture_persuade_max_attempts }
+				trigger_event = { id = pam_investiture_council_events.0033 days = 1 }
+			}
+		}
+	}
+	# Convince the assembly toward the Church (Spiritual).
+	option = {
+		name = pam_investiture_council_events.0033.b
+		trigger = {
+			prestige >= pam_investiture_persuade_prestige_cost_scaled
+			custom_description = {
+				text = pam_investiture_persuade_target_spiritual_tt
+				scope:activity ?= {
+					any_attending_character = {
+						is_ai = yes
+						this != root
+						pam_valid_ecumenical_council_voter_trigger = yes
+						NOT = { is_in_guest_subset = { name = innovator } }
+					}
+				}
+			}
+		}
+		add_prestige = { value = pam_investiture_persuade_prestige_cost_scaled multiply = -1 }
+		pam_investiture_persuade_duel_effect = { SKILL_A = diplomacy SKILL_B = learning SIDE = innovator OPPOSITE = conservative }
+		# Chain the next, dearer attempt until the cap.
+		hidden_effect = {
+			change_variable = { name = investiture_persuade_attempts add = 1 }
+			if = {
+				limit = { var:investiture_persuade_attempts <= pam_investiture_persuade_max_attempts }
+				trigger_event = { id = pam_investiture_council_events.0033 days = 1 }
+			}
+		}
+	}
+	# Bribe the assembly toward the crown (Temporal).
+	option = {
+		name = pam_investiture_council_events.0033.c
+		trigger = {
+			gold >= pam_investiture_persuade_gold_cost_scaled
+			custom_description = {
+				text = pam_investiture_persuade_target_temporal_tt
+				scope:activity ?= {
+					any_attending_character = {
+						is_ai = yes
+						this != root
+						pam_valid_ecumenical_council_voter_trigger = yes
+						NOT = { is_in_guest_subset = { name = conservative } }
+					}
+				}
+			}
+		}
+		remove_short_term_gold = pam_investiture_persuade_gold_cost_scaled
+		pam_investiture_persuade_duel_effect = { SKILL_A = intrigue SKILL_B = stewardship SIDE = conservative OPPOSITE = innovator }
+		# Chain the next, dearer attempt until the cap.
+		hidden_effect = {
+			change_variable = { name = investiture_persuade_attempts add = 1 }
+			if = {
+				limit = { var:investiture_persuade_attempts <= pam_investiture_persuade_max_attempts }
+				trigger_event = { id = pam_investiture_council_events.0033 days = 1 }
+			}
+		}
+	}
+	# Convince the assembly toward the crown (Temporal).
+	option = {
+		name = pam_investiture_council_events.0033.d
+		trigger = {
+			prestige >= pam_investiture_persuade_prestige_cost_scaled
+			custom_description = {
+				text = pam_investiture_persuade_target_temporal_tt
+				scope:activity ?= {
+					any_attending_character = {
+						is_ai = yes
+						this != root
+						pam_valid_ecumenical_council_voter_trigger = yes
+						NOT = { is_in_guest_subset = { name = conservative } }
+					}
+				}
+			}
+		}
+		add_prestige = { value = pam_investiture_persuade_prestige_cost_scaled multiply = -1 }
+		pam_investiture_persuade_duel_effect = { SKILL_A = diplomacy SKILL_B = learning SIDE = conservative OPPOSITE = innovator }
+		# Chain the next, dearer attempt until the cap.
+		hidden_effect = {
+			change_variable = { name = investiture_persuade_attempts add = 1 }
+			if = {
+				limit = { var:investiture_persuade_attempts <= pam_investiture_persuade_max_attempts }
+				trigger_event = { id = pam_investiture_council_events.0033 days = 1 }
+			}
+		}
+	}
+	# Stay out of it.
+	option = {
+		name = pam_investiture_council_events.0033.e
+	}
+}
+
+# Letter to a non-attending player Head of Faith, sent the moment the vote is decided (attendees see the ruling
+# on the activity's conclusion page instead).
+pam_investiture_council_events.0060 = {
+	type = letter_event
+	opening = pam_investiture_council_events.0060.opening
+	sender = scope:host
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:investiture_conclusion_host.var:investiture_conclusion_outcome ?= flag:passed }
+				desc = pam_investiture_council_events.0060.desc.spiritual
+			}
+			desc = pam_investiture_council_events.0060.desc.temporal
+		}
+	}
+
+	option = {
+		name = pam_investiture_council_events.0060.a
+	}
+}
+
+# Outcome letter from the court chaplain to a non-attending secular participant player (the realm priest
+# relays what the council decided). Sender saved as investiture_report_chaplain by the tally effect.
+pam_investiture_council_events.0061 = {
+	type = letter_event
+	opening = pam_investiture_council_events.0061.opening
+	sender = scope:investiture_report_chaplain
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:investiture_conclusion_host.var:investiture_conclusion_outcome ?= flag:passed }
+				desc = pam_investiture_council_events.0061.desc.spiritual
+			}
+			desc = pam_investiture_council_events.0061.desc.temporal
+		}
+	}
+
+	option = {
+		name = pam_investiture_council_events.0061.a
+	}
+}
+
+# Interrupt for a player voter who is busy or travelling when the council convenes: drop everything and race
+# to it (freed of their current plan, with a large travel-speed boost), or carry on as they were.
+pam_investiture_council_events.0004 = {
+	type = character_event
+	title = pam_investiture_council_events.0004.t
+	desc = pam_investiture_council_events.0004.desc
+	theme = christian
+	left_portrait = {
+		character = root
+		animation = worried
+	}
+
+	option = {
+		name = pam_investiture_council_events.0004.a
+		pam_investiture_free_for_council_effect = yes
+		add_character_modifier = { modifier = pam_investiture_council_haste_modifier days = 365 }
+	}
+	option = {
+		name = pam_investiture_council_events.0004.b
+	}
+}
+
+# Tells a player Head of Faith that a senior archbishop will convene the council in their stead.
+pam_investiture_council_events.0050 = {
+	type = character_event
+	title = pam_investiture_council_events.0050.t
+	desc = {
+		first_valid = {
+			# Name the nominated archbishop when the nudge scope made it through; generic wording otherwise.
+			triggered_desc = {
+				trigger = { exists = scope:investiture_nominee_host }
+				desc = pam_investiture_council_events.0050.desc.named
+			}
+			desc = pam_investiture_council_events.0050.desc
+		}
+	}
+	theme = christian
+	left_portrait = {
+		character = root
+		animation = personality_content
+	}
+	right_portrait = {
+		trigger = { exists = scope:investiture_nominee_host }
+		character = scope:investiture_nominee_host
+		animation = personality_zealous
+	}
+
+	option = {
+		name = pam_investiture_council_events.0050.a
+		custom_tooltip = pam_investiture_upcoming_council_tt
+	}
+}
+
+# Hidden retry nudge: re-attempts hosting until the nominee starts the council or the flag/pending expires.
+# Self-healing - a blocked nominee hands the nomination back to the nudge if any substitute host exists.
+pam_investiture_council_events.0091 = {
+	type = character_event
+	hidden = yes
+
+	trigger = {
+		has_character_flag = investiture_council_nominated
+		faith = {
+			has_variable = investiture_council_pending
+			has_doctrine = doctrine_clerical_succession_conditional
+		}
+	}
+
+	immediate = {
+		if = {
+			# The Head of Faith uses the prompt availability check, an archbishop the shared host trigger
+			limit = {
+				trigger_if = {
+					limit = { faith.religious_head = this }
+					pam_available_investiture_hof_ai_trigger = yes
+				}
+				trigger_else = {
+					pam_valid_investiture_council_host_trigger = yes
+				}
+			}
+			ai_attempt_to_host_activity = activity_investiture_council
+			trigger_event = { id = pam_investiture_council_events.0091 days = pam_investiture_council_host_retry_days }
+		}
+		else_if = {
+			# Blocked, and a substitute exists: hand the nomination back to the nudge to pick the next host.
+			limit = {
+				faith = {
+					OR = {
+						religious_head ?= { pam_available_investiture_hof_ai_trigger = yes }
+						any_faith_character = { pam_valid_investiture_council_host_trigger = yes }
+					}
+				}
+			}
+			remove_character_flag = investiture_council_nominated
+			faith = { pam_nudge_investiture_council_host_effect = yes }
+		}
+		else = {
+			# With no substitute we keep waiting, and the in-absentia fallback still ends the crisis
+			ai_attempt_to_host_activity = activity_investiture_council
+			trigger_event = { id = pam_investiture_council_events.0091 days = pam_investiture_council_host_retry_days }
+		}
+	}
+}
+
+# Hidden delayed force-gather, a month after start: by then every invitation is processed, so force-adding
+# can't collide with an in-flight acceptance (engine assert). Fired at the host from the activity on_start.
+pam_investiture_council_events.0092 = {
+	type = character_event
+	hidden = yes
+
+	# Skip if the council is gone or the host changed; the normal invitations carry on without the sweep.
+	trigger = {
+		involved_activity ?= {
+			has_activity_type = activity_investiture_council
+			activity_host = root
+		}
+	}
+
+	immediate = {
+		save_scope_as = host
+		involved_activity = { save_scope_as = activity }
+		pam_investiture_council_force_gather_effect = yes
+	}
+}
+
+# Hidden backstop check, ~2y after the nudge: if the crisis is still unresolved (faith still pending), settle
+# it in absentia.
+pam_investiture_council_events.0090 = {
+	type = character_event
+	hidden = yes
+
+	# Still on Conditional so a concluded council cannot double-resolve
+	trigger = {
+		faith = {
+			has_variable = investiture_council_pending
+			has_doctrine = doctrine_clerical_succession_conditional
+		}
+	}
+
+	immediate = {
+		faith = { pam_investiture_council_backstop_effect = yes }
+	}
+}
