@@ -1,0 +1,934 @@
+﻿petition_head_of_faith_save_scopes_effect = {
+	save_scope_as = actor
+	var:petition_head_of_faith_recipient ?= {
+		save_scope_as = recipient
+	}
+	# A var: MakeScope lookup does not resolve in custom_tooltip
+	if = {
+		limit = { exists = var:petition_head_of_faith_target_character }
+		var:petition_head_of_faith_target_character = {
+			save_scope_as = petition_target
+		}
+	}
+	# Saves scope:petition_gravest_sin when the target or penitent is sinful enough to name.
+	petition_head_of_faith_save_gravest_sin_effect = yes
+}
+
+petition_head_of_faith_clear_pending_effect = {
+	var:pending_petition_head_of_faith_recipient ?= {
+		remove_variable = petition_head_of_faith_petitioner
+	}
+	remove_variable = pending_petition_head_of_faith_type
+	remove_variable = pending_petition_head_of_faith_recipient
+	remove_variable = pending_petition_head_of_faith_target_character
+	remove_variable = pending_petition_head_of_faith_reserved_piety_value
+	remove_character_flag = pending_petition_head_of_faith_use_hook
+}
+
+# Blocks an AI Head of Faith from travel and new activities while awaiting the petitioner.
+petition_head_of_faith_block_recipient_effect = {
+	scope:recipient = {
+		if = {
+			limit = { is_ai = yes }
+			set_variable = {
+				name = petition_head_of_faith_petitioner
+				value = scope:actor
+			}
+		}
+	}
+}
+
+petition_head_of_faith_cleanup_effect = {
+	if = {
+		limit = { has_character_flag = petition_head_of_faith_in_courtroom }
+		close_view = {
+			view = royal_court
+			player = root
+		}
+	}
+	var:petition_head_of_faith_recipient ?= {
+		remove_variable = petition_head_of_faith_petitioner
+	}
+	remove_variable = petition_head_of_faith_type
+	remove_variable = petition_head_of_faith_recipient
+	remove_variable = petition_head_of_faith_target_character
+	remove_variable = petition_head_of_faith_reserved_piety_value
+	remove_character_flag = petition_head_of_faith_character_flag
+	remove_character_flag = petition_head_of_faith_in_courtroom
+	remove_character_flag = petition_head_of_faith_use_hook
+	remove_character_flag = petition_head_of_faith_argument_cite_sins
+	remove_character_flag = petition_head_of_faith_argument_finesse
+	remove_character_flag = petition_head_of_faith_argument_learning
+	remove_character_flag = petition_head_of_faith_argument_confess
+	remove_character_flag = petition_head_of_faith_argument_canon_law
+	remove_character_flag = petition_head_of_faith_argument_weep
+}
+
+petition_head_of_faith_clear_all_effect = {
+	petition_head_of_faith_clear_pending_effect = yes
+	petition_head_of_faith_cleanup_effect = yes
+}
+
+# Only refunds if the reserved-piety var still exists, so two callers cannot refund twice
+petition_head_of_faith_refund_pending_costs_effect = {
+	if = {
+		limit = { has_variable = pending_petition_head_of_faith_reserved_piety_value }
+		add_piety = var:pending_petition_head_of_faith_reserved_piety_value
+		remove_variable = pending_petition_head_of_faith_reserved_piety_value
+	}
+}
+
+petition_head_of_faith_refund_reserved_costs_effect = {
+	if = {
+		limit = { has_variable = petition_head_of_faith_reserved_piety_value }
+		custom_tooltip = petition_head_of_faith_reclaim_offering_tt
+		add_piety = var:petition_head_of_faith_reserved_piety_value
+		remove_variable = petition_head_of_faith_reserved_piety_value
+	}
+}
+
+petition_head_of_faith_activate_pending_effect = {
+	if = {
+		limit = {
+			has_variable = pending_petition_head_of_faith_type
+			exists = var:pending_petition_head_of_faith_recipient
+		}
+		add_character_flag = petition_head_of_faith_character_flag
+		set_variable = {
+			name = petition_head_of_faith_type
+			value = var:pending_petition_head_of_faith_type
+		}
+		set_variable = {
+			name = petition_head_of_faith_recipient
+			value = var:pending_petition_head_of_faith_recipient
+		}
+		if = {
+			limit = { exists = var:pending_petition_head_of_faith_target_character }
+			set_variable = {
+				name = petition_head_of_faith_target_character
+				value = var:pending_petition_head_of_faith_target_character
+			}
+		}
+		if = {
+			limit = { has_variable = pending_petition_head_of_faith_reserved_piety_value }
+			set_variable = {
+				name = petition_head_of_faith_reserved_piety_value
+				value = var:pending_petition_head_of_faith_reserved_piety_value
+			}
+		}
+		if = {
+			limit = { has_character_flag = pending_petition_head_of_faith_use_hook }
+			add_character_flag = petition_head_of_faith_use_hook
+		}
+		petition_head_of_faith_clear_pending_effect = yes
+	}
+}
+
+petition_head_of_faith_invalidation_effect = {
+	if = {
+		limit = {
+			has_character_flag = petition_head_of_faith_character_flag
+			petition_head_of_faith_valid_trigger = no
+		}
+		trigger_event = petition_head_of_faith.0601
+	}
+}
+
+petition_head_of_faith_begin_travel_effect = {
+	if = {
+		limit = {
+			exists = var:pending_petition_head_of_faith_recipient
+			default_location = var:pending_petition_head_of_faith_recipient.capital_province
+		}
+		petition_head_of_faith_activate_pending_effect = yes
+		trigger_event = petition_head_of_faith.9000
+	}
+	else = {
+		start_travel_plan = {
+			destination = var:pending_petition_head_of_faith_recipient.capital_province
+			on_start_on_action = petition_head_of_faith_start
+			on_travel_planner_cancel_on_action = petition_head_of_faith_travel_planner_exit
+			on_arrival_event = petition_head_of_faith.9000
+			# With return_trip, all_but_last fires on arrival at the Head of Faith's capital and not on the way home
+			on_arrival_destinations = all_but_last
+			return_trip = yes
+		}
+	}
+}
+
+# Setup on_accept runs this and we need actor and recipient
+# secondary_recipient is only set for excommunication
+# $TYPE$ = petition flag, $HOOK$ = hook send-option, $PIETY_VALUE$ = tier
+petition_head_of_faith_prepare_petition_effect = {
+	scope:puppet_or_actor = {
+		petition_head_of_faith_clear_all_effect = yes
+		set_variable = {
+			name = pending_petition_head_of_faith_type
+			value = flag:$TYPE$
+		}
+		set_variable = {
+			name = pending_petition_head_of_faith_recipient
+			value = scope:recipient
+		}
+		if = {
+			limit = { exists = scope:secondary_recipient }
+			set_variable = {
+				name = pending_petition_head_of_faith_target_character
+				value = scope:secondary_recipient
+			}
+		}
+		if = {
+			limit = { scope:$HOOK$ = yes }
+			add_character_flag = pending_petition_head_of_faith_use_hook
+		}
+		else = {
+			#peace of god makes excommunicating free against aggressors
+			if = {
+				limit = {
+					NAND = {
+						exists = scope:excom_request
+						rite = {
+							rite_has_parameter = tenet_peace_of_god_excommunication
+						}
+						scope:puppet_or_actor = {
+							has_opinion_modifier = {
+								modifier = declared_war
+								target = scope:secondary_recipient
+							}
+						}
+					}
+				}
+				set_variable = {
+					name = pending_petition_head_of_faith_reserved_piety_value
+					value = $PIETY_VALUE$
+				}
+				add_piety = {
+					value = 0
+					subtract = $PIETY_VALUE$
+				}
+			}
+		}
+		petition_head_of_faith_block_recipient_effect = yes
+		petition_head_of_faith_begin_travel_effect = yes
+	}
+}
+
+# cite_sins argument ("Cite Sins"). Success chance scales with target net sin; grave sins auto-succeed. Odds shown in random_list.
+petition_head_of_faith_cite_sins_effect = {
+	add_character_flag = petition_head_of_faith_argument_cite_sins
+	random_list = {
+		0 = {
+			modifier = { add = petition_head_of_faith_cite_sins_chance_value }
+			desc = petition_head_of_faith_cite_sins_success_desc
+			petition_head_of_faith_grant_excommunication_effect = yes
+			petition_head_of_faith_route_to_excommunication_success_effect = yes
+		}
+		# Failure: reserved piety forfeited, no affront opinion (affront is for failed bribe only).
+		0 = {
+			modifier = { add = petition_head_of_faith_cite_sins_chance_inverse_value }
+			desc = petition_head_of_faith_cite_sins_failure_desc
+			petition_head_of_faith_route_to_excommunication_failure_effect = yes
+		}
+	}
+}
+
+# We save scope:petition_gravest_sin, because repentance uses scope:actor instead of petition_target
+petition_head_of_faith_save_gravest_sin_effect = {
+	if = {
+		limit = { petition_head_of_faith_target_net_sinful_trigger = yes }
+		scope:petition_target = {
+			ordered_character_trait = {
+				limit = { petition_head_of_faith_trait_sin_value < 0 }
+				order_by = petition_head_of_faith_trait_sin_magnitude_value
+				save_scope_as = petition_gravest_sin
+			}
+		}
+	}
+	else_if = {
+		limit = { petition_head_of_faith_target_has_grave_sins_trigger = yes }
+		scope:petition_target = {
+			ordered_character_trait = {
+				limit = {
+					OR = {
+						trait_is_criminal_in_rite_trigger = {
+							TRAIT = this
+							RITE = scope:recipient.rite
+							GENDER_CHARACTER = scope:petition_target
+						}
+						AND = {
+							scope:petition_target = { has_trait = murderer }
+							NOT = {
+								scope:recipient.rite = {
+									trait_is_virtue_rite = murderer
+								}
+							}
+						}
+						#scope:petition_target = { has_trait = despoiler_of_byzantium } # Warcraft - trait removed
+					}
+				}
+				order_by = petition_head_of_faith_trait_sin_magnitude_value
+				save_scope_as = petition_gravest_sin
+			}
+		}
+	}
+	else_if = {
+		limit = { petition_head_of_faith_actor_net_sinful_trigger = yes }
+		scope:actor = {
+			ordered_character_trait = {
+				limit = { petition_head_of_faith_trait_sin_value < 0 }
+				order_by = petition_head_of_faith_trait_sin_magnitude_value
+				save_scope_as = petition_gravest_sin
+			}
+		}
+	}
+}
+
+# scholastic_debate argument (last resort). Learning duel vs Head of Faith. Reserved piety forfeited on failure (refunded on withdraw only). Petitioner scope.
+petition_head_of_faith_excommunication_scholastic_debate_effect = {
+	add_character_flag = petition_head_of_faith_argument_learning
+	duel = {
+		skill = learning
+		target = var:petition_head_of_faith_recipient
+		# Base 10/10 = 50% at equal skill, neutral disposition
+		10 = {
+			desc = petition_head_of_faith_duel_success
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = 1
+			}
+			modifier = {
+				top_participant_group:the_christian_church ?= {
+					has_participant_group_parameter = the_christian_church_more_likely_to_accept_request_excommunications
+				}
+				add = 5
+			}
+			# Virtuous/sinful traits modify duel chance.
+			modifier = {
+				num_virtuous_traits >= 1
+				add = 4
+			}
+			modifier = {
+				num_virtuous_traits >= 2
+				add = 4
+			}
+			modifier = {
+				num_sinful_traits >= 1
+				add = -4
+			}
+			modifier = {
+				num_sinful_traits >= 2
+				add = -4
+			}
+			modifier = {
+				petition_head_of_faith_disposition_favorable_trigger = yes
+				add = 5
+			}
+			modifier = {
+				petition_head_of_faith_disposition_skeptical_trigger = yes
+				add = -3
+			}
+			modifier = {
+				petition_head_of_faith_disposition_hostile_trigger = yes
+				add = -8
+			}
+			min = 1
+			petition_head_of_faith_excommunication_scholastic_debate_success_effect = yes
+		}
+		10 = {
+			desc = petition_head_of_faith_argument_dismissed
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = -1
+			}
+			petition_head_of_faith_excommunication_affront_failure_effect = yes
+		}
+	}
+}
+
+# offer_gold argument ("Offer Gold"). Venal Head of Faith auto-accepts gold. Otherwise diplomacy duel; gold not spent on failure. Reserved piety forfeited on duel failure. Petitioner scope.
+petition_head_of_faith_excommunication_offer_gold_effect = {
+	add_character_flag = petition_head_of_faith_argument_finesse
+	if = {
+		# Venal Head of Faith skips the duel.
+		limit = { petition_head_of_faith_recipient_venal_trigger = yes }
+		petition_head_of_faith_excommunication_offer_gold_success_effect = yes
+	}
+	else = {
+		duel = {
+			skill = diplomacy
+			target = var:petition_head_of_faith_recipient
+			# Base 10/10 = 50% at equal skill, neutral disposition
+			10 = {
+				desc = petition_head_of_faith_duel_success
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = 1
+				}
+				modifier = {
+					top_participant_group:the_christian_church ?= {
+						has_participant_group_parameter = the_christian_church_more_likely_to_accept_request_excommunications
+					}
+					add = 5
+				}
+				modifier = {
+					petition_head_of_faith_disposition_favorable_trigger = yes
+					add = 5
+				}
+				modifier = {
+					petition_head_of_faith_disposition_skeptical_trigger = yes
+					add = -3
+				}
+				modifier = {
+					petition_head_of_faith_disposition_hostile_trigger = yes
+					add = -8
+				}
+				min = 1
+				petition_head_of_faith_excommunication_offer_gold_success_effect = yes
+			}
+			10 = {
+				desc = petition_head_of_faith_argument_affronted
+				compare_modifier = {
+					value = scope:duel_value
+					multiplier = -1
+				}
+				petition_head_of_faith_excommunication_affront_failure_effect = yes
+			}
+		}
+	}
+}
+
+# Petitioner scope, not root, since root is the Head of Faith
+petition_head_of_faith_grant_excommunication_effect = {
+	save_temporary_scope_as = petition_hof_petitioner
+	trigger_event = religious_interaction.1022
+	excommunicate_character = {
+		EXCOMMUNICATOR = var:petition_head_of_faith_recipient
+		TARGET_CHARACTER = var:petition_head_of_faith_target_character
+		REQUESTING_CHARACTER = scope:petition_hof_petitioner
+	}
+	var:petition_head_of_faith_target_character = {
+		trigger_event = {
+			id = religious_interaction.1020
+			days = 5
+		}
+	}
+	add_clan_unity_interaction_effect = {
+		CHARACTER = scope:petition_hof_petitioner
+		TARGET = var:petition_head_of_faith_recipient
+		VALUE = medium_unity_loss
+		DESC = clan_unity_request_excommunication.desc
+		REVERSE_NON_HOUSE_TARGET = no
+	}
+}
+
+# Routing helpers. Fire the correct event variant based on courtroom state.
+# Result events come in court/field pairs; $COURT_EVENT$/$FIELD_EVENT$ pick the pair.
+# Also resumes the paused return leg home after the petition is decided.
+petition_head_of_faith_route_to_result_effect = {
+	current_travel_plan ?= { resume_travel_plan = yes }
+	if = {
+		limit = { has_character_flag = petition_head_of_faith_in_courtroom }
+		trigger_event = petition_head_of_faith.$COURT_EVENT$
+	}
+	else = {
+		trigger_event = petition_head_of_faith.$FIELD_EVENT$
+	}
+}
+
+petition_head_of_faith_route_to_excommunication_success_effect = {
+	petition_head_of_faith_route_to_result_effect = { COURT_EVENT = 4020 FIELD_EVENT = 2020 }
+}
+
+petition_head_of_faith_route_to_excommunication_failure_effect = {
+	petition_head_of_faith_route_to_result_effect = { COURT_EVENT = 4030 FIELD_EVENT = 2030 }
+}
+
+# Success/failure effects for each argument type
+# These apply costs and game effects, then route to a presentational result event.
+# Reserved piety is consumed on success and forfeited on failed argument (no refund here).
+# Refunded only when the petitioner withdraws. Argument flags are set by the calling argument effects.
+
+petition_head_of_faith_excommunication_offer_gold_success_effect = {
+	# Pay gold; Head of Faith gains grateful_opinion toward petitioner.
+	pay_short_term_gold = {
+		target = var:petition_head_of_faith_recipient
+		gold = major_gold_value
+	}
+	var:petition_head_of_faith_recipient = {
+		add_opinion = {
+			target = prev
+			modifier = grateful_opinion
+			opinion = 20
+		}
+	}
+	petition_head_of_faith_grant_excommunication_effect = yes
+	petition_head_of_faith_route_to_excommunication_success_effect = yes
+}
+
+# Shared failure for finesse and learning arguments: no gold spent, reserved piety forfeited, affront opinion applied.
+petition_head_of_faith_affronted_opinion_effect = {
+	var:petition_head_of_faith_recipient = {
+		if = {
+			limit = { prev = { has_character_flag = petition_head_of_faith_argument_finesse } }
+			add_opinion = {
+				target = prev
+				modifier = petition_head_of_faith_affronted_opinion
+			}
+		}
+		else_if = {
+			limit = { prev = { has_character_flag = petition_head_of_faith_argument_learning } }
+			add_opinion = {
+				target = prev
+				modifier = petition_head_of_faith_dismissed_debate_opinion
+			}
+		}
+	}
+}
+
+petition_head_of_faith_excommunication_affront_failure_effect = {
+	petition_head_of_faith_affronted_opinion_effect = yes
+	petition_head_of_faith_route_to_excommunication_failure_effect = yes
+}
+
+petition_head_of_faith_excommunication_failure_tooltip_effect = {
+	if = {
+		limit = { has_character_flag = petition_head_of_faith_argument_cite_sins }
+		custom_tooltip = petition_head_of_faith_cite_sins_failure_desc
+	}
+	else_if = {
+		limit = { has_character_flag = petition_head_of_faith_argument_finesse }
+		custom_tooltip = petition_head_of_faith_argument_affronted
+		petition_head_of_faith_affronted_opinion_effect = yes
+	}
+	else_if = {
+		limit = { has_character_flag = petition_head_of_faith_argument_learning }
+		custom_tooltip = petition_head_of_faith_argument_dismissed
+		petition_head_of_faith_affronted_opinion_effect = yes
+	}
+	else = {
+		add_prestige = medium_prestige_loss
+		stress_and_fulfillment_impact = {
+			arrogant = minor_stress_impact_gain
+			zealous = minor_stress_impact_gain
+		}
+	}
+}
+
+petition_head_of_faith_excommunication_scholastic_debate_success_effect = {
+	# Learning duel win: grant learning lifestyle XP.
+	add_learning_lifestyle_xp = 100
+	petition_head_of_faith_grant_excommunication_effect = yes
+	petition_head_of_faith_route_to_excommunication_success_effect = yes
+}
+
+# Hook auto-success effect
+petition_head_of_faith_invoke_hook_effect = {
+	use_hook = var:petition_head_of_faith_recipient
+	petition_head_of_faith_grant_excommunication_effect = yes
+	petition_head_of_faith_route_to_excommunication_success_effect = yes
+}
+
+# Withdraw: refund reserved piety and resume the paused return leg home.
+petition_head_of_faith_withdraw_effect = {
+	change_spiritual_fulfillment = minor_spiritual_fulfillment_value
+	petition_head_of_faith_refund_reserved_costs_effect = yes
+	current_travel_plan ?= { resume_travel_plan = yes }
+	petition_head_of_faith_cleanup_effect = yes
+}
+
+# Used when a human Head of Faith refuses, because the AI uses argument failure
+# No opinions, because both sides are players
+petition_head_of_faith_deny_effect = {
+	add_prestige = medium_prestige_loss
+	stress_and_fulfillment_impact = {
+		arrogant = minor_stress_impact_gain
+		zealous = minor_stress_impact_gain
+	}
+}
+
+# We copy declaration_of_repentance_interaction_effect, because those scopes are absent here
+petition_head_of_faith_grant_repentance_effect = {
+	# Petitioner scope, not root, since root is the Head of Faith
+	# Whoever calls this consumes the hook, whether by invoking it or by a human Head of Faith granting it
+	save_temporary_scope_as = petition_hof_petitioner
+	if = {
+		limit = {
+			NOR = {
+				has_character_flag = petition_head_of_faith_use_hook
+				rite ?= { rite_has_parameter = tenet_purgatory_absolution_costs_less_prestige }
+			}
+		}
+		# Without hook (Walk to Canossa): massive prestige loss and prestige level drop.
+		add_prestige = massive_prestige_loss
+		add_prestige_level = -1
+	}
+	else_if = {
+		limit = { NOT = { has_character_flag = petition_head_of_faith_use_hook } }
+		add_prestige = major_prestige_loss
+	}
+	remove_trait = excommunicated
+	clear_excommunication_tracking_effect = yes
+	add_character_modifier = {
+		modifier = excommunication_recently_lifted
+		years = 10
+	}
+	stress_and_fulfillment_impact = {
+		cynical = minor_stress_impact_gain
+	}
+	var:petition_head_of_faith_recipient = {
+		add_prestige = major_prestige_gain
+		# repentant_opinion only for AI Head of Faith; human players choose their own response.
+		if = {
+			limit = { is_ai = yes }
+			add_opinion = {
+				modifier = repentant_opinion
+				target = prev
+				opinion = 10
+			}
+		}
+	}
+	add_clan_unity_interaction_effect = {
+		CHARACTER = scope:petition_hof_petitioner
+		TARGET = var:petition_head_of_faith_recipient
+		VALUE = medium_unity_gain
+		DESC = clan_unity_repentance.desc
+		REVERSE_NON_HOUSE_TARGET = no
+	}
+}
+
+#####################################################################
+# REPENTANCE: ROUTING, DUELS, SUCCESS/FAILURE EFFECTS
+#####################################################################
+
+petition_head_of_faith_route_to_repentance_success_effect = {
+	petition_head_of_faith_route_to_result_effect = { COURT_EVENT = 7020 FIELD_EVENT = 5020 }
+}
+
+petition_head_of_faith_route_to_repentance_failure_effect = {
+	petition_head_of_faith_route_to_result_effect = { COURT_EVENT = 7030 FIELD_EVENT = 5030 }
+}
+
+# confession argument (open confession). Diplomacy vs Head of Faith learning. Sinners with sins to name fare best.
+petition_head_of_faith_repentance_confess_duel_effect = {
+	add_character_flag = petition_head_of_faith_argument_confess
+	duel = {
+		skill = diplomacy
+		value = scope:recipient.learning
+		12 = {
+			desc = petition_head_of_faith_repentance_confess_duel_success
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = 1
+			}
+			# Diplomacy education bonus (scaled by level)
+			modifier = {
+				has_trait = education_diplomacy_5
+				add = 6
+			}
+			modifier = {
+				has_trait = education_diplomacy_4
+				add = 4
+			}
+			modifier = {
+				has_trait = education_diplomacy_3
+				add = 2
+			}
+			modifier = {
+				exists = scope:petition_gravest_sin
+				add = 5
+			}
+			modifier = {
+				NOT = { exists = scope:petition_gravest_sin }
+				add = -5
+			}
+			modifier = {
+				num_sinful_traits >= 1
+				add = 3
+			}
+			modifier = {
+				num_sinful_traits >= 2
+				add = 3
+			}
+			modifier = {
+				petition_head_of_faith_disposition_favorable_trigger = yes
+				add = 5
+			}
+			modifier = {
+				petition_head_of_faith_disposition_skeptical_trigger = yes
+				add = -3
+			}
+			modifier = {
+				petition_head_of_faith_disposition_hostile_trigger = yes
+				add = -8
+			}
+			min = 1
+			petition_head_of_faith_repentance_confess_success_effect = yes
+		}
+		10 = {
+			desc = petition_head_of_faith_repentance_confess_duel_failure
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = -1
+			}
+			petition_head_of_faith_repentance_confess_failure_effect = yes
+		}
+	}
+}
+
+# canon_law argument. Learning duel about whether the excommunication was valid.
+petition_head_of_faith_repentance_canon_law_duel_effect = {
+	add_character_flag = petition_head_of_faith_argument_canon_law
+	duel = {
+		skill = learning
+		target = var:petition_head_of_faith_recipient
+		# 14/10 base weight.
+		14 = {
+			desc = petition_head_of_faith_repentance_duel_success
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = 1
+			}
+			# Learning education bonus by level.
+			modifier = {
+				has_trait = education_learning_5
+				add = 8
+			}
+			modifier = {
+				has_trait = education_learning_4
+				add = 6
+			}
+			modifier = {
+				has_trait = education_learning_3
+				add = 3
+			}
+			modifier = {
+				petition_head_of_faith_disposition_favorable_trigger = yes
+				add = 5
+			}
+			modifier = {
+				petition_head_of_faith_disposition_skeptical_trigger = yes
+				add = -3
+			}
+			modifier = {
+				petition_head_of_faith_disposition_hostile_trigger = yes
+				add = -8
+			}
+			min = 1
+			petition_head_of_faith_repentance_canon_law_success_effect = yes
+		}
+		10 = {
+			desc = petition_head_of_faith_repentance_duel_failure
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = -1
+			}
+			petition_head_of_faith_repentance_canon_law_failure_effect = yes
+		}
+	}
+}
+
+# weep argument. Walk-to-Canossa emotional display (diplomacy vs Head of Faith diplomacy). Humility helps, not clever words.
+petition_head_of_faith_repentance_weep_duel_effect = {
+	add_character_flag = petition_head_of_faith_argument_weep
+	duel = {
+		skill = diplomacy
+		target = var:petition_head_of_faith_recipient
+		14 = {
+			desc = petition_head_of_faith_repentance_weep_duel_success
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = 1
+			}
+			modifier = {
+				has_trait = humble
+				add = 8
+			}
+			modifier = {
+				has_trait = arrogant
+				add = -8
+			}
+			modifier = {
+				num_virtuous_traits >= 1
+				add = 3
+			}
+			modifier = {
+				num_virtuous_traits >= 2
+				add = 3
+			}
+			modifier = {
+				num_sinful_traits >= 1
+				add = -4
+			}
+			modifier = {
+				num_sinful_traits >= 2
+				add = -4
+			}
+			modifier = {
+				petition_head_of_faith_disposition_favorable_trigger = yes
+				add = 5
+			}
+			modifier = {
+				petition_head_of_faith_disposition_skeptical_trigger = yes
+				add = -3
+			}
+			modifier = {
+				petition_head_of_faith_disposition_hostile_trigger = yes
+				add = -8
+			}
+			min = 1
+			petition_head_of_faith_repentance_weep_success_effect = yes
+		}
+		10 = {
+			desc = petition_head_of_faith_repentance_weep_duel_failure
+			compare_modifier = {
+				value = scope:duel_value
+				multiplier = -1
+			}
+			petition_head_of_faith_repentance_weep_failure_effect = yes
+		}
+	}
+}
+
+# Success/failure effects for each repentance argument type
+
+petition_head_of_faith_repentance_confess_success_effect = {
+	add_piety = minor_piety_loss
+	# Head of Faith gains grateful_opinion toward petitioner.
+	var:petition_head_of_faith_recipient = {
+		add_opinion = {
+			target = prev
+			modifier = grateful_opinion
+			opinion = 20
+		}
+	}
+	petition_head_of_faith_grant_repentance_effect = yes
+	petition_head_of_faith_route_to_repentance_success_effect = yes
+}
+
+petition_head_of_faith_repentance_confess_failure_effect = {
+	add_prestige = minor_prestige_loss
+	var:petition_head_of_faith_recipient = {
+		add_opinion = {
+			target = prev
+			modifier = disappointed_opinion
+			opinion = -5
+		}
+	}
+	# Reserved piety is forfeited on a failed argument (refunded only on withdraw).
+	petition_head_of_faith_route_to_repentance_failure_effect = yes
+}
+
+petition_head_of_faith_repentance_canon_law_success_effect = {
+	# Learning duel win: grant learning lifestyle XP.
+	add_learning_lifestyle_xp = 100
+	petition_head_of_faith_grant_repentance_effect = yes
+	petition_head_of_faith_route_to_repentance_success_effect = yes
+}
+
+petition_head_of_faith_repentance_canon_law_failure_effect = {
+	add_piety = minor_piety_loss
+	var:petition_head_of_faith_recipient = {
+		add_opinion = {
+			target = prev
+			modifier = angry_opinion
+			opinion = -10
+		}
+	}
+	# Reserved piety is forfeited on a failed argument (refunded only on withdraw).
+	petition_head_of_faith_route_to_repentance_failure_effect = yes
+}
+
+petition_head_of_faith_repentance_weep_success_effect = {
+	# Walk-to-Canossa: extra prestige loss on top of grant_repentance_effect (which already costs prestige without hook).
+	add_prestige = medium_prestige_loss
+	change_spiritual_fulfillment = medium_spiritual_fulfillment_value
+	stress_and_fulfillment_impact = {
+		arrogant = medium_stress_impact_gain
+		humble = medium_stress_impact_loss
+	}
+	# Head of Faith gains grateful_opinion toward petitioner.
+	var:petition_head_of_faith_recipient = {
+		add_opinion = {
+			target = prev
+			modifier = grateful_opinion
+			opinion = 20
+		}
+	}
+	petition_head_of_faith_grant_repentance_effect = yes
+	petition_head_of_faith_route_to_repentance_success_effect = yes
+}
+
+petition_head_of_faith_repentance_weep_failure_effect = {
+	# Humiliated for nothing: prestige loss, petition failed.
+	add_prestige = medium_prestige_loss
+	stress_and_fulfillment_impact = {
+		arrogant = medium_stress_impact_gain
+	}
+	var:petition_head_of_faith_recipient = {
+		add_opinion = {
+			target = prev
+			modifier = disappointed_opinion
+			opinion = -5
+		}
+	}
+	# Reserved piety is forfeited on a failed argument (refunded only on withdraw).
+	petition_head_of_faith_route_to_repentance_failure_effect = yes
+}
+
+# Hook auto-success for repentance
+petition_head_of_faith_repentance_invoke_hook_effect = {
+	use_hook = var:petition_head_of_faith_recipient
+	petition_head_of_faith_grant_repentance_effect = yes
+	petition_head_of_faith_route_to_repentance_success_effect = yes
+}
+
+# Decision confirm only, before a target is chosen. Matches disposition triggers when no target exists.
+petition_head_of_faith_display_recipient_disposition_effect = {
+	if = {
+		limit = {
+			scope:petition_recipient = {
+				opinion = {
+					target = scope:petitioner
+					value >= petition_head_of_faith_favorable_opinion_threshold_value
+				}
+			}
+		}
+		custom_tooltip = petition_head_of_faith_decision_receptive_favorable
+	}
+	else_if = {
+		limit = {
+			scope:petition_recipient = {
+				OR = {
+					has_relation_rival = scope:petitioner
+					opinion = {
+						target = scope:petitioner
+						value <= petition_head_of_faith_hostile_opinion_threshold_value
+					}
+				}
+			}
+		}
+		custom_tooltip = petition_head_of_faith_decision_receptive_hostile
+	}
+	else_if = {
+		limit = {
+			scope:petition_recipient = {
+				opinion = {
+					target = scope:petitioner
+					value <= petition_head_of_faith_skeptical_opinion_threshold_value
+				}
+			}
+		}
+		custom_tooltip = petition_head_of_faith_decision_receptive_skeptical
+	}
+	else = {
+		custom_tooltip = petition_head_of_faith_decision_receptive_neutral
+	}
+}
+
+# Saves the petitioner's current Head of Faith or antipope for use by decisions and actions.
+petition_head_of_faith_save_religious_authority_effect = {
+	if = {
+		limit = { exists = religious_head_or_challenger }
+		religious_head_or_challenger = { save_scope_as = $SCOPE$ }
+	}
+}
