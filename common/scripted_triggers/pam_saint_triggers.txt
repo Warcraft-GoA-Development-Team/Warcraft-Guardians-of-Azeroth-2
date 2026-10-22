@@ -1,0 +1,247 @@
+﻿############################################
+# Canonizing Saints - scripted triggers
+# pam_can_canonize_saint_trigger
+# pam_is_canonization_candidate_trigger
+# pam_faith_uses_cathedrals_trigger
+# pam_character_has_cathedral_trigger
+# pam_has_consecration_site_trigger
+# pam_site_free_trigger
+# pam_province_is_free_burial_site_trigger
+# pam_has_free_primary_site_trigger
+# pam_county_has_actor_primary_site_trigger
+# pam_has_free_adjacent_site_trigger
+# pam_needs_hof_approval_for_canonization_trigger
+# pam_hof_thinks_well_of_canonizer_trigger
+# pam_saint_is_buried_in_my_lands_trigger
+# pam_can_extract_relic_from_saint_trigger
+# pam_saint_relic_drawable_trigger
+# pam_venerated_the_saints_personally_trigger
+############################################
+has_corpse_trigger = {
+	trigger_if = {
+		limit = { is_alive = no }
+		NOR = {
+			has_dead_character_variable = no_corpse_left
+			saint_burial_location ?= { has_variable = no_corpse_left }
+			death_reason = death_disappearance
+			death_reason = death_vanished
+			death_reason = death_hunted_by_wild_beast
+			death_reason = death_disappeared_into_slave_markets
+			death_reason = death_killed_by_monstrous_dog
+			death_reason = death_killed_by_monstrous_wolf
+			death_reason = death_killed_by_monstrous_hyena
+			death_reason = death_killed_by_monstrous_lion
+			death_reason = death_killed_by_monstrous_tiger
+			death_reason = death_killed_by_monstrous_leopard
+			death_reason = death_killed_by_monstrous_panther
+			death_reason = death_killed_by_monstrous_lynx
+			death_reason = death_killed_by_monstrous_caracal
+			death_reason = death_killed_by_monstrous_bear
+			death_reason = death_killed_by_monstrous_hippo
+			death_reason = death_killed_by_monstrous_crocodile
+		}
+	}
+}
+# Can this ruler canonize saints at all? (the actor of the decision)
+pam_can_canonize_saint_trigger = {
+	has_pam_dlc_trigger = yes
+	is_landed_or_landless_administrative_or_theocratic = yes
+	is_adult = yes
+	is_ruler = yes
+	exists = faith
+	# Christian sainthood needs Dulia not forbidden or unknown; non-Christian (Venerated Ancestor) faiths are unaffected.
+	trigger_if = {
+		limit = { faith.religion = religion:christianity_religion }
+		rite = {
+			NOT = { has_tenet_status = { tenet = tenet_dulia status = unknown } }
+			NOT = { has_tenet_status = { tenet = tenet_dulia status = prohibited } }
+		}
+	}
+}
+
+# Can this dead ancestor be canonized? CANONIZER is passed in because the picker runs with root = none; virtue/sin are judged by the canonizer's rite.
+pam_is_canonization_candidate_trigger = {
+	is_alive = no
+	NOT = { has_trait = saint }
+	faith ?= $CANONIZER$.faith
+	dynasty ?= $CANONIZER$.dynasty
+	# Saintly life: at least one virtue and no sins by our rite's reckoning.
+	num_virtuous_traits = {
+		value >= 1
+		target = this.rite
+	}
+	num_sinful_traits = {
+		value = 0
+		target = this.rite
+	}
+}
+
+# Faiths with clerical regions and a temporal/appointed clergy build cathedrals; every other faith, including all non-Christian ones, consecrates at a holy site instead. Mirrors the ecclesiastical_government gate (see 02_theocratic_government_types.txt).
+pam_faith_uses_cathedrals_trigger = {
+	faith ?= { has_doctrine_parameter = has_clerical_regions }
+	NOT = { rite = { rite_has_doctrine = doctrine_theocracy_lay_clergy } }
+}
+
+# We start with government because it is quick, then ecclesiastical_domicile_main_01 or higher
+pam_character_has_cathedral_trigger = {
+	has_government = ecclesiastical_government
+	domicile ?= { has_domicile_building_or_higher = ecclesiastical_domicile_main_01 }
+}
+
+# Does the actor have somewhere to consecrate a saint? A free (unoccupied) cathedral / holy site, or - once those are all taken - a free county-capital barony neighbouring one. Burial is one saint per province, so "free" means the province holds no saint yet.
+pam_has_consecration_site_trigger = {
+	OR = {
+		pam_has_free_primary_site_trigger = yes
+		pam_has_free_adjacent_site_trigger = yes
+	}
+}
+
+# A consecration barony (barony scope) whose province has no saint buried yet. Burial is province-anchored (the poi_buried_saint marks the province), so one province holds at most one saint.
+pam_site_free_trigger = {
+	title_province ?= {
+		NOR = {
+			has_variable = hide_location_for_saint
+			has_travel_point_of_interest = poi_buried_saint
+		}
+	}
+}
+
+# Province can take add_saint: holding present, no buried-saint PoI yet.
+pam_province_is_free_burial_site_trigger = {
+	has_holding = yes
+	NOR = {
+		has_variable = hide_location_for_saint
+		has_travel_point_of_interest = poi_buried_saint
+	}
+}
+
+# Does the actor have a free primary consecration site? Cathedral faiths: an unoccupied cathedral in their realm. Others: an unoccupied holy site of their faith in realm.
+pam_has_free_primary_site_trigger = {
+	trigger_if = {
+		limit = { pam_faith_uses_cathedrals_trigger = yes }
+		OR = {
+			AND = {
+				pam_character_has_cathedral_trigger = yes
+				domicile ?= { domicile_location = { barony ?= { pam_site_free_trigger = yes } } }
+			}
+			any_realm_province = {
+				barony ?= { pam_site_free_trigger = yes }
+				any_province_domicile = { owner = { pam_character_has_cathedral_trigger = yes } }
+			}
+		}
+	}
+	trigger_else = {
+		save_temporary_scope_as = pam_primary_site_actor
+		any_realm_province = {
+			barony ?= { is_holy_site_of = scope:pam_primary_site_actor.faith }
+			NOT = { has_travel_point_of_interest = poi_buried_saint }
+		}
+	}
+}
+
+# Does this county (title scope) hold one of $ACTOR$'s primary consecration sites? Used to find provinces adjacent to a real site. Cathedral faiths: a cathedral (an ecclesiastical domicile) in $ACTOR$'s realm sits in the county, whoever owns it. Others: a holy site of $ACTOR$'s faith sits in the county, in realm. Identified from the province's domicile side (same walk as pam_has_free_primary_site_trigger and setup_items) - a cathedral barony's holder isn't reliably the bishop, so a barony->holder lookup misses them. Intentionally intrinsic (cathedral/holy-site nature, not occupancy) so an adjacency burial never seeds further neighbours.
+pam_county_has_actor_primary_site_trigger = {
+	save_temporary_scope_as = pam_primary_site_county
+	trigger_if = {
+		limit = { $ACTOR$ = { pam_faith_uses_cathedrals_trigger = yes } }
+		$ACTOR$ = {
+			OR = {
+				AND = {
+					pam_character_has_cathedral_trigger = yes
+					domicile ?= { domicile_location ?= { county = scope:pam_primary_site_county } }
+				}
+				any_realm_province = {
+					county = scope:pam_primary_site_county
+					any_province_domicile = { owner = { pam_character_has_cathedral_trigger = yes } }
+				}
+			}
+		}
+	}
+	trigger_else = {
+		$ACTOR$ = {
+			any_realm_province = {
+				barony ?= { is_holy_site_of = $ACTOR$.faith }
+				county = scope:pam_primary_site_county
+			}
+		}
+	}
+}
+
+# Once every primary site is taken, may the actor consecrate in a neighbouring province instead? True when a free county-capital barony in realm borders a county that holds one of the actor's primary sites (one candidate per county, keeping the picker focused).
+pam_has_free_adjacent_site_trigger = {
+	save_temporary_scope_as = pam_adjacency_actor
+	any_realm_province = {
+		is_county_capital = yes
+		NOT = { has_travel_point_of_interest = poi_buried_saint }
+		county = {
+			any_neighboring_county = {
+				pam_county_has_actor_primary_site_trigger = { ACTOR = scope:pam_adjacency_actor }
+			}
+		}
+	}
+}
+
+# Approval is needed when a Head of Faith exists and it is not the actor.
+pam_needs_hof_approval_for_canonization_trigger = {
+	exists = faith.religious_head
+	NOT = { faith.religious_head = root }
+}
+
+# A Head of Faith who thinks poorly of the actor will not entertain the petition at all. Vacuously true where approval is not sought anyway - no Head of Faith, or the actor holds the office - and for a puppeted Head of Faith, who cannot refuse their puppeteer (mirrors the certain-approval branch in the canonize decision).
+pam_hof_thinks_well_of_canonizer_trigger = {
+	trigger_if = {
+		limit = {
+			pam_needs_hof_approval_for_canonization_trigger = yes
+			NOT = { faith.religious_head.puppeteer ?= root }
+		}
+		faith.religious_head ?= {
+			opinion = {
+				target = root
+				value >= high_positive_opinion
+			}
+		}
+	}
+}
+
+# Is this burial province within $EXTRACTOR$'s realm (held by them or a vassal/sub-vassal)? EXTRACTOR is passed in because the relic picker runs with root = none.
+pam_saint_is_buried_in_my_lands_trigger = {
+	county.holder ?= {
+		target_is_same_character_or_above = $EXTRACTOR$
+	}
+}
+
+# Can $EXTRACTOR$ draw another relic from this site? The AI always leaves one relic
+# $SAINT$ is the saint being evaluated
+pam_can_extract_relic_from_saint_trigger = {
+	# add_saint deliberately accepts living characters for modders, so the registry can hold one - never offer them as a relic source
+	$SAINT$ = { is_alive = no }
+	pam_saint_is_buried_in_my_lands_trigger = { EXTRACTOR = $EXTRACTOR$ }
+	trigger_if = {
+		limit = { $EXTRACTOR$ = { is_ai = yes } }
+		$SAINT$ = {
+			remaining_saint_relics > 1
+		}
+	}
+	trigger_else = {
+		$SAINT$ = {
+			remaining_saint_relics > 0
+		}
+	}
+}
+
+# Relic picker is_item_valid helper (scope = picked saint): can $EXTRACTOR$ still draw from this saint? Resolve their burial province, then defer to the shared eligibility trigger (prev = the saint).
+pam_saint_relic_drawable_trigger = {
+	saint_burial_location = {
+		pam_can_extract_relic_from_saint_trigger = { EXTRACTOR = $EXTRACTOR$ SAINT = prev }
+	}
+}
+
+pam_venerated_the_saints_personally_trigger = {
+	trigger_if = {
+		limit = { is_alive = yes }
+		has_personal_tenet_flag = tenet_dulia_personal_sainthood_chance
+	}
+	trigger_else = {
+		has_dead_character_variable = pam_dulia_personal_sainthood
+	}
+}
