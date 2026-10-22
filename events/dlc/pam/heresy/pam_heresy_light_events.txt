@@ -1,0 +1,394 @@
+﻿namespace = heresy_light
+
+####################################################################
+# Heresy outbreak system - Component 1: Light rite divergence      #
+####################################################################
+# An existing non-mainline rite diverges and spreads
+
+#############################
+# 0001 - Faith-scope picker #
+#############################
+
+heresy_light.0001 = {
+	hidden = yes
+	scope = faith
+
+	immediate = {
+		save_scope_as = origin_faith
+
+		pam_heresy_c1_pick_diverging_rite_effect = yes
+
+		if = {
+			limit = { exists = scope:diverging_rite }
+
+			# Resolve a head-of-rite (if any) and an anchor county for the spread sweep.
+			scope:diverging_rite = {
+				if = {
+					limit = { exists = head_of_rite }
+					head_of_rite = { save_scope_as = hor }
+				}
+			}
+			if = {
+				limit = { exists = scope:hor.capital_county }
+				scope:hor.capital_county = { save_scope_as = c1_anchor }
+			}
+			else = {
+				# Fall back to any landed ruler on the diverging rite.
+				scope:origin_faith = {
+					random_faith_ruler = {
+						limit = {
+							rite = scope:diverging_rite
+							exists = capital_county
+						}
+						capital_county = { save_scope_as = c1_anchor }
+					}
+				}
+			}
+
+			# Roll the divergence step. Buckets weight toward the middle.
+			# Pluralism scales the range: fundamentalist 15-40, righteous 5-30, pluralistic 5-20.
+			if = {
+				limit = { main_rite = { rite_has_parameter = pluralism_fundamentalist_vulnerable_to_heresy } }
+				random_list = {
+					1 = { save_scope_value_as = { name = c1_divergence_step value = 15 } }
+					3 = { save_scope_value_as = { name = c1_divergence_step value = 20 } }
+					5 = { save_scope_value_as = { name = c1_divergence_step value = 25 } }
+					5 = { save_scope_value_as = { name = c1_divergence_step value = 30 } }
+					3 = { save_scope_value_as = { name = c1_divergence_step value = 35 } }
+					1 = { save_scope_value_as = { name = c1_divergence_step value = 40 } }
+				}
+			}
+			else_if = {
+				limit = { main_rite = { rite_has_parameter = pluralism_pluralistic_resistant_to_heresy } }
+				random_list = {
+					2 = { save_scope_value_as = { name = c1_divergence_step value = 5 } }
+					4 = { save_scope_value_as = { name = c1_divergence_step value = 10 } }
+					3 = { save_scope_value_as = { name = c1_divergence_step value = 15 } }
+					1 = { save_scope_value_as = { name = c1_divergence_step value = 20 } }
+				}
+			}
+			else = {
+				random_list = {
+					1 = { save_scope_value_as = { name = c1_divergence_step value = 5 } }
+					3 = { save_scope_value_as = { name = c1_divergence_step value = 10 } }
+					5 = { save_scope_value_as = { name = c1_divergence_step value = 15 } }
+					5 = { save_scope_value_as = { name = c1_divergence_step value = 20 } }
+					3 = { save_scope_value_as = { name = c1_divergence_step value = 25 } }
+					1 = { save_scope_value_as = { name = c1_divergence_step value = 30 } }
+				}
+			}
+
+			# Snapshot so flavour describes what change_rite_divergence swapped, not older diffs
+			pam_heresy_c1_snapshot_pre_divergence_state_effect = yes
+
+			scope:diverging_rite = {
+				change_rite_divergence = {
+					value = scope:c1_divergence_step
+					override_tenets_first = yes
+				}
+			}
+
+			# Seed the small spread chain.
+			scope:diverging_rite = {
+				set_variable = {
+					name = c1_spread_remaining_converts
+					value = pam_heresy_c1_spread_budget_base_value
+				}
+			}
+			# source_rite is the parent main, new_rite is the diverging rite
+			# founder is the AI Head of Rite, who is framed as the author of the change
+			scope:origin_faith.main_rite = { save_scope_as = source_rite }
+			scope:diverging_rite = { save_scope_as = new_rite }
+			if = {
+				limit = { exists = scope:hor }
+				scope:hor = {
+					save_scope_as = founder
+					add_piety = minor_piety_gain
+				}
+
+				# Compare against the pre-divergence snapshot so the text names what the HoR just changed
+				pam_heresy_c1_resolve_differences_effect = yes
+
+				# Players on the diverging rite, a player Head of Faith, and nearby mainline duke+ players
+				every_player = {
+					limit = {
+						faith = scope:origin_faith
+						OR = {
+							rite = scope:diverging_rite
+							this = scope:origin_faith.religious_head
+							AND = {
+								rite = scope:origin_faith.main_rite
+								highest_held_title_tier >= tier_duchy
+								exists = capital_county
+								exists = scope:c1_anchor
+								capital_county = {
+									squared_distance = {
+										target = scope:c1_anchor
+										value <= squared_distance_medium
+									}
+								}
+							}
+						}
+					}
+					send_interface_message = {
+						type = event_religious_bad_text
+						title = heresy_light.0010.t
+						left_icon = scope:founder
+						desc = {
+							desc = heresy_light.0010.desc.intro.descriptor_ruler
+							first_valid = {
+								triggered_desc = {
+									trigger = { "scope:new_rite.divergence(scope:source_rite)" >= 50 }
+									desc = heresy_light.0010.desc.body.dangerous
+								}
+								triggered_desc = {
+									trigger = { "scope:new_rite.divergence(scope:source_rite)" >= 30 }
+									desc = heresy_light.0010.desc.body.alarming
+								}
+								desc = heresy_light.0010.desc.body.uneasy
+							}
+							first_valid = {
+								triggered_desc = {
+									trigger = { exists = scope:differing_tenet }
+									desc = heresy_light.0010.desc.differing.tenet
+								}
+								triggered_desc = {
+									trigger = { exists = scope:differing_doctrine }
+									desc = heresy_light.0010.desc.differing.doctrine
+								}
+								desc = heresy_light.0010.desc.differing.fallback
+							}
+						}
+					}
+				}
+			}
+
+			# After the scope vocabulary: trigger_event captures scopes at call time
+			trigger_event = {
+				id = heresy_light.0011
+				days = { 4 7 }
+			}
+
+			pam_heresy_fervor_reset_effect = { COMPONENT = 1 }
+			pam_heresy_push_catalyst_effect = { CATALYST = catalyst_heresy_light_outbreak }
+		}
+	}
+}
+
+############################################
+# 0011 - Light spread sweep (faith scope)  #
+############################################
+
+heresy_light.0011 = {
+	hidden = yes
+	scope = faith
+
+	trigger = {
+		exists = scope:origin_faith
+		exists = scope:diverging_rite
+		exists = scope:c1_anchor
+		scope:diverging_rite = {
+			var:c1_spread_remaining_converts > 0
+		}
+	}
+
+	immediate = {
+		clear_saved_scope = convert_ruler
+
+		scope:origin_faith = {
+			random_faith_ruler = {
+				limit = {
+					is_physically_able_ai_adult = yes
+					rite = scope:origin_faith.main_rite
+					# Two valid candidate shapes, mirroring vanilla
+					# is_eligible_rite_growth_target_trigger:
+					#   * landed county-or-higher ruler (is_landed catches mercenaries,
+					#     landless adventurers, and territory-destroyed nomadic counts;
+					#     the tier floor prunes single-barony mayors), OR
+					#   * any holder of a clerical-region title (archbishops, who in
+					#     some configurations don't satisfy is_landed = yes despite
+					#     holding the see).
+					OR = {
+						AND = {
+							is_landed = yes
+							highest_held_title_tier >= tier_county
+						}
+						any_held_title = { has_clerical_region = yes }
+					}
+					# Lay-clergy guard: don't pull archbishops into a lay-clergy rite -
+					# the conversion strands them as landless feudal holders of a
+					# clerical region in a rite that doesn't recognise the structure.
+					NAND = {
+						scope:diverging_rite = { rite_has_doctrine = doctrine_theocracy_lay_clergy }
+						any_held_title = { has_clerical_region = yes }
+					}
+					NOR = {
+						this = faith.religious_head
+						any_held_title = { is_head_of_faith = yes }
+						has_character_flag = recently_converted_by_heresy
+						recently_converted_faith_trigger = yes
+					}
+					exists = capital_county
+					# Regional spread cap. Three valid neighbourhoods:
+					#   * same clerical region as the anchor (archbishop spread),
+					#   * within squared_distance_small of the founder's capital
+					#     (the classic local-spread feel), OR
+					#   * border-adjacent to ANY county already on the diverging
+					#     rite. This third branch lets established regional rites
+					#     like Insular Celtic / Mozarabic actually radiate from
+					#     their existing border into adjacent main-rite counties,
+					#     instead of fizzling when the founder's own neighbourhood
+					#     is already mostly converted to the diverging rite. Naturally
+					#     self-tuning: a brand-new C1 outbreak only has counties near
+					#     the founder, so this branch behaves identically to the
+					#     distance branch.
+					OR = {
+						AND = {
+							faith = { has_doctrine_parameter = has_clerical_regions }
+							exists = capital_county.clerical_region_title
+							scope:c1_anchor.clerical_region_title ?= capital_county.clerical_region_title
+						}
+						capital_county = {
+							squared_distance = {
+								target = scope:c1_anchor
+								value <= squared_distance_small
+							}
+						}
+						capital_county = {
+							any_neighboring_county = {
+								rite = scope:diverging_rite
+							}
+						}
+					}
+				}
+
+				weight = {
+					base = 100
+
+					modifier = {
+						add = -40
+						capital_county = {
+							squared_distance = {
+								target = scope:c1_anchor
+								value > squared_distance_small
+							}
+						}
+					}
+
+					modifier = {
+						factor = 0.3
+						highest_held_title_tier >= tier_kingdom
+					}
+
+					modifier = {
+						factor = 1.5
+						OR = {
+							has_trait = zealous
+							has_trait = lifestyle_mystic
+							has_trait = lifestyle_scholar
+							has_trait = theologian
+						}
+					}
+
+					modifier = {
+						factor = 0.001
+						OR = {
+							government_has_flag = government_is_nomadic
+							government_has_flag = government_is_herder
+						}
+					}
+				}
+
+				save_scope_as = convert_ruler
+			}
+		}
+
+		if = {
+			limit = { exists = scope:convert_ruler }
+
+			scope:convert_ruler = {
+				if = {
+					limit = { rite != scope:diverging_rite }
+					set_character_rite_with_conversion = scope:diverging_rite
+				}
+				every_held_title = {
+					limit = {
+						tier = tier_county
+						rite = scope:origin_faith.main_rite
+					}
+					set_county_rite = scope:diverging_rite
+				}
+				add_character_flag = {
+					flag = recently_converted_by_heresy
+					years = 10
+				}
+				# Without this, an archbishop convert leaves their see on the main rite
+				if = {
+					limit = { any_held_title = { has_clerical_region = yes } }
+					every_held_title = {
+						limit = { has_clerical_region = yes }
+						save_temporary_scope_as = title_check
+						every_county_in_clerical_region = {
+							limit = {
+								rite = scope:origin_faith.main_rite
+								OR = {
+									this = scope:title_check.title_capital_county
+									any_neighboring_county = {
+										this = scope:title_check.title_capital_county
+									}
+								}
+							}
+							set_county_rite = scope:diverging_rite
+							holder = {
+								if = {
+									limit = { is_eligible_rite_growth_target_trigger = yes }
+									if = {
+										limit = { rite != scope:diverging_rite }
+										set_character_rite_with_conversion = scope:diverging_rite
+									}
+									every_held_title = {
+										limit = {
+											tier = tier_county
+											rite = scope:origin_faith.main_rite
+										}
+										set_county_rite = scope:diverging_rite
+									}
+									add_character_flag = {
+										flag = recently_converted_by_heresy
+										years = 10
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			pam_heresy_send_spread_message_effect = { TITLE = heresy_historical.spread.title }
+
+			scope:diverging_rite = {
+				change_variable = {
+					name = c1_spread_remaining_converts
+					subtract = 1
+				}
+				if = {
+					limit = { var:c1_spread_remaining_converts > 0 }
+					scope:origin_faith = {
+						trigger_event = {
+							id = heresy_light.0011
+							days = { 5 12 }
+						}
+					}
+				}
+				else = {
+					remove_variable = c1_spread_remaining_converts
+				}
+			}
+		}
+		else = {
+			scope:diverging_rite = {
+				remove_variable = c1_spread_remaining_converts
+			}
+		}
+	}
+}
