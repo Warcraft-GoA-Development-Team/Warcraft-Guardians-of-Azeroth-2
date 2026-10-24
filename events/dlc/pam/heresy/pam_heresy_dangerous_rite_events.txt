@@ -1,0 +1,617 @@
+﻿namespace = heresy_dangerous_rite
+
+####################################################################
+# Heresy outbreak system - Component 2: New dangerously divergent rite #
+####################################################################
+# Rare. Requires the main rite to still hold >=60% of faith counties (so the
+# faith has room to splinter). Spawns a new dynamic rite at 35-50 divergence,
+# led by a charismatic heresiarch-style founder, and runs an aggressive
+# recursive spread sweep (heresy_pulse.0011-style) with a larger budget than
+# legitimate rite growth.
+
+############################
+# 0001 - Faith-scope picker #
+############################
+
+heresy_dangerous_rite.0001 = {
+	hidden = yes
+	scope = faith
+
+	immediate = {
+		save_scope_as = origin_faith
+
+		main_rite = { save_scope_as = source_rite }
+
+		# Aligned with rite_growth_pick_founder_effect's cascade, but we are more permissive
+		clear_saved_scope = founder
+		random_faith_ruler = {
+			limit = { # Archbishops who actually know their stuff
+				is_eligible_pam_heresy_c2_founder_trigger = yes
+				rite_growth_founder_is_well_versed_trigger = yes
+				OR = {
+					rite_growth_holds_sizable_clerical_region_trigger = yes
+					exists = clerical_elector_title
+				}
+			}
+			alternative_limit = { # Archbishops making something up
+				is_eligible_pam_heresy_c2_founder_trigger = yes
+				OR = {
+					rite_growth_holds_sizable_clerical_region_trigger = yes
+					exists = clerical_elector_title
+				}
+			}
+			alternative_limit = { # Rulers who actually know their stuff
+				is_eligible_pam_heresy_c2_founder_trigger = yes
+				rite_growth_founder_is_well_versed_trigger = yes
+			}
+			alternative_limit = { # Rulers making something up
+				is_eligible_pam_heresy_c2_founder_trigger = yes
+			}
+
+			weight = {
+				base = 1
+				# Tier weight - higher tier reaches more land.
+				modifier = {
+					add = 5
+					highest_held_title_tier >= tier_kingdom
+				}
+				# In faiths with archbishops, prefer the archbishops themselves.
+				# modifier = {
+				# 	add = 50
+				# 	root = { has_doctrine_parameter = has_clerical_regions }
+				# 	rite_growth_holds_sizable_clerical_region_trigger = yes
+				# }
+				# Archbishop with a king in their clerical region
+				# modifier = {
+				# 	add = 100
+				# 	root = { has_doctrine_parameter = has_clerical_regions }
+				# 	save_temporary_scope_as = ruler_check
+				# 	any_held_title = {
+				# 		has_clerical_region = yes
+				# 		clerical_region_size >= rite_growth_min_clerical_region_size
+				# 		any_ruler_in_clerical_region = {
+				# 			faith = root
+				# 			is_landed = yes
+				# 			highest_held_title_tier = tier_kingdom
+				# 			NOR = {
+				# 				this = scope:ruler_check
+				# 				recently_converted_faith_trigger = yes
+				# 				has_character_flag = recently_converted_by_rite_growth
+				# 				this = faith.religious_head
+				# 				rite.head_of_rite ?= this
+				# 			}
+				# 			NOT = { any_held_title = { has_clerical_region = yes } }
+				# 		}
+				# 	}
+				# }
+				# Charismatic-schismatic carriers we keep but don't actively exclude.
+				modifier = {
+					add = 50
+					OR = {
+						has_trait = heresiarch
+						has_trait = herald
+					}
+				}
+				# Eccentrics come up with interesting new rites.
+				modifier = {
+					add = 15
+					OR = {
+						has_trait = eccentric
+						has_trait = possessed
+						has_trait = lunatic
+					}
+				}
+				# Theological fitness traits.
+				modifier = {
+					add = 10
+					OR = {
+						has_trait = theologian
+						has_trait = lifestyle_scholar
+						has_trait = lifestyle_mystic
+						has_trait = devoted
+					}
+				}
+				modifier = {
+					factor = 2
+					has_focus = learning_theology_focus
+				}
+				modifier = {
+					factor = 2
+					has_trait = zealous
+				}
+				# Strong negative for those very loyal to the religious head.
+				modifier = {
+					factor = 0
+					opinion = {
+						target = faith.religious_head
+						value >= 75
+					}
+				}
+				# These are the Head of Faith's own flock
+				modifier = {
+					factor = 0
+					exists = faith.religious_head.capital_county.clerical_region_title
+					capital_county.clerical_region_title ?= faith.religious_head.capital_county.clerical_region_title
+				}
+			}
+
+			save_scope_as = founder
+		}
+
+		# No delay: 0010 both spawns the rite and notifies the player
+		if = {
+			limit = { exists = scope:founder }
+			scope:founder = {
+				trigger_event = heresy_dangerous_rite.0010
+			}
+		}
+	}
+}
+
+#####################################
+# 0010 - Founder character event    #
+#####################################
+
+heresy_dangerous_rite.0010 = {
+	type = character_event
+	title = heresy_dangerous_rite.0010.t
+	window = big_event_window
+
+	# Description layout uses the same pattern as rite_growth.0010
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { rite_growth_founder_is_archbishop_trigger = yes }
+				desc = heresy_dangerous_rite.0010.desc.intro.descriptor_archbishop
+			}
+			desc = heresy_dangerous_rite.0010.desc.intro.descriptor_ruler
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { rite_growth_founder_is_archbishop_trigger = yes }
+				desc = heresy_dangerous_rite.0010.desc.opener.archbishopric
+			}
+			desc = heresy_dangerous_rite.0010.desc.opener.lands
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { "scope:new_rite.divergence(scope:source_rite)" >= 50 }
+				desc = heresy_dangerous_rite.0010.desc.body.severe
+			}
+			desc = heresy_dangerous_rite.0010.desc.body.alarming
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:differing_tenet }
+				desc = heresy_dangerous_rite.0010.desc.differing.tenet
+			}
+			triggered_desc = {
+				trigger = { exists = scope:differing_doctrine }
+				desc = heresy_dangerous_rite.0010.desc.differing.doctrine
+			}
+			desc = heresy_dangerous_rite.0010.desc.differing.fallback
+		}
+		desc = heresy_dangerous_rite.0010.desc.outro
+	}
+
+	major = yes
+	theme = christian
+	override_background = holy_site_scope
+	override_effect_2d = { reference = smoke }
+
+	major_trigger = {
+		faith = scope:origin_faith
+	}
+
+	widget = {
+		gui = "event_window_widget_rite_founder"
+		container = "custom_widgets_container"
+	}
+
+	left_portrait = {
+		character = scope:founder
+		animation = preaching
+		camera = camera_event_scheme_center_forward
+	}
+
+	immediate = {
+		location = {
+			save_scope_as = holy_site_scope
+			save_scope_as = background_terrain_scope
+		}
+		save_scope_as = founder
+
+		# create_dynamic_rite target_divergence only accepts literals
+		random_list = {
+			3 = {
+				modifier = {
+					factor = 1.6
+					scope:origin_faith.main_rite = {
+						rite_has_parameter = pluralism_pluralistic_resistant_to_heresy
+					}
+				}
+				rite_growth_create_rite_effect = { DIVERGENCE = 35 INCLUDE_UNKNOWN = yes OVERRIDE_TENETS_FIRST = yes }
+			}
+			4 = {
+				rite_growth_create_rite_effect = { DIVERGENCE = 40 INCLUDE_UNKNOWN = yes OVERRIDE_TENETS_FIRST = yes }
+			}
+			3 = {
+				modifier = {
+					factor = 0.6
+					scope:origin_faith.main_rite = {
+						rite_has_parameter = pluralism_pluralistic_resistant_to_heresy
+					}
+				}
+				rite_growth_create_rite_effect = { DIVERGENCE = 45 INCLUDE_UNKNOWN = yes OVERRIDE_TENETS_FIRST = yes }
+			}
+			2 = {
+				trigger = {
+					scope:origin_faith.main_rite = {
+						rite_has_parameter = pluralism_fundamentalist_vulnerable_to_heresy
+					}
+				}
+				rite_growth_create_rite_effect = { DIVERGENCE = 50 INCLUDE_UNKNOWN = yes OVERRIDE_TENETS_FIRST = yes }
+			}
+		}
+
+		# Founder gets herald + heresiarch + religious inspiration.
+		if = {
+			limit = { NOT = { has_trait = heresiarch } }
+			add_trait = heresiarch
+		}
+		if = {
+			limit = { NOT = { has_trait = herald } }
+			add_trait = herald
+		}
+		add_character_flag = {
+			flag = new_heresiarch
+			days = 3
+		}
+		if = {
+			limit = { NOT = { exists = inspiration } }
+			create_inspiration = religious_inspiration
+		}
+		add_character_flag = {
+			flag = recently_converted_by_heresy
+			years = 10
+		}
+
+		# Convert founder's source-faith counties to the new rite, plus their court.
+		every_held_title = {
+			limit = {
+				tier = tier_county
+				faith = scope:source_rite.faith
+			}
+			set_county_rite = scope:new_rite
+		}
+
+		# Archbishop clerical-region cascade (mirrors rite_growth.0010).
+		if = {
+			limit = {
+				any_held_title = { has_clerical_region = yes }
+			}
+			every_held_title = {
+				limit = {
+					has_clerical_region = yes
+				}
+				save_temporary_scope_as = title_check
+				every_county_in_clerical_region = {
+					limit = {
+						rite = scope:source_rite
+						OR = {
+							this = scope:title_check.title_capital_county
+							any_neighboring_county = {
+								this = scope:title_check.title_capital_county
+							}
+						}
+					}
+					set_county_rite = scope:new_rite
+					holder = {
+						if = {
+							limit = {
+								is_eligible_rite_growth_target_trigger = yes
+							}
+							save_scope_as = convert_ruler
+							pam_heresy_convert_ruler_to_new_rite_effect = yes
+						}
+					}
+				}
+			}
+			clear_saved_scope = convert_ruler
+		}
+
+		rite_growth_convert_court_to_new_rite_effect = yes
+
+		# Resolve flavour scopes for event text (differing tenet/doctrine).
+		rite_growth_resolve_differences_effect = yes
+
+		# Save founder's clerical region title for the archbishopric opener line.
+		if = {
+			limit = { rite_growth_founder_is_archbishop_trigger = yes }
+			random_held_title = {
+				limit = { has_clerical_region = yes }
+				save_scope_as = founder_clerical_title
+			}
+		}
+
+		# Seed the spread sweep budget (faster and bigger than rite_growth).
+		scope:origin_faith = {
+			scope:new_rite = {
+				set_variable = {
+					name = c2_spread_remaining_converts
+					value = pam_heresy_c2_spread_budget_base_value
+				}
+				# create_dynamic_rite skips on_rite_created, so this window sways domain and court for a year
+				set_variable = {
+					name = pam_rite_founding_window
+					value = yes
+					years = 1
+				}
+				# Shorter than rite_growth grace so the heresy stays fightable
+				set_variable = {
+					name = pam_rite_grace_period
+					value = yes
+					days = pam_heresy_c2_grace_period_days
+				}
+			}
+			trigger_event = {
+				id = heresy_dangerous_rite.0011
+				days = { 3 6 }
+			}
+		}
+
+		scope:origin_faith = {
+			pam_heresy_fervor_reset_effect = { COMPONENT = 2 }
+			# pam_heresy_push_catalyst_effect = { CATALYST = catalyst_heresy_dangerous_rite } # Warcraft - the Christian situation catalyst push is an empty stub in GoA
+		}
+	}
+
+	option = {
+		name = heresy_dangerous_rite.0010.a
+		add_internal_flag = dangerous
+		trigger = {
+			rite != scope:new_rite
+			NOR = {
+				faith.religious_head ?= this
+				rite.head_of_rite ?= this
+			}
+		}
+		set_character_rite_with_conversion = scope:new_rite
+		add_character_flag = {
+			flag = recently_converted_by_heresy
+			years = 10
+		}
+		change_spiritual_fulfillment = 10
+		ai_chance = {
+			base = 0
+		}
+	}
+
+	option = {
+		name = heresy_dangerous_rite.0010.c
+		add_piety = medium_piety_gain
+		ai_chance = {
+			base = 100
+		}
+	}
+}
+
+############################
+# 0011 - Aggressive sweep  #
+############################
+
+heresy_dangerous_rite.0011 = {
+	hidden = yes
+	scope = faith
+
+	trigger = {
+		exists = scope:origin_faith
+		exists = scope:source_rite
+		exists = scope:new_rite
+		exists = scope:founder
+		scope:new_rite = {
+			var:c2_spread_remaining_converts > 0
+		}
+	}
+
+	immediate = {
+		clear_saved_scope = convert_ruler
+
+		scope:origin_faith = {
+			random_faith_ruler = {
+				limit = {
+					is_physically_able_ai_adult = yes
+					rite = scope:source_rite
+					# Two valid candidate shapes, mirroring vanilla
+					# is_eligible_rite_growth_target_trigger:
+					#   * landed county-or-higher ruler (is_landed catches mercenaries,
+					#     landless adventurers, and territory-destroyed nomadic counts;
+					#     the tier floor prunes single-barony mayors), OR
+					#   * any holder of a clerical-region title (archbishops, who in
+					#     some configurations don't satisfy is_landed = yes despite
+					#     holding the see).
+					OR = {
+						AND = {
+							is_landed = yes
+							highest_held_title_tier >= tier_county
+						}
+						any_held_title = { has_clerical_region = yes }
+					}
+					# Lay-clergy guard: don't pull archbishops into a lay-clergy rite -
+					# the conversion strands them as landless feudal holders of a
+					# clerical region in a rite that doesn't recognise the structure.
+					NAND = {
+						scope:new_rite = { rite_has_doctrine = doctrine_theocracy_lay_clergy }
+						any_held_title = { has_clerical_region = yes }
+					}
+					NOR = {
+						this = scope:founder
+						this = faith.religious_head
+						any_held_title = { is_head_of_faith = yes }
+						has_character_flag = recently_converted_by_heresy
+						recently_converted_faith_trigger = yes
+					}
+					exists = capital_county
+					# Regional spread cap, mirrors vanilla rite_growth_in_founder_spread_area_trigger.
+					exists = scope:founder.capital_county
+					OR = {
+						# AND = {
+						# 	faith = { has_doctrine_parameter = has_clerical_regions }
+						# 	exists = capital_county.clerical_region_title
+						# 	scope:founder.capital_county.clerical_region_title ?= capital_county.clerical_region_title
+						# }
+						capital_county = {
+							squared_distance = {
+								target = scope:founder.capital_county
+								value <= squared_distance_small
+							}
+						}
+					}
+				}
+
+				weight = {
+					base = 100
+
+					# Closer rulers are sharper targets.
+					modifier = {
+						add = -50
+						exists = scope:founder.capital_county
+						capital_county = {
+							squared_distance = {
+								target = scope:founder.capital_county
+								value > squared_distance_small
+							}
+						}
+					}
+					modifier = {
+						add = -25
+						exists = scope:founder.capital_county
+						capital_county = {
+							squared_distance = {
+								target = scope:founder.capital_county
+								value > squared_distance_medium
+							}
+						}
+					}
+
+					modifier = {
+						factor = 3
+						highest_held_title_tier >= tier_kingdom
+					}
+					modifier = {
+						factor = 2
+						highest_held_title_tier = tier_duchy
+					}
+					modifier = {
+						factor = 0.3
+						highest_held_title_tier = tier_county
+					}
+
+					# Archbishops (clerical region holders) are key spread vectors.
+					# Mirrors rite_growth.0011's weighting so the heresy can pull
+					# whole sees over rather than just one-county counts.
+					modifier = {
+						factor = 5
+						any_held_title = { has_clerical_region = yes }
+					}
+
+					# Same clerical region as the founder, so the local see falls first
+					# modifier = {
+					# 	factor = 3
+					# 	faith = { has_doctrine_parameter = has_clerical_regions }
+					# 	exists = capital_county.clerical_region_title
+					# 	scope:founder.capital_county.clerical_region_title ?= capital_county.clerical_region_title
+					# }
+
+					modifier = {
+						factor = 1.8
+						OR = {
+							has_trait = zealous
+							has_trait = lifestyle_mystic
+							has_trait = lifestyle_scholar
+							has_trait = theologian
+							has_trait = ambitious
+						}
+					}
+
+					modifier = {
+						factor = 1.5
+						culture = { has_same_culture_heritage = scope:founder.culture }
+					}
+
+					modifier = {
+						factor = 0.001
+						OR = {
+							government_has_flag = government_is_nomadic
+							government_has_flag = government_is_herder
+						}
+					}
+				}
+
+				save_scope_as = convert_ruler
+			}
+		}
+
+		if = {
+			limit = { exists = scope:convert_ruler }
+
+			scope:convert_ruler = {
+				pam_heresy_convert_ruler_to_new_rite_effect = yes
+			}
+
+			scope:new_rite = {
+				if = {
+					limit = {
+						scope:convert_ruler = {
+							highest_held_title_tier >= tier_kingdom
+						}
+					}
+					change_variable = {
+						name = c2_spread_remaining_converts
+						subtract = 4
+					}
+				}
+				else_if = {
+					limit = {
+						scope:convert_ruler = {
+							highest_held_title_tier = tier_duchy
+						}
+					}
+					change_variable = {
+						name = c2_spread_remaining_converts
+						subtract = 2
+					}
+				}
+				else = {
+					change_variable = {
+						name = c2_spread_remaining_converts
+						subtract = 1
+					}
+				}
+
+				if = {
+					limit = { var:c2_spread_remaining_converts > 0 }
+					scope:origin_faith = {
+						trigger_event = {
+							id = heresy_dangerous_rite.0011
+							days = { 4 8 }
+						}
+					}
+				}
+				else = {
+					remove_variable = c2_spread_remaining_converts
+				}
+			}
+
+			if = {
+				limit = { scope:convert_ruler ?= { rite = scope:new_rite } }
+				pam_heresy_send_spread_message_effect = { TITLE = heresy_dangerous_rite.spread.title }
+			}
+		}
+		else = {
+			scope:new_rite = {
+				remove_variable = c2_spread_remaining_converts
+			}
+		}
+	}
+}
