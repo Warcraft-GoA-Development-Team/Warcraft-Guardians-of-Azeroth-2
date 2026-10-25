@@ -1,0 +1,216 @@
+﻿############################################
+# Canonizing Saints - script values
+# pam_saint_relic_max
+# pam_saint_relics_extracted_value
+# pam_saint_relic_quality_value
+# pam_dynasty_saint_count_value
+# pam_canonize_saint_piety_cost
+# pam_canonize_saint_gold_cost
+# pam_extract_relic_piety_cost
+# pam_extract_relic_gold_cost
+# pam_saint_worthiness_value
+# pam_hof_canonization_full_approval_traits / _cynical_weight / _effective_virtues_value / _approve_weight / _reject_weight / _accept_chance(_cynical)
+############################################
+
+# A buried saint can yield this many relics in total. Pulled from the define that actually drives remaining_saint_relics, so the "X of N" loc display can't drift out of sync.
+pam_saint_relic_max = {
+	value = define:NFaith|MAX_RELICS_FROM_SAINT
+}
+
+# Relics already drawn from this saint (evaluated on the saint): the cap minus the engine's remaining charges.
+pam_saint_relics_extracted_value = {
+	value = pam_saint_relic_max
+	subtract = remaining_saint_relics
+}
+
+# Quality of a relic drawn from this saint (evaluated on the saint): their holiness, diminishing with each draw already taken.
+pam_saint_relic_quality_value = {
+	value = 20
+	add = {
+		value = pam_saint_worthiness_value
+		multiply = 1.5
+	}
+	multiply = {
+		value = 1
+		subtract = {
+			value = pam_saint_relics_extracted_value
+			multiply = 0.1
+		}
+	}
+	min = 25
+	max = 100
+	round = yes
+}
+
+# How many saints this character's dynasty has already produced (for cost modificiation).
+pam_dynasty_saint_count_value = {
+	value = 0
+	if = {
+		limit = {
+			exists = dynasty
+			dynasty = { has_variable = pam_dynasty_saint_count }
+		}
+		add = dynasty.var:pam_dynasty_saint_count
+	}
+}
+
+# Piety cost to canonize a saint, scaling with the dynasty's saints. Dulia faiths pay 15% less (checked on the acting ruler's rite) and Religious Icon another 25%; round_to keeps the discounted total a clean multiple of 10. Relic extraction reuses this value, so both discounts carry over there.
+pam_canonize_saint_piety_cost = {
+	value = 3000
+	add = {
+		value = pam_dynasty_saint_count_value
+		multiply = 250
+	}
+	if = {
+		limit = { rite = { rite_has_parameter = tenet_dulia_cheaper_saint_costs } }
+		multiply = 0.85
+	}
+	if = {
+		limit = { has_perk = religious_icon_perk }
+		multiply = 0.75
+	}
+	round_to = 10
+}
+
+# Gold cost to canonize a saint; same scaling, Dulia discount and rounding as the piety cost above.
+pam_canonize_saint_gold_cost = {
+	value = 500
+	add = {
+		value = pam_dynasty_saint_count_value
+		multiply = 50
+	}
+	if = {
+		limit = { rite = { rite_has_parameter = tenet_dulia_cheaper_saint_costs } }
+		multiply = 0.85
+	}
+	round_to = 10
+}
+
+# Relic extraction mirrors the canonize cost (Dulia discount already baked in), so it never double-discounts.
+pam_extract_relic_piety_cost = {
+	value = pam_canonize_saint_piety_cost
+}
+
+pam_extract_relic_gold_cost = {
+	value = pam_canonize_saint_gold_cost
+}
+
+# Saint-worthiness score: selection weight for the candidate pick (widget pre-selection and AI auto-pick). Additive and non-negative; the base keeps every eligible forebear in the running.
+pam_saint_worthiness_value = {
+	value = 1
+
+	# More virtuous traits = worthier.
+	add = {
+		value = num_virtuous_traits
+		multiply = 3
+	}
+	if = {
+		limit = { has_trait = zealous }
+		add = 2
+	}
+
+	# Promulgated their own pious deeds in life, worth about two virtuous traits here.
+	if = {
+		limit = {
+			trigger_if = {
+				limit = { is_alive = yes }
+				has_variable = pam_propagate_word_of_my_sainthood 
+			}
+			trigger_else = {
+				has_dead_character_variable = pam_propagate_word_of_my_sainthood 
+			}
+		}
+		add = 6
+	}
+
+	# Anointed with the Holy Myron at their funeral, worth one virtuous trait here.
+	if = {
+		limit = {
+			is_alive = no
+			always = no # Warcraft - never set in GoA
+		}
+		add = 3
+	}
+
+	if = {
+		limit = { pam_venerated_the_saints_personally_trigger = yes }
+		add = 3
+	}
+
+	# Elders are more readily venerated.
+	add = {
+		value = age
+		multiply = 0.1
+	}
+
+	# Theological learning lends itself to sainthood.
+	add = {
+		value = learning
+		multiply = 0.2
+	}
+}
+
+# Shared HoF approval weights driving both event 0002's ai_chance and the accept-chance estimate in the canonize decision (edit here, both stay in sync). Virtuous traits are the whole story (1 ~= 33%, 2 ~= 66%, 3+ ~= 100%); no flat base since one virtue is the minimum to canonize, and a cynical Head of Faith drags the odds down.
+pam_hof_canonization_full_approval_traits = 3
+pam_hof_canonization_cynical_weight = 1
+
+# Estimated chance the HoF approves, shown in the canonize decision's Effects. Evaluated FROM the saint candidate (loc calls saint_candidate.MakeScope.ScriptValue), so num_virtuous_traits reads off root; the HoF's cynicism lives elsewhere and is folded into the _cynical variant below, which the decision picks based on the HoF's trait.
+pam_hof_canonization_effective_virtues_value = {
+	value = num_virtuous_traits
+	if = {
+		limit = {
+			trigger_if = {
+				limit = { is_alive = yes }
+				has_variable = pam_propagate_word_of_my_sainthood 
+			}
+			trigger_else = {
+				has_dead_character_variable = pam_propagate_word_of_my_sainthood 
+			}
+		}
+		add = 1
+	}
+	if = {
+		limit = {
+			is_alive = no
+			always = no # Warcraft - never set in GoA
+		}
+		add = 1
+	}
+	if = {
+		limit = { pam_venerated_the_saints_personally_trigger = yes }
+		add = 1
+	}
+}
+
+pam_hof_canonization_approve_weight = {
+	value = pam_hof_canonization_effective_virtues_value
+	min = 0
+	max = pam_hof_canonization_full_approval_traits
+}
+
+pam_hof_canonization_reject_weight = {
+	value = pam_hof_canonization_full_approval_traits
+	subtract = pam_hof_canonization_effective_virtues_value
+	min = 0
+}
+
+# Approve / (approve + reject) as a 0-1 fraction for |0% display. min = 1 floors the divisor so it never divides by zero.
+pam_hof_canonization_accept_chance = {
+	value = pam_hof_canonization_approve_weight
+	divide = {
+		value = pam_hof_canonization_approve_weight
+		add = pam_hof_canonization_reject_weight
+		min = 1
+	}
+}
+
+# As above, but for a cynical petitioner: the cynical penalty widens the denominator.
+pam_hof_canonization_accept_chance_cynical = {
+	value = pam_hof_canonization_approve_weight
+	divide = {
+		value = pam_hof_canonization_approve_weight
+		add = pam_hof_canonization_reject_weight
+		add = pam_hof_canonization_cynical_weight
+		min = 1
+	}
+}
