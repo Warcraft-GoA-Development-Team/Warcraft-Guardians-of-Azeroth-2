@@ -1,4 +1,4 @@
-Includes = {
+﻿Includes = {
 	"cw/pdxmesh_blendshapes.fxh"
 	"cw/pdxmesh.fxh"
 	"cw/utility.fxh"
@@ -1272,6 +1272,20 @@ PixelShader =
 		Output = "PS_COLOR_SSAO"
 		Code
 		[[
+			void DitheredOpacity( in float Opacity, in float2 NoiseCoordinate )
+			{
+				const float4x4 ThresholdMatrix =
+				{
+					0.0588235f, 0.5294117f, 0.1764705f, 0.6470588f,
+					0.7647058f, 0.2941176f, 0.8823529f, 0.4117647f,
+					0.2352941f, 0.7058823f, 0.1176470f, 0.5882352f,
+					0.9411764f, 0.4705882f, 0.8235294f, 0.3529411f
+				};
+				int2 Coordinate = (int2)NoiseCoordinate & 3;
+				float Factor = ThresholdMatrix[Coordinate.x][Coordinate.y];
+				clip( Opacity - Factor );
+			}
+
 			PDX_MAIN
 			{
 				PS_COLOR_SSAO Out;
@@ -1284,9 +1298,13 @@ PixelShader =
 				#else
 					float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw );
 				#endif
-
 			
 				Diffuse.a = PdxMeshApplyOpacity( Diffuse.a, Input.Position.xy, PdxMeshGetOpacity( Input.InstanceIndex ) );
+
+				#ifdef DITHERED_OPACITY
+					DitheredOpacity( Diffuse.a, Input.Position.xz );
+					Diffuse.a = 1.0f;
+				#endif
 
 				#ifdef VARIATIONS_ENABLED
 					float4 SecondColorMask = vec4( 0.0f );
@@ -1380,6 +1398,60 @@ PixelShader =
 
 
 				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, HoverMult, PortraitEffect );
+
+				#ifdef ALPHA_TO_COVERAGE
+					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, UV0, DiffuseMap );
+
+					const float CUTOFF = 0.5f;
+					Diffuse.a = SharpenAlpha( Diffuse.a, CUTOFF );
+				#endif
+
+				#ifdef WRITE_ALPHA_ONE
+					Out.Color = float4( Color, 1.0f );
+				#else
+					#ifdef HAIR_TRANSPARENCY_HACK
+						// TODO [HL]: Hack to stop clothing fragments from being discarded by transparent hair,
+						// proper fix is to ensure that hair is drawn after clothes
+						// https://beta.paradoxplaza.com/browse/PSGE-3103
+						clip( Diffuse.a - 0.5f );
+					#endif
+
+					Out.Color = float4( Color, Diffuse.a );
+				#endif
+
+				Out.SSAOColor = float4( vec3( 0.0f ), 1.0f );
+
+				return Out;
+			}
+		]]
+	}
+
+	MainCode PS_wc_ice
+	{
+		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
+		Output = "PS_COLOR_SSAO"
+		Code
+		[[
+			PDX_MAIN
+			{
+				PS_COLOR_SSAO Out;
+
+				float2 UV0 = Input.UV0;
+				float4 Diffuse = PdxTex2D( DiffuseMap, UV0 );
+				float4 Properties = PdxTex2D( PropertiesMap, UV0 );
+				Properties *= vHairPropertyMult;
+				float4 NormalSampleRaw = PdxTex2D( NormalMap, UV0 );
+				float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw ) * ( PDX_IsFrontFace ? 1 : -1 );
+
+				float ColorMaskStrength = NormalSampleRaw.b;
+				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorHair.rgb, Input.InstanceIndex, ColorMaskStrength );
+
+				// MOD(godherja)
+				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
+				// END MOD
+
+
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
 
 				#ifdef ALPHA_TO_COVERAGE
 					Diffuse.a = RescaleAlphaByMipLevel( Diffuse.a, UV0, DiffuseMap );
@@ -1836,6 +1908,23 @@ PixelShader =
 		]]
 	}
 
+	MainCode PS_mesh_vfx_head_halo_court
+	{
+		Input = "VS_OUTPUT_PDXMESH_VFX"
+		Output = "PS_COLOR_SSAO"
+		Code
+		[[
+			PDX_MAIN
+			{
+				PS_COLOR_SSAO Out;
+
+				Out.Color.a = 0.0f;
+				Out.SSAOColor = float4( 1.0f, 1.0f, 1.0f, 0.0f );
+				return Out;
+			}
+		]]
+	}
+
 	MainCode PS_noop
 	{
 		Input = "VS_OUTPUT_PDXMESHPORTRAIT"
@@ -1851,6 +1940,16 @@ PixelShader =
 }
 
 BlendState hair_alpha_blend
+{
+	BlendEnable = yes
+	SourceBlend = "SRC_ALPHA"
+	DestBlend = "INV_SRC_ALPHA"
+	SourceAlpha = "ONE"
+	DestAlpha = "INV_SRC_ALPHA"
+	WriteMask = "RED|GREEN|BLUE|ALPHA"
+}
+
+BlendState ice_alpha_blend
 {
 	BlendEnable = yes
 	SourceBlend = "SRC_ALPHA"
@@ -2035,6 +2134,21 @@ Effect portrait_attachment_selection
 	VertexShader = "VS_standard"
 	PixelShader = "PS_court_selection"
 	Defines = { "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect wc_portrait_attachment_ice
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_attachment"
+	BlendState = "ice_alpha_blend"
+	Defines = { "USE_CHARACTER_DATA" "PDX_MESH_BLENDSHAPES" }
+}
+
+Effect wc_portrait_attachment_ice_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_court_selection"
+	BlendState = "ice_alpha_blend"
 }
 
 Effect wc_portrait_attachment_emissive
@@ -3082,6 +3196,21 @@ Effect tabletop_standard
 }
 
 Effect tabletop_standard_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect mesh_vfx_head_halo
+{
+	VertexShader = "VS_mesh_vfx_standard"
+	PixelShader = "PS_mesh_vfx_head_halo_court"
+	BlendState = "alpha_to_coverage"
+	RasterizerState = "rasterizer_no_culling"
+	Defines = { "BILLBOARD_HALO_MESH" "BILLBOARD_OFFSET_DISTANCE 30.0"}
+}
+
+Effect mesh_vfx_head_halo_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"
