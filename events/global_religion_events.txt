@@ -189,8 +189,7 @@ global_religion.0001 = {
 							}
 						}
 						NAND = { # The Steppes convert, but stay tribal
-							exists = capital_province
-							capital_province = { geographical_region = world_steppe }
+							capital_province ?= { geographical_region = world_steppe }
 						}
 					}
 					check_available_government_effect = yes # Warcraft
@@ -249,20 +248,26 @@ global_religion.1000 = {
 		first_valid = {
 			triggered_desc = {
 				trigger = {
-					exists = scope:seeking_same_faith_counties
-					scope:target_faith_associated_county_faith != scope:target_faith
+					OR = {
+						exists = scope:seeking_same_rite_counties
+						exists = scope:seeking_same_faith_counties
+					}
+					scope:target_rite_associated_county_rite != scope:target_rite
 				}
 				desc = global_religion.1000.desc_same_faith_counties_alt
 			}
 			triggered_desc = {
 				trigger = {
-					exists = scope:seeking_same_faith_counties
+					OR = {
+						exists = scope:seeking_same_rite_counties
+						exists = scope:seeking_same_faith_counties
+					}
 				}
 				desc = global_religion.1000.desc_same_faith_counties
 			}
 			triggered_desc = {
 				trigger = {
-					scope:target_faith_associated_county_faith = scope:target_faith
+					scope:target_rite_associated_county_rite = scope:target_rite
 				}
 				desc = global_religion.1000.desc_any_counties_alt
 			}
@@ -284,29 +289,44 @@ global_religion.1000 = {
 	}
 
 	immediate = {
+		# Stored here so the take-up-rite option does not have to check again
+		if = {
+			limit = {
+				pam_rite_locally_present_trigger = { RITE = scope:target_rite }
+			}
+			save_scope_value_as = {
+				name = exiles_rite_locally_present
+				value = yes
+			}
+		}
 		hidden_effect_new_object = {
-			scope:target_faith = {
+			scope:target_rite = {
 				var:associated_culture = {
-					save_scope_as = target_faith_associated_culture
+					save_scope_as = target_rite_associated_culture
 				}
 				var:associated_county = {
-					save_scope_as = target_faith_associated_county
-					faith = { save_scope_as = target_faith_associated_county_faith }
+					save_scope_as = target_rite_associated_county
+					rite = { save_scope_as = target_rite_associated_county_rite }
 				}
 			}
 			save_scope_value_as = {
 				name = initial_available_development
-				value = scope:target_faith.var:converted_development
+				value = scope:target_rite.var:converted_development
+			}
+			# Defaulted so the loops below still evaluate when no starting County is found.
+			save_scope_value_as = {
+				name = remaining_converted_development
+				value = 0
 			}
 			
-			# Save same-faith Counties if that's what we're looking for, they can be all over the place
+			# Save same-rite Counties if that's what we're looking for, they can be all over the place
 			if = {
 				limit = {
-					exists = scope:seeking_same_faith_counties
+					exists = scope:seeking_same_rite_counties
 				}
 				random_sub_realm_county = {
 					limit = {
-						faith = scope:target_faith
+						rite = scope:target_rite
 					}
 					save_scope_as = initial_county_target
 					add_to_list = counties_to_move_in_to
@@ -345,7 +365,79 @@ global_religion.1000 = {
 					}
 					random_sub_realm_county = {
 						limit = {
-							faith = scope:target_faith
+							rite = scope:target_rite
+							NOT = {
+								is_in_list = counties_to_move_in_to
+							}
+						}
+						add_to_list = counties_to_move_in_to
+						set_variable = {
+							name = county_development_to_get
+							value = {
+								value = development_level
+								divide = 10
+								floor = yes
+								add = 1
+								max = scope:remaining_converted_development
+								min = 1
+							}
+						}
+						save_scope_value_as = {
+							name = remaining_converted_development
+							value = {
+								value = scope:remaining_converted_development
+								subtract = var:county_development_to_get
+							}
+						}
+					}
+				}
+			}
+			else_if = {
+				limit = {
+					exists = scope:seeking_same_faith_counties
+				}
+				random_sub_realm_county = {
+					limit = {
+						faith = scope:target_rite.faith
+					}
+					save_scope_as = initial_county_target
+					add_to_list = counties_to_move_in_to
+					set_variable = {
+						name = county_development_to_get
+						value = {
+							value = development_level
+							divide = 10
+							floor = yes
+							add = 1
+							max = scope:initial_available_development
+							min = 1
+						}
+					}
+					save_scope_value_as = {
+						name = remaining_converted_development
+						value = {
+							value = scope:initial_available_development
+							subtract = var:county_development_to_get
+						}
+					}
+				}
+				while = {
+					count = {
+						add = root.primary_title.tier
+						if = {
+							limit = {
+								root.primary_title.tier <= tier_duchy
+							}
+							add = -1
+							min = 1
+						}
+					}
+					limit = {
+						scope:remaining_converted_development > 0
+					}
+					random_sub_realm_county = {
+						limit = {
+							faith = scope:target_rite.faith
 							NOT = {
 								is_in_list = counties_to_move_in_to
 							}
@@ -380,8 +472,8 @@ global_religion.1000 = {
 						faith = root.faith
 						NOT = {
 							is_target_in_variable_list = {
-								name = faiths_converted_in_the_county
-								target = scope:target_faith
+								name = rites_converted_in_the_county
+								target = scope:target_rite
 							}
 						}
 						trigger_if = {
@@ -442,8 +534,8 @@ global_religion.1000 = {
 							faith = root.faith
 							NOT = {
 								is_target_in_variable_list = {
-									name = faiths_converted_in_the_county
-									target = scope:target_faith
+									name = rites_converted_in_the_county
+									target = scope:target_rite
 								}
 							}
 							trigger_if = {
@@ -514,16 +606,17 @@ global_religion.1000 = {
 			}
 			create_character = {
 				template = pool_repopulate_learning
-				faith = scope:target_faith
-				culture = scope:target_faith_associated_culture
+				faith = scope:target_rite.faith
+				rite = scope:target_rite
+				culture = scope:target_rite_associated_culture
 				location = root.capital_province
 				gender_female_chance = {
 					if = {
-						limit = { scope:target_faith = { has_doctrine = doctrine_gender_male_dominated } }
+						limit = { scope:target_rite = { rite_has_doctrine = doctrine_gender_male_dominated } }
 						add = 0
 					}
 					else_if = {
-						limit = { scope:target_faith = { has_doctrine = doctrine_gender_female_dominated } }
+						limit = { scope:target_rite = { rite_has_doctrine = doctrine_gender_female_dominated } }
 						add = 100
 					}
 					else = {
@@ -533,6 +626,7 @@ global_religion.1000 = {
 				save_scope_as = local_character
 			}
 			scope:local_character = {
+				set_character_rite = scope:target_rite
 				add_trait = lifestyle_mystic
 				set_variable = {
 					name = loc_number
@@ -566,9 +660,12 @@ global_religion.1000 = {
 		capital_county = {
 			if = {
 				limit = {
-					faith != scope:target_faith
+					OR = {
+						faith != scope:target_rite.faith
+						rite != scope:target_rite
+					}
 				}
-				faith = {
+				rite = {
 					if = {
 						limit = {
 							OR = {
@@ -636,10 +733,13 @@ global_religion.1000 = {
 			}
 			if = {
 				limit = {
-					root.faith != scope:target_faith
-					faith != scope:target_faith
+					OR = {
+						root.faith != scope:target_rite.faith
+						rite != scope:target_rite
+					}
 				}
-				set_county_faith = scope:target_faith
+				set_county_faith = scope:target_rite.faith
+				set_county_rite = scope:target_rite
 			}
 			change_development_level = {
 				value = {
@@ -670,11 +770,11 @@ global_religion.1000 = {
 		
 		if = {
 			limit = {
-				culture != scope:target_faith_associated_culture
+				culture != scope:target_rite_associated_culture
 			}
 			culture = {
 				change_cultural_acceptance = {
-					target = scope:target_faith_associated_culture
+					target = scope:target_rite_associated_culture
 					value = {
 						value = scope:initial_available_development
 						subtract = scope:remaining_converted_development
@@ -684,7 +784,7 @@ global_religion.1000 = {
 			}
 		}
 		
-		scope:target_faith = {
+		scope:target_rite = {
 			change_variable = {
 				name = converted_development
 				subtract = {
@@ -701,6 +801,7 @@ global_religion.1000 = {
 		if = {
 			limit = {
 				is_ai = no
+				NOT = { exists = scope:pam_syncretic_exiles_decision }
 			}
 			add_achievement_global_variable_effect = {
 				VARIABLE = achieved_ep4_20_promised_land_achievement
@@ -739,11 +840,11 @@ global_religion.1000 = {
 		
 		if = {
 			limit = {
-				culture != scope:target_faith_associated_culture
+				culture != scope:target_rite_associated_culture
 			}
 			culture = {
 				change_cultural_acceptance = {
-					target = scope:target_faith_associated_culture
+					target = scope:target_rite_associated_culture
 					value = {
 						value = scope:initial_available_development
 						subtract = scope:remaining_converted_development
@@ -754,14 +855,14 @@ global_religion.1000 = {
 			}
 		}
 		
-		scope:target_faith = {
+		scope:target_rite = {
 			change_variable = {
 				name = converted_development
 				subtract = 1
 			}
 		}
 		
-		stress_impact = {
+		stress_and_fulfillment_impact = {
 			generous = massive_stress_impact_gain
 			compassionate = massive_stress_impact_gain
 			humble = medium_stress_impact_gain
@@ -786,14 +887,21 @@ global_religion.1000 = {
 		name = global_religion.1000.special
 		add_internal_flag = dangerous
 		trigger = {
-			faith != scope:target_faith
+			rite != scope:target_rite
 			faith.religious_head != root
+			trigger_if = { # The AI only takes up a rite that already has a foothold nearby, unless it is unreformed and this is its road out of paganism; players may follow their conscience
+				limit = { is_ai = yes }
+				OR = {
+					exists = scope:exiles_rite_locally_present
+					rite = { rite_has_parameter = unreformed }
+				}
+			}
 		}
 		show_as_tooltip = {
-			set_character_faith_with_conversion = scope:target_faith
+			set_character_rite_with_conversion = scope:target_rite
 			if = {
 				limit = { 
-					scope:target_faith = { has_doctrine = doctrine_monotheist }
+					scope:target_rite = { has_doctrine = doctrine_monotheist }
 				}
 				custom_description_no_bullet = { text = mandala_monotheist_warning_tt }
 			}
@@ -810,8 +918,8 @@ global_religion.1000 = {
 		}
 		else_if = {
 			limit = {
-				faith = { has_doctrine = doctrine_pluralism_pluralistic }
-				scope:target_faith = { has_doctrine = doctrine_pluralism_pluralistic }
+				rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
+				scope:target_rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
 			}
 			add_piety = minor_piety_gain
 		}
@@ -819,7 +927,7 @@ global_religion.1000 = {
 			add_piety_level = -2
 		}
 		hidden_effect = {
-			set_character_faith_with_conversion = scope:target_faith
+			set_character_rite_with_conversion = scope:target_rite
 		}
 		if = {
 			limit = {
@@ -836,25 +944,27 @@ global_religion.1000 = {
 				}
 				if = {
 					limit = {
-						domicile_faith != scope:target_faith
+						domicile_faith != scope:target_rite.faith
 					}
-					set_domicile_faith = scope:target_faith
+					set_domicile_faith = scope:target_rite.faith
 				}
 			}
 			every_held_title = {
 				limit = {
 					tier = tier_county
 					is_landless_type_title = no
-					faith = root.faith
+					rite = root.rite
 				}
-				set_county_faith = scope:target_faith
+				set_county_faith = scope:target_rite.faith
+				set_county_rite = scope:target_rite
 			}
 		}
 		else = {
 			every_in_list = {
 				list = counties_to_move_in_to
 				change_development_level = var:county_development_to_get
-				set_county_faith = scope:target_faith
+				set_county_faith = scope:target_rite.faith
+				set_county_rite = scope:target_rite
 				change_county_control = {
 					value = var:county_development_to_get
 					multiply = -5
@@ -864,11 +974,11 @@ global_religion.1000 = {
 		
 		if = {
 			limit = {
-				culture != scope:target_faith_associated_culture
+				culture != scope:target_rite_associated_culture
 			}
 			culture = {
 				change_cultural_acceptance = {
-					target = scope:target_faith_associated_culture
+					target = scope:target_rite_associated_culture
 					value = {
 						value = scope:initial_available_development
 						subtract = scope:remaining_converted_development
@@ -878,7 +988,7 @@ global_religion.1000 = {
 			}
 		}
 		
-		scope:target_faith = {
+		scope:target_rite = {
 			change_variable = {
 				name = converted_development
 				subtract = {
@@ -890,13 +1000,14 @@ global_religion.1000 = {
 			}
 		}
 		
-		stress_impact = {
+		stress_and_fulfillment_impact = {
 			zealous = massive_stress_impact_gain
 		}
 		
 		if = {
 			limit = {
 				is_ai = no
+				NOT = { exists = scope:pam_syncretic_exiles_decision }
 			}
 			add_achievement_global_variable_effect = {
 				VARIABLE = achieved_ep4_20_promised_land_achievement
@@ -908,25 +1019,27 @@ global_religion.1000 = {
 			base = 0
 			modifier = {
 				current_year >= 1000
-				faith = {
-					has_doctrine_parameter = unreformed
-					NOT = { like_baltic_religion_trigger = yes }
+				rite = {
+					rite_has_parameter = unreformed
+					faith = {
+						NOT = { like_baltic_religion_trigger = yes }
+					}
 				}
 				add = 10
 			}
 			modifier = {
-				faith = { has_doctrine = doctrine_pluralism_pluralistic }
-				scope:target_faith = { has_doctrine = doctrine_pluralism_pluralistic }
+				rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
+				scope:target_rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
 				
 				OR = {
-					faith.religion = scope:target_faith.religion
+					faith.religion = scope:target_rite.faith.religion
 					AND = {
-						faith = { like_eastern_religion_trigger = yes }
-						scope:target_faith = { like_eastern_religion_trigger = yes }
+						faith.religion = { like_eastern_religion_trigger = yes }
+						scope:target_rite.faith.religion = { like_eastern_religion_trigger = yes }
 					}
 					AND = {
-						faith = { like_sinitic_religion_trigger = yes }
-						scope:target_faith = { like_sinitic_religion_trigger = yes }
+						faith.religion = { like_sinitic_religion_trigger = yes }
+						scope:target_rite.faith.religion = { like_sinitic_religion_trigger = yes }
 					}
 				}
 				
@@ -941,9 +1054,9 @@ global_religion.1000 = {
 				add = 1
 			}
 			modifier = {
-				faith = { like_abrahamic_religion_trigger = yes }
+				faith.religion = { like_abrahamic_religion_trigger = yes }
 				NOT = {
-					scope:target_faith = { like_abrahamic_religion_trigger = yes }
+					scope:target_rite.faith.religion = { like_abrahamic_religion_trigger = yes }
 				}
 				factor = 0
 			}
@@ -987,7 +1100,10 @@ global_religion.1000 = {
 		add_courtier = scope:local_character
 		if = {
 			limit = {
-				exists = scope:seeking_same_faith_counties
+				OR = {
+					exists = scope:seeking_same_rite_counties
+					exists = scope:seeking_same_faith_counties
+				}
 			}
 			if = {
 				limit = {
@@ -1031,9 +1147,9 @@ global_religion.1000 = {
 					}
 					if = {
 						limit = {
-							domicile_faith != scope:target_faith
+							domicile_faith != scope:target_rite.faith
 						}
-						set_domicile_faith = scope:target_faith
+						set_domicile_faith = scope:target_rite.faith
 					}
 				}
 				every_held_title = {
@@ -1042,7 +1158,8 @@ global_religion.1000 = {
 						is_landless_type_title = no
 						faith = root.faith
 					}
-					set_county_faith = scope:target_faith
+					set_county_faith = scope:target_rite.faith
+					set_county_rite = scope:target_rite
 				}
 			}
 			else = {
@@ -1059,7 +1176,8 @@ global_religion.1000 = {
 							multiply = 2
 						}
 					}
-					set_county_faith = scope:target_faith
+					set_county_faith = scope:target_rite.faith
+					set_county_rite = scope:target_rite
 					change_county_control = {
 						value = var:county_development_to_get
 						multiply = -5
@@ -1070,11 +1188,11 @@ global_religion.1000 = {
 		
 		if = {
 			limit = {
-				culture != scope:target_faith_associated_culture
+				culture != scope:target_rite_associated_culture
 			}
 			culture = {
 				change_cultural_acceptance = {
-					target = scope:target_faith_associated_culture
+					target = scope:target_rite_associated_culture
 					value = {
 						value = scope:initial_available_development
 						subtract = scope:remaining_converted_development
@@ -1084,7 +1202,7 @@ global_religion.1000 = {
 			}
 		}
 		
-		scope:target_faith = {
+		scope:target_rite = {
 			change_variable = {
 				name = converted_development
 				subtract = {
@@ -1099,6 +1217,7 @@ global_religion.1000 = {
 		if = {
 			limit = {
 				is_ai = no
+				NOT = { exists = scope:pam_syncretic_exiles_decision }
 			}
 			add_achievement_global_variable_effect = {
 				VARIABLE = achieved_ep4_20_promised_land_achievement
@@ -1106,33 +1225,43 @@ global_religion.1000 = {
 			}
 		}
 		
+		# Sheltering exiles of your own religion is spiritually fulfilling; housing foreign faiths is realm business
+		if = {
+			limit = {
+				faith.religion = scope:target_rite.faith.religion
+			}
+			change_spiritual_fulfillment = minor_spiritual_fulfillment_value
+		}
+
 		ai_chance = { # Warcraft - change faiths to lore triggers
 			base = 0
 			modifier = {
-				faith = scope:target_faith
+				rite = scope:target_rite
 				add = 5000
 			}
 			modifier = {
 				current_year >= 1000
-				faith = {
-					has_doctrine_parameter = unreformed
-					NOT = { like_baltic_religion_trigger = yes }
+				rite = {
+					rite_has_parameter = unreformed
+					faith = {
+						NOT = { like_baltic_religion_trigger = yes }
+					}
 				}
 				add = 10
 			}
 			modifier = {
-				faith = { like_eastern_religion_trigger = yes }
-				scope:target_faith = { like_eastern_religion_trigger = yes }
+				faith.religion = { like_eastern_religion_trigger = yes }
+				scope:target_rite.faith.religion = { like_eastern_religion_trigger = yes }
 				add = 1000
 			}
 			modifier = {
-				faith = { like_sinitic_religion_trigger = yes }
-				scope:target_faith = { like_sinitic_religion_trigger = yes }
+				faith.religion = { like_sinitic_religion_trigger = yes }
+				scope:target_rite.faith.religion = { like_sinitic_religion_trigger = yes }
 				add = 1000
 			}
 			modifier = {
 				culture = { like_heritage_chinese_trigger = yes } #Warcraft
-				scope:target_faith = { like_sinitic_religion_trigger = yes }
+				scope:target_rite.faith.religion = { like_sinitic_religion_trigger = yes }
 				add = 1000
 			}
 			modifier = {
@@ -1143,19 +1272,19 @@ global_religion.1000 = {
 					has_trait = humble
 				}
 				is_open_to_inviting_other_faiths_trigger = yes
-				faith = { like_eastern_religion_trigger = yes }
-				scope:target_faith = { num_county_followers < 5 }
+				faith.religion = { like_eastern_religion_trigger = yes }
+				scope:target_rite.faith = { num_county_followers < 5 }
 				add = 1000
 			}
 			modifier = {
 				is_open_to_inviting_other_faiths_trigger = yes
-				scope:target_faith = { faith_is_open_minded_trigger = yes }
+				scope:target_rite = { faith_is_open_minded_trigger = yes }
 				add = 10
 			}
 			modifier = {
-				faith = { like_abrahamic_religion_trigger = yes }
+				faith.religion = { like_abrahamic_religion_trigger = yes }
 				NOT = {
-					scope:target_faith = { like_abrahamic_religion_trigger = yes }
+					scope:target_rite.faith.religion = { like_abrahamic_religion_trigger = yes }
 				}
 				factor = 0
 			}
@@ -1188,7 +1317,7 @@ global_religion.1000 = {
 			# 	factor = 0
 			# }
 			modifier = {
-				faith != scope:target_faith
+				faith != scope:target_rite.faith
 				any_sub_realm_county = {
 					count < {
 						value = {
@@ -1223,7 +1352,7 @@ global_religion.1000 = {
 		else = {
 			if = {
 				limit = {
-					faith != scope:target_faith
+					faith != scope:target_rite.faith
 				}
 				add_piety = {
 					value = {

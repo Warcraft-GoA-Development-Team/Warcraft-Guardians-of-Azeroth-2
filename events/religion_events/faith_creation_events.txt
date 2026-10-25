@@ -1,11 +1,17 @@
 ﻿namespace = faith_creation
 
 # Fired when you make a faith. Temporal rel head setup
+# currently it can be fired by HoF who kick a rite out as a heresy, so always check correct scope. TIT-74780
 faith_creation.0001 = {
 	hidden = yes
 	
 	trigger = {
 		faith = {
+			NOT = { exists = religious_head }
+			trigger_if = {
+				limit = { exists = scope:rite }
+				main_rite = scope:rite
+			}
 			has_doctrine = doctrine_temporal_head
 			can_create_temporal_head_of_faith_title_trigger = yes
 		}
@@ -17,15 +23,20 @@ faith_creation.0001 = {
 }
 
 # Fired when you make a faith. Spiritual rel head setup
+# currently it can be fired by HoF who kick a rite out as a heresy, so always check correct scope. TIT-74780
 faith_creation.0002 = {
 	hidden = yes
 	
 	trigger = {
 		faith = {
+			NOT = { exists = religious_head }
+			trigger_if = {
+				limit = { exists = scope:rite }
+				main_rite = scope:rite
+			}
 			has_doctrine = doctrine_spiritual_head
 			can_create_spiritual_head_of_faith_title_trigger = yes
 		}
-
 	}
 	
 	immediate = {
@@ -33,7 +44,7 @@ faith_creation.0002 = {
 	}
 }
 
-# Fired when you make a faith. Flags faith as being player-created for future heresies.
+# Fired when you make a faith.
 faith_creation.0003 = {
 	hidden = yes
 	
@@ -42,15 +53,6 @@ faith_creation.0003 = {
 	}
 
 	immediate = {
-		if = {
-			limit = { is_ai = no }
-			faith = {
-				set_variable = {
-					name = player_created_faith
-					value = yes
-				}
-			}
-		}
 		# Set original faith this one was based on
 		faith = {
 			if = {
@@ -70,12 +72,52 @@ faith_creation.0003 = {
 	}
 }
 
+# apply correct succession law for hof title
+faith_creation.0004 = {
+	hidden = yes
+	trigger = {
+		exists = root
+		faith.religious_head_title.holder ?= this
+		faith = {
+			OR = {
+				AND = {
+					has_doctrine = doctrine_spiritual_head
+					religious_head_title = { has_title_law = temporal_head_of_faith_succession_law }
+				}
+				AND = {
+					has_doctrine = doctrine_temporal_head
+					NOT = { religious_head_title = { has_title_law = temporal_head_of_faith_succession_law } }
+				}
+			}
+		}
+	}
+	immediate = {
+		faith = {
+			if = {
+				limit = { has_doctrine = doctrine_spiritual_head }
+				religious_head_title ?= {
+					remove_title_law = temporal_head_of_faith_succession_law
+				}
+			}
+			else = {
+				religious_head_title ?= {
+					add_title_law = temporal_head_of_faith_succession_law
+				}
+			}
+		}
+	}
+}
+
 # Temporal Head of Faith re-creation event
 faith_creation.0011 = {
 	hidden = yes
 
 	trigger = {
 		faith = {
+			trigger_if = {
+				limit = { exists = scope:rite }
+				main_rite = scope:rite
+			}
 			has_doctrine = doctrine_temporal_head
 			can_create_temporal_head_of_faith_title_trigger = yes
 
@@ -116,6 +158,10 @@ faith_creation.0012 = {
 
 	trigger = {
 		faith = {
+			trigger_if = {
+				limit = { exists = scope:rite }
+				main_rite = scope:rite
+			}
 			has_doctrine = doctrine_spiritual_head
 			can_create_spiritual_head_of_faith_title_trigger = yes
 
@@ -134,6 +180,36 @@ faith_creation.0012 = {
 
 		if = {
 			limit = {
+				root = { is_clergy = yes }
+			}
+			root = { save_scope_as = new_religious_head }
+		}
+		else_if = {
+			limit = {
+				root.puppet:theological_agent_puppet ?= { rite = root.rite }
+			}
+			root.puppet:theological_agent_puppet = {
+				save_scope_as = new_religious_head
+			}
+		}
+		else_if = {
+			limit = {
+				root.puppet:external_theological_agent_puppet ?= { rite = root.rite }
+			}
+			root.puppet:external_theological_agent_puppet = {
+				save_scope_as = new_religious_head
+			}
+		}
+		else_if = {
+			limit = {
+				root.cp:councillor_court_chaplain ?= { rite = root.rite }
+			}
+			root.cp:councillor_court_chaplain = {
+				save_scope_as = new_religious_head
+			}
+		}
+		else_if = {
+			limit = {
 				any_theocratic_vassal = {
 					faith = root.faith
 				}
@@ -147,7 +223,7 @@ faith_creation.0012 = {
 				save_scope_as = new_religious_head
 			}
 		}
-		else = {	
+		else = {
 			create_character = {
 				location = root.capital_province
 				# Warcraft
@@ -155,6 +231,7 @@ faith_creation.0012 = {
 				gender_female_chance = root_faith_clergy_gender_female_chance
 				trait = education_learning_4
 				faith = root.faith
+				rite = root.rite
 				culture = root.culture
 				learning = { 14 22 }
 				save_scope_as = new_religious_head
@@ -177,13 +254,26 @@ faith_creation.0012 = {
 				change = scope:change
 			}
 		}
-		resolve_title_and_vassal_change = scope:change		
+		resolve_title_and_vassal_change = scope:change
+		# The establishing rite becomes the mainline rite of the faith.
+		if = {
+			limit = {
+				exists = rite
+				NOT = { rite = faith.main_rite }
+			}
+			rite = { set_main_rite = yes }
+		}
 	}
 }
 
 # Fired when a new Faith is created by a player, or when a Pagan faith is reformed. Fired off an informative event for all players.
 faith_creation.1000 = {
 	hidden = yes
+
+	trigger = {
+		# declaring a rite a heresy branches it off into a new faith, which makes this particular subsequent event contextually unnecessary
+		NOT = { exists = scope:diverged }
+	}
 
 	immediate = {
 		save_scope_as = reformer
@@ -251,6 +341,17 @@ faith_creation.1001 = {
 				}
 				desc = faith_creation.1001.desc.reformation.personal
 			}
+			# I am breaking away from an established faith whose head of faith's authority I reject.
+			triggered_desc = {
+				trigger = {
+					scope:old_faith = {
+						root = scope:reformer
+					}
+					exists = scope:old_hof
+					NOT = { scope:old_hof = scope:reformer }
+				}
+				desc = faith_creation.1001.desc.schism.personal.hof
+			}
 			# I am splitting off a new faith from an existing one.
 			triggered_desc = {
 				trigger = {
@@ -268,6 +369,14 @@ faith_creation.1001 = {
 					}
 				}
 				desc = faith_creation.1001.desc.reformation
+			}
+			# Someone else is breaking from an established faith that has a head of faith.
+			triggered_desc = {
+				trigger = {
+					exists = scope:old_hof
+					NOT = { scope:old_hof = scope:reformer }
+				}
+				desc = faith_creation.1001.desc.schism.hof
 			}
 			# Someone else is splitting off a new faith from an existing one.
 			desc = faith_creation.1001.desc.schism
@@ -291,7 +400,7 @@ faith_creation.1001 = {
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						has_doctrine_parameter = pacifist_opinion_active
+						has_doctrine_parameter = pacifist
 					}
 				}
 				desc = faith_creation.1001.desc.outlook.pacifism
@@ -300,17 +409,17 @@ faith_creation.1001 = {
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						OR = {
+						main_rite = {
 							OR = {
-								has_doctrine = doctrine_pluralism_fundamentalist
-								has_doctrine = doctrine_pluralism_dark
-							}
-							AND = {
-								has_doctrine = doctrine_pluralism_righteous
-								OR = {
-									has_doctrine = tenet_religious_legal_pronouncements
-									has_doctrine = tenet_literalism
-									has_doctrine = tenet_legalism
+								rite_has_doctrine = doctrine_pluralism_fundamentalist
+								rite_has_doctrine = doctrine_pluralism_dark # Warcraft
+								AND = {
+									rite_has_doctrine = doctrine_pluralism_righteous
+									OR = {
+										rite_has_tenet = tenet_religious_legal_pronouncements
+										rite_has_tenet = tenet_literalism
+										rite_has_tenet = tenet_legalism
+									}
 								}
 							}
 						}
@@ -328,11 +437,10 @@ faith_creation.1001 = {
 								has_doctrine = doctrine_pluralism_righteous
 								OR = {
 									# Warcraft
-									has_syncretic_doctrine_trigger = yes
-									
-									has_doctrine = tenet_tax_nonbelievers
+									main_rite = { has_syncretic_doctrine_trigger = yes }
+									has_tenet = tenet_tax_nonbelievers
 									has_doctrine = special_doctrine_jizya
-									has_doctrine = tenet_adaptive
+									has_tenet = tenet_adaptive
 								}
 							}
 						}
@@ -343,68 +451,208 @@ faith_creation.1001 = {
 			desc = faith_creation.1001.desc.outlook.fallback
 		}
 
-		#State the new faith's most important and/or distinctive belief:
+		#State the new faith's most important and/or distinctive belief.
 		first_valid = {
-			#Human Sacrifice
+			#Blood Sacrifice
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						OR = {
-							# Warcraft
-							has_doctrine_tenet_human_sacrifice_trigger = yes
-							has_doctrine_tenet_ritual_cannibalism_trigger = yes
+						main_rite = {
+							OR = {
+								# Warcraft
+								has_doctrine_tenet_human_sacrifice_trigger = yes
+								has_doctrine_tenet_ritual_cannibalism_trigger = yes
+								rite_has_tenet = tenet_sacrificial_ceremonies
+								rite_has_tenet = tenet_cranial_trophies
+								rite_has_tenet = tenet_gruesome_festivals
+							}
 						}
 					}
 				}
 				desc = faith_creation.1001.desc.belief.sacrifice
 			}
-			#Indulgent
-			triggered_desc = {
-				trigger = {
-					scope:reformed_faith = {
-						OR = {
-							has_doctrine = tenet_carnal_exaltation
-							has_doctrine = tenet_hedonistic
-						}
-					}
-				}
-				desc = faith_creation.1001.desc.belief.indulgent
-			}
 			#Incest
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						OR = {
-							has_doctrine = tenet_divine_marriage
-							has_doctrine = doctrine_consanguinity_unrestricted
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_divine_marriage
+								rite_has_doctrine = doctrine_consanguinity_unrestricted
+							}
 						}
 					}
 				}
 				desc = faith_creation.1001.desc.belief.incest
 			}
+			#Mortification of the Flesh
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_exaltation_of_pain
+								rite_has_tenet = tenet_mortification_of_the_flesh
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.pain
+			}
+			#Indulgent
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_carnal_exaltation
+								rite_has_tenet = tenet_hedonistic
+								rite_has_tenet = tenet_polyamory
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.indulgent
+			}
+			#Iconoclasm
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							rite_has_tenet = tenet_sacred_destruction
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.iconoclasm
+			}
+			#Militant Devotion
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_warmonger
+								rite_has_tenet = tenet_unrelenting_faith
+								rite_has_tenet = tenet_armed_pilgrimages
+								rite_has_tenet = tenet_miles_christi
+								rite_has_tenet = tenet_fp3_fedayeen
+								rite_has_tenet = tenet_pursuit_of_power
+								rite_has_tenet = tenet_struggle_submission
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.militant
+			}
 			#Aniconism
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						has_doctrine = tenet_aniconism
+						main_rite = {
+							rite_has_tenet = tenet_aniconism
+						}
 					}
 				}
 				desc = faith_creation.1001.desc.belief.aniconism
+			}
+			#Veneration of the Holy Departed
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_dulia
+								rite_has_tenet = tenet_hyperdulia
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.veneration
+			}
+			#Sacraments
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_communion
+								rite_has_tenet = tenet_transubstantiation
+								rite_has_tenet = tenet_divine_liturgy
+								rite_has_tenet = tenet_holy_myron
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.sacraments
+			}
+			#Sin and Penance
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_original_sin
+								rite_has_tenet = tenet_confession
+								rite_has_tenet = tenet_purgatory
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.penance
+			}
+			#Nature of the Divine
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_monophysitism
+								rite_has_tenet = tenet_miaphysitism
+								rite_has_tenet = tenet_adoptionism
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.christology
+			}
+			#Cycle of Rebirth
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_reincarnation
+								rite_has_tenet = tenet_dharmic_pacifism
+								rite_has_tenet = tenet_pure_land
+								rite_has_tenet = tenet_extinction_of_dharma
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.rebirth
 			}
 			#Ascetic
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
 						OR = {
-							has_doctrine = tenet_monasticism
-							has_doctrine = tenet_vows_of_poverty
-							has_doctrine = tenet_mendicant_preachers
-							
-							# Warcraft
-							# has_doctrine = tenet_gnosticism
-							
-							has_doctrine = tenet_inner_journey
-							has_doctrine = tenet_asceticism
+							faith_has_monasticism_trigger = yes
+							main_rite = {
+								OR = {
+									rite_has_tenet = tenet_vows_of_poverty
+									rite_has_tenet = tenet_mendicant_preachers
+									#rite_has_tenet = tenet_gnosticism # Warcraft
+									rite_has_tenet = tenet_inner_journey
+									rite_has_tenet = tenet_asceticism
+									rite_has_tenet = tenet_ora_et_labora
+									rite_has_tenet = tenet_anachoresis
+									rite_has_tenet = tenet_hesychasm
+									rite_has_tenet = tenet_no_mind
+									rite_has_tenet = tenet_pastoral_isolation
+									rite_has_tenet = tenet_communal_possessions
+									rite_has_tenet = tenet_consolamentum
+								}
+							}
 						}
 					}
 				}
@@ -414,9 +662,13 @@ faith_creation.1001 = {
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						OR = {
-							has_doctrine = tenet_ancestor_worship
-							has_doctrine = tenet_adorcism
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_ancestor_worship
+								rite_has_tenet = tenet_adorcism
+								#rite_has_tenet = tenet_household_gods # Warcraft - not in GoA
+								rite_has_tenet = tenet_takamin
+							}
 						}
 					}
 				}
@@ -426,32 +678,186 @@ faith_creation.1001 = {
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						OR = {
-							# Warcraft
-							has_doctrine_tenet_astrology_trigger = yes
-
-							has_doctrine = tenet_sacred_childbirth
-							has_doctrine = tenet_esotericism
-							has_doctrine = tenet_mystical_birthright
+						main_rite = {
+							OR = {
+								has_doctrine_tenet_astrology_trigger = yes # Warcraft
+								rite_has_tenet = tenet_sacred_childbirth
+								rite_has_tenet = tenet_esotericism
+								rite_has_tenet = tenet_mystical_birthright
+								rite_has_tenet = tenet_cthonic_redoubts
+							}
 						}
 					}
 				}
 				desc = faith_creation.1001.desc.belief.superstition
 			}
+			#Learning
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_scholasticism
+								rite_has_tenet = tenet_pursuit_of_knowledge
+								rite_has_tenet = tenet_alexandrian_catechism
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.learning
+			}
+			#Sacred Law
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_legalism
+								rite_has_tenet = tenet_literalism
+								rite_has_tenet = tenet_religious_legal_pronouncements
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.law
+			}
+			#Missionary Zeal
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							rite_has_tenet = tenet_acts_of_apostles
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.missionary
+			}
+			#Sacred Hierarchy
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_pentarchy
+								rite_has_tenet = tenet_apostolic_succession
+								rite_has_tenet = tenet_celestial_hierarchy
+								rite_has_tenet = tenet_harmonious_society
+								rite_has_tenet = tenet_preservation
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.hierarchy
+			}
+			#Charity
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_philanthropia
+								rite_has_tenet = tenet_love_thy_neighbour
+								rite_has_tenet = tenet_bhakti
+								rite_has_tenet = tenet_benevolent_governance
+								rite_has_tenet = tenet_peace_of_god
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.charity
+			}
+			#Sacred Family
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_be_fruitful_and_multiply
+								rite_has_tenet = tenet_filial_piety
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.family
+			}
+			#Sacred Sites
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_megaliths
+								rite_has_tenet = tenet_khachkar
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.sacred_sites
+			}
 			#Nature
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						has_doctrine = tenet_sanctity_of_nature
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_sanctity_of_nature
+								rite_has_tenet = tenet_natural_primitivism
+								rite_has_tenet = tenet_mountain_worship
+								rite_has_tenet = tenet_sun_worship
+							}
+						}
 					}
 				}
 				desc = faith_creation.1001.desc.belief.nature
+			}
+			#Worldly Pragmatism
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_simony
+								rite_has_tenet = tenet_tax_nonbelievers
+								rite_has_tenet = tenet_false_conversion_sanction
+								rite_has_tenet = tenet_sacred_shadows
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.worldly
+			}
+			#Syncretic
+			triggered_desc = {
+				trigger = {
+					scope:reformed_faith = {
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_adaptive
+								# Warcraft - real-world syncretism tenets are not in GoA
+								#rite_has_tenet = tenet_sinitic_syncretism
+								#rite_has_tenet = tenet_eastern_syncretism
+								#rite_has_tenet = tenet_unreformed_syncretism
+								#rite_has_tenet = tenet_christian_syncretism
+								#rite_has_tenet = tenet_islamic_syncretism
+								#rite_has_tenet = tenet_jewish_syncretism
+								has_syncretic_doctrine_trigger = yes # Warcraft
+							}
+						}
+					}
+				}
+				desc = faith_creation.1001.desc.belief.syncretic
 			}
 			#Community
 			triggered_desc = {
 				trigger = {
 					scope:reformed_faith = {
-						has_doctrine = tenet_communal_identity
+						main_rite = {
+							OR = {
+								rite_has_tenet = tenet_communal_identity
+								rite_has_tenet = tenet_ritual_hospitality
+								rite_has_tenet = tenet_ritual_celebrations
+							}
+						}
 					}
 				}
 				desc = faith_creation.1001.desc.belief.community
@@ -547,9 +953,169 @@ faith_creation.1001 = {
 
 	option = {
 		name = faith_creation.1001.o.getreaction	
+
+		# Granted in on_faith_created; shown here so the faithful learn about it.
+		if = {
+			limit = {
+				faith = scope:reformed_faith
+				scope:reformed_faith = {
+					faith_has_free_holy_site_action_trigger = yes
+				}
+			}
+			custom_tooltip = faith_creation.1001.o.free_holy_site_actions
+		}
 	}
 }
 
+# Fired when a rite has diverged so far it is detached into a new faith (scope:diverged set by code).
+# Root is the head of the detached rite; players of the old and the new faith are notified.
+faith_creation.1002 = {
+	type = character_event
+	window = big_event_window
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { faith = scope:old_rite.faith }
+				desc = faith_creation.1002.t.new_faith
+			}
+			desc = faith_creation.1002.t
+		}
+	}
+	desc = {
+		# Who broke away, from whose side of the divide.
+		first_valid = {
+			triggered_desc = {
+				trigger = { this = scope:founder }
+				desc = faith_creation.1002.desc.intro.founder
+			}
+			triggered_desc = {
+				trigger = { faith = scope:new_faith }
+				desc = faith_creation.1002.desc.intro.member
+			}
+			desc = faith_creation.1002.desc.intro.observer
+		}
+		# The old faith's answer.
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:old_hof }
+				desc = faith_creation.1002.desc.anathema.hof
+			}
+			desc = faith_creation.1002.desc.anathema.no_hof
+		}
+		# Leadership of the new faith.
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:new_hof ?= this }
+				desc = faith_creation.1002.desc.new_head.personal
+			}
+			triggered_desc = {
+				trigger = { scope:new_hof ?= scope:founder }
+				desc = faith_creation.1002.desc.new_head.founder
+			}
+			triggered_desc = {
+				trigger = { exists = scope:new_hof }
+				desc = faith_creation.1002.desc.new_head.other
+			}
+			desc = faith_creation.1002.desc.new_head.none
+		}
+		# What the break means, for us or for them.
+		first_valid = {
+			triggered_desc = {
+				trigger = { faith = scope:new_faith }
+				desc = faith_creation.1002.desc.outro.new_faith
+			}
+			desc = faith_creation.1002.desc.outro.old_faith
+		}
+	}
+
+	theme = faith
+	override_background = { reference = temple_scope }
+
+	major = yes
+	major_trigger = {
+		OR = {
+			faith = scope:old_faith
+			faith = scope:old_rite.faith
+		}
+	}
+
+	widget = {
+		gui = "event_window_widget_rite_founder"
+		container = "custom_widgets_container"
+	}
+
+	left_portrait = {
+		character = scope:founder
+		animation = preaching
+		camera = camera_event_scheme_left
+	}
+	right_portrait = {
+		trigger = {
+			exists = scope:old_hof
+			NOT = { scope:old_hof = scope:founder }
+		}
+		character = scope:old_hof
+		animation = condemnation
+		camera = camera_event_scheme_far_right
+	}
+
+	trigger = {
+		exists = scope:diverged
+		scope:diverged = yes
+	}
+
+	immediate = {
+		save_scope_as = founder
+		save_scope_as = background_temple_scope
+		faith = { save_scope_as = new_faith }
+		scope:old_faith.religious_head ?= { save_scope_as = old_hof }
+		faith.religious_head ?= { save_scope_as = new_hof }
+	}
+
+	# The new faith embraces the break
+	option = {
+		name = {
+			trigger = { this = scope:founder }
+			text = faith_creation.1002.a.founder
+		}
+		name = faith_creation.1002.a
+		trigger = { faith = scope:new_faith }
+		custom_tooltip = faith_creation.1002.consequences.tt
+		# Granted in on_faith_created; shown here so the faithful learn about it.
+		if = {
+			limit = {
+				scope:new_faith = {
+					faith_has_free_holy_site_action_trigger = yes
+				}
+			}
+			custom_tooltip = faith_creation.1002.a.free_holy_site_actions
+		}
+		# Invisible ecumenism is stripped without any warning in the rite window
+		if = {
+			limit = {
+				scope:old_faith = { has_doctrine = special_doctrine_ecumenical_christian }
+				scope:new_faith = {
+					NOT = { has_doctrine = special_doctrine_ecumenical_christian }
+				}
+			}
+			custom_tooltip = faith_creation.1002.a.lost_ecumenism
+		}
+		change_spiritual_fulfillment = medium_spiritual_fulfillment_value
+		add_piety = medium_piety_gain
+	}
+
+	# The old faith condemns it
+	option = {
+		name = {
+			trigger = { scope:old_hof ?= this }
+			text = faith_creation.1002.b.hof
+		}
+		name = faith_creation.1002.b
+		trigger = { faith = scope:old_faith }
+		custom_tooltip = faith_creation.1002.consequences.tt
+		add_piety = minor_piety_gain
+	}
+}
 
 # Notification event for when you create a Head of Faith.
 faith_creation.1010 = {
@@ -636,6 +1202,7 @@ faith_creation.1010 = {
 		if = {
 			limit = {
 				root = scope:reformer
+				scope:HoF != scope:reformer
 				scope:faith = {
 					has_doctrine = doctrine_spiritual_head
 				}						
@@ -659,7 +1226,7 @@ faith_creation.1011 = {
 		# Limit range, so Irish players don't hear about Zhengyi religious developments
 		OR = {
 			scope:faith.religious_head.top_liege = root.top_liege # Same realm
-			faith = scope:faith.religion # Same religion
+			faith.religion = scope:faith.religion # Same religion
 			culture = scope:faith.religious_head.culture # Same culture
 			in_diplomatic_range = scope:faith.religious_head # Fallback, actually in diplomatic range
 		}
@@ -677,6 +1244,177 @@ faith_creation.1011 = {
 			left_icon = scope:HoF
 			title = faith_creation.1011.message.title
 			desc = faith_creation.1011.message.desc
+		}
+	}
+}
+
+# Dispatcher for a player-founded rite. Only the player rite-creation command raises on_rite_created.
+faith_creation.1020 = {
+	hidden = yes
+
+	trigger = {
+		is_ai = no
+		exists = scope:old_rite
+		NOT = { rite = scope:old_rite }
+	}
+
+	immediate = {
+		save_scope_as = founder
+		rite = { save_scope_as = new_rite }
+		# Aliased because rite_growth_resolve_differences_effect compares against scope:source_rite.
+		scope:old_rite = { save_scope_as = source_rite }
+		rite_growth_resolve_differences_effect = yes
+
+		# Delayed a day so the conversion requests and head_of_faith.0100 resolve first.
+		every_player = {
+			limit = { faith = scope:old_faith }
+			trigger_event = {
+				id = faith_creation.1021
+				days = 1
+			}
+		}
+	}
+}
+
+# Notification event - a player founded a new rite within their faith.
+faith_creation.1021 = {
+	type = character_event
+	title = {
+		first_valid = {
+			triggered_desc = {
+				trigger = { this = scope:founder }
+				desc = faith_creation.1021.t.founder
+			}
+			desc = faith_creation.1021.t
+		}
+	}
+	desc = {
+		# Who founded it, and from which side it is seen.
+		first_valid = {
+			triggered_desc = {
+				trigger = { this = scope:founder }
+				desc = faith_creation.1021.desc.intro.founder
+			}
+			desc = faith_creation.1021.desc.intro.observer
+		}
+		# How far it stands from the rite it branched off from.
+		first_valid = {
+			triggered_desc = {
+				trigger = { "scope:new_rite.divergence(scope:source_rite)" < minor_rite_divergence_value }
+				desc = faith_creation.1021.desc.divergence.minor
+			}
+			triggered_desc = {
+				trigger = { "scope:new_rite.divergence(scope:source_rite)" >= medium_rite_divergence_value }
+				desc = faith_creation.1021.desc.divergence.major
+			}
+			desc = faith_creation.1021.desc.divergence.moderate
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = { exists = scope:differing_tenet }
+				desc = faith_creation.1021.desc.differing.tenet
+			}
+			triggered_desc = {
+				trigger = { exists = scope:differing_doctrine }
+				desc = faith_creation.1021.desc.differing.doctrine
+			}
+			desc = faith_creation.1021.desc.differing.fallback
+		}
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					this = scope:founder
+					scope:source_rite = scope:old_faith.main_rite
+				}
+				desc = faith_creation.1021.desc.outro.founder.mainline
+			}
+			triggered_desc = {
+				trigger = { this = scope:founder }
+				desc = faith_creation.1021.desc.outro.founder.branch
+			}
+			desc = faith_creation.1021.desc.outro.observer
+		}
+	}
+
+	theme = faith
+
+	widget = {
+		gui = "event_window_widget_rite_founder"
+		container = "custom_widgets_container"
+	}
+
+	left_portrait = {
+		character = scope:founder
+		animation = preaching
+		camera = camera_event_right_forward
+	}
+
+	trigger = {
+		exists = scope:founder
+		exists = scope:new_rite
+		exists = scope:source_rite
+		exists = scope:old_faith
+	}
+
+	immediate = {
+		play_music_cue = "mx_cue_sacredrite"
+	}
+
+	option = {
+		name = faith_creation.1021.a.founder
+		trigger = { this = scope:founder }
+		change_spiritual_fulfillment = medium_spiritual_fulfillment_value
+		add_piety = minor_piety_gain
+	}
+
+	option = {
+		name = faith_creation.1021.b.founder
+		trigger = { this = scope:founder }
+		add_prestige = medium_prestige_gain
+		add_piety = minor_piety_loss
+	}
+
+	# For multiplayer onlookers only, since conversion already went out and effects stay on the chooser
+	option = {
+		name = faith_creation.1021.a
+		trigger = { NOT = { this = scope:founder } }
+		change_spiritual_fulfillment = medium_spiritual_fulfillment_value
+	}
+
+	option = {
+		name = faith_creation.1021.b
+		trigger = { NOT = { this = scope:founder } }
+		add_piety = minor_piety_gain
+	}
+}
+
+# destroy HoF if no longer valid
+faith_creation.1100 = {
+	hidden = yes
+
+	trigger = {
+		exists = root
+		faith.main_rite = scope:rite
+		exists = faith.religious_head
+		scope:rite = {
+			NOR = {
+				rite_has_doctrine = doctrine_temporal_head
+				rite_has_doctrine = doctrine_spiritual_head
+			}
+		}
+	}
+
+	immediate = {
+		faith = {
+			religious_head = {
+				save_scope_as = head_of_faith
+			}
+			religious_head_title = {
+				save_scope_as = head_of_faith_title
+			}
+		}
+		scope:head_of_faith = {
+			destroy_title = scope:head_of_faith_title
 		}
 	}
 }
