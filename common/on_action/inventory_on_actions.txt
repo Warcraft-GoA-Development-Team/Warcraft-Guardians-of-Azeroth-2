@@ -2,6 +2,9 @@
 # root = the artifact
 # scope:owner = the person who now holds the artifact
 # scope:old_owner = the person who used to hold the artifact
+# scope:old_holy_site = the holy site that used to hold the artifact (set only when
+#                       the artifact transitioned out of holy-site ownership into
+#                       character ownership; otherwise absent)
 on_artifact_changed_owner = {
 	on_actions = {
 		wc_on_artifact_changed_owner
@@ -13,11 +16,17 @@ on_artifact_changed_owner = {
 	}
 
 	effect = {
-		save_scope_as = artifact
-		grant_banner_house_claim_effect = yes
-		every_artifact_claimant = { #This on_action is not triggered on succession for the ones getting the claim, so we force it here
-			trigger_event = {
-				on_action = on_artifact_claim_gained
+		if = {
+			limit = {
+				exists = scope:old_owner
+			}
+
+			save_scope_as = artifact
+			grant_banner_house_claim_effect = yes
+			every_artifact_claimant = { #This on_action is not triggered on succession for the ones getting the claim, so we force it here
+				trigger_event = {
+					on_action = on_artifact_claim_gained
+				}
 			}
 		}
 	}
@@ -118,5 +127,419 @@ on_artifact_durability_low = {
 on_artifact_durability_very_low = {
 	events = {
 		artifact.3050
+	}
+}
+
+# Fired when an artifact has been enshrined in a holy site (whether the slot was empty
+# or an existing artifact was replaced).
+# root             = the artifact that was enshrined
+# scope:holy_site  = the holy site receiving the artifact
+# scope:actor      = the character who initiated the enshrining
+# scope:replacing  = the artifact that was replaced in the slot, if any
+on_holy_site_artifact_enshrined = {
+	effect = {
+		# Save if we're improving the artifact level with a replace
+		if = {
+			limit = {
+				scope:replacing ?= {
+					is_holy_relic_for = scope:actor.faith
+					rarity_level >= root.rarity_level
+				}
+			}
+			save_scope_value_as = {
+				name = replacing_with_better_artifact
+				value = no
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = replacing_with_better_artifact
+				value = yes
+			}
+		}
+
+
+		# If this is a relic of your faith
+		if = {
+			limit = {
+				is_holy_relic_for = scope:actor.faith
+
+				# Don't gain things from replacing with a worse/equal level artifact
+				scope:replacing_with_better_artifact = no
+			}
+
+			save_scope_value_as = {
+				name = replace_piety_value
+				value = 0
+			}
+			scope:replacing ?= {
+				switch = {
+					trigger = rarity
+					illustrious = {
+						scope:actor = {
+							save_scope_value_as = {
+								name = replace_piety_value
+								value = massive_piety_loss
+							}
+						}
+					}
+					famed = {
+						scope:actor = {
+							save_scope_value_as = {
+								name = replace_piety_value
+								value = major_piety_loss
+							}
+						}
+					}
+					masterwork = {
+						scope:actor = {
+							save_scope_value_as = {
+								name = replace_piety_value
+								value = medium_piety_loss
+							}
+						}
+					}
+					common = {
+						scope:actor = {
+							save_scope_value_as = {
+								name = replace_piety_value
+								value = minor_piety_loss
+							}
+						}
+					}
+				}
+			}
+
+			switch = {
+				trigger = rarity
+				illustrious = {
+					scope:actor = {
+						add_piety = {
+							value = massive_piety_value
+							add = scope:replace_piety_value
+						}
+					}
+				}
+				famed = {
+					scope:actor = {
+						add_piety = {
+							value = major_piety_value
+							add = scope:replace_piety_value
+						}
+					}
+				}
+				masterwork = {
+					scope:actor = {
+						add_piety = {
+							value = medium_piety_value
+							add = scope:replace_piety_value
+						}
+					}
+				}
+				common = {
+					scope:actor = {
+						add_piety = {
+							value = minor_piety_value
+							add = scope:replace_piety_value
+						}
+					}
+				}
+			}
+
+			# Your zealous vassals like it
+			scope:actor = {
+				every_vassal = {
+					vassal_stance = zealot
+					limit = {
+						root = {
+							is_holy_relic_for = prev.faith
+						}
+					}
+					add_opinion = {
+						modifier = enshrined_holy_relic_at_holy_site
+						target = scope:actor
+					}
+				}
+
+				# Zealot lieges like it
+				every_liege_or_above = {
+					limit = {
+						OR = {
+							ai_zeal >= 50
+							has_trait = devoted
+							has_trait = zealous
+						}
+						root = {
+							is_holy_relic_for = prev.faith
+						}
+					}
+					add_opinion = {
+						modifier = enshrined_holy_relic_at_holy_site
+						target = scope:actor
+					}
+				}
+				# your head of faith likes it
+				faith = {
+					religious_head ?= {
+						if = {
+							limit = {
+								this != scope:actor
+								root = {
+									is_holy_relic_for = prev.faith
+								}
+							}
+
+							add_opinion = {
+								modifier = enshrined_holy_relic_at_holy_site
+								target = scope:actor
+							}
+						}
+					}
+				}
+			}
+		}
+		# CE3 achievement: Father's best side — a relic from a saint of the actor's family, enshrined in a holy site the actor's dynasty founded
+		if = {
+			limit = {
+				exists = var:pam_saint_relic_saint
+				scope:holy_site.title_province.barony.var:ce3_holy_site_founder_dynasty ?= scope:actor.dynasty
+				scope:actor = {
+					OR = {
+						is_close_or_extended_family_of = root.var:pam_saint_relic_saint
+						AND = {
+							exists = dynasty
+							root.var:pam_saint_relic_saint.dynasty ?= dynasty
+						}
+					}
+				}
+			}
+			scope:actor = {
+				add_achievement_global_variable_effect = {
+					VARIABLE = ce3_06_fathers_best_side_achievement_unlocked
+					VALUE = yes
+				}
+			}
+		}
+	}
+}
+
+# Fired when an artifact has been removed from a holy site (back into the actor's inventory).
+# Also fires for the artifact replaced by a swap-style enshrining — in that
+# (Only fired from explicit enshrining/removing effects, not generic inventory effects)
+# case scope:replacing is the artifact that took its place.
+# root             = the artifact that was removed
+# scope:holy_site  = the holy site the artifact was taken from
+# scope:actor      = the character who initiated the removal
+# scope:replacing  = the artifact taking this one's place, if removal is part of a swap
+on_holy_site_artifact_removed = {
+	effect = {
+		# Save if we're improving the artifact level with a replace
+		if = {
+			limit = {
+				is_holy_relic_for = scope:actor.faith
+				OR = {
+					NOT = { exists = scope:replacing }
+					scope:replacing ?= {
+						rarity_level < root.rarity_level
+					}
+				}
+			}
+			save_scope_value_as = {
+				name = replacing_with_better_artifact
+				value = no
+			}
+		}
+		else = {
+			save_scope_value_as = {
+				name = replacing_with_better_artifact
+				value = yes
+			}
+		}
+
+		# Heads of Faith don't like this.
+		if = {
+			limit = {
+				# Don't lose things from replacing with a better/equal level artifact
+				scope:replacing_with_better_artifact = no
+			}
+			scope:holy_site = {
+				every_holy_site_faith = {
+					limit = {
+						num_county_followers > 0
+					}
+					religious_head ?= {
+						if = {
+							limit = {
+								this != scope:actor
+								root = {
+									is_holy_relic_for = prev.faith
+								}
+							}
+
+							add_opinion = {
+								modifier = removed_holy_relic_from_holy_site
+								target = scope:actor
+							}
+						}
+					}
+				}
+			}
+		}
+
+		# If this is a relic of your faith
+		if = {
+			limit = {
+				is_holy_relic_for = scope:actor.faith
+				scope:replacing_with_better_artifact = no
+			}
+
+			# Costs Piety if it is your faith
+			switch = {
+				trigger = rarity
+				illustrious = { scope:actor = { add_piety_and_experience = massive_piety_loss } }
+				famed = { scope:actor = { add_piety_and_experience = major_piety_loss } }
+				masterwork = { scope:actor = { add_piety_and_experience = medium_piety_loss } }
+				common = { scope:actor = { add_piety_and_experience = minor_piety_loss } }
+			}
+
+			# Your zealous / minority vassals don't like it
+			scope:actor = {
+				every_vassal = {
+					custom = every_zealot_vassal
+					vassal_stance = zealot
+					limit = {
+						faith = scope:actor.faith
+					}
+					add_opinion = {
+						modifier = removed_holy_relic_from_holy_site
+						target = scope:actor
+					}
+				}
+				every_vassal = {
+					custom = every_minority_vassal
+					vassal_stance = minority
+					limit = {
+						faith = scope:actor.faith
+					}
+					add_opinion = {
+						modifier = removed_holy_relic_from_holy_site
+						target = scope:actor
+					}
+				}
+
+				if = {
+					limit = { liege != this }
+					# Fellow zealous vassals don't like it
+					liege = {
+						every_vassal = {
+							custom = every_zealot_fellow_vassal
+							vassal_stance = zealot
+							limit = {
+								faith = scope:actor.faith
+							}
+							add_opinion = {
+								modifier = removed_holy_relic_from_holy_site
+								target = scope:actor
+							}
+						}
+					}
+					# Lieges don't like it
+					every_liege_or_above = {
+						limit = {
+							OR = {
+								ai_zeal >= 50
+								has_trait = devoted
+								has_trait = zealous
+							}
+							root = {
+								is_holy_relic_for = prev.faith
+							}
+						}
+						add_opinion = {
+							modifier = removed_holy_relic_from_holy_site
+							target = scope:actor
+						}
+					}
+				}
+			}
+		}
+		else_if = {
+		 	# If this is not a relic of your faith
+			save_scope_as = artifact
+			custom_tooltip = {
+				text = holy_site_relic_will_get_reclaim_relic_cb
+			}
+
+			# Your vassals / fellow vassals / liege doesn't like it
+			scope:actor = {
+				every_vassal = {
+					limit = {
+						OR = {
+							faith != scope:actor.faith
+							scope:replacing_with_better_artifact = no
+						}
+						root = {
+							is_holy_relic_for = prev.faith
+						}
+					}
+					add_opinion = {
+						modifier = removed_holy_relic_from_holy_site
+						target = scope:actor
+					}
+				}
+				if = {
+					limit = { liege != this }
+					liege = {
+						every_vassal = {
+							limit = {
+								OR = {
+									faith != scope:actor.faith
+									scope:replacing_with_better_artifact = no
+								}
+								root = {
+									is_holy_relic_for = prev.faith
+								}
+							}
+							add_opinion = {
+								modifier = removed_holy_relic_from_holy_site
+								target = scope:actor
+							}
+						}
+					}
+					every_liege_or_above = {
+						limit = {
+							OR = {
+								faith != scope:actor.faith
+								scope:replacing_with_better_artifact = no
+							}
+							root = {
+								is_holy_relic_for = prev.faith
+							}
+						}
+						add_opinion = {
+							modifier = removed_holy_relic_from_holy_site
+							target = scope:actor
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+
+# Fired whenever an artifact's holy-site ownership has changed.
+# (artifact is now owned by a holy site, or no longer owner by a holy site)
+#
+# root                 = the artifact
+# scope:holy_site      = the holy site that now owns the artifact, if any
+# scope:old_holy_site  = the holy site that used to own the artifact, if any
+# scope:old_owner      = the character who used to own the artifact, if any
+#
+# Either or both of the old_* scopes may be present depending on what the previous
+# owner was. The new holy_site scope is absent only if the artifact was cleared of
+# holy-site ownership without immediately being given to a new one.
+on_artifact_changed_holy_site_owner = {
+	effect = {
 	}
 }
