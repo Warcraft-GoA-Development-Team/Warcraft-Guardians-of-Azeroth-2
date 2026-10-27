@@ -6,24 +6,28 @@ excommunicate_character = {
 			$REQUESTING_CHARACTER$.faith = $TARGET_CHARACTER$.faith
 		}
 
+		$EXCOMMUNICATOR$ = {
+			save_scope_as = excommunicator
+		}
 		$REQUESTING_CHARACTER$ = {
 			save_scope_as = requesting_character
 		}
 		$TARGET_CHARACTER$ = {
 			save_scope_as = target_character
-			faith.religious_head = {
-				save_scope_as = religious_head
+			set_variable = {
+				name = excommunication_issuer
+				value = scope:excommunicator
 			}
 
 			# If our religious head was convinced/persuaded to excommunicate us by another ruler, we want to make that clear.
 			if = {
 				limit = {
-					scope:requesting_character != scope:religious_head
+					scope:requesting_character != scope:excommunicator
 				}
 				add_excommunication_actual_effect = yes
 				add_opinion = {
-					modifier = angry_opinion
-					target = scope:religious_head
+					modifier = excommunicated_opinion
+					target = scope:excommunicator
 					opinion = -30
 				}
 				add_opinion = {
@@ -36,32 +40,63 @@ excommunicate_character = {
 			else = {
 				add_excommunication_actual_effect = yes
 				add_opinion = {
-					modifier = angry_opinion
-					target = scope:religious_head
+					modifier = excommunicated_opinion
+					target = scope:excommunicator
 					opinion = -50
 				}
 			}
 
+			add_piety_level = -1
+
 			# LEGITIMACY LOSS FROM EXCOMMUNICATION
 			excommunication_legitimacy_effect = yes
 
-			progress_towards_rival_effect = {
-				CHARACTER = scope:requesting_character
-				REASON = rival_requested_excommunication
-				OPINION = 0
+			if = {
+				limit = {
+					scope:requesting_character != scope:excommunicator
+				}
+				# Stored for the excommunication letter event: who asked the Pope to excommunicate you.
+				set_variable = {
+					name = requested_my_excommunication
+					value = scope:requesting_character
+				}
 			}
-			set_variable = { #TO save who wanted you excommunicated
-				name = requested_my_excommunication
-				value = scope:requesting_character
+			if = {
+				limit = {
+					empire_faith_gate_enabled_trigger = yes
+					has_contested_empire_trigger = yes
+					faith_has_existing_empire_holder_trigger = yes
+				}
+				# Stored for conditional letter text (empire faith gate reason).
+				set_variable = {
+					name = excommunication_reason
+					value = flag:empire_faith_gate
+				}
+			}
+			else_if = {
+				limit = {
+					scope:requesting_character = scope:excommunicator
+					faith.religious_head ?= scope:excommunicator
+					OR = {
+						has_relation_rival = scope:excommunicator
+						has_relation_nemesis = scope:excommunicator
+						is_at_war_with = scope:excommunicator
+					}
+				}
+				# Stored for conditional letter text (Pope excommunicated you on his own initiative).
+				set_variable = {
+					name = excommunication_reason
+					value = flag:clergy_hostility
+				}
 			}
 
-			# Regardless of why the excommunication happened, players should be aware whenever a character of interest is excommunicated.
+			# Notify other players of interest; the excommunicated player gets the recovery alert instead.
 			every_player = {
 				limit = {
 					faith = scope:target_character.faith
 					NOR = {
-						this = scope:target_character # If we are the excommunication target, we were already send a notification in the script above this.
-						this = scope:requesting_character #If we are the excommunication requester, we already get a diplomacy response telling us about the excommunication.
+						this = scope:target_character # Excommunicated player uses action_excommunicated_recovery instead.
+						this = scope:requesting_character # Requester already got a response from the Pope.
 					}
 
 					save_temporary_scope_as = player
@@ -90,11 +125,77 @@ excommunicate_character = {
 					title = excommunicated_other_message
 					desc = other_excommunicated_message
 					left_icon = scope:target_character
-					right_icon = scope:religious_head	
+					right_icon = scope:excommunicator	
+				}
+			}
+		}
+
+		# Head of Faith excommunication: heavier spiritual cost, and must petition Rome to be absolved (not a local bishop).
+		if = {
+			limit = {
+				scope:target_character.faith.religious_head ?= {
+					OR = {
+						this = scope:requesting_character
+						this = scope:excommunicator
+					}
+				}
+			}
+			scope:target_character = {
+				if = {
+					limit = { is_playable_character = yes }	# Only playable characters have spiritual fulfillment
+					change_spiritual_fulfillment = massive_spiritual_fulfillment_loss
+				}
+				add_character_flag = {
+					flag = pope_excom
+				}
+
+				custom_tooltip = non_hof_excom_lifting_punishment_tt
+			}
+		}
+		else = {
+			scope:target_character = {
+				if = {
+					limit = { is_playable_character = yes }	# Only playable characters have spiritual fulfillment
+					change_spiritual_fulfillment = major_spiritual_fulfillment_loss
+				}
+			}
+		} 
+
+		# PAM - Great Schism: cross-rite excommunication is a grievance; anathematising the other rite's head has its own weight
+		hidden_effect = {
+			if = {
+				limit = {
+					pam_schism_head_of_rite_and_opposing_character_trigger = {
+						HEAD = scope:target_character
+						OTHER = scope:excommunicator
+					}
+				}
+				pam_change_great_schism_progress_effect = {
+					VALUE = pam_great_schism_progress_head_of_rite_excommunicated_value
+					TT = pam_great_schism_progress_head_of_rite_excommunicated_tt
+				}
+			}
+			else_if = {
+				limit = {
+					pam_schism_characters_in_opposite_pair_rites_trigger = {
+						FIRST = scope:excommunicator
+						SECOND = scope:target_character
+					}
+				}
+				pam_change_great_schism_progress_effect = {
+					VALUE = pam_great_schism_progress_excommunication_value
+					TT = pam_great_schism_progress_excommunication_tt
 				}
 			}
 		}
 	}
+}
+
+# Clears letter-event tracking set in excommunicate_character when absolution happens.
+clear_excommunication_tracking_effect = {
+	remove_variable = excommunication_reason
+	remove_variable = requested_my_excommunication
+	remove_variable = excommunication_issuer
 }
 
 lift_character_excommunication_effect = {
@@ -111,6 +212,7 @@ lift_character_excommunication_effect = {
 	}
 	$TARGET_CHARACTER$ = {
 		remove_trait = excommunicated
+		clear_excommunication_tracking_effect = yes
 		add_character_modifier = {
 			modifier = excommunication_recently_lifted
 			years = 10
@@ -192,8 +294,8 @@ determine_ghw_target_effect = {
 			continue = { tier > tier_county }
 			limit = { #Try to pick the largest ruler in the area.
 				tier = tier_county
-				$FAITH$ = {
-					is_hostile_enough_for_holy_war_trigger = { FAITH = prev.holder.faith }
+				$FAITH$.main_rite = {
+					is_hostile_enough_for_holy_war_trigger = { RITE = prev.holder.rite }
 				}
 				holder = {
 					highest_held_title_tier >= 4
@@ -202,8 +304,8 @@ determine_ghw_target_effect = {
 			}
 			alternative_limit = {
 				tier = tier_county
-				$FAITH$ = {
-					is_hostile_enough_for_holy_war_trigger = { FAITH = prev.holder.faith }
+				$FAITH$.main_rite = {
+					is_hostile_enough_for_holy_war_trigger = { RITE = prev.holder.rite }
 				}
 				holder = {
 					highest_held_title_tier >= 3
@@ -212,8 +314,8 @@ determine_ghw_target_effect = {
 			}
 			alternative_limit = {
 				tier = tier_county
-				$FAITH$ = {
-					is_hostile_enough_for_holy_war_trigger = { FAITH = prev.holder.faith }
+				$FAITH$.main_rite = {
+					is_hostile_enough_for_holy_war_trigger = { RITE = prev.holder.rite }
 				}
 				holder = {
 					highest_held_title_tier >= 2
@@ -222,14 +324,14 @@ determine_ghw_target_effect = {
 			}
 			alternative_limit = {
 				tier = tier_county
-				$FAITH$ = {
-					is_hostile_enough_for_holy_war_trigger = { FAITH = prev.holder.faith }
+				$FAITH$.main_rite = {
+					is_hostile_enough_for_holy_war_trigger = { RITE = prev.holder.rite }
 				}
 			}
 			alternative_limit = {
 				tier = tier_kingdom
-				$FAITH$ = {
-					is_hostile_enough_for_holy_war_trigger = { FAITH = prev.holder.faith }
+				$FAITH$.main_rite = {
+					is_hostile_enough_for_holy_war_trigger = { RITE = prev.holder.rite }
 				}
 			}
 			holder = {
@@ -263,6 +365,10 @@ pledge_ghw_piety_gain_effect = {
 }
 
 pledge_ghw_piety_loss_effect = {
+	if = {
+		limit = { highest_held_title_tier = tier_hegemony }
+		add_piety = monumental_piety_loss
+	}
 	if = {
 		limit = { highest_held_title_tier = tier_empire }
 		add_piety = massive_piety_loss
@@ -445,15 +551,15 @@ undirected_ghw_recipient_selection_effect = {
 					OR = {
 						AND = {
 							is_male = yes
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 					reverse_opinion = {
@@ -472,15 +578,15 @@ undirected_ghw_recipient_selection_effect = {
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 					reverse_opinion = {
@@ -499,15 +605,15 @@ undirected_ghw_recipient_selection_effect = {
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 				}
@@ -521,15 +627,15 @@ undirected_ghw_recipient_selection_effect = {
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 				}
@@ -609,15 +715,15 @@ undirected_ghw_recipient_selection_on_death_effect = {
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 					reverse_opinion = {
@@ -637,15 +743,15 @@ undirected_ghw_recipient_selection_on_death_effect = {
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 					reverse_opinion = {
@@ -665,15 +771,15 @@ undirected_ghw_recipient_selection_on_death_effect = {
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 				}
@@ -688,15 +794,15 @@ undirected_ghw_recipient_selection_on_death_effect = {
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 				}
@@ -777,15 +883,15 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 					reverse_opinion = {
@@ -804,15 +910,15 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 					reverse_opinion = {
@@ -831,15 +937,15 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 				}
@@ -853,15 +959,15 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 					OR = {
 						AND = {
 							is_female = no
-							faith = { has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 						}
 						AND = {
 							is_female = yes
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 						NOR = {
-							faith = { has_doctrine = doctrine_gender_male_dominated }
-							faith = { has_doctrine = doctrine_gender_female_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_male_dominated }
+							rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 						}
 					}
 				}
@@ -911,7 +1017,7 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 					faith = scope:the_faith
 				}
 				alternative_limit = {
-					scope:the_faith = { has_doctrine = doctrine_gender_male_dominated }
+					scope:the_faith.main_rite = { rite_has_doctrine = doctrine_gender_male_dominated }
 					is_female = no
 					is_adult = yes
 					is_ai = yes
@@ -923,7 +1029,7 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 					faith = scope:the_faith
 				}
 				alternative_limit = {
-					scope:the_faith = { has_doctrine = doctrine_gender_female_dominated }
+					scope:the_faith.main_rite = { rite_has_doctrine = doctrine_gender_female_dominated }
 					is_female = yes
 					is_adult = yes
 					is_ai = yes
@@ -964,6 +1070,10 @@ undirected_ghw_recipient_selection_on_victory_effect = { #Set in the event of no
 #  List 'spouses_and_family_to_convert' - grabbed characters.
 #
 grab_spouses_and_family_to_convert_effect = {
+	if = {
+		limit = { NOT = { exists = scope:puppet_or_actor } }
+		scope:actor = { save_scope_as = puppet_or_actor }
+	}
 	scope:recipient = {
 		# Add yourself
 		add_to_list = spouses_and_family_to_convert
@@ -972,20 +1082,21 @@ grab_spouses_and_family_to_convert_effect = {
 		every_spouse = {
 			limit = {
 				OR = {
-					is_courtier_of = scope:actor
+					is_courtier_of = scope:puppet_or_actor
 					is_courtier_of = scope:recipient
-					is_vassal_of = scope:actor
+					is_vassal_of = scope:puppet_or_actor
 					is_vassal_of = scope:recipient
 				}
-				NOR = { 
-					faith = scope:actor.faith
+				NOR = {
+					has_character_flag = ai_will_not_convert
+					rite = scope:puppet_or_actor.rite
 					has_character_flag = spouse_or_family_to_convert 
 				}
 				trigger_if = {
 					limit = {
-						exists = scope:conversion_faith
+						exists = scope:conversion_rite
 					}
-					faith != scope:conversion_faith
+					rite != scope:conversion_rite
 				}
 			}
 			add_to_list = spouses_and_family_to_convert
@@ -1001,8 +1112,9 @@ grab_spouses_and_family_to_convert_effect = {
 				limit = {
 					employer ?= scope:recipient
 					faith = scope:recipient.faith
-					faith != scope:actor.faith
+					faith != scope:puppet_or_actor.faith
 					is_ai = yes
+					NOT = { has_character_flag = ai_will_not_convert }
 					NOT = { has_character_flag = spouse_or_family_to_convert }
 					# Don't add the recipient twice
 					#root != scope:recipient
@@ -1020,9 +1132,42 @@ grab_spouses_and_family_to_convert_effect = {
 
 # Default conversion effect; allows the recipient to demure whether to keep a secret faith or not
 demand_conversion_interaction_effect = {
-
+	if = {
+		limit = { NOT = { exists = scope:puppet_or_actor } }
+		scope:actor = { save_scope_as = puppet_or_actor }
+	}
+	scope:recipient.faith = {
+		save_scope_as = old_faith
+	}
+	if = { # Confession penalty
+		limit = {
+			scope:puppet_or_actor = { var:pam_confession_penalty_var ?= scope:recipient }
+		}
+		scope:puppet_or_actor = {
+			send_interface_toast = {
+				title = pam_decision_events.0001.a.conversion.toast
+				left_icon = scope:puppet_or_actor
+				right_icon = scope:recipient
+				remove_variable = pam_confession_penalty_var
+				remove_character_modifier = pam_confession_penalty_modifier
+			}
+		}
+		if = {
+			limit = {
+				scope:is_puppet_action ?= yes
+				scope:actor != scope:recipient
+			}
+			scope:actor = {
+				send_interface_toast = {
+					title = pam_decision_events.0001.a.conversion.toast_puppeteer
+					left_icon = scope:puppet_or_actor
+					right_icon = scope:recipient
+				}
+			}
+		}
+	}
 	# Reward conversion
-	scope:actor = { mandala_converter_piety_effect = yes }
+	scope:puppet_or_actor = { mandala_converter_piety_effect = yes }
 
 	# Grab additional converters, and present them in the tooltip.
 	grab_spouses_and_family_to_convert_effect = yes
@@ -1038,8 +1183,8 @@ demand_conversion_interaction_effect = {
 		if = {
 			limit = {
 				faith = scope:recipient.faith
-				NOT = { has_crypto_religionist_secret_known_by_character_trigger = { CHARACTER = scope:actor } }
-				NOT =  { exists = secret_faith }
+				NOT = { has_crypto_religionist_secret_known_by_character_trigger = { CHARACTER = scope:puppet_or_actor } }
+				NOT = { exists = secret_faith }
 			}
 			custom_tooltip = ask_for_conversion_interaction_accept_tooltip
 		}
@@ -1054,6 +1199,14 @@ demand_conversion_interaction_effect = {
 # Switch a character to the specified faith and keep their old faith as a secret (or not)
 # Assumes that spouses and family to convert have already been grabbed
 convert_family_to_faith_effect = {
+	if = {
+		limit = { NOT = { exists = scope:puppet_or_actor } }
+		scope:actor = { save_scope_as = puppet_or_actor }
+	}
+	if = {
+		limit = { NOT = { exists = scope:old_faith } }
+		scope:recipient.faith = { save_scope_as = old_faith }
+	}
 	every_in_list = {
 		list = spouses_and_family_to_convert
 		# Make crypto-religionists of them, if applicable
@@ -1062,15 +1215,14 @@ convert_family_to_faith_effect = {
 				$FALSE_CONVERSION$ = yes
 				faith = scope:recipient.faith
 			}
-			scope:recipient.faith = { save_temporary_scope_as = old_faith }
 			if = {
 				limit = {
-					exists = scope:conversion_faith
+					exists = scope:conversion_rite
 				}
-				set_character_faith = scope:conversion_faith
+				convert_to_rite_with_consequences_effect = { RITE = scope:conversion_rite }
 			}
 			else = {
-				set_character_faith = scope:actor.faith
+				convert_to_rite_with_consequences_effect = { RITE = scope:puppet_or_actor.rite }
 			}
 			make_character_crypto_religionist_effect = { CRYPTO_RELIGION = scope:old_faith }
 			# Grab the character's recently added crypto secret
@@ -1104,12 +1256,12 @@ convert_family_to_faith_effect = {
 		else = {
 			if = {
 				limit = {
-					exists = scope:conversion_faith
+					exists = scope:conversion_rite
 				}
-				set_character_faith = scope:conversion_faith
+				convert_to_rite_with_consequences_effect = { RITE = scope:conversion_rite }
 			}
 			else = {
-				set_character_faith = scope:actor.faith
+				convert_to_rite_with_consequences_effect = { RITE = scope:puppet_or_actor.rite }
 			}
 		}
 		if = {
@@ -1248,6 +1400,11 @@ child_secret_faith_conversion_success_effect = {
 					NOT = { is_known_by = scope:child }
 				}
 				reveal_to = scope:child
+			}
+			# Only playable characters have spiritual fulfillment
+			if = {
+				limit = { is_playable_character = yes }
+				change_spiritual_fulfillment = minor_spiritual_fulfillment_value
 			}
 		}
 	}
@@ -1554,7 +1711,7 @@ humsacd_a_hof_effect = {
 
 give_piety_for_clinging_to_state_faith_effect = {
 	if = {
-		limit = { top_liege.primary_title.state_faith ?= scope:recipient.faith }
+		limit = { top_liege.primary_title.state_rite ?= scope:recipient.rite }
 		add_piety = 200
 	}
 }
@@ -1580,8 +1737,50 @@ revel_in_pain_effect = {
 			add_stress = medium_stress_loss
 		}
 	}
-
+	
 	increase_wounds_effect = { REASON = whipping }
+}
+
+exaltation_of_pain_wound_courtier_effect = {
+	$ACTOR$ = {
+		save_scope_as = exaltation_of_pain_wound_actor
+	}
+	$TARGET$ = {
+		save_scope_as = exaltation_of_pain_wound_target
+	}
+
+	scope:exaltation_of_pain_wound_actor = {
+		add_piety = medium_piety_value
+		stress_and_fulfillment_impact = {
+			sadistic = minor_stress_impact_loss
+			callous = minor_stress_impact_loss
+			wrathful = miniscule_stress_impact_loss
+			arbitrary = miniscule_stress_impact_loss
+			flagellant = minor_stress_impact_loss
+			compassionate = minor_stress_impact_gain
+			forgiving = minor_stress_impact_gain
+		}
+	}
+
+	scope:exaltation_of_pain_wound_target = {
+		increase_wounds_no_death_effect = { REASON = whipping }
+		if = {
+			limit = {
+				has_personal_tenet_flag = self_mutilation_active
+				rite = scope:exaltation_of_pain_wound_actor.rite
+			}
+			add_opinion = {
+				modifier = exaltation_of_pain_grateful_wounding_opinion
+				target = scope:exaltation_of_pain_wound_actor
+			}
+		}
+		else = {
+			add_opinion = {
+				modifier = exaltation_of_pain_resentful_wounding_opinion
+				target = scope:exaltation_of_pain_wound_actor
+			}
+		}
+	}
 }
 
 revel_in_pain_opinion_effect = {
@@ -1609,6 +1808,444 @@ revel_in_pain_opinion_effect = {
 					opinion = 20
 				}
 			}
+		}
+	}
+}
+donate_to_monastic_order_effect = {
+	if = {
+		limit = { NOT = { exists = scope:puppet_or_actor } }
+		scope:actor = { save_scope_as = puppet_or_actor }
+	}
+	scope:puppet_or_actor = {
+		change_spiritual_fulfillment = {
+   			value = major_spiritual_fulfillment_value
+   			if = {
+   				limit = {
+   					scope:huge_donation ?= yes
+   				}
+   				add = {
+   					value = major_spiritual_fulfillment_value
+   					multiply = 1.5
+   				}
+   			}
+   			if = {
+   				limit = {
+   					scope:ceremonial_humbling ?= yes
+   				}
+   				add = {
+   					value = major_spiritual_fulfillment_value
+   					multiply = 1.5
+   				}
+   			}
+   			if = {
+   				limit = {
+   					scope:recipient.holy_order.title ?= {
+   						has_variable = ascetic_order_founder
+   						var:ascetic_order_founder = scope:puppet_or_actor
+   					}
+   				}
+   				multiply = 2
+   			}
+   			if = {
+   				limit = {
+   					has_trait = cynical
+   				}
+   				multiply = 0.75
+   			}
+   			if = {
+   				limit = {
+   					has_trait = zealous
+   				}
+   				multiply = 1.25
+   			}
+   		}
+   		add_piety = {
+			value = medium_piety_gain
+			if = {
+   				limit = {
+   					scope:huge_donation ?= yes
+   				}
+   				add = {
+   					value = medium_piety_gain
+   					multiply = 1.5
+   				}
+   			}
+   			if = {
+   				limit = {
+   					scope:ceremonial_humbling ?= yes
+   				}
+   				add = {
+   					value = medium_piety_gain
+   					multiply = 2.5
+   				}
+   			}
+		}
+		if = {
+			limit = {
+				has_treasury = yes
+				government_has_flag = government_is_theocracy
+			}
+			pay_treasury_to_gold = {
+				value = {
+					value = 0
+					if = {
+						limit = {
+							scope:huge_donation ?= yes
+						}
+						add = monastic_huge_donation_treasury_value
+					}
+					else = {
+						add = monastic_donation_treasury_value
+					}
+				}
+				target = scope:recipient
+			}
+		}
+		else = {
+   			pay_short_term_gold = {
+   				gold = {
+   					value = 0
+   					if = {
+						limit = {
+							scope:huge_donation ?= yes
+						}
+						add = monastic_huge_donation_value
+					}
+					else = {
+						add = monastic_donation_value
+					}
+				}
+				target = scope:recipient
+   			}
+   		}
+   		if = {
+   			limit = {
+   				scope:ceremonial_humbling ?= yes
+   			}
+   			add_prestige = massive_prestige_loss
+   			add_prestige_level = -1
+   			add_character_modifier = {
+   				modifier = monastics_praying_for_grievous_sins_modifier
+   				years = 5
+   			}
+   		}
+	}
+	
+	#Holy order leader gains opinion
+	scope:recipient = {
+		add_opinion = {
+			target = scope:puppet_or_actor
+			modifier = monastic_donation_opinion
+			opinion = {
+				value = 20
+				if = {
+   					limit = {
+   						scope:huge_donation ?= yes
+   					}
+   					add = 40
+   				}
+   				if = {
+   					limit = {
+   						scope:ceremonial_humbling ?= yes
+   					}
+   					multiply = 0.5
+   				}
+			}
+		}
+		if = {
+			limit = {
+				NOT = {
+					exists = puppeteer
+				}
+			}
+			custom_tooltip = easier_to_puppet_monk_tt
+			add_to_variable_list = {
+				name = recent_donators
+				target = scope:actor
+				years = 5
+			}
+		}
+
+		dynastic_monks_gain_xp_effect = yes
+	}
+}
+lease_to_monastic_order_interaction_effect = {
+	scope:target = {
+		lease_out_to_holy_order = scope:monastic_order
+		county = {
+			save_scope_as = target_county
+			scope:puppet_or_actor = {
+				custom_tooltip = new_monastic_county_modifier_tt
+			}
+			hidden_effect = {
+				add_county_modifier = {
+					modifier = new_monastic_county_modifier
+					years = 5
+				}
+			}
+		}
+	}
+	scope:puppet_or_actor = {
+		change_spiritual_fulfillment = {
+   			value = massive_spiritual_fulfillment_value
+   			if = {
+   				limit = {
+   					scope:huge_donation ?= yes
+   				}
+   				multiply = 1.5
+   			}
+   			#It's less of a sacrifice the bigger your domain is... and you know it
+   			multiply = 1.2
+   			every_held_title = {
+   				limit = {
+   					tier = tier_county
+   					is_landless_type_title = no
+   				}
+   				multiply = 0.85
+   			}
+   			if = {
+   				limit = {
+   					has_trait = cynical
+   				}
+   				multiply = 0.75
+   			}
+   			if = {
+   				limit = {
+   					has_trait = zealous
+   				}
+   				multiply = 1.25
+   			}
+   			if = {
+   				limit = {
+   					scope:recipient.holy_order.title ?= {
+   						has_variable = ascetic_order_founder
+   						var:ascetic_order_founder = scope:puppet_or_actor
+   					}
+   				}
+   				multiply = 2
+   			}
+   			min = minor_spiritual_fulfillment_value
+   		}
+   		add_piety = {
+			value = major_piety_gain
+			if = {
+   				limit = {
+   					scope:huge_donation ?= yes
+   				}
+   				add = {
+   					value = major_piety_gain
+   				}
+   			}
+		}
+		if = {
+			limit = {
+				scope:huge_donation ?= yes
+			}
+			pay_short_term_gold = {
+   				gold = monastic_donation_value
+				target = scope:recipient
+   			}
+   			if = {
+   				limit = {
+   					NOT = {
+   						scope:target_county = {
+   							has_county_modifier = monastic_onslaught_modifier
+   						}
+   					}
+   				}
+   				custom_tooltip = {
+   					text = monastic_onslaught_modifier_tt
+   					scope:target_county = {
+   						add_county_modifier = {
+   							modifier = monastic_onslaught_modifier
+   							years = 20
+   						}
+   					}
+   				}
+   			}
+		}
+	}
+
+	#Holy Order will now be in interaction range 
+	if = {
+		limit = {
+			scope:puppet_or_actor.faith = {
+				any_faith_holy_order = {
+					leader = scope:recipient
+					NOT = { holy_order_range_trigger = { CHARACTER = scope:puppet_or_actor } }
+				}
+			}
+		}
+		scope:puppet_or_actor = {
+			custom_tooltip = monastic_order_entering_interaction_range_tt
+		}
+	}
+	
+	#Holy order leader gains opinion
+	scope:recipient = {
+		add_opinion = {
+			target = scope:puppet_or_actor
+			modifier = monastic_donation_opinion
+			opinion = {
+				value = 30
+				if = {
+   					limit = {
+   						scope:huge_donation ?= yes
+   					}
+   					add = 50
+   				}
+			}
+		}
+		if = {
+			limit = {
+				NOT = {
+					exists = puppeteer
+				}
+			}
+			custom_tooltip = easier_to_puppet_monk_tt
+			add_to_variable_list = {
+				name = recent_leasers
+				target = scope:actor
+				years = 5
+			}
+		}
+		dynastic_monks_gain_xp_effect = yes
+	}
+}
+clerical_interaction_refusal_major_effect = {
+	if = {
+		limit = {
+			is_ai = yes
+		}
+		add_opinion = {
+			target = scope:recipient
+			modifier = refusal_opinion
+			opinion = -50
+		}
+	}
+}
+clerical_interaction_refusal_minor_effect = {
+	if = {
+		limit = {
+			is_ai = yes
+		}
+		add_opinion = {
+			target = scope:recipient
+			modifier = refusal_opinion
+			opinion = -25
+		}
+	}
+}
+
+# Head of Faith get or loose something when getting requests.
+hof_request_accept_consequences_effect = {
+	$HOF$ = {
+		add_piety = miniscule_piety_gain
+	}
+}
+
+hof_request_refuse_consequences_effect = {
+	$HOF$ = {
+		add_piety = miniscule_piety_loss
+	}
+	$REQUESTER$ = {
+		if = {
+			limit = {
+				is_ai = yes
+			}
+			add_opinion = {
+				target = $HOF$
+				modifier = refusal_opinion
+				opinion = -10
+			}
+		}
+	}
+}
+
+# Keeps the first valid bishop found by excommunicated_recovery_find_cleric_effect.
+excommunicated_recovery_try_save_cleric_scope_effect = {
+	if = {
+		limit = {
+			NOT = { exists = scope:repentance_cleric }
+			excommunicated_recovery_valid_cleric_for_actor_trigger = { ACTOR = root }
+		}
+		save_scope_as = repentance_cleric
+	}
+}
+
+excommunicated_recovery_find_cleric_effect = {
+	# Try realm priest's superior first.
+	if = {
+		limit = {
+			cp:councillor_court_chaplain ?= {
+				highest_held_title_tier < tier_duchy
+				superior ?= {
+					highest_held_title_tier >= tier_duchy
+					is_clergy = yes
+					NOT = { this = root }
+				}
+			}
+		}
+		cp:councillor_court_chaplain.superior = {
+			excommunicated_recovery_try_save_cleric_scope_effect = yes
+		}
+	}
+	# Then the archbishop of your capital region.
+	if = {
+		limit = {
+			NOT = { exists = scope:repentance_cleric }
+			capital_county ?= {
+				clerical_region_title ?= {
+					holder ?= {
+						highest_held_title_tier >= tier_duchy
+						faith = root.faith
+						NOT = { this = root }
+					}
+				}
+			}
+		}
+		capital_county.clerical_region_title.holder = {
+			excommunicated_recovery_try_save_cleric_scope_effect = yes
+		}
+	}
+	# Then your religious superior if you are a theocratic ruler.
+	if = {
+		limit = {
+			NOT = { exists = scope:repentance_cleric }
+			government_has_flag = government_is_theocracy
+			exists = superior
+			NOT = { superior = root }
+		}
+		superior = {
+			excommunicated_recovery_try_save_cleric_scope_effect = yes
+		}
+	}
+	# Last resort: any valid bishop in your realm or de jure hierarchy.
+	if = {
+		limit = {
+			NOT = { exists = scope:repentance_cleric }
+		}
+		every_vassal_or_below = {
+			limit = {
+				excommunicated_recovery_valid_cleric_for_actor_trigger = { ACTOR = root }
+			}
+			add_to_temporary_list = repentance_clerics
+		}
+		primary_title ?= {
+			every_clerical_region_in_dejure_title = {
+				holder ?= {
+					if = {
+						limit = {
+							excommunicated_recovery_valid_cleric_for_actor_trigger = { ACTOR = root }
+						}
+						add_to_temporary_list = repentance_clerics
+					}
+				}
+			}
+		}
+		every_in_list = {
+			list = repentance_clerics
+			excommunicated_recovery_try_save_cleric_scope_effect = yes
 		}
 	}
 }

@@ -8,11 +8,11 @@ gift_interaction = {
 	use_diplomatic_range = { # Warcraft
 		trigger_if = {
 			limit = {
-				scope:actor = { has_variable = this_union }
+				scope:puppet_or_actor = { has_variable = this_union }
 				scope:recipient ?= { has_variable = this_union }
 			}
 			NOT = {
-				scope:actor.var:this_union = scope:recipient.var:this_union
+				scope:puppet_or_actor.var:this_union = scope:recipient.var:this_union
 			}
 		}
 	}
@@ -49,17 +49,35 @@ gift_interaction = {
 		hegemony = 36
 	}
 
-	is_shown = {
-		scope:recipient != scope:actor
+	is_available = {
+		trigger_if = {
+			limit = { is_ai = yes }
+			ai_greed < medium_positive_ai_value
+			short_term_gold >= gift_interaction_cutoff
+			ai_should_focus_on_building_in_their_capital = no
+			is_available_at_peace_ai_adult = yes
+			NOR = {
+				has_trait = greedy
+				has_variable = conqueror
+			}
+		}
+	}
 
+	is_shown = {
 		# Prioritize paying back loans first
-		scope:actor = {
+		scope:puppet_or_actor ?= {
+			this != scope:recipient
 			trigger_if = {
 				limit = {
 					exists = var:loan_amount_owed
 					exists = var:loan_holder
 				}
 				NOT = { var:loan_holder = scope:recipient }
+			}
+			# A landless puppet has nothing to gift that is not already the puppeteer's
+			trigger_if = {
+				limit = { scope:recipient = scope:actor }
+				is_ruler = yes
 			}
 		}
 	}
@@ -80,11 +98,18 @@ gift_interaction = {
 	highlighted_reason = HIGHLIGHTED_FAMILY_RATING
 
 	is_valid_showing_failures_only = {
-		scope:actor.gold >= gift_value
-		scope:recipient = { 
-			NOT = { is_imprisoned_by = scope:actor }
+		scope:puppet_or_actor.gold >= gift_value
+		scope:recipient = {
+			NOT = { is_imprisoned_by = scope:puppet_or_actor }
 		}
-		scope:actor = { NOT = { is_isolated_from_trigger = { target = scope:recipient } } }	# Warcraft
+		# puppet_or_actor only differs from the actor on puppet actions, where the puppet's own purse pays
+		trigger_if = {
+			limit = { scope:is_puppet_action ?= yes }
+			custom_tooltip = {
+				text = puppet_gift_cooldown_tt
+				NOT = { scope:puppet_or_actor = { has_variable = puppet_gift_cooldown } }
+			}
+		}
 	}
 
 	on_auto_accept = {
@@ -99,10 +124,10 @@ gift_interaction = {
 			if = {
 				limit = {
 					NAND = {
-						has_relation_friend = scope:actor
-						has_relation_lover = scope:actor
-						has_relation_soulmate = scope:actor
-						has_relation_best_friend = scope:actor
+						has_relation_friend = scope:puppet_or_actor
+						has_relation_lover = scope:puppet_or_actor
+						has_relation_soulmate = scope:puppet_or_actor
+						has_relation_best_friend = scope:puppet_or_actor
 					}
 				}
 				gifting_leads_towards_friendship_effect = yes
@@ -111,14 +136,14 @@ gift_interaction = {
 		# HOUSE RELATIONS
 		if = {
 			limit = {
-				scope:actor = {
+				scope:puppet_or_actor = {
 					is_house_head = yes
 				}
 				scope:recipient = {
 					is_house_head = yes
 					NOT = {
 						has_opinion_modifier = {
-							target = scope:actor
+							target = scope:puppet_or_actor
 							modifier = gift_opinion
 						}
 					}
@@ -126,29 +151,30 @@ gift_interaction = {
 			}
 			scope:recipient.house = {
 				change_house_relation_effect = {
-					HOUSE = scope:actor.house
+					HOUSE = scope:puppet_or_actor.house
 					VALUE = house_relation_improve_medium_value
 					REASON = sent_a_gift
-					CHAR = scope:actor
+					CHAR = scope:puppet_or_actor
 					TARGET_CHAR = scope:recipient
 					TITLE = scope:dummy_gender
 				}
 			}
 		}
-		scope:actor = {
+		scope:puppet_or_actor = {
 			# Warning for multiple gifts
 			if = {
 				limit = {
+					scope:actor != scope:recipient
 					scope:recipient = {
 						has_opinion_modifier = {
-							target = scope:actor
+							target = scope:puppet_or_actor
 							modifier = gift_opinion
 						}
 					}
 				}
 				custom_tooltip = ALREADY_SENT_GIFT_WARNING
 			}
-			
+
 			send_interface_message = {
 				type = event_gold_neutral
 				title = gift_interaction_notification
@@ -157,43 +183,82 @@ gift_interaction = {
 					gold = gift_value
 					target = scope:recipient
 				}
-				stress_impact = {
+				stress_and_fulfillment_impact = {
 					greedy = medium_stress_impact_gain
 				}
 				if = {
 					limit = {
 						scope:recipient = {
 							NOT = {
-								is_heir_of = scope:actor
+								is_heir_of = scope:puppet_or_actor
 							}
 						}
 					}
-					stress_impact = {
+					stress_and_fulfillment_impact = {
 						generous = medium_stress_impact_loss
 					}
 				}
-				
-				#FP3 Tenet Communal Possessions Perk - piety gain for gift giving. 
 				if = {
 					limit = {
-						scope:actor = {
-							faith = {
-					 			has_doctrine_parameter = piety_from_gifts_active
+						scope:puppet_or_actor = {
+							has_personal_tenet_flag = tenet_simony_personal_gifts
+						}
+					}
+					# Doubled: personal pick has stress_loss_mult -0.5
+					add_stress = medium_stress_loss
+					change_spiritual_fulfillment = miniscule_spiritual_fulfillment_value
+				}
+
+				#FP3 Tenet Communal Possessions Perk - piety gain for gift giving.
+				if = {
+					limit = {
+						scope:puppet_or_actor = {
+							rite = {
+					 			rite_has_parameter = piety_from_gifts_active
 					 		}
 					 	}
+						NOT = {
+							scope:recipient = {
+								has_opinion_modifier = {
+									target = scope:puppet_or_actor
+									modifier = gift_opinion
+								}
+							}
+						}
 					}
-					scope:actor = {
+					scope:puppet_or_actor = {
 						add_piety = minor_piety_gain
 					}
 				}
-				
+
+				if = {
+					limit = {
+						scope:puppet_or_actor = {
+							has_personal_tenet_flag = tenet_philanthropia_alms_to_the_destitute
+						}
+						scope:recipient = { is_in_debt = yes }
+						NOT = {
+							scope:recipient = {
+								has_opinion_modifier = {
+									target = scope:puppet_or_actor
+									modifier = gift_opinion
+								}
+							}
+						}
+					}
+					scope:puppet_or_actor = {
+						add_prestige = minor_prestige_gain
+						add_piety = minor_piety_gain
+					}
+				}
+
 				# Check if the target already has been sent a gift or not. If not, apply the following effects
 				if = {
 					limit = {
 						NOT = {
 							scope:recipient = {
 								has_opinion_modifier = {
-									target = scope:actor
+									target = scope:puppet_or_actor
 									modifier = gift_opinion
 								}
 							}
@@ -205,20 +270,20 @@ gift_interaction = {
 					# FP2 Urbanism Legacy Perk 2: increase cultural acceptance when gifting a republican vassal
 					if = {
 						limit = {
-							scope:actor = {
+							scope:puppet_or_actor = {
 								dynasty ?= { has_dynasty_perk = fp2_urbanism_legacy_4 }
 							}
 							scope:recipient = {
 								AND = {
-									is_vassal_of = scope:actor
+									is_vassal_of = scope:puppet_or_actor
 									government_has_flag = government_is_republic
 								}
 							}
-							scope:actor.culture != scope:recipient.capital_province.county.culture
+							scope:puppet_or_actor.culture != scope:recipient.capital_province.county.culture
 						}
 						scope:recipient.capital_province.county.culture = {
 							change_cultural_acceptance = {
-								target = scope:actor.culture
+								target = scope:puppet_or_actor.culture
 								value = {
 									value = 20
 									multiply = scope:recipient.capital_province.county.development_level
@@ -229,21 +294,66 @@ gift_interaction = {
 						}
 					}
 				}
-				
+
 				# Let's apply the opinion modifier last, as to apply everything else correctly first
-				scope:recipient = {
-					add_opinion = {
-						target = scope:actor
-						modifier = gift_opinion
-						opinion = send_gift_opinion
+				# Don't grant the puppeteer opinion of their own puppet when they are the gift recipient
+				if = {
+					limit = {
+						scope:actor != scope:recipient
+						scope:puppet_or_actor = {
+							NOT = { has_personal_tenet_flag = tenet_simony_personal_gifts }
+						}
 					}
+					scope:recipient = {
+						add_opinion = {
+							target = scope:puppet_or_actor
+							modifier = gift_opinion
+							opinion = send_gift_opinion
+						}
+					}
+				}
+				if = {
+					limit = {
+						scope:actor != scope:recipient
+						scope:puppet_or_actor = {
+							has_personal_tenet_flag = tenet_simony_personal_gifts
+						}
+					}
+					scope:recipient = {
+						add_opinion = {
+							target = scope:puppet_or_actor
+							modifier = friendliness_opinion
+							opinion = send_gift_opinion
+						}
+					}
+				}
+			}
+			if = {
+				limit = {
+					scope:actor != scope:recipient
+					scope:puppet_or_actor = {
+						has_personal_tenet_flag = tenet_simony_personal_gifts
+					}
+					scope:recipient = {
+						NOT = {
+							has_opinion_modifier = {
+								target = scope:puppet_or_actor
+								modifier = friendliness_opinion
+							}
+						}
+					}
+				}
+				progress_towards_friend_effect = {
+					REASON = friend_simony_gift
+					CHARACTER = scope:recipient
+					OPINION = 0
 				}
 			}
 
 			if = { # for tutorial purposes
 				limit = {
 					is_ai = no
-					scope:recipient = { is_child_of = scope:actor }
+					scope:recipient = { is_child_of = scope:puppet_or_actor }
 				}
 				add_character_flag = {
 					flag = tutorial_sent_gift
@@ -254,13 +364,11 @@ gift_interaction = {
 			if = {
 				limit = {
 					is_ruler = yes
-					government_allows = administrative
+					government_has_flag = government_has_influence
 					scope:recipient = {
 						is_ruler = yes
-						government_allows = administrative
-						any_held_title = {
-							is_noble_family_title = yes
-						}
+						government_has_flag = government_has_influence
+						is_governor_or_landless_admin = yes
 					}
 				}
 				if = {
@@ -270,7 +378,7 @@ gift_interaction = {
 								house = {
 									is_dominant_family = yes
 								}
-								this = scope:actor.top_liege
+								this = scope:puppet_or_actor.top_liege
 							}
 							influence_level >= 5
 						}
@@ -287,7 +395,7 @@ gift_interaction = {
 								house = {
 									is_dominant_family = yes
 								}
-								this = scope:actor.top_liege
+								this = scope:puppet_or_actor.top_liege
 							}
 							influence_level >= 3
 						}
@@ -304,7 +412,7 @@ gift_interaction = {
 								house = {
 									is_dominant_family = yes
 								}
-								this = scope:actor.top_liege
+								this = scope:puppet_or_actor.top_liege
 							}
 						}
 					}
@@ -320,7 +428,7 @@ gift_interaction = {
 								house = {
 									is_powerful_family = yes
 								}
-								this = scope:actor.top_liege
+								this = scope:puppet_or_actor.top_liege
 							}
 							influence_level >= 5
 						}
@@ -337,7 +445,7 @@ gift_interaction = {
 								house = {
 									is_powerful_family = yes
 								}
-								this = scope:actor.top_liege
+								this = scope:puppet_or_actor.top_liege
 							}
 							influence_level >= 3
 						}
@@ -354,7 +462,7 @@ gift_interaction = {
 								house = {
 									is_powerful_family = yes
 								}
-								this = scope:actor.top_liege
+								this = scope:puppet_or_actor.top_liege
 							}
 						}
 					}
@@ -386,8 +494,20 @@ gift_interaction = {
 				}
 			}
 		}
+		if = {
+			limit = {
+				scope:is_puppet_action ?= yes
+				scope:actor = { is_ai = no }
+			}
+			scope:puppet_or_actor = {
+				set_variable = {
+					name = puppet_gift_cooldown
+					years = 5
+				}
+			}
+		}
 	}
-	
+
 	ai_accept = {
 		base = 0
 		modifier = {
@@ -402,73 +522,74 @@ gift_interaction = {
 		scourge_interaction_modifiers = yes
 
 	}
-	
-	ai_potential = {
-		is_available_at_peace_ai_adult = yes
-		ai_greed < medium_positive_ai_value
-		short_term_gold >= gift_interaction_cutoff
-		NOT = {
-			has_trait = greedy
-		}
-		NOT = { has_variable = conqueror }
-		ai_should_focus_on_building_in_their_capital = no
-	}
-	
+
 	auto_accept = {
 		custom_description = {
-			text = auto_accept_interaction_ai	
+			text = auto_accept_interaction_ai
 			object = scope:recipient
 			scope:recipient = {
 				is_ai = yes
 			}
 		}
 	}
-	
+
 	ai_min_reply_days = 1
 	ai_max_reply_days = 1
-	
+
 	ai_will_do = {
 		base = 100
-		
+
 		modifier = { # Do not send double-gifts
 			factor = 0
 			scope:recipient = {
 				has_opinion_modifier = {
-					target = scope:actor
+					target = scope:puppet_or_actor
 					modifier = gift_opinion
 				}
 			}
 		}
-		
+		modifier = { # Do not repeat Simony gifts
+			factor = 0
+			scope:puppet_or_actor = {
+				has_personal_tenet_flag = tenet_simony_personal_gifts
+			}
+			scope:recipient = {
+				has_opinion_modifier = {
+					target = scope:puppet_or_actor
+					modifier = friendliness_opinion
+				}
+			}
+		}
+
 		modifier = { # Basic Filtering
 			factor = 0
 			scope:recipient = {
 				NOR = {
 					AND = { # Bankrupt lovers, friends and a bankrupt liege should be considered
 						OR = {
-							scope:actor = {
+							scope:puppet_or_actor = {
 								any_liege_or_above = {
 									this = scope:recipient
 								}
 							}
-							has_secret_relation_lover = scope:actor
-							has_relation_lover = scope:actor
-							has_relation_soulmate = scope:actor
-							has_relation_friend = scope:actor
-							has_relation_best_friend = scope:actor
+							has_secret_relation_lover = scope:puppet_or_actor
+							has_relation_lover = scope:puppet_or_actor
+							has_relation_soulmate = scope:puppet_or_actor
+							has_relation_friend = scope:puppet_or_actor
+							has_relation_best_friend = scope:puppet_or_actor
 						}
 						gold < 0
 					}
 					AND = { # Generous characters will give gifts to their friends/lovers
 						is_ruler = yes
 						OR = {
-							has_secret_relation_lover = scope:actor
-							has_relation_lover = scope:actor
-							has_relation_soulmate = scope:actor
-							has_relation_friend = scope:actor
-							has_relation_best_friend = scope:actor
+							has_secret_relation_lover = scope:puppet_or_actor
+							has_relation_lover = scope:puppet_or_actor
+							has_relation_soulmate = scope:puppet_or_actor
+							has_relation_friend = scope:puppet_or_actor
+							has_relation_best_friend = scope:puppet_or_actor
 						}
-						scope:actor = {
+						scope:puppet_or_actor = {
 							OR = {
 								ai_greed <= high_negative_ai_value
 								AND = {
@@ -483,10 +604,10 @@ gift_interaction = {
 					AND = { # Characters with the Generous Cultural Tradition will give gifts to more people
 						is_ruler = yes
 						OR = {
-							is_allied_to = scope:actor
-							is_close_or_extended_family_of = scope:actor
+							is_allied_to = scope:puppet_or_actor
+							is_close_or_extended_family_of = scope:puppet_or_actor
 						}
-						scope:actor = {
+						scope:puppet_or_actor = {
 							ai_greed < 0
 							culture = {
 								has_cultural_parameter = gives_more_gifts
@@ -495,13 +616,13 @@ gift_interaction = {
 					}
 					AND = { # Characters with the loyal trait more likely to give gifts to friends/lieges
 						OR = {
-							scope:actor.liege ?= this
-							has_relation_friend = scope:actor
-							has_relation_best_friend = scope:actor
-							is_allied_to = scope:actor
-							is_close_or_extended_family_of = scope:actor
+							scope:puppet_or_actor.liege ?= this
+							has_relation_friend = scope:puppet_or_actor
+							has_relation_best_friend = scope:puppet_or_actor
+							is_allied_to = scope:puppet_or_actor
+							is_close_or_extended_family_of = scope:puppet_or_actor
 						}
-						scope:actor = {
+						scope:puppet_or_actor = {
 							ai_greed <= 0
 							has_trait = loyal
 						}
@@ -515,46 +636,46 @@ gift_interaction = {
 							}
 							primary_defender = scope:recipient
 						}
-						scope:actor = {
+						scope:puppet_or_actor = {
 							ai_zeal >= 50
 						}
 					}
 					AND = { # Powerful vassals should be considered
-						is_powerful_vassal_of = scope:actor
+						is_powerful_vassal_of = scope:puppet_or_actor
 						opinion = {
-							target = scope:actor
+							target = scope:puppet_or_actor
 							value < 0
 						}
 						NOT ={
 							has_opinion_modifier = {
-								target = scope:actor
+								target = scope:puppet_or_actor
 								modifier = gift_opinion
 							}
 						}
 					}
 					AND = { # Factioneering vassals should be considered
-						is_vassal_of = scope:actor
+						is_vassal_of = scope:puppet_or_actor
 						is_a_faction_member = yes
 						NOT ={
 							has_opinion_modifier = {
-								target = scope:actor
+								target = scope:puppet_or_actor
 								modifier = gift_opinion
 							}
 						}
 					}
 					AND = { # Realm Priests should be considered
-						scope:actor = {
-							faith = { has_doctrine = doctrine_theocracy_temporal }
+						scope:puppet_or_actor = {
+							rite = { rite_has_doctrine = doctrine_theocracy_temporal }
 							exists = cp:councillor_court_chaplain
 							cp:councillor_court_chaplain = scope:recipient
 						}
 						opinion = {
-							target = scope:actor
+							target = scope:puppet_or_actor
 							value <= 25
 						}
 						NOT = {
 							has_opinion_modifier = {
-								target = scope:actor
+								target = scope:puppet_or_actor
 								modifier = gift_opinion
 							}
 						}
@@ -563,7 +684,7 @@ gift_interaction = {
 						gold < 0
 						is_at_war = yes
 						any_war_enemy = {
-							has_relation_rival = scope:actor
+							has_relation_rival = scope:puppet_or_actor
 						}
 					}
 					AND = { # Independent ruler within the struggle should be considered
@@ -582,12 +703,12 @@ gift_interaction = {
 			factor = 0.1
 			scope:recipient = {
 				opinion = {
-					target = scope:actor
+					target = scope:puppet_or_actor
 					value < 0
 				}
 				NAND = {
-					is_vassal_of = scope:actor
-					scope:actor = {
+					is_vassal_of = scope:puppet_or_actor
+					scope:puppet_or_actor = {
 						ai_rationality > 50
 					}
 				}
@@ -597,24 +718,24 @@ gift_interaction = {
 		# Nomads are slightly less likely to do this since they'd prefer to send Herd instead
 		modifier = {
 			add = -10
-			scope:actor = {
+			scope:puppet_or_actor = {
 				government_has_flag = government_is_nomadic
 			}
 			scope:recipient = {
 				government_has_flag = government_is_nomadic
 			}
 		}
-		
+
 		modifier = {
 			factor = 0.1
 			scope:recipient = {
-				has_relation_rival = scope:actor
+				has_relation_rival = scope:puppet_or_actor
 			}
 		}
 
 		modifier = {
 			factor = 2
-			scope:actor.house.house_confederation ?= {
+			scope:puppet_or_actor.house.house_confederation ?= {
 				has_cohesion_level_parameter = bloc_members_send_leader_gifts
 				leading_house.house_head ?= scope:recipient
 			}
