@@ -28,7 +28,7 @@ influence_candidacy_interaction = {
 				every_house_member = {
 					limit = {
 						top_liege != this
-						government_allows = administrative
+						government_has_mechanic = administrative
 						top_liege = scope:actor.top_liege
 						any_valid_title_to_grant_trigger = {
 							CANDIDATE = this
@@ -43,7 +43,7 @@ influence_candidacy_interaction = {
 				every_courtier_or_guest = {
 					limit = {
 						top_liege != this
-						government_allows = administrative
+						government_has_mechanic = administrative
 						top_liege = scope:actor.top_liege
 						any_valid_title_to_grant_trigger = {
 							CANDIDATE = this
@@ -82,19 +82,17 @@ influence_candidacy_interaction = {
 				holder = { has_realm_law_flag = appointment_type_succession }
 			}
 		}
-		scope:recipient = { government_allows = administrative }
+		scope:recipient = { government_has_mechanic = administrative }
 	}
 
 	is_available = {
 		is_ai = no
-		AND = {
-			NOT = { government_has_flag = government_has_merit }
-			government_allows = administrative
-		}
+		government_has_mechanic = administrative
+		NOT = { government_has_flag = government_has_merit }
 	}
 
 	is_valid_showing_failures_only = {
-		scope:actor = { government_allows = administrative }
+		scope:actor = { government_has_mechanic = administrative }
 		trigger_if = {
 			limit = {
 				exists = scope:secondary_recipient
@@ -102,7 +100,7 @@ influence_candidacy_interaction = {
 			}
 			scope:secondary_recipient = {
 				is_independent_ruler = no
-				government_allows = administrative
+				government_has_mechanic = administrative
 				top_liege = scope:actor.top_liege
 			}
 		}
@@ -435,7 +433,7 @@ influence_candidacy_interaction = {
 			limit = {
 				scope:target = {
 					this != holder.primary_title
-					OR = { 
+					OR = {
 						has_title_law = acclamation_succession_law
 						holder = { has_realm_law = acclamation_succession_law }
 					}
@@ -731,21 +729,46 @@ support_candidacy_interaction = {
 				}
 			}
 		}
-		scope:recipient = { government_allows = administrative }
+		scope:recipient = { government_has_mechanic = administrative }
 	}
 
 	is_available = {
-		is_ai = yes
 		NOT = { government_has_flag = government_has_merit }
+		is_ai = yes
 
 		# admin rule is already checked in code, no need to duplicate in trigger here
 	}
 
 	is_shown = {
-		scope:secondary_recipient = {
+		scope:secondary_recipient ?= {
 			top_liege != this
-			government_allows = administrative
-			top_liege = scope:actor.top_liege
+			government_has_mechanic = administrative
+			top_liege ?= scope:actor.top_liege
+
+			# Don't promote lowborn or different-house candidates (lifted from ai_will_do factor = 0)
+			NOR = {
+				is_lowborn = yes
+				AND = {
+					exists = house
+					exists = scope:actor.house
+					house != scope:actor.house
+				}
+			}
+		}
+
+		# Don't promote rivals (lifted from ai_will_do factor = 0)
+		NOT = { scope:actor = { has_relation_rival = scope:secondary_recipient } }
+
+		# Respect gender-preference succession laws (lifted from ai_will_do factor = 0)
+		NOR = {
+			AND = {
+				scope:actor.top_liege ?= { has_realm_law = male_preference_law }
+				scope:secondary_recipient ?= { is_female = yes }
+			}
+			AND = {
+				scope:actor.top_liege ?= { has_realm_law = female_preference_law }
+				scope:secondary_recipient ?= { is_male = yes }
+			}
 		}
 	}
 
@@ -1122,9 +1145,7 @@ support_candidacy_interaction = {
 	}
 
 	# AI
-	# Interaction is used by AI in code, don't change the frequency
-	ai_frequency = 0
-
+	# Interaction frequency determined by code, do not set frequency
 	ai_will_do = {
 		base = 5
 
@@ -1136,12 +1157,12 @@ support_candidacy_interaction = {
 				}
 				current_heir ?= {
 					NOR = {
-						"appointment_candidate_accumulated_score(scope:target)" > 0
 						AND = {
 							exists = house
 							exists = scope:actor.house
 							house = scope:actor.house
 						}
+						"appointment_candidate_accumulated_score(scope:target)" > 0
 					}
 				}
 			}
@@ -1172,14 +1193,12 @@ support_candidacy_interaction = {
 			factor = 1.5
 		}
 		modifier = {
-			exists = scope:secondary_recipient
 			scope:actor = {
 				has_relation_friend = scope:secondary_recipient
 			}
 			factor = 2
 		}
 		modifier = {
-			exists = scope:secondary_recipient
 			scope:actor = {
 				has_relation_best_friend = scope:secondary_recipient
 			}
@@ -1188,7 +1207,6 @@ support_candidacy_interaction = {
 
 		# For the imperial title, we want to promote ourselves
 		modifier = {
-			exists = scope:secondary_recipient
 			scope:target.tier >= tier_empire
 			scope:actor = scope:secondary_recipient
 			factor = 5
@@ -1223,7 +1241,7 @@ support_candidacy_interaction = {
 				any_heir_title = {
 					is_noble_family_title = no
 					holder = {
-						government_allows = administrative
+						government_has_mechanic = administrative
 					}
 				}
 			}
@@ -1252,87 +1270,38 @@ support_candidacy_interaction = {
 			factor = 0
 		}
 
-		# Don't promote rivals
-		modifier = {
-			exists = scope:secondary_recipient
-			scope:actor = {
-				has_relation_rival = scope:secondary_recipient
-			}
-			factor = 0
-		}
-
-		# Don't promote a candidate if your house is first in line
+		# Don't outcompete our own house/candidate at the top, or someone we like in the top 3
 		modifier = {
 			scope:target = {
 				any_title_heir = {
-					exists = house
-					exists = scope:actor.house
-					house = scope:actor.house
+					save_temporary_scope_as = heir
 					scope:target = {
 						place_in_line_of_succession = {
-							target = prev
-							value = 1
-						}
-					}
-				}
-			}
-			factor = 0
-		}
-
-		# Don't promote your candidate if they are first in line
-		modifier = {
-			exists = scope:secondary_recipient
-			scope:target = {
-				any_title_heir = {
-					this = scope:secondary_recipient
-					scope:target = {
-						place_in_line_of_succession = {
-							target = prev
-							value = 1
-						}
-					}
-				}
-			}
-			factor = 0
-		}
-
-		# Don't promote lowborn or characters of a different house
-		modifier = {
-			scope:secondary_recipient ?= {
-				is_lowborn = yes
-			}
-			factor = 0
-		}
-		modifier = {
-			exists = scope:secondary_recipient
-			exists = scope:secondary_recipient.house
-			exists = scope:actor.house
-			scope:actor.house != scope:secondary_recipient.house
-			factor = 0
-		}
-
-		modifier = { # For now
-			scope:actor.top_liege = { has_realm_law = male_preference_law }
-			scope:secondary_recipient = { is_female = yes }
-			factor = 0
-		}
-		modifier = { # For now
-			scope:actor.top_liege = { has_realm_law = female_preference_law }
-			scope:secondary_recipient = { is_male = yes }
-			factor = 0
-		}
-
-		# Don't outcompete someone you like
-		modifier = {
-			scope:target = {
-				any_title_heir = {
-					scope:target  = {
-						place_in_line_of_succession = {
-							target = prev
+							target = scope:heir
 							value <= 3
 						}
 					}
-					scope:actor = { has_any_good_relationship_with_character_trigger = { CHARACTER = prev } }
+					OR = {
+						AND = {
+							scope:target = {
+								place_in_line_of_succession = {
+									target = scope:heir
+									value = 1
+								}
+							}
+							OR = {
+								scope:heir = scope:secondary_recipient
+								AND = {
+									scope:heir = { exists = house }
+									exists = scope:actor.house
+									scope:heir.house = scope:actor.house
+								}
+							}
+						}
+						scope:actor = {
+							has_any_good_relationship_with_character_trigger = { CHARACTER = scope:heir }
+						}
+					}
 				}
 			}
 			factor = 0
@@ -1380,14 +1349,15 @@ harm_candidacy_interaction = {
 		}
 	}
 
+	is_available = {
+		government_has_mechanic = administrative
+	}
+
 	is_shown = {
-		scope:actor = {
-			government_allows = administrative
-		}
 		scope:secondary_recipient = {
 			top_liege != this
-			government_allows = administrative
-			top_liege = scope:actor.top_liege
+			government_has_mechanic = administrative
+			top_liege ?= scope:actor.top_liege
 		}
 	}
 
@@ -1639,28 +1609,18 @@ harm_candidacy_interaction = {
 		}
 	}
 
-	ai_targets = {
-		ai_recipients = scripted_relations
-		max = 10
-	}
-
-	ai_frequency_by_tier = {
-		barony = 0
-		county = 48
-		duchy = 24
-		kingdom = 24
-		empire = 24
-		hegemony = 24
-	}
-
-	ai_potential = {
-		influence > major_influence_value
-		government_allows = administrative
-		ai_honor <= 25
-	}
-
+	# Interaction frequency determined by code, do not set frequency
 	ai_will_do = {
 		base = 0
+		# ai_potential is not evaluated on the code-driven path, so keep its gating here as hard-no guards.
+		modifier = {
+			factor = 0
+			scope:actor = { influence <= major_influence_value }
+		}
+		modifier = {
+			factor = 0
+			scope:actor = { ai_honor > 25 }
+		}
 		modifier = {
 			scope:actor = {
 				has_relation_rival = scope:secondary_recipient
@@ -1743,6 +1703,7 @@ request_appointment_support = {
 			desc = request_appointment_support_desc
 		}
 	}
+	notification_text = request_appointment_support_notification
 
 	target_type = title
 	target_filter = actor_top_liege_de_jure_titles
@@ -1753,7 +1714,7 @@ request_appointment_support = {
 				limit = {
 					this != scope:recipient
 					is_alive = yes
-					government_allows = administrative
+					government_has_mechanic = administrative
 					# Check that they are still valid to be appointed
 					any_valid_title_to_grant_trigger = {
 						CANDIDATE = this
@@ -1771,7 +1732,7 @@ request_appointment_support = {
 					every_house_member = {
 						limit = {
 							this != scope:recipient
-							government_allows = administrative
+							government_has_mechanic = administrative
 							any_valid_title_to_grant_trigger = {
 								CANDIDATE = this
 								TOP_LIEGE = scope:actor.top_liege
@@ -1827,16 +1788,26 @@ request_appointment_support = {
 		}
 	}
 
-	is_shown = {
-		scope:actor = {
-			NOT = { government_has_flag = government_has_merit }
-			government_allows = administrative
+	is_available = {
+		government_has_mechanic = administrative
+		NOT = { government_has_flag = government_has_merit }
+		trigger_if = {
+			limit = { is_ai = yes }
+			house ?= {
+				OR = {
+					is_powerful_family = yes
+					is_dominant_family = yes
+				}
+			}
 		}
+	}
+
+	is_shown = {
 		scope:recipient = {
 			this != scope:actor
 			NOT = { government_has_flag = government_has_merit }
-			government_allows = administrative
-			top_liege = scope:actor.top_liege
+			government_has_mechanic = administrative
+			top_liege ?= scope:actor.top_liege
 		}
 	}
 
@@ -1905,7 +1876,7 @@ request_appointment_support = {
 			limit = {
 				scope:target = {
 					this != holder.primary_title
-					OR = { 
+					OR = {
 						has_title_law = acclamation_succession_law
 						holder = { has_realm_law = acclamation_succession_law }
 					}
@@ -2197,7 +2168,7 @@ request_appointment_support = {
 			desc = requesting_my_title_reason
 		}
 		modifier = { # Don't support actor if there is a close family member within the top 3 candidates
-		exists = scope:recipient
+			exists = scope:recipient
 			scope:target ?= {
 				any_title_heir = {
 					scope:target ?= {
@@ -2510,15 +2481,6 @@ request_appointment_support = {
 		empire = 0
 		hegemony = 0
 	}
-	ai_potential = {
-		government_allows = administrative
-		house ?= {
-			OR = {
-				is_powerful_family = yes
-				is_dominant_family = yes
-			}
-		}
-	}
 
 	ai_targets = {
 		ai_recipients = peer_vassals
@@ -2575,10 +2537,17 @@ demand_admin_interaction = {
 		}
 	}
 
+	is_available = {
+		government_has_mechanic = administrative
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_adult = yes
+		}
+	}
+
 	is_shown = {
 		always = no # Warcraft
 		scope:actor = {
-			government_allows = administrative
 			trigger_if = {
 				limit = { is_ai = yes }
 				scope:recipient = { highest_held_title_tier >= tier_county }
@@ -2604,7 +2573,7 @@ demand_admin_interaction = {
 					is_landed = no
 					exists = domicile
 				}
-				domicile.domicile_location.county.holder = { government_allows = administrative }
+				domicile.domicile_location.county.holder = { government_has_mechanic = administrative }
 			}
 			trigger_if = {
 				limit = { exists = confederation }
@@ -2624,9 +2593,9 @@ demand_admin_interaction = {
 			}
 		}
 		custom_tooltip = {
-			text = head_of_faith_unable_to_change_government_desc
+			text = clergy_unable_to_change_government_desc
 			NOT = {
-				scope:recipient = { faith.religious_head ?= this }
+				scope:recipient = { holds_religious_office_trigger = yes }
 			}
 		}
 	}
@@ -2695,18 +2664,19 @@ demand_admin_interaction = {
 		show_as_tooltip = {
 			change_to_administrative_interaction_effect = yes
 		}
-		#if = {
-		#	limit = {
-		#		scope:recipient = { is_ai = yes }
-		#	}
-		#	scope:recipient = {
-		#		set_variable = {
-		#			name = demand_admin_accepted_ai_block
-		#			value = scope:actor
-		#			years = 10
-		#		}
-		#	}
-		#}
+		if = {
+			limit = {
+				scope:recipient = { is_ai = yes }
+			}
+			scope:recipient = {
+				# Warcraft - set but never read
+				# set_variable = {
+					# name = demand_admin_accepted_ai_block
+					# value = scope:actor
+					# years = 10
+				# }
+			}
+		}
 	}
 
 	on_decline = {
@@ -2725,11 +2695,6 @@ demand_admin_interaction = {
 		else = {
 			scope:recipient = { custom_tooltip = demand_admin_interaction_vassal_refuses }
 		}
-	}
-
-	ai_potential = {
-		government_allows = administrative
-		is_adult = yes
 	}
 
 	ai_will_do = {
@@ -2808,6 +2773,14 @@ contest_appointment_interaction = {
 
 	prompt = CONTEST_TITLE_SELECT_TITLE
 
+	is_available = {
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_landless_administrative = yes
+			liege ?= { has_realm_law_flag = title_revocation_allowed }
+		}
+	}
+
 	is_shown = {
 		# The obvious.
 		NOR = {
@@ -2818,12 +2791,12 @@ contest_appointment_interaction = {
 		# Admin Govt
 		#You don't have another appointment
 		scope:actor = { is_landless_administrative = yes }
-		scope:recipient = { government_allows = administrative }
-		scope:intermediary ?= { government_allows = administrative }
+		scope:recipient = { government_has_mechanic = administrative }
+		scope:intermediary ?= { government_has_mechanic = administrative }
 		# Make sure scope:recipient is suitable.
 		scope:recipient = {
 			# We only target vassals of the liege
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 			# who have a contestable title
 			highest_held_title_tier >= main_administrative_tier
 			any_held_title = {
@@ -3426,11 +3399,6 @@ contest_appointment_interaction = {
 		hegemony = 12
 	}
 
-	ai_potential = {
-		is_landless_administrative = yes
-		liege = { has_realm_law_flag = title_revocation_allowed }
-	}
-
 	ai_will_do = {
 		base = 100
 		ai_value_modifier = {
@@ -3568,16 +3536,30 @@ request_council_interaction = {
 		influence = admin_council_cost_value
 	}
 
+	is_available = {
+		# Admin only
+		government_has_mechanic = administrative
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_councillor = no
+			top_liege != this
+			liege ?= {
+				is_at_war = no
+				NOT = { has_character_flag = refused_council_request }
+			}
+		}
+		# Except for Merit based realms - they should compete with merit and score instead
+		liege ?= {
+			tgp_has_access_to_ministry_trigger = no
+		}
+	}
+
 	is_shown = {
 		scope:actor = {
 			liege ?= scope:recipient
-			# Admin only
-			government_allows = administrative
-			# Except for Merit based realms - they should compete with merit and score instead
-			NOT = { government_allows = merit }
 		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			this != scope:actor
 		}
 		trigger_if = {
@@ -3594,13 +3576,11 @@ request_council_interaction = {
 			NOT = {
 				is_at_war_with = scope:recipient
 			}
-			NOT = {
-				is_councillor = yes
-			}
+			is_councillor = no
 			NAND = {
 				has_council_position = councillor_court_chaplain
-				faith = {
-					has_doctrine_parameter = clerical_appointment_fixed
+				rite = {
+					rite_has_parameter = clerical_appointment_fixed
 				}
 			}
 			tgp_is_ceremonial_liege_trigger = no
@@ -3667,7 +3647,7 @@ request_council_interaction = {
 					}
 				}
 			}
-			stress_impact = { content = minor_stress_impact_gain }
+			stress_and_fulfillment_impact = { content = minor_stress_impact_gain }
 		}
 		scope:recipient = {
 			assign_council_task = {
@@ -3793,15 +3773,6 @@ request_council_interaction = {
 					}
 				}
 			}
-		}
-	}
-
-	ai_potential = {
-		top_liege != this
-		is_councillor = no
-		liege ?= {
-			NOT = { has_character_flag = refused_council_request }
-			is_at_war = no
 		}
 	}
 
@@ -4032,10 +4003,15 @@ transfer_county_interaction = {
 
 	target_type = title
 	target_filter = actor_domain_titles
-	interface_priority = 60
 
 	# actor character giving the title
 	# recipient character receiving the title
+
+	is_available = {
+		highest_held_title_tier >= tier_empire
+		top_liege ?= this
+		government_has_mechanic = administrative
+	}
 
 	is_shown = {
 		scope:actor != scope:recipient
@@ -4043,13 +4019,8 @@ transfer_county_interaction = {
 			target_is_liege_or_above = scope:actor
 			highest_held_title_tier >= tier_duchy
 			is_governor = yes
-			government_allows = administrative
+			government_has_mechanic = administrative
 			tgp_is_ceremonial_liege_trigger = no
-		}
-		scope:actor = {
-			government_allows = administrative
-			top_liege = this
-			highest_held_title_tier >= tier_empire
 		}
 	}
 
@@ -4131,6 +4102,33 @@ transfer_county_interaction = {
 	}
 
 	on_accept = {
+		if = {
+			limit = {
+				scope:recipient = {
+					highest_held_title_tier >= tier_duchy
+				}
+				#you are giving away Order capital
+				scope:actor = {
+					any_patroned_holy_order = {
+						leader.capital_county ?= {
+    						save_temporary_scope_as = ho_capital_temp
+    						this = scope:target
+						}
+    				}
+				}
+			}
+			if = {
+				limit = {
+					scope:recipient = {
+						highest_held_title_tier >= tier_duchy
+					}
+				}
+				custom_tooltip = holy_order_control_loss_warning_tt
+			}
+			else = {
+				custom_tooltip = potential_holy_order_control_loss_warning_tt
+			}
+		}
 		hidden_effect = {
 			scope:recipient = {
 				add_opinion = {
@@ -4248,6 +4246,17 @@ transfer_county_interaction = {
 				}
 				# Actually removed in religious_decision.0312
 				custom_tooltip = runestone_grant_title_warning
+			}
+			if = { # Maintenance for khachkar decision
+				limit = {
+					has_pam_dlc_trigger = yes
+					scope:target = {
+						exists = var:pam_khachkar_ancestor
+						has_county_modifier = pam_khachkar_ancestral_county
+					}
+					NOT = { scope:recipient.dynasty = scope:target.var:pam_khachkar_ancestor.dynasty }
+				}
+				custom_tooltip = pam_khachkar_grant_title_warning
 			}
 
 			if = {
@@ -4441,19 +4450,24 @@ castrate_child_interaction = {
 
 	desc = castrate_child_interaction_desc
 
-	is_shown = {
-		has_ep3_dlc_trigger = yes
-		scope:actor = {
-			culture = {
-				has_cultural_parameter = family_castration
-			}
-			NAND = {
-				is_ai = yes
-				any_close_family_member = {
-					is_ai = no
-				}
+	is_available = {
+		culture ?= {
+			has_cultural_parameter = family_castration
+		}
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_adult = yes
+		}
+		NAND = {
+			is_ai = yes
+			any_close_family_member = {
+				is_ai = no
 			}
 		}
+	}
+
+	is_shown = {
+		has_ep3_dlc_trigger = yes
 		scope:recipient = {
 			is_ai = yes
 			is_female = no
@@ -4611,7 +4625,7 @@ castrate_child_interaction = {
 						age > age_6_value # Warcraft
 					}
 				}
-				stress_impact = {
+				stress_and_fulfillment_impact = {
 					compassionate = medium_stress_impact_gain
 					content = minor_stress_impact_gain
 					generous = medium_stress_impact_gain
@@ -4679,7 +4693,7 @@ castrate_child_interaction = {
 						age > age_6_value # Warcraft
 					}
 				}
-				stress_impact = {
+				stress_and_fulfillment_impact = {
 					compassionate = medium_stress_impact_gain
 					content = minor_stress_impact_gain
 					generous = medium_stress_impact_gain
@@ -4704,10 +4718,6 @@ castrate_child_interaction = {
 				trigger_event = ep3_interactions_events.0031
 			}
 		}
-	}
-
-	ai_potential = {
-		is_adult = yes
 	}
 
 	# Use hook
@@ -4987,22 +4997,26 @@ offer_eunuch_interaction = {
 
 	cooldown_against_recipient = { years = 1 }
 
-	is_shown = {
-		scope:recipient = { government_allows = administrative }
-		# Only if you actually have any eunuchs in your court
-		scope:actor = {
-			any_courtier = {
-				is_eunuch_trigger = yes
-			}
+	is_available = {
+		trigger_if = {
+			limit = { is_ai = yes }
+			government_has_mechanic = administrative
 		}
+		any_courtier = {
+			is_eunuch_trigger = yes
+		}
+	}
+
+	is_shown = {
+		scope:recipient = { government_has_mechanic = administrative }
 		# Cannot exchange eunuchs with self
 		scope:recipient != scope:actor
 		# Target has to be a ruler and have a court
 		scope:recipient = { is_ruler = yes }
 		# Target has to be a direct vassal of the Emperor
-		scope:recipient.top_liege = scope:recipient.liege
+		scope:recipient.top_liege ?= scope:recipient.liege
 		# Only admin gov care about this
-		scope:actor = { government_allows = administrative }
+		scope:actor = { government_has_mechanic = administrative }
 	}
 
 	is_valid_showing_failures_only = {
@@ -5220,10 +5234,6 @@ offer_eunuch_interaction = {
 		hegemony = 0
 	}
 
-	ai_potential = {
-		government_allows = administrative
-	}
-
 	ai_will_do = {
 		base = 0
 		modifier = {
@@ -5277,6 +5287,7 @@ cabinet_of_curiosities_interaction = {
 
 	target_type = artifact
 	target_filter = actor_artifacts
+	show_all_targets = no
 
 	can_be_picked_artifact = {
 		scope:actor = {
@@ -5290,21 +5301,36 @@ cabinet_of_curiosities_interaction = {
 				}
 			}
 		}
+		scope:target = {
+			is_equipped = no
+		}
+	}
+
+	is_available = {
+		domicile ?= {
+			has_domicile_parameter = can_receive_artifacts
+		}
+		trigger_if = {
+			limit = { is_ai = yes }
+			has_any_unequipped_artifact = yes
+			any_character_artifact = {
+				count >= 5
+				is_equipped = no
+			}
+		}
 	}
 
 	is_shown = {
 		scope:recipient = scope:actor
-		scope:actor = {
-			domicile ?= {
-				has_domicile_parameter = can_receive_artifacts
-			}
-		}
 	}
 
 	is_valid_showing_failures_only = {
 		# needs to have an artifact to give away
 		scope:actor = {
-			has_any_artifact = yes
+			custom_description = {
+				text = "any_unequipped_artifact_tt"
+				has_any_unequipped_artifact = yes
+			}
 			is_imprisoned = no
 		}
 	}
@@ -5466,14 +5492,6 @@ cabinet_of_curiosities_interaction = {
 		hegemony = 84
 	}
 
-	ai_potential = {
-		has_any_unequipped_artifact = yes
-		any_character_artifact = {
-			count >= 5
-			is_equipped = no
-		}
-	}
-
 	ai_will_do = {
 		base = 30
 	}
@@ -5504,18 +5522,19 @@ acknowledge_governor_interaction = {
 
 	desc = acknowledge_governor_interaction_desc
 
+	is_available = {
+		highest_held_title_tier >= tier_empire
+		top_liege ?= this
+		government_has_mechanic = administrative
+	}
+
 	is_shown = {
 		scope:actor != scope:recipient
 		scope:recipient = {
 			target_is_liege_or_above = scope:actor
 			highest_held_title_tier >= tier_duchy
-			government_allows = administrative
+			government_has_mechanic = administrative
 			tgp_is_ceremonial_liege_trigger = no
-		}
-		scope:actor = {
-			government_allows = administrative
-			top_liege = this
-			highest_held_title_tier >= tier_empire
 		}
 	}
 
@@ -5573,11 +5592,6 @@ acknowledge_governor_interaction = {
 				}
 			}
 		}
-	}
-
-	ai_potential = {
-		government_allows = administrative
-		highest_held_title_tier >= tier_empire
 	}
 
 	ai_will_do = {
@@ -5690,13 +5704,26 @@ boost_efficiency_interaction = {
 
 	desc = boost_efficiency_interaction_desc
 
+	is_available = {
+		trigger_if = {
+			limit = { is_ai = yes }
+			government_has_mechanic = administrative
+			top_liege ?= {
+				any_vassal = {
+					is_governor = yes
+					this != root
+				}
+			}
+		}
+	}
+
 	is_shown = {
-		scope:actor = { government_allows = administrative }
+		scope:actor = { government_has_mechanic = administrative }
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			this != scope:actor
 			is_governor = yes
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 		}
 	}
 
@@ -5838,16 +5865,6 @@ boost_efficiency_interaction = {
 		}
 	}
 
-	ai_potential = {
-		government_allows = administrative
-		top_liege = {
-			any_vassal = {
-				is_governor = yes
-				this != root
-			}
-		}
-	}
-
 	ai_will_do = {
 		base = -10
 		modifier = { # Boost house members
@@ -5954,7 +5971,7 @@ damage_efficiency_interaction = {
 	ai_frequency_by_tier = {
 		barony = 0
 		county = 72
-		duchy = 36
+		duchy = 48
 		kingdom = 36
 		empire = 36
 		hegemony = 36
@@ -5962,12 +5979,25 @@ damage_efficiency_interaction = {
 
 	desc = damage_efficiency_interaction_desc
 
+	is_available = {
+		trigger_if = {
+			limit = { is_ai = yes }
+			government_has_mechanic = administrative
+			top_liege ?= {
+				any_vassal = {
+					is_governor = yes
+					this != root
+				}
+			}
+		}
+	}
+
 	is_shown = {
-		scope:actor = { government_allows = administrative }
+		scope:actor = { government_has_mechanic = administrative }
 		scope:recipient = {
 			is_governor = yes
 			this != scope:actor
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 		}
 	}
 
@@ -6109,16 +6139,6 @@ damage_efficiency_interaction = {
 		}
 	}
 
-	ai_potential = {
-		government_allows = administrative
-		top_liege = {
-			any_vassal = {
-				is_governor = yes
-				this != root
-			}
-		}
-	}
-
 	ai_will_do = {
 		base = -10
 		modifier = { # Don't damage house members
@@ -6221,11 +6241,17 @@ governor_removal_interaction = {
 
 	auto_accept = yes
 
-	is_shown = {
-		scope:actor = {
-			top_liege = this
-			government_allows = administrative
+	is_available = {
+		government_has_mechanic = administrative
+		top_liege ?= this
+		trigger_if = {
+			limit = { is_ai = yes }
+			influence > massive_influence_value
+			is_at_war = no # Don't spend influence when at war in case troops are needed
 		}
+	}
+
+	is_shown = {
 		scope:recipient = {
 			this != scope:actor
 			is_governor = yes
@@ -6238,7 +6264,6 @@ governor_removal_interaction = {
 			NOT = { is_at_war_with = scope:recipient }
 			any_vassal = {
 				is_governor = yes
-				this != scope:actor
 			}
 			is_imprisoned = no
 		}
@@ -6557,7 +6582,7 @@ governor_removal_interaction = {
 					save_scope_as = landed_title
 					current_heir = { save_scope_as = next_candidate }
 					if = {
-						limit = { tier >= main_administrative_tier }
+						limit = { tier >= scope:recipient.main_administrative_tier }
 						scope:next_candidate = { custom_tooltip = force_governor_removal_interaction_pass_effect_tt }
 					}
 				}
@@ -6641,10 +6666,6 @@ governor_removal_interaction = {
 		kingdom = 6
 		empire = 6
 		hegemony = 6
-	}
-	ai_potential = {
-		influence > massive_influence_value
-		is_at_war = no # Don't spend influence when at war in case troops are needed
 	}
 
 	ai_will_do = {
@@ -6737,7 +6758,7 @@ force_governor_removal_interaction = {
 	is_shown = {
 		scope:secondary_recipient ?= {
 			is_governor = yes
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 			NOR = {
 				this = scope:actor
 				this = scope:recipient
@@ -7245,6 +7266,7 @@ force_governor_removal_interaction = {
 	}
 
 	is_available = {
+		government_has_mechanic = administrative
 		trigger_if = {
 			limit = {
 				is_ai = yes
@@ -7252,8 +7274,7 @@ force_governor_removal_interaction = {
 			influence > massive_influence_value
 		}
 		top_liege != this
-		government_allows = administrative
-		top_liege ?= { government_allows = administrative }
+		top_liege ?= { government_has_mechanic = administrative }
 	}
 
 	ai_accept = {
@@ -7538,16 +7559,28 @@ force_step_down_interaction = {
 		hegemony = 0
 	}
 
+	is_available = {
+		government_has_mechanic = administrative
+		trigger_if = {
+			limit = { is_ai = yes }
+			highest_held_title_tier >= tier_duchy
+			NOT = {
+				any_scheme = {
+					is_scheme_category = political
+				}
+			}
+		}
+		top_liege != this
+	}
+
 	is_shown = {
 		scope:actor = {
-			government_allows = administrative
-			top_liege != this
 			this != scope:recipient
 		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			is_governor = yes
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 		}
 	}
 
@@ -7907,17 +7940,6 @@ force_step_down_interaction = {
 		}
 	}
 
-	ai_potential = {
-		NOT = {
-			any_scheme = {
-				is_scheme_category = political
-			}
-		}
-		government_allows = administrative
-		top_liege != this
-		highest_held_title_tier >= tier_duchy
-	}
-
 	ai_will_do = {
 		base = -200
 
@@ -8151,29 +8173,42 @@ request_governorship_interaction = {
 		}
 	}
 
+	is_available = {
+		government_has_mechanic = administrative
+		this != top_liege
+		trigger_if = {
+			limit = { is_ai = yes }
+			top_liege = {
+				NOT = { has_character_flag = refused_governorship_request }
+			}
+		}
+	}
+
 	is_shown = {
 		scope:recipient != scope:actor
-		trigger_if = {
+		OR = {
+			scope:recipient = scope:actor.top_liege
+			scope:recipient = {
+				liege ?= scope:actor.top_liege
+				has_title = title:e_minister_of_personnel
+			}
+		}
+		scope:recipient = {
+			government_has_mechanic = administrative
+		}
+	}
+
+	redirect = {
+		if = {
 			limit = {
 				scope:actor.top_liege = {
 					tgp_has_access_to_ministry_trigger = yes
 					exists = cp:minister_personnel
 				}
 			}
-			scope:recipient = {
-				liege = scope:actor.top_liege
-				has_title = title:e_minister_of_personnel
+			title:e_minister_of_personnel.holder ?= {
+				save_scope_as = recipient
 			}
-		}
-		trigger_else = {
-			scope:recipient = scope:actor.top_liege
-		}
-		scope:recipient = {
-			government_allows = administrative
-		}
-		scope:actor = {
-			government_allows = administrative
-			this != top_liege
 		}
 	}
 
@@ -8201,47 +8236,44 @@ request_governorship_interaction = {
 				custom_tooltip = {
 					text = request_governorship_interaction_tier_county_tt
 					tier >= scope:actor.main_administrative_tier
-					tier < scope:actor.top_liege.highest_held_title_tier
 				}
 			}
 			trigger_else = {
 				custom_tooltip = {
 					text = request_governorship_interaction_tier_tt
 					tier >= scope:actor.main_administrative_tier
-					tier < scope:actor.top_liege.highest_held_title_tier
 				}
 			}
-			# Recipient is the top liege
+			custom_tooltip = {
+				text = request_governorship_interaction_tier_cap_tt
+				tier < scope:actor.top_liege.highest_held_title_tier
+			}
+
 			trigger_if = {
-				limit = {
-					scope:recipient = scope:actor.top_liege
-				}
-				trigger_if = {
-					limit = { is_title_created = no }
-					custom_tooltip = {
-						text = request_governorship_interaction_created_tt
-						any_de_jure_county = { holder = scope:recipient }
-					}
-					trigger_if = {
-						limit = { tier = tier_kingdom }
-						scope:recipient = { japan_government_japan_kingdom_restriction_trigger = yes }
-					}
-				}
+				limit = { is_title_created = no }
 				custom_tooltip = {
-					text = request_governorship_interaction_liege_duchy_tt
-					NOT = {
-						any_de_jure_county = { this = scope:recipient.capital_county }
-					}
+					text = request_governorship_interaction_created_tt
+					any_de_jure_county = { holder = scope:actor.top_liege }
 				}
 				trigger_if = {
-					limit = { scope:target.holder ?= scope:recipient }
-					custom_tooltip = {
-						text = request_governorship_interaction_county_tt
-						any_de_jure_county = { holder = scope:recipient }
-					}
+					limit = { tier = tier_kingdom }
+					scope:actor.top_liege = { japan_government_japan_kingdom_restriction_trigger = yes }
 				}
 			}
-			
+			custom_tooltip = {
+				text = request_governorship_interaction_liege_duchy_tt
+				NOT = {
+					any_de_jure_county = { this = scope:actor.top_liege.capital_county }
+				}
+			}
+			trigger_if = {
+				limit = { scope:target.holder ?= scope:actor.top_liege }
+				custom_tooltip = {
+					text = request_governorship_interaction_county_tt
+					any_de_jure_county = { holder = scope:actor.top_liege }
+				}
+			}
+
 			trigger_if = {
 				limit = {
 					min_appointment_level > 0
@@ -8260,7 +8292,7 @@ request_governorship_interaction = {
 				limit = { exists = holder }
 				# Only show titles held by admin governors within the realm
 				holder ?= {
-					government_allows = administrative
+					government_has_mechanic = administrative
 					top_liege = scope:actor.top_liege
 				}
 				# If the target title is a military or civilian province, make sure actor uses the correct career pool
@@ -8273,7 +8305,7 @@ request_governorship_interaction = {
 							}
 						}
 						scope:actor = {
-							government_allows = administrative
+							government_has_mechanic = administrative
 							government_allows = merit
 						}
 					}
@@ -8288,7 +8320,7 @@ request_governorship_interaction = {
 							}
 						}
 						scope:actor = {
-							government_allows = administrative
+							government_has_mechanic = administrative
 							government_allows = merit
 						}
 					}
@@ -8303,7 +8335,7 @@ request_governorship_interaction = {
 				exists = holder
 				holder != scope:actor.top_liege
 			}
-			is_noble_family_title = no
+			is_landless_type_title = no
 		}
 	}
 
@@ -8532,10 +8564,15 @@ request_governorship_interaction = {
 			}
 			trigger_event = ep3_interactions_events.0021
 		}
-	}
-
-	ai_potential = {
-		is_governor = no
+		scope:recipient = {
+			if = {
+				limit = { is_ai = no }
+				add_character_flag = {
+					flag = refused_governorship_request
+					years = 15
+				}
+			}
+		}
 	}
 
 	ai_will_do = {
@@ -8754,14 +8791,25 @@ noble_family_adoption_interaction = {
 
 	cooldown_against_recipient = { years = 5 }
 
-	is_shown = {
-		scope:actor != scope:recipient
-		scope:actor = {
-			culture = { has_cultural_parameter = allows_noble_family_adoption }
-			house.house_head ?= {
-				any_held_title = { is_noble_family_title = yes }
+	is_available = {
+		house.house_head ?= {
+			any_held_title = { is_noble_family_title = yes }
+		}
+		culture ?= { has_cultural_parameter = allows_noble_family_adoption }
+		is_house_head = yes
+		trigger_if = {
+			limit = { is_ai = yes }
+			house ?= {
+				any_house_member = {
+					count <= 5
+					is_alive = yes
+				}
 			}
 		}
+	}
+
+	is_shown = {
+		scope:actor != scope:recipient
 		scope:recipient = {
 			NOR = {
 				# They don't already belong to your house
@@ -8769,9 +8817,6 @@ noble_family_adoption_interaction = {
 				# Don't adopt your own grandkids
 				any_ancestor = { this = scope:actor }
 			}
-		}
-		scope:actor = {
-			is_house_head = yes
 		}
 	}
 
@@ -8842,13 +8887,13 @@ noble_family_adoption_interaction = {
 				type = event_toast_effect_bad
 				title = noble_family_adoption_effect_toast
 				left_icon = scope:recipient
-				right_icon = scope:actor.house
+				right_icon = scope:actor
 				scope:recipient = {
 					send_interface_toast = {
 						type = event_toast_effect_bad
 						title = noble_family_adoption_effect_toast
 						left_icon = scope:recipient
-						right_icon = scope:actor.house
+						right_icon = scope:actor
 						if = {
 							limit = { scope:actor = { is_ai = yes } }
 							reverse_add_opinion = {
@@ -8965,16 +9010,6 @@ noble_family_adoption_interaction = {
 					}
 					multiply = 0
 				}
-			}
-		}
-	}
-
-	ai_potential = {
-		is_house_head = yes
-		house ?= {
-			any_house_member = {
-				count <= 5
-				is_alive = yes
 			}
 		}
 	}
@@ -9145,15 +9180,15 @@ noble_family_adoption_interaction = {
 			desc = FAITH_HOSTILITY_LEVEL
 		}
 		modifier = {
-			exists = scope:actor.top_liege.primary_title.state_faith
-			faith = {
-				faith_hostility_level = {
-					target = scope:actor.top_liege.primary_title.state_faith
+			exists = scope:actor.top_liege.primary_title.state_rite
+			rite = {
+				rite_hostility_level = {
+					target = scope:actor.top_liege.primary_title.state_rite
 					value >= faith_astray_level
 				}
 			}
 			add = {
-				value = "faith.faith_hostility_level(scope:actor.top_liege.primary_title.state_faith)"
+				value = "rite.rite_hostility_level(scope:actor.top_liege.primary_title.state_rite)"
 				multiply = -5
 			}
 			desc = FAITH_HOSTILITY_LEVEL_STATE_FAITH
@@ -9307,21 +9342,22 @@ request_ally_title_troops_interaction = {
 		}
 	}
 
+	is_available = {
+		government_has_mechanic = administrative
+		NOT = { government_allows = merit }
+		is_governor = yes
+		top_liege != this
+	}
+
 	is_shown = {
-		scope:actor = {
-			government_allows = administrative
-			NOT = { government_allows = merit }
-			top_liege != this
-			is_governor = yes
-		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			NOT = { government_allows = merit }
 			NOT = {
 				this = scope:actor
 				this = scope:actor.top_liege
 			}
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 		}
 	}
 
@@ -9462,10 +9498,6 @@ request_ally_title_troops_interaction = {
 		}
 	}
 
-	ai_potential = {
-		is_governor = yes
-	}
-
 	ai_will_do = {
 		base = 0 # AI uses this interaction from code
 	}
@@ -9543,16 +9575,29 @@ request_emperor_title_troops_interaction = {
 		}
 	}
 
+	is_available = {
+		government_has_mechanic = administrative
+		NOT = { government_allows = merit } # Merit based governments use celestial_request_military_aid_interaction instead
+		is_governor = yes
+		trigger_if = {
+			limit = { is_ai = yes }
+			NOR = { # Don't ask for more troops if you have borrowed some already
+				government_has_flag = government_is_celestial # Celestial use celestial_request_military_aid_interaction instead
+				any_maa_regiment = {
+					is_title_maa_regiment = yes
+					regiment_owning_title ?= { holder = root }
+				}
+			}
+		}
+		top_liege != this
+	}
+
 	is_shown = {
 		scope:actor = {
-			government_allows = administrative
-			NOT = { government_allows = merit } # Merit based governments use celestial_request_military_aid_interaction instead
-			top_liege != this
-			is_governor = yes
 			liege = scope:recipient
 		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			NOT = { government_allows = merit } # Merit based governments use celestial_request_military_aid_interaction instead
 			is_independent_ruler = yes
 		}
@@ -9775,17 +9820,6 @@ request_emperor_title_troops_interaction = {
 					years = 5
 				}
 			}
-		}
-	}
-
-	ai_potential = {
-		is_governor = yes # Only governors may ask for troops
-		NOR = { # Don't ask for more troops if you have borrowed some already
-			any_maa_regiment = {
-				is_title_maa_regiment = yes
-				regiment_owning_title = { holder = root }
-			}
-			government_has_flag = government_is_celestial # Celestial use celestial_request_military_aid_interaction instead
 		}
 	}
 
@@ -10069,14 +10103,15 @@ request_title_troops_back_interaction = {
 		}
 	}
 
+	is_available = {
+		is_ai = no # The AI should not request their troops back ahead of time
+		top_liege != this
+		government_has_mechanic = administrative
+	}
+
 	is_shown = {
-		scope:actor = {
-			government_allows = administrative
-			top_liege != this
-			is_ai = no # The AI should not request their troops back ahead of time
-		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			this = scope:actor
 		}
 	}
@@ -10146,9 +10181,11 @@ request_title_troops_back_interaction = {
 				remove_variable = title_troops_lent_out
 			}
 		}
-		tgp_activate_catalyst_against_hegemon_effect = {
-			HEGEMON = scope:recipient
-			CATALYST = catalyst_hegemon_influenced_by_interaction
+		scope:actor = {
+			tgp_activate_catalyst_against_hegemon_effect = {
+				HEGEMON = scope:recipient
+				CATALYST = catalyst_hegemon_influenced_by_interaction
+			}
 		}
 	}
 
@@ -10176,6 +10213,7 @@ request_raid_remit_interaction = {
 	interface_priority = 90
 
 	desc = request_raid_remit_interaction_desc
+	notification_text = request_raid_remit_interaction_notification
 	use_diplomatic_range = yes
 
 	ai_min_reply_days = 4
@@ -10183,27 +10221,30 @@ request_raid_remit_interaction = {
 
 	cooldown_against_recipient = { years = 5 }
 
-	is_shown = {
-		scope:actor = {
-			domicile ?= {
-				OR = {
-					is_domicile_type = estate
-					is_domicile_type = east_asian_estate
-					is_domicile_type = japanese_manor
+	is_available = {
+		domicile ?= {
+			domicile_is_estate_trigger = yes
+		}
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_house_head = yes
+			house ?= {
+				any_house_member = {
+					count <= 5
+					is_alive = yes
 				}
 			}
-			top_liege != this
 		}
+		top_liege != this
+	}
+
+	is_shown = {
 		scope:secondary_recipient ?= {
 			domicile ?= {
-				OR = {
-					is_domicile_type = estate
-					is_domicile_type = east_asian_estate
-					is_domicile_type = japanese_manor
-				}
+				domicile_is_estate_trigger = yes
 			}
 			house != scope:recipient.house
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 			house != scope:actor.house
 		}
 	}
@@ -10240,11 +10281,7 @@ request_raid_remit_interaction = {
 			custom_tooltip = {
 				text = raid_estate_estate_tt
 				domicile ?= {
-					OR = {
-						is_domicile_type = estate
-						is_domicile_type = east_asian_estate
-						is_domicile_type = japanese_manor
-					}
+					domicile_is_estate_trigger = yes
 				}
 			}
 		}
@@ -10294,10 +10331,12 @@ request_raid_remit_interaction = {
 	on_accept = {
 		if = {
 			limit = { scope:gold = yes }
-			scope:actor = {
-				pay_short_term_gold = {
-					target = scope:recipient
-					gold = scope:actor.minor_gold_value
+			show_as_tooltip = {
+				scope:actor = {
+					pay_short_term_gold = {
+						target = scope:recipient
+						gold = scope:actor.minor_gold_value
+					}
 				}
 			}
 		}
@@ -10402,16 +10441,6 @@ request_raid_remit_interaction = {
 						}
 					}
 				}
-			}
-		}
-	}
-
-	ai_potential = {
-		is_house_head = yes
-		house ?= {
-			any_house_member = {
-				count <= 5
-				is_alive = yes
 			}
 		}
 	}
@@ -10638,11 +10667,19 @@ request_co_emperor_interaction = {
 		}
 	}
 
-	is_shown = {
-		scope:actor = {
-			government_allows = administrative
-			top_liege != this
+	is_available = {
+		government_has_mechanic = administrative
+		trigger_if = {
+			limit = { is_ai = yes }
+			NOR = {
+				has_trait = content
+				has_trait = humble
+			}
 		}
+		top_liege != this
+	}
+
+	is_shown = {
 		scope:recipient = {
 			this = scope:actor.top_liege
 			may_appoint_co_emperors_trigger = yes
@@ -10791,13 +10828,6 @@ request_co_emperor_interaction = {
 				}
 				change_strife_opinion = medium_strife_gain
 			}
-		}
-	}
-
-	ai_potential = {
-		NOR = {
-			has_trait = humble
-			has_trait = content
 		}
 	}
 
@@ -11207,14 +11237,15 @@ frontier_influence_war_interaction = {
 
 	cooldown_against_recipient = { years = 10 }
 
+	is_available = {
+		government_has_mechanic = administrative
+		top_liege ?= this
+		NOT = { government_has_flag = government_is_landless_adventurer }
+	}
+
 	is_shown = {
-		scope:actor = {
-			top_liege = this
-			government_allows = administrative
-			NOT = { government_has_flag = government_is_landless_adventurer }
-		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			NOT = { government_has_flag = government_is_landless_adventurer }
 			custom_tooltip = {
 				text = admin_theme_type_trigger
@@ -11224,7 +11255,7 @@ frontier_influence_war_interaction = {
 					vassal_contract_has_flag = celestial_province_protectorate
 				}
 			}
-			top_liege = scope:actor.top_liege
+			top_liege ?= scope:actor.top_liege
 		}
 	}
 
@@ -11355,11 +11386,6 @@ frontier_influence_war_interaction = {
 		}
 	}
 
-	ai_potential = {
-		government_allows = administrative
-		top_liege = this
-	}
-
 	ai_targets = {
 		ai_recipients = vassals
 	}
@@ -11449,15 +11475,15 @@ frontier_influence_war_interaction = {
 			desc = FAITH_HOSTILITY_LEVEL
 		}
 		modifier = {
-			exists = scope:actor.top_liege.primary_title.state_faith
-			faith = {
-				faith_hostility_level = {
-					target = scope:actor.top_liege.primary_title.state_faith
+			exists = scope:actor.top_liege.primary_title.state_rite
+			rite = {
+				rite_hostility_level = {
+					target = scope:actor.top_liege.primary_title.state_rite
 					value >= faith_astray_level
 				}
 			}
 			add = {
-				value = "faith.faith_hostility_level(scope:actor.top_liege.primary_title.state_faith)"
+				value = "rite.rite_hostility_level(scope:actor.top_liege.primary_title.state_rite)"
 				multiply = -5
 			}
 			desc = FAITH_HOSTILITY_LEVEL_STATE_FAITH
@@ -11599,11 +11625,15 @@ house_head_request_interaction = {
 	pre_answer_yes_key = ACCEPT
 	pre_answer_no_key = DECLINE
 
+	ai_targets = { ai_recipients = liege }
+	ai_targets = {
+		ai_recipients = vassals
+		ai_recipients = peer_vassals
+		max = 10
+	}
 	ai_targets = {
 		ai_recipients = family
-		ai_recipients = peer_vassals
-		ai_recipients = vassals
-		ai_recipients = liege
+		max = 20
 	}
 	ai_target_quick_trigger = { adult = yes }
 	ai_frequency_by_tier = {
@@ -11624,15 +11654,20 @@ house_head_request_interaction = {
 	cost = { # If the cost changes, remember to update the on_send to give correct refund in the event
 	}
 
+	is_available = {
+		government_has_mechanic = administrative
+		this = house.house_head
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_house_head = yes
+		}
+	}
+
 	is_shown = {
 		scope:recipient != scope:actor
-		scope:actor = {
-			government_allows = administrative
-			this = house.house_head
-		}
 		scope:recipient = {
-			government_allows = administrative
-			house = scope:actor.house
+			government_has_mechanic = administrative
+			house ?= scope:actor.house
 		}
 	}
 
@@ -11679,8 +11714,7 @@ house_head_request_interaction = {
 			}
 		}
 		is_shown = {
-			scope:actor.domicile ?= { has_domicile_building_or_higher = cabinet_of_curiosities_01 }
-
+			scope:actor.domicile ?= { has_domicile_parameter = house_head_can_ask_for_artifacts }
 		}
 		flag = artifact
 		localization = ASK_FOR_ARTIFACT
@@ -11699,10 +11733,7 @@ house_head_request_interaction = {
 			}
 		}
 		is_shown = {
-			OR = {
-				scope:actor.domicile ?= { has_domicile_building_or_higher = guardhouse_01 }
-				scope:actor.domicile ?= { has_domicile_building_or_higher = barracks_01 }
-			}
+			scope:actor.domicile ?= { has_domicile_parameter = house_head_can_ask_for_knight }
 		}
 		flag = knight
 		localization = ASK_FOR_KNIGHT
@@ -11745,21 +11776,14 @@ house_head_request_interaction = {
 			}
 		}
 		is_shown = {
-			OR = {
-				scope:actor.domicile ?= { has_domicile_building_or_higher = guardhouse_03 }
-				scope:actor.domicile ?= { has_domicile_building_or_higher = barracks_01 }
-				scope:actor.domicile ?= { has_domicile_building_or_higher = watchtower_04 }
-			}
+			scope:actor.domicile ?= { has_domicile_parameter = house_head_can_ask_for_maa }
 		}
 		flag = maa
 		localization = ASK_FOR_MAA
 	}
 	send_option = {
 		is_shown = {
-			OR = {
-				scope:actor.domicile ?= { has_domicile_building_or_higher = storage_01 }
-				scope:actor.domicile ?= { has_domicile_building_or_higher = storage_warehouse_03 }
-			}
+			scope:actor.domicile ?= { has_domicile_parameter = house_head_can_ask_for_building_support }
 		}
 		flag = building
 		localization = ASK_FOR_BUILDING
@@ -12059,10 +12083,6 @@ house_head_request_interaction = {
 		}
 	}
 
-	ai_potential = {
-		is_house_head = yes
-	}
-
 	ai_will_do = {
 		base = 50
 	}
@@ -12164,9 +12184,14 @@ ep3_hof_ask_for_influence_interaction = {
 	category = interaction_category_religion
 
 	desc = ep3_hof_ask_for_influence_interaction_desc
+	notification_text = ASK_FOR_INFLUENCE_TEXT
 
 	ai_targets = {
 		ai_recipients = head_of_faith
+		ai_recipients = realm_priest_superior
+		ai_recipients = superior
+		ai_recipients = realm_priest_top_superior
+		ai_recipients = councillors
 	}
 	ai_target_quick_trigger = {
 		adult = yes
@@ -12180,61 +12205,95 @@ ep3_hof_ask_for_influence_interaction = {
 		hegemony = 24
 	}
 
+	redirect = {
+		scope:actor = {
+			spiritual_hof_or_realm_priest_superior_recipient_redirect_effect = yes
+		}
+	}
+
 	cooldown_against_recipient = { years = 10 }
 
-	is_shown = {
-		scope:recipient != scope:actor
-		scope:actor.faith = {
-			religious_head = scope:recipient
-			has_doctrine = doctrine_spiritual_head
+	is_available = {
+		government_has_mechanic = administrative
+		trigger_if = {
+			limit = {
+				is_ai = yes
+			}
+			piety >= massive_piety_value
+			exists = faith.religious_head
+			exists = house
+			NOT = { has_trait = excommunicated }
 		}
-		scope:actor = {
-			is_playable_character = yes
-			government_allows = administrative
-			is_lowborn = no
+		is_playable_character = yes
+		faith ?= {
+			OR = {
+				has_doctrine = doctrine_spiritual_head
+				#has_doctrine_parameter = has_clerical_regions
+			}
+		}
+		is_lowborn = no
+	}
+
+	is_shown = {
+		scope:recipient != scope:puppet_or_actor
+		scope:puppet_or_actor ?= {
+			broader_clergy_show_hof_or_superior_interactions_trigger = yes
 		}
 	}
 
 	is_valid_showing_failures_only = {
 		scope:actor = {
+			spiritual_hof_or_realm_priest_superior_recipient_trigger = yes
 			piety >= massive_piety_value
 			custom_description = {
-				text = "hof_ask_for_gold_excommunicated"
+				text = hof_ask_for_gold_excommunicated
 				NOT = { has_trait = excommunicated }
 			}
 			NOT = { is_at_war_with = scope:recipient }
-			custom_description = {
-				text = "hof_interaction_unreformed_faith"
+			custom_tooltip = {
+				text = HOF_INTERACTION_UNREFORMED_FAITH
 				NOT = {
 					faith = { has_doctrine_parameter = unreformed }
 				}
 			}
-			custom_description = {
-				text = "hof_interaction_state_faith"
+			custom_tooltip = {
+				text = HOF_INTERACTION_STATE_FAITH
 				top_liege = {
 					government_allows = state_faith
-					exists = primary_title.state_faith
+					exists = primary_title.state_rite
 				}
-				faith = {
-					this = scope:actor.top_liege.primary_title.state_faith
+				rite = {
+					this = scope:actor.top_liege.primary_title.state_rite
 				}
 			}
-			custom_description = {
-				text = "hof_interaction_has_house_modifier"
+			custom_tooltip = {
+				text = HOF_INTERACTION_HAS_HOUSE_MODIFIER
 				house ?= {
-					NOT = {
+					NOR = {
 						has_house_modifier = ep3_requested_faith_support_modifier
+						has_house_modifier = ep3_requested_faith_support_modifier_small
 					}
 				}
 			}
-			custom_description = {
-				text = "hof_interaction_is_house_head"
+			custom_tooltip = {
+				text = HOF_INTERACTION_IS_HOUSE_HEAD
 				house ?= {
 					house_head = scope:actor
 				}
 			}
 		}
-
+		custom_tooltip = {
+			text = recipient_supports_3_houses_tt
+			NOT = {
+				scope:recipient = {
+					has_variable_list = cleric_houses_support
+					variable_list_size = {
+						name = cleric_houses_support
+						value >= 3
+					}
+				}
+			}
+		}
 	}
 
 	auto_accept = {
@@ -12277,17 +12336,12 @@ ep3_hof_ask_for_influence_interaction = {
 	}
 
 	on_decline = {
+		show_as_tooltip = {
+			scope:actor = { clerical_interaction_refusal_major_effect = yes }
+		}
 		scope:actor = {
 			trigger_event = ep3_interactions_events.0621
 		}
-	}
-
-	ai_potential = {
-		is_playable_character = yes
-		piety >= massive_piety_value
-		NOT = { has_trait = excommunicated }
-		exists = faith.religious_head
-		exists = house
 	}
 
 	ai_accept = {
@@ -12302,6 +12356,33 @@ ep3_hof_ask_for_influence_interaction = {
 			opinion_target = scope:actor
 			who = scope:recipient
 			multiplier = 0.5
+		}
+
+		modifier = {
+			scope:recipient = {
+				OR = {
+					ai_greed > 0
+					ai_greed < 0
+				}
+			}
+			add = {
+				value = scope:recipient.ai_greed
+				multiply = 0.5
+			}
+			desc = AI_GREED_REASON
+		}
+		modifier = {
+			scope:recipient = {
+				OR = {
+					ai_honor > 0
+					ai_honor < 0
+				}
+			}
+			add = {
+				value = scope:recipient.ai_honor
+				multiply = -0.5
+			}
+			desc = AI_HONOR_REASON
 		}
 
 		#Doesn't like the emperor... if you're not the emperor
@@ -12443,14 +12524,6 @@ ep3_hof_ask_for_influence_interaction = {
 			}
 		}
 
-		modifier = { # HoF wants the influence for themselves!
-			add = -10
-			desc = THEY_ARE_GREEDY
-			scope:recipient = {
-				ai_greed >= high_positive_greed
-			}
-		}
-
 		modifier = { # I am influential already
 			add = -10
 			desc = I_AM_INFLUENTIAL
@@ -12477,11 +12550,11 @@ ep3_hof_ask_for_influence_interaction = {
 				OR = {
 					AND = {
 						has_trait = fornicator
-						trait_is_shunned_or_criminal_in_faith_trigger = { FAITH = faith TRAIT = trait:fornicator GENDER_CHARACTER = scope:actor }
+						trait_is_shunned_or_criminal_in_rite_trigger = { RITE = rite TRAIT = trait:fornicator GENDER_CHARACTER = scope:actor }
 					}
 					AND = {
 						has_trait = adulterer
-						trait_is_shunned_or_criminal_in_faith_trigger = { FAITH = faith TRAIT = trait:adulterer GENDER_CHARACTER = scope:actor }
+						trait_is_shunned_or_criminal_in_rite_trigger = { RITE = rite TRAIT = trait:adulterer GENDER_CHARACTER = scope:actor }
 					}
 				}
 			}
@@ -12499,7 +12572,7 @@ ep3_hof_ask_for_influence_interaction = {
 			add = -50
 			desc = I_AM_INCESTOUS
 			scope:actor = {
-				NOT = { scope:recipient = { faith = { has_doctrine = doctrine_consanguinity_unrestricted } } }
+				NOT = { scope:recipient = { rite = { rite_has_doctrine = doctrine_consanguinity_unrestricted } } }
 				has_trait = incestuous
 			}
 		}
@@ -12511,15 +12584,15 @@ ep3_hof_ask_for_influence_interaction = {
 				OR = {
 					AND = {
 						has_trait = kinslayer_1
-						trait_is_shunned_or_criminal_in_faith_trigger = { FAITH = faith TRAIT = trait:kinslayer_1 GENDER_CHARACTER = scope:actor }
+						trait_is_shunned_or_criminal_in_rite_trigger = { RITE = rite TRAIT = trait:kinslayer_1 GENDER_CHARACTER = scope:actor }
 					}
 					AND = {
 						has_trait = kinslayer_2
-						trait_is_shunned_or_criminal_in_faith_trigger = { FAITH = faith TRAIT = trait:kinslayer_2 GENDER_CHARACTER = scope:actor }
+						trait_is_shunned_or_criminal_in_rite_trigger = { RITE = rite TRAIT = trait:kinslayer_2 GENDER_CHARACTER = scope:actor }
 					}
 					AND = {
 						has_trait = kinslayer_3
-						trait_is_shunned_or_criminal_in_faith_trigger = { FAITH = faith TRAIT = trait:kinslayer_3 GENDER_CHARACTER = scope:actor }
+						trait_is_shunned_or_criminal_in_rite_trigger = { RITE = rite TRAIT = trait:kinslayer_3 GENDER_CHARACTER = scope:actor }
 					}
 				}
 			}
@@ -12669,7 +12742,7 @@ ep3_hof_ask_for_influence_interaction = {
 			scope:actor.num_sinful_traits > 0
 			desc = I_AM_SINFUL
 		}
-		
+
 		# Admin family attribute bonus
 		modifier = {
 			add = {
@@ -12698,6 +12771,44 @@ ep3_hof_ask_for_influence_interaction = {
 				}
 			}
 			desc = you_have_faithful_nobles_attribute_with_value_desc
+		}
+		secular_to_ecclesiastical_pam_factors_acceptance_modifier = yes
+
+		modifier = {
+			add = -30
+			scope:recipient = {
+				has_variable_list = cleric_houses_support
+				variable_list_size = {
+					name = cleric_houses_support
+					value < 2
+				}
+			}
+			desc = supports_other_house_reason
+		}
+		modifier = {
+			add = -75
+			scope:recipient = {
+				has_variable_list = cleric_houses_support
+				variable_list_size = {
+					name = cleric_houses_support
+					value >= 2
+				}
+			}
+			desc = supports_other_houses_reason
+		}
+		modifier = {
+			scope:actor.house ?= {
+				is_powerful_family = yes
+			}
+			add = 25
+			desc = YOUR_FAMILY_IS_POWERFUL
+		}
+		modifier = {
+			scope:actor.house ?= {
+				is_dominant_family = yes
+			}
+			add = 50
+			desc = YOUR_FAMILY_IS_DOMINANT
 		}
 	}
 
@@ -12766,6 +12877,26 @@ ep3_hof_ask_for_influence_interaction = {
 				ai_has_cautious_personality = no
 			}
 		}
+		modifier = {
+			add = -25
+			scope:recipient = {
+				has_variable_list = cleric_houses_support
+				variable_list_size = {
+					name = cleric_houses_support
+					value < 2
+				}
+			}
+		}
+		modifier = {
+			add = -75
+			scope:recipient = {
+				has_variable_list = cleric_houses_support
+				variable_list_size = {
+					name = cleric_houses_support
+					value >= 2
+				}
+			}
+		}
 	}
 }
 
@@ -12785,18 +12916,21 @@ ep3_join_faction_war_interaction = {
 	ai_min_reply_days = 4
 	ai_max_reply_days = 9
 
+	is_available = {
+		is_at_war = yes
+		government_has_mechanic = administrative
+		has_ep3_dlc_trigger = yes
+	}
+
 	is_shown = {
 		scope:actor = {
-			has_ep3_dlc_trigger = yes
-			is_at_war = yes
 			NOR = {
 				this = scope:recipient
 				is_at_war_with = scope:recipient
 			}
-			government_allows = administrative
 		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			scope:actor.liege ?= liege
 		}
 		scope:actor.joined_faction ?= {
@@ -12971,22 +13105,22 @@ ep3_join_faction_war_interaction = {
 		modifier = { # Reluctant to join against Friends
 			add = -50
 			has_relation_friend = scope:secondary_recipient
-			desc = WONT_FIGHT_FRIEND
+			desc = WONT_FIGHT_FRIEND_REASON
 		}
 		modifier = { # Reluctant to join against Best Friends
 			add = -100
 			has_relation_best_friend = scope:secondary_recipient
-			desc = WONT_FIGHT_BEST_FRIEND
+			desc = WONT_FIGHT_BEST_FRIEND_REASON
 		}
 		modifier = { # Reluctant to join against Lovers
 			add = -100
 			has_relation_lover = scope:secondary_recipient
-			desc = WONT_FIGHT_LOVER
+			desc = WONT_FIGHT_LOVER_REASON
 		}
 		modifier = { # Reluctant to join against Soulmate
 			add = -200
 			has_relation_soulmate = scope:secondary_recipient
-			desc = WONT_FIGHT_SOULMATE
+			desc = WONT_FIGHT_SOULMATE_REASON
 		}
 		modifier = {  # Refuse call for hostages' safety
 			any_home_court_hostage = {
@@ -13048,15 +13182,18 @@ ep3_switch_faction_war_sides_interaction = {
 	ai_min_reply_days = 4
 	ai_max_reply_days = 9
 
+	is_available = {
+		government_has_mechanic = administrative
+		has_ep3_dlc_trigger = yes
+	}
+
 	is_shown = {
 		scope:actor = {
-			has_ep3_dlc_trigger = yes
 			is_at_war_with = scope:recipient
-			government_allows = administrative
 			this != scope:recipient
 		}
 		scope:recipient = {
-			government_allows = administrative
+			government_has_mechanic = administrative
 			OR = {
 				is_vassal_of = scope:actor
 				scope:actor.liege ?= liege
@@ -13373,25 +13510,25 @@ ep3_switch_faction_war_sides_interaction = {
 			add = -50
 			exists = scope:secondary_recipient
 			has_relation_friend = scope:secondary_recipient
-			desc = WONT_FIGHT_FRIEND
+			desc = WONT_FIGHT_FRIEND_REASON
 		}
 		modifier = { # Reluctant to join against Best Friends
 			add = -100
 			exists = scope:secondary_recipient
 			has_relation_best_friend = scope:secondary_recipient
-			desc = WONT_FIGHT_BEST_FRIEND
+			desc = WONT_FIGHT_BEST_FRIEND_REASON
 		}
 		modifier = { # Reluctant to join against Lovers
 			add = -100
 			exists = scope:secondary_recipient
 			has_relation_lover = scope:secondary_recipient
-			desc = WONT_FIGHT_LOVER
+			desc = WONT_FIGHT_LOVER_REASON
 		}
 		modifier = { # Reluctant to join against Soulmate
 			add = -200
 			exists = scope:secondary_recipient
 			has_relation_soulmate = scope:secondary_recipient
-			desc = WONT_FIGHT_SOULMATE
+			desc = WONT_FIGHT_SOULMATE_REASON
 		}
 	}
 
@@ -13431,20 +13568,24 @@ ep3_governor_request_war_permission_interaction = {
 	ai_min_reply_days = 2
 	ai_max_reply_days = 5
 
-	is_shown = {
-		scope:actor = {
-			government_allows = administrative
-			liege = scope:recipient
-			OR = {
-				vassal_contract_has_flag = admin_theme_frontier
-				vassal_contract_has_flag = admin_theme_naval
-			}
-		}
-		scope:recipient = {
-			government_allows = administrative
-			top_liege = this
+	is_available = {
+		government_has_mechanic = administrative
+		top_liege ?= {
 			has_realm_law_flag = admin_vassal_wars_permission_only
 		}
+		OR = {
+			vassal_contract_has_flag = admin_theme_frontier
+			vassal_contract_has_flag = admin_theme_naval
+		}
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_adult = yes
+			liege ?= { is_at_war = no } # Don't ask if your liege is at war
+		}
+	}
+
+	is_shown = {
+		scope:actor.liege = scope:recipient
 	}
 
 	is_valid_showing_failures_only = {
@@ -13637,12 +13778,6 @@ ep3_governor_request_war_permission_interaction = {
 		}
 	}
 
-	ai_potential = {
-		government_allows = administrative
-		is_adult = yes
-		liege = { is_at_war = no } # Don't ask if your liege is at war
-	}
-
 	ai_will_do = {
 		base = 10
 		modifier = {
@@ -13707,13 +13842,18 @@ ep3_mass_arrests_interaction = {
 		hegemony = 36
 	}
 
-	is_shown = {
-		has_ep3_dlc_trigger = yes
-		scope:actor = {
-			top_liege = this
-			government_allows = administrative
-			dynasty ?= { has_dynasty_perk = ep3_administrative_legacy_5 }
+	is_available = {
+		government_has_mechanic = administrative
+		dynasty ?= { has_dynasty_perk = ep3_administrative_legacy_5 }
+		trigger_if = {
+			limit = { is_ai = yes }
+			is_adult = yes
 		}
+		top_liege ?= this
+		has_ep3_dlc_trigger = yes
+	}
+
+	is_shown = {
 		scope:recipient = {
 			liege ?= scope:actor
 			any_held_title = {
@@ -13724,7 +13864,7 @@ ep3_mass_arrests_interaction = {
 
 	is_valid_showing_failures_only = {
 		scope:actor = {
-			NOT = { exists = involved_activity }
+			is_in_activity = no
 			is_imprisoned = no
 		}
 		scope:recipient = {
@@ -13780,11 +13920,6 @@ ep3_mass_arrests_interaction = {
 				id = ep3_decisions_event.3201
 			}
 		}
-	}
-
-	ai_potential = {
-		government_allows = administrative
-		is_adult = yes
 	}
 
 	ai_will_do = {
