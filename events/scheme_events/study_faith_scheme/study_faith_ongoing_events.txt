@@ -7,7 +7,7 @@
 #   study_faith_ongoing.1000    Young character picks up the faith *really* fast
 #	study_faith_ongoing.1010	Some other practitioner of the target faith attempts to have an affair with you
 #	study_faith_ongoing.1011	You find out that the target is a non-believer - now what?
-#	study_faith_ongoing.1012	The target is actually a practitioner of ancient rites! Learn of the secret, change your plans or find another target.
+#	study_faith_ongoing.1012	Warcraft - the target secretly follows a hidden cult (Cult of the Damned, Burning Blade, Atal'ai, Dark Iron, Twilight's Hammer)
 #	study_faith_ongoing.1013	The target is cynical and their vision of the world is materialistic.
 #	study_faith_ongoing.1020    A believer in your vicinity that practices the faith offers to help you learn it
 #	study_faith_ongoing.1030    Someone offers you a trinket-slot religious text on the appropriate faith
@@ -531,12 +531,8 @@ study_faith_ongoing.1011 = {
 		name = study_faith_ongoing.1011.c
 
 		trigger = {
-			scope:target = {
-				or = {
-					study_faith_potential_pagan_believer = yes
-					study_faith_potential_hellenic_believer = yes
-				}
-			}
+			# Warcraft - a hidden Warcraft cult instead of vanilla's pagan/hellenic culture groups (issue #1969)
+			scope:target = { wc_study_faith_has_hidden_cult_trigger = { OWNER = root } }
 		}
 
 		custom_tooltip = study_faith_ongoing.1011.c.tt
@@ -556,15 +552,15 @@ study_faith_ongoing.1011 = {
 
 		hidden_effect = {
 			random_list = {
-				# 5% they are pagan or hellenic
-				5 = {
+				# Warcraft - 20% they secretly follow a cult (issue #1969)
+				20 = {
 					trigger_event = {
 						id = study_faith_ongoing.1012
 						days = 120
 					}
 				}
 				# else they are just cynical
-				95 = {
+				80 = {
 					trigger_event = {
 						id = study_faith_ongoing.1013
 						days = 90
@@ -594,121 +590,177 @@ scripted_effect study_faith_find_new_teacher_effect = {
 	}
 }
 
-# The target is actually a practitioner of ancient rites! Learn of the secret, change your plans or find another target.
+# Warcraft - rebuilt as a hidden cult reveal (issue #1969). Vanilla's hellenic/pagan faiths do not exist in GoA.
+# The teacher secretly follows a forbidden cult: expose them, watch them, join them, or find another teacher.
 study_faith_ongoing.1012 = {
 	type = character_event
-	title = study_faith_ongoing.1012.t
-	desc = study_faith_ongoing.1012.desc
+	title = wc_study_faith_ongoing.1012.t
+	desc = {
+		desc = wc_study_faith_ongoing.1012.desc.intro
+		first_valid = {
+			triggered_desc = {
+				trigger = { scope:actual_faith = faith:death_god }
+				desc = wc_study_faith_ongoing.1012.desc.damned
+			}
+			triggered_desc = {
+				trigger = { scope:actual_faith = faith:orcish_fel }
+				desc = wc_study_faith_ongoing.1012.desc.burning_blade
+			}
+			triggered_desc = {
+				trigger = { scope:actual_faith = faith:cult_of_hakkar }
+				desc = wc_study_faith_ongoing.1012.desc.atalai
+			}
+			triggered_desc = {
+				trigger = { scope:actual_faith = faith:ragnarism }
+				desc = wc_study_faith_ongoing.1012.desc.dark_iron
+			}
+			desc = wc_study_faith_ongoing.1012.desc.twilight
+		}
+	}
 	theme = study_faith
 
 	left_portrait = {
 		character = root
-		animation = personality_rational
+		animation = shock
 	}
 	right_portrait = {
 		character = scope:target
-		animation = holding_scrolls
+		animation = scheme
 	}
 	widget = {
 		gui = "event_window_widget_scheme"
 		container = "custom_widgets_container"
 	}
 
-	immediate = {
-		# Warcraft - to reflavorize
-		# scope:target = {
-		# 	if = {
-		# 		limit = { study_faith_potential_hellenic_believer = yes }
-		# 		faith:hellenic_pagan = {
-		# 			save_scope_as = actual_faith
-		# 		}
-		# 	}
-		# 	else_if = {
-		# 		limit = { study_faith_potential_pagan_believer = yes }
-		# 		faith:pagan = {
-		# 			save_scope_as = actual_faith
-		# 		}
-		# 	}
-		# }
+	trigger = {
+		exists = scope:scheme
+		scope:target ?= {
+			is_alive = yes
+			wc_study_faith_has_hidden_cult_trigger = { OWNER = root }
+		}
 	}
 
-	# open the possibility to blackmail
-	option = {
-		name = study_faith_ongoing.1012.a
+	# Warcraft - if the reveal no longer holds after the delay, fall back to vanilla's "just a cynic" outcome (issue #1969)
+	on_trigger_fail = {
+		if = {
+			limit = {
+				exists = scope:scheme
+				scope:target ?= { is_alive = yes }
+			}
+			trigger_event = {
+				id = study_faith_ongoing.1013
+				days = 1
+			}
+		}
+	}
 
+	immediate = {
 		scope:target = {
-			give_witch_secret_or_trait_effect = yes
+			wc_study_faith_pick_hidden_cult_effect = { OWNER = root }
+			make_character_crypto_religionist_effect = { CRYPTO_RELIGION = scope:actual_faith }
 			random_secret = {
-				type = secret_witch
-				save_scope_as = witch_secret
+				type = secret_crypto_religionist
+				save_scope_as = cult_secret
+			}
+			scope:cult_secret ?= { reveal_to = root }
+		}
+	}
+
+	# Expose them before the court
+	option = {
+		name = wc_study_faith_ongoing.1012.a
+		custom_tooltip = wc_study_faith_ongoing.1012.a.tt
+
+		add_piety = medium_piety_gain
+		scope:cult_secret ?= {
+			expose_secret = root
+		}
+		scope:scheme = { end_scheme = yes }
+
+		stress_impact = {
+			zealous = minor_stress_impact_loss
+			compassionate = minor_stress_impact_gain
+			honest = minor_stress_impact_gain
+		}
+		ai_chance = {
+			base = 0
+		}
+	}
+
+	# Keep them close, and keep studying
+	option = {
+		name = wc_study_faith_ongoing.1012.b
+
+		if = {
+			limit = {
+				scope:cult_secret ?= {
+					is_blackmailable_secret_trigger = {
+						PARTICIPANT = scope:target
+						BLACKMAILER = root
+					}
+				}
+			}
+			blackmail_target_with_secret_effect = {
+				TARGET = scope:target
+				SECRET = scope:cult_secret
+			}
+		}
+		hidden_effect = {
+			random = {
+				chance = 15
+				trigger_event = {
+					id = wc_study_faith.0400
+					days = { 150 210 }
+				}
 			}
 		}
 
-		scope:scheme = {
-			end_scheme = yes
-		}
-		scope:witch_secret ?= {
-			reveal_to = root
-		}
 		stress_impact = {
 			honest = minor_stress_impact_gain
-			compassionate = minor_stress_impact_gain
-			zealous = major_stress_impact_loss
-			lazy = minor_stress_impact_loss
+			paranoid = minor_stress_impact_gain
+			deceitful = minor_stress_impact_loss
+		}
+		ai_chance = {
+			base = 0
 		}
 	}
 
-	# find another target
+	# Accept their initiation
 	option = {
-		name = study_faith_ongoing.1012.b
+		name = wc_study_faith_ongoing.1012.c
+		custom_tooltip = wc_study_faith_ongoing.1012.c.tt
+		add_internal_flag = dangerous
 
-		
+		wc_study_faith_initiation_effect = yes
+
+		stress_impact = {
+			zealous = major_stress_impact_gain
+			honest = minor_stress_impact_gain
+			ambitious = minor_stress_impact_loss
+			arbitrary = minor_stress_impact_loss
+		}
+		ai_chance = {
+			base = 0
+		}
+	}
+
+	# Find another teacher (the wc_ copy of vanilla's find-new-teacher effect; the witch secret vanilla gave the target is gone)
+	option = {
+		name = wc_study_faith_ongoing.1012.d
 		custom_tooltip = study_faith_ongoing.1012.b.tt
 
-		hidden_effect = {			
-			scope:target = {
-				give_witch_secret_or_trait_effect = yes
-			}
-		}
-		study_faith_find_new_teacher_effect = yes
-		
+		wc_study_faith_find_new_teacher_effect = yes
+
 		stress_impact = {
 			stubborn = minor_stress_impact_loss
 			diligent = minor_stress_impact_loss
 			zealous = minor_stress_impact_gain
 			lazy = miniscule_stress_impact_gain
 		}
+		ai_chance = {
+			base = 100
+		}
 	}
-
-	# change of plans, study this faith instead
-	# Warcraft - actual_faith is never set, so this option never shows
-	# option = {
-		# name = study_faith_ongoing.1012.c
-		# custom_tooltip = study_faith_ongoing.1012.c.tt
-
-		# trigger = {
-			# exists = scope:actual_faith
-		# }
-
-		# scope:target = {
-			# set_character_faith = scope:actual_faith
-		# }
-
-		# scope:scheme = {
-			# remove_scheme_modifier = study_faith_learning_mannerism
-			# add_scheme_modifier = {
-				# type = study_faith_newfound_coherence
-			# }
-			# add_scheme_progress = scheme_progress_loss
-		# }
-		
-		# stress_impact = {
-			# diligent = minor_stress_impact_loss
-			# zealous = medium_stress_impact_gain
-			# lazy = miniscule_stress_impact_gain
-			# eccentric = medium_stress_impact_loss
-		# }
-	# }
 }
 
 #follow up to study_faith_ongoing.1011 (trying to learn from a non-believer)
@@ -1159,7 +1211,18 @@ scripted_trigger study_faith_appropriately_dirty_peasant = {
 study_faith_ongoing.1030 = {
 	type = character_event
 	title = study_faith_ongoing.1030.t
-	desc = study_faith_ongoing.1030.desc
+	# Warcraft - a named relic gets its own text (issue #1969)
+	desc = {
+		first_valid = {
+			triggered_desc = {
+				trigger = {
+					scope:newly_created_artifact ?= { has_variable = wc_study_faith_relic }
+				}
+				desc = wc_study_faith_ongoing.1030.desc.relic
+			}
+			desc = study_faith_ongoing.1030.desc
+		}
+	}
 	theme = study_faith
 	override_background = market 
 	left_portrait = {
@@ -1272,22 +1335,8 @@ study_faith_ongoing.1030 = {
 			}
 			hidden_effect_new_object = {
 				scope:chosen_peasant = {
-					set_variable = {
-						name = religious_text
-						value = scope:scheme.scheme_target_character.faith
-					}
-					create_artifact_book_effect = { #using effect to ensure that scope:owner is set properly
-						OWNER = scope:chosen_peasant
-						CREATOR = scope:dummy_gender
-						SET_SUBJECT = flag:religious_text
-						SET_TOPIC = flag:religious_text
-					}
-					scope:newly_created_artifact = {
-						set_variable = {
-							name = faith
-							value = scope:scheme.scheme_target_character.faith
-						}
-					}
+					# Warcraft - named relics for some faiths, the vanilla book otherwise (issue #1969)
+					wc_study_faith_create_peddler_artifact_effect = yes
 				}
 			}
 		}
@@ -1513,6 +1562,7 @@ study_faith_ongoing.1030 = {
 				opinion = -5
 			}
 			hidden_effect = {
+				wc_study_faith_release_relic_effect = yes # Warcraft - free the relic for a later peddler (issue #1969)
 				destroy_artifact = scope:newly_created_artifact
 			}
 		}
