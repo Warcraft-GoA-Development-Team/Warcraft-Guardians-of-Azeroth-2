@@ -4900,6 +4900,247 @@ wc_suramar_events.1002 = {
     }
 }
 
+scripted_effect wc_suramar_convert_felweaver_to_moonweaver_effect = {
+    if = {
+        limit = { NOT = { exists = secret_faith } }
+        random = {
+            chance = 50
+            modifier = { add = 15 has_trait = zealous }
+            modifier = { add = 15 has_trait = brave }
+            modifier = { add = -15 has_trait = compassionate }
+            modifier = { add = -15 root.diplomacy >= high_skill_rating }
+            make_character_crypto_religionist_effect = { CRYPTO_RELIGION = faith:azji }
+        }
+    }
+    set_character_faith = faith:faldorei_religion
+    set_character_rite = rite:moonweaver
+}
+
+# 1011 - Restore Archaelunism
+wc_suramar_events.1011 = {
+    type = character_event
+    content_source = dlc_GOA
+    title = wc_suramar_events.1011.t
+    desc = wc_suramar_events.1011.desc
+    theme = faith
+
+    override_background = { reference = throne_room }
+
+    left_portrait = {
+        character = root
+        animation = personality_zealous
+    }
+    right_portrait = {
+        character = scope:felweaver_antagonist
+        animation = dismissal
+    }
+
+    immediate = {
+        # Gather all vassals and reserve one weighted direct-vassal antagonist
+        every_vassal_or_below = {
+            add_to_temporary_list = felweaver_all_vassals
+            add_to_temporary_list = felweaver_candidates
+        }
+        set_variable = {
+            name = felweaver_opposition_cap
+            value = list_size:felweaver_all_vassals
+        }
+        change_variable = {
+            name = felweaver_opposition_cap
+            multiply = 0.3
+        }
+        random_vassal = {
+            weight = {
+                base = 1
+                modifier = { factor = 3 has_trait = zealous }
+                modifier = { factor = 3 has_trait = brave }
+            }
+            save_scope_as = felweaver_antagonist
+            add_to_temporary_list = felweaver_opposition
+            remove_from_list = felweaver_candidates
+        }
+
+        # Fill the opposition to the rounded-up cap, favoring zeal and boldness
+        set_while_counter_variable_effect = yes
+        while = {
+            limit = {
+                list_size:felweaver_opposition < var:felweaver_opposition_cap
+                list_size:felweaver_candidates > 0
+            }
+            random_in_list = {
+                list = felweaver_candidates
+                weight = {
+                    base = 1
+                    modifier = { factor = 3 has_trait = zealous }
+                    modifier = { factor = 3 has_trait = brave }
+                }
+                save_scope_as = selected_felweaver_opponent
+            }
+            scope:selected_felweaver_opponent = {
+                add_to_temporary_list = felweaver_opposition
+                remove_from_list = felweaver_candidates
+            }
+            increase_while_counter_variable_effect = yes
+        }
+        remove_while_counter_variable_effect = yes
+
+        # Convert non-opposing Felweavers and their Felweaver courtiers
+        every_vassal_or_below = {
+            limit = {
+                rite = rite:felweaver
+                NOT = { any_in_list = { list = felweaver_opposition this = prev } }
+            }
+            wc_suramar_convert_felweaver_to_moonweaver_effect = yes
+            every_courtier = {
+                limit = { rite = rite:felweaver }
+                wc_suramar_convert_felweaver_to_moonweaver_effect = yes
+            }
+        }
+    }
+
+    # Use shadow magic to compel the opposition
+    option = {
+        name = wc_suramar_events.1011.a
+        trigger = {
+            OR = {
+                has_trait = wc_lifestyle_shadow_magic
+                shadow_magic_lifestyle_perks >= 1
+                any_secret = { secret_type = secret_shadow_magic_user }
+            }
+            has_variable = wc_current_mana_variable
+            var:wc_current_mana_variable >= wc_seventy_percent_of_max_mana_value
+        }
+        wc_change_mana_by_value_effect = {
+            CHANGE = subtract
+            VALUE = wc_seventy_percent_of_max_mana_value
+        }
+        duel = {
+            skill = learning
+            target = scope:felweaver_antagonist
+            desc = wc_suramar_events.1011.a.duel
+            60 = {
+                compare_modifier = { value = scope:duel_value multiplier = 3.5 }
+                modifier = {
+                    add = 10
+                    shadow_magic_lifestyle_perks > 9
+                }
+                desc = wc_suramar_events.1011.a.win
+                # Root overcomes the antagonist; the opposition converts openly
+                save_scope_value_as = { name = felweaver_restoration_result value = flag:won }
+            }
+            40 = {
+                compare_modifier = { value = scope:duel_value multiplier = -3.5 }
+                modifier = {
+                    add = -10
+                    shadow_magic_lifestyle_perks > 9
+                }
+                desc = wc_suramar_events.1011.a.loss
+                # The antagonist defeats root; the remaining opposition gains loyalty
+                save_scope_value_as = { name = felweaver_restoration_result value = flag:lost }
+            }
+        }
+        if = {
+            limit = { scope:felweaver_restoration_result = flag:won }
+            every_in_list = {
+                list = felweaver_opposition
+                set_character_faith = faith:faldorei_religion
+                set_character_rite = rite:moonweaver
+                every_courtier = {
+                    set_character_faith = faith:faldorei_religion
+                    set_character_rite = rite:moonweaver
+                }
+            }
+        }
+        else = {
+            every_in_list = {
+                list = felweaver_opposition
+                limit = { this != scope:felweaver_antagonist }
+                add_opinion = {
+                    target = root
+                    modifier = loyalty_opinion
+                    opinion = 40
+                }
+            }
+        }
+        if = { 
+            limit = { any_secret = { secret_type = secret_shadow_magic_user } }
+            wc_event_chance_to_expose_secret_effect = { MAGICTYPE = shadow VALUE = 50 }
+        }
+    }
+
+    # Nurture loyalist holdings with life magic
+    option = {
+        name = wc_suramar_events.1011.b
+        trigger = {
+            OR = {
+                has_trait = wc_lifestyle_life_magic
+                life_magic_lifestyle_perks >= 1
+            }
+            has_variable = wc_current_mana_variable
+            var:wc_current_mana_variable >= wc_thirty_percent_of_max_mana_value
+        }
+        wc_change_mana_by_value_effect = {
+            CHANGE = subtract
+            VALUE = wc_thirty_percent_of_max_mana_value
+        }
+        every_vassal = {
+            limit = { NOT = { any_in_list = { list = felweaver_opposition this = prev } } }
+            add_opinion = {
+                target = root
+                modifier = loyalty_opinion
+                opinion = 40
+            }
+        }
+        add_piety = medium_piety_gain
+    }
+
+    # Persuade the opposition to stand down
+    option = {
+        name = wc_suramar_events.1011.c
+        duel = {
+            skill = diplomacy
+            target = scope:felweaver_antagonist
+            desc = wc_suramar_events.1011.c.duel
+            70 = {
+                compare_modifier = { value = scope:duel_value multiplier = 3.5 }
+                desc = wc_suramar_events.1011.c.win
+                # Root persuades the antagonist; vassals admire the restoration
+                save_scope_value_as = { name = felweaver_diplomacy_result value = flag:won }
+            }
+            30 = {
+                compare_modifier = { value = scope:duel_value multiplier = -3.5 }
+                desc = wc_suramar_events.1011.c.loss
+                # Root fails to persuade the antagonist; vassals dismiss the restoration
+                save_scope_value_as = { name = felweaver_diplomacy_result value = flag:lost }
+            }
+        }
+        if = {
+            limit = { scope:felweaver_diplomacy_result = flag:won }
+            every_vassal_or_below = {
+                add_opinion = { target = root modifier = admiration_opinion opinion = 10 }
+            }
+        }
+        else = {
+            every_vassal_or_below = {
+                add_opinion = { target = root modifier = dismissive_opinion opinion = -10 }
+            }
+        }
+    }
+
+    # Imprison the antagonist and silence the opposition
+    option = {
+        name = wc_suramar_events.1011.d
+        imprison_character_effect = {
+            TARGET = scope:felweaver_antagonist
+            IMPRISONER = root
+        }
+        add_tyranny = 20
+        every_vassal_or_below = {
+            add_opinion = { target = root modifier = outraged_opinion opinion = -10 }
+        }
+    }
+}
+
 ### FALDOREI RELIGIOUS EVENT CHAIN ###
 
 # 2100 - Hidden yearly scheduler for the Falanaar mural encounter
@@ -5044,10 +5285,8 @@ wc_suramar_events.2102 = {
     # Sell the implements for wealth and a little dynastic renown
     option = {
         name = wc_suramar_events.2102.a
-        add_gold = medium_gold_gain
-        dynasty ?= {
-            add_dynasty_prestige = miniscule_dynasty_prestige_gain
-        }
+        add_gold = medium_gold_value
+        dynasty = { add_dynasty_prestige = miniscule_dynasty_prestige_gain }
         stress_impact = {
             greedy = minor_stress_impact_loss
             generous = minor_stress_impact_gain
@@ -5093,10 +5332,7 @@ wc_suramar_events.2102 = {
         }
         wc_change_mana_by_value_effect = {
             CHANGE = add
-            VALUE = {
-                value = wc_max_mana_value
-                divide = 2
-            }
+            VALUE = wc_fifty_percent_of_max_mana_value
         }
         stress_impact = {
             greedy = minor_stress_impact_loss
@@ -5105,7 +5341,11 @@ wc_suramar_events.2102 = {
         ai_chance = {
             base = 30
             ai_value_modifier = {
-                ai_ambition = 1
+                ai_compassion = -1
+            }
+            modifier = { 
+                var:wc_current_mana_variable > wc_fifty_percent_of_max_mana_value
+                factor = 0
             }
         }
     }
@@ -5122,10 +5362,8 @@ wc_suramar_events.2102 = {
                 rite = rite:felweaver
             }
         }
-        set_character_secret_faith = faith:faldorei_religion
-        dynasty ?= {
-            add_dynasty_prestige = miniscule_dynasty_prestige_gain
-        }
+        make_character_crypto_religionist_effect = { CRYPTO_RELIGION = faith:faldorei_religion }
+        dynasty = { add_dynasty_prestige = miniscule_dynasty_prestige_gain }
         stress_impact = {
             zealous = minor_stress_impact_loss
             cynical = medium_stress_impact_gain
