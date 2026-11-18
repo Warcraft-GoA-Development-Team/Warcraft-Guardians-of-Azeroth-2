@@ -1272,6 +1272,20 @@ PixelShader =
 		Output = "PS_COLOR_SSAO"
 		Code
 		[[
+			void DitheredOpacity( in float Opacity, in float2 NoiseCoordinate )
+			{
+				const float4x4 ThresholdMatrix =
+				{
+					0.0588235f, 0.5294117f, 0.1764705f, 0.6470588f,
+					0.7647058f, 0.2941176f, 0.8823529f, 0.4117647f,
+					0.2352941f, 0.7058823f, 0.1176470f, 0.5882352f,
+					0.9411764f, 0.4705882f, 0.8235294f, 0.3529411f
+				};
+				int2 Coordinate = (int2)NoiseCoordinate & 3;
+				float Factor = ThresholdMatrix[Coordinate.x][Coordinate.y];
+				clip( Opacity - Factor );
+			}
+
 			PDX_MAIN
 			{
 				PS_COLOR_SSAO Out;
@@ -1284,9 +1298,13 @@ PixelShader =
 				#else
 					float3 NormalSample = UnpackRRxGNormal( NormalSampleRaw );
 				#endif
-
 			
 				Diffuse.a = PdxMeshApplyOpacity( Diffuse.a, Input.Position.xy, PdxMeshGetOpacity( Input.InstanceIndex ) );
+
+				#ifdef DITHERED_OPACITY
+					DitheredOpacity( Diffuse.a, Input.Position.xz );
+					Diffuse.a = 1.0f;
+				#endif
 
 				#ifdef VARIATIONS_ENABLED
 					float4 SecondColorMask = vec4( 0.0f );
@@ -1885,6 +1903,23 @@ PixelShader =
 				Out.Color = float4( Color, Diffuse.a );
 				Out.SSAOColor = float4( 0.0f, 0.0f, 0.0f, Diffuse.a );
 
+				return Out;
+			}
+		]]
+	}
+
+	MainCode PS_mesh_vfx_head_halo_court
+	{
+		Input = "VS_OUTPUT_PDXMESH_VFX"
+		Output = "PS_COLOR_SSAO"
+		Code
+		[[
+			PDX_MAIN
+			{
+				PS_COLOR_SSAO Out;
+
+				Out.Color.a = 0.0f;
+				Out.SSAOColor = float4( 1.0f, 1.0f, 1.0f, 0.0f );
 				return Out;
 			}
 		]]
@@ -3161,6 +3196,21 @@ Effect tabletop_standard
 }
 
 Effect tabletop_standard_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect mesh_vfx_head_halo
+{
+	VertexShader = "VS_mesh_vfx_standard"
+	PixelShader = "PS_mesh_vfx_head_halo_court"
+	BlendState = "alpha_to_coverage"
+	RasterizerState = "rasterizer_no_culling"
+	Defines = { "BILLBOARD_HALO_MESH" "BILLBOARD_OFFSET_DISTANCE 30.0"}
+}
+
+Effect mesh_vfx_head_halo_selection
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"

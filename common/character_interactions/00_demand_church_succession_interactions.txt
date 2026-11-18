@@ -1,0 +1,551 @@
+﻿# demand_church_succession_interaction - Theocrat (count-tier bishop, archbishop) demands a secular ruler set them as fallback succession heir.
+# demand_church_succession_religious_head_interaction - Religious head (Pope etc.) variant with broader reach.
+
+demand_church_succession_interaction = {
+	category = interaction_category_religion
+	icon = icon_clergy_succession
+	interface_priority = 50
+
+	desc = demand_church_succession_interaction_desc
+	notification_text = DEMAND_CHURCH_SUCCESSION_NOTIFICATION
+	send_name = DEMAND_CHURCH_SUCCESSION_SEND_NAME
+
+	is_shown = {
+		scope:puppet_or_actor ?= {
+			government_has_flag = government_is_theocracy
+			trigger_if = {
+				limit = {
+					scope:actor = { is_ai = yes }
+				}
+				piety_level >= medium_piety_level
+				OR = {
+					ai_greed >= 50
+					has_trait = fickle
+					has_trait = arrogant
+					has_trait = deceitful
+					has_trait = ambitious
+					AND = {
+						has_trait = zealous
+						ai_greed > 0
+					}
+					has_trait = greedy
+				}
+				is_available_adult = yes
+				treasury_or_gold >= major_treasury_or_gold_value
+				NOR = {
+					has_trait = generous
+					has_trait = content
+					has_trait = excommunicated
+				}
+				piety >= massive_piety_value
+			}
+			NOT = { faith.religious_head ?= scope:puppet_or_actor }
+		}
+		scope:recipient = {
+			this != scope:puppet_or_actor
+			is_landed = yes
+			is_valid_demand_church_succession_target_trigger = yes
+			scope:puppet_or_actor.faith ?= faith
+			primary_title ?= {
+				tier >= tier_county
+			}
+		}
+	}
+
+	cooldown_against_recipient = { years = 10 }
+
+	is_valid_showing_failures_only = {
+		scope:puppet_or_actor = {
+			is_available_adult = yes
+			piety_level >= medium_piety_level
+			NOT = { has_trait = excommunicated }
+			NOT = { is_at_war_with = scope:recipient }
+		}
+		# Don't overwrite an existing fallback the secular ruler is already pledged to.
+		custom_tooltip = {
+			text = demand_church_succession_no_existing_fallback
+			scope:recipient = {
+				NOR = {
+					exists = fallback_succession_title
+					exists = fallback_succession_character
+				}
+			}
+		}
+		custom_tooltip = {
+			text = demand_church_succession_recently_refused_tt
+			scope:recipient = {
+				NOT = { has_character_flag = demand_church_succession_refused_immunity }
+			}
+		}
+		# Elective and advanced succession ignore the decreed fallback, so exclude those titles
+		custom_tooltip = {
+			text = demand_church_succession_no_elective
+			scope:recipient.primary_title = {
+				NOR = {
+					has_title_law_flag = advanced_succession_law
+					has_title_law_flag = elective_succession_law
+				}
+			}
+		}
+		custom_tooltip = {
+			text = demand_church_succession_target_in_reach
+			OR = {
+				# Anyone bordering the actor's realm (works for both bishops and archbishops).
+				scope:recipient = {
+					any_held_title = {
+						tier >= tier_county
+						is_neighbor_to_realm = scope:puppet_or_actor
+					}
+				}
+				# Archbishop bonus: anyone whose capital sits inside the actor's diocese.
+				# Only Christian archbishops actually hold a clerical region; others fall back on the neighbour rule above.
+				AND = {
+					scope:puppet_or_actor = {
+						pam_gift_claim_recipient_in_own_clerical_region_trigger = { TARGET = scope:recipient }
+					}
+				}
+			}
+		}
+		trigger_if = {
+			limit = { scope:is_puppet_action ?= yes }
+			scope:puppet_or_actor = {
+				piety >= pam_demand_church_succession_piety_cost_value
+			}
+		}
+		trigger_if = {
+			limit = { scope:is_puppet_action ?= yes }
+			scope:puppet_or_actor = {
+				treasury_or_gold >= pam_demand_church_succession_treasury_cost_value
+			}
+		}
+	}
+
+	cost = {
+		piety = {
+			value = pam_demand_church_succession_piety_cost_value
+			if = {
+				limit = { scope:is_puppet_action ?= yes }
+				multiply = 0
+			}
+		}
+		treasury_or_gold = {
+			value = pam_demand_church_succession_treasury_cost_value
+			if = {
+				limit = { scope:is_puppet_action ?= yes }
+				multiply = 0
+			}
+		}
+	}
+
+	auto_accept = yes
+
+	on_accept = {
+		if = {
+			limit = { scope:is_puppet_action ?= yes }
+			scope:puppet_or_actor = {
+				remove_treasury_or_gold = pam_demand_church_succession_treasury_cost_value
+				add_piety = {
+					value = {
+						add = pam_demand_church_succession_piety_cost_value
+						max = piety
+						multiply = -1
+					}
+				}
+			}
+		}
+		scope:puppet_or_actor = {
+			send_interface_toast = {
+				type = event_toast_effect_good
+				title = demand_church_succession_actor_toast
+				desc = demand_church_succession_actor_toast_desc
+				left_icon = scope:puppet_or_actor
+				right_icon = scope:recipient
+				scope:recipient = {
+					set_fallback_succession_title = scope:puppet_or_actor.primary_title
+					trigger_event = demand_church_succession.0001
+					add_opinion = {
+						target = scope:puppet_or_actor
+						modifier = meddling_church_opinion
+					}
+				}
+			}
+		}
+		scope:recipient = {
+			show_as_tooltip = {
+				demand_church_succession_side_effects = yes
+			}
+		}
+		
+		if = {
+			limit = {
+				scope:is_puppet_action ?= yes
+				scope:actor != scope:recipient
+			}
+			scope:actor = {
+				send_interface_toast = {
+					type = event_toast_effect_good
+					title = demand_church_succession_actor_toast_puppeteer
+					desc = demand_church_succession_actor_toast_desc_puppeteer
+					left_icon = scope:puppet_or_actor
+					right_icon = scope:recipient
+				}
+			}
+		}
+		# CE3 achievement: Where There's a Will — remember who extorted this succession
+		if = {
+			limit = { scope:puppet_or_actor = { is_ai = no } }
+			# Warcraft - ce3_will_demander is never read in GoA
+			# scope:recipient = {
+				# set_variable = {
+					# name = ce3_will_demander
+					# value = scope:puppet_or_actor
+				# }
+			# }
+		}
+	}
+
+	# Bounded AI candidate set; neighbour list naturally restrains lower-tier theocrats.
+	ai_targets = {
+		ai_recipients = neighboring_rulers
+		max = 10
+	}
+	ai_targets = {
+		ai_recipients = peer_vassals
+		max = 10
+	}
+	ai_targets = {
+		ai_recipients = domicile_location_top_realm_vassals
+		max = 10
+	}
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 60
+		duchy = 36
+		kingdom = 24
+		empire = 12
+		hegemony = 12
+	}
+
+	ai_will_do = {
+		base = 0
+
+		# Childless = the canonical reason to bother.
+		modifier = {
+			add = 30
+			scope:recipient = {
+				NOT = { any_child = { is_alive = yes } }
+			}
+		}
+		# Old AND childless = the dream target.
+		modifier = {
+			add = 30
+			scope:recipient = {
+				age >= 50
+				NOT = { any_child = { is_alive = yes } }
+			}
+		}
+		# Few children = somewhat tempting.
+		modifier = {
+			add = 10
+			scope:recipient = {
+				any_child = { is_alive = yes }
+				NOT = {
+					any_child = {
+						is_alive = yes
+						count >= 2
+					}
+				}
+			}
+		}
+		# Personality nudges.
+		modifier = {
+			add = -25
+			scope:puppet_or_actor = { has_trait = humble }
+		}
+		modifier = {
+			factor = 2
+			scope:puppet_or_actor = { has_trait = ambitious }
+		}
+		modifier = {
+			factor = 2
+			scope:puppet_or_actor = { has_trait = greedy }
+		}
+		modifier = {
+			factor = 2
+			scope:puppet_or_actor = { has_trait = zealous }
+		}
+		# Archbishop-in-own-diocese: the canonical use-case for this rank.
+		modifier = {
+			add = 25
+			scope:puppet_or_actor = {
+				pam_gift_claim_recipient_in_own_clerical_region_trigger = { TARGET = scope:recipient }
+			}
+		}
+		# Don't shake down friends or close family.
+		modifier = {
+			factor = 0
+			scope:puppet_or_actor = {
+				OR = {
+					has_relation_friend = scope:recipient
+					has_relation_lover = scope:recipient
+					is_close_family_of = scope:recipient
+				}
+			}
+		}
+	}
+}
+
+demand_church_succession_religious_head_interaction = {
+	category = interaction_category_religion
+	icon = icon_clergy_succession
+	interface_priority = 51
+
+	desc = demand_church_succession_religious_head_interaction_desc
+	notification_text = DEMAND_CHURCH_SUCCESSION_NOTIFICATION
+	send_name = DEMAND_CHURCH_SUCCESSION_SEND_NAME
+
+	is_shown = {
+		scope:puppet_or_actor ?= {
+			government_has_flag = government_is_theocracy
+			scope:recipient.religious_head_or_challenger ?= scope:puppet_or_actor
+			trigger_if = {
+				limit = {
+					scope:actor = { is_ai = yes }
+				}
+				piety_level >= medium_piety_level
+				OR = {
+					ai_greed >= 50
+					has_trait = fickle
+					has_trait = arrogant
+					has_trait = deceitful
+					has_trait = ambitious
+					AND = {
+						has_trait = zealous
+						ai_greed > 0
+					}
+					has_trait = greedy
+				}
+				is_available_adult = yes
+				treasury_or_gold >= major_treasury_or_gold_value
+				NOR = {
+					has_trait = generous
+					has_trait = content
+					has_trait = excommunicated
+				}
+				piety >= massive_piety_value
+			}
+		}
+		exists = scope:puppet_or_actor
+		scope:recipient = {
+			this != scope:puppet_or_actor
+			is_landed = yes
+			is_valid_demand_church_succession_target_trigger = yes
+			scope:puppet_or_actor.faith ?= faith
+			primary_title ?= {
+				tier >= tier_county
+			}
+		}
+	}
+
+	cooldown_against_recipient = { years = 10 }
+
+	is_valid_showing_failures_only = {
+		scope:puppet_or_actor = {
+			is_available_adult = yes
+			piety_level >= medium_piety_level
+			NOT = { has_trait = excommunicated }
+			NOT = { is_at_war_with = scope:recipient }
+		}
+		# Don't overwrite an existing fallback the secular ruler is already pledged to.
+		custom_tooltip = {
+			text = demand_church_succession_no_existing_fallback
+			scope:recipient = {
+				NOR = {
+					exists = fallback_succession_title
+					exists = fallback_succession_character
+				}
+			}
+		}
+		custom_tooltip = {
+			text = demand_church_succession_recently_refused_tt
+			scope:recipient = {
+				NOT = { has_character_flag = demand_church_succession_refused_immunity }
+			}
+		}
+		# Elective and advanced succession ignore the decreed fallback, so exclude those titles
+		custom_tooltip = {
+			text = demand_church_succession_no_elective
+			scope:recipient.primary_title = {
+				NOR = {
+					has_title_law_flag = advanced_succession_law
+					has_title_law_flag = elective_succession_law
+				}
+			}
+		}
+		trigger_if = {
+			limit = { scope:is_puppet_action ?= yes }
+			scope:puppet_or_actor = {
+				piety >= pam_demand_church_succession_piety_cost_value
+			}
+		}
+		trigger_if = {
+			limit = { scope:is_puppet_action ?= yes }
+			scope:puppet_or_actor = {
+				treasury_or_gold >= pam_demand_church_succession_religious_head_treasury_cost_value
+			}
+		}
+	}
+
+	cost = {
+		piety = {
+			value = pam_demand_church_succession_piety_cost_value
+			if = {
+				limit = { scope:is_puppet_action ?= yes }
+				multiply = 0
+			}
+		}
+		treasury_or_gold = {
+			value = pam_demand_church_succession_religious_head_treasury_cost_value
+			if = {
+				limit = { scope:is_puppet_action ?= yes }
+				multiply = 0
+			}
+		}
+	}
+
+	auto_accept = yes
+
+	on_accept = {
+		if = {
+			limit = { scope:is_puppet_action ?= yes }
+			scope:puppet_or_actor = {
+				remove_treasury_or_gold = pam_demand_church_succession_religious_head_treasury_cost_value
+				add_piety = {
+					value = {
+						add = pam_demand_church_succession_piety_cost_value
+						max = piety
+						multiply = -1
+					}
+				}
+			}
+		}
+		scope:puppet_or_actor = {
+			send_interface_toast = {
+				type = event_toast_effect_good
+				title = demand_church_succession_actor_toast
+				desc = demand_church_succession_actor_toast_desc
+				left_icon = scope:puppet_or_actor
+				right_icon = scope:recipient
+				scope:recipient = {
+					set_fallback_succession_title = scope:puppet_or_actor.primary_title
+					# Letter event delivers the recipient's reward (piety / spiritual fulfilment) on the appropriate option.
+					trigger_event = demand_church_succession.0001
+					add_opinion = {
+						target = scope:puppet_or_actor
+						modifier = meddling_church_opinion
+					}
+				}
+			}
+		}
+		if = {
+			limit = {
+				exists = scope:actor
+				exists = scope:puppet_or_actor
+				scope:is_puppet_action ?= yes
+				scope:actor != scope:recipient
+			}
+			scope:actor = {
+				send_interface_toast = {
+					type = event_toast_effect_good
+					title = demand_church_succession_actor_toast_puppeteer
+					desc = demand_church_succession_actor_toast_desc_puppeteer
+					left_icon = scope:puppet_or_actor
+					right_icon = scope:recipient
+				}
+			}
+		}
+	}
+
+	ai_targets = {
+		ai_recipients = neighboring_rulers
+		max = 10
+	}
+	ai_targets = {
+		ai_recipients = peer_vassals
+		max = 10
+	}
+	ai_targets = {
+		ai_recipients = domicile_location_top_realm_vassals
+		max = 10
+	}
+	
+	ai_frequency_by_tier = {
+		barony = 0
+		county = 0
+		duchy = 36
+		kingdom = 12
+		empire = 12
+		hegemony = 12
+	}
+
+	ai_will_do = {
+		base = 0
+
+		# Childless = the canonical reason to bother.
+		modifier = {
+			add = 40
+			scope:recipient = {
+				NOT = { any_child = { is_alive = yes } }
+			}
+		}
+		# Old AND childless = the dream target.
+		modifier = {
+			add = 40
+			scope:recipient = {
+				age >= 50
+				NOT = { any_child = { is_alive = yes } }
+			}
+		}
+		# Few children = somewhat tempting.
+		modifier = {
+			add = 15
+			scope:recipient = {
+				any_child = { is_alive = yes }
+				NOT = {
+					any_child = {
+						is_alive = yes
+						count >= 2
+					}
+				}
+			}
+		}
+		# Personality nudges.
+		modifier = {
+			add = -25
+			scope:puppet_or_actor = { has_trait = humble }
+		}
+		modifier = {
+			factor = 2
+			scope:puppet_or_actor = { has_trait = greedy }
+		}
+		modifier = {
+			factor = 2
+			scope:puppet_or_actor = { has_trait = ambitious }
+		}
+		modifier = {
+			factor = 2
+			scope:puppet_or_actor = { has_trait = zealous }
+		}
+		# Don't shake down friends or close family.
+		modifier = {
+			factor = 0
+			scope:puppet_or_actor = {
+				OR = {
+					has_relation_friend = scope:recipient
+					has_relation_lover = scope:recipient
+					is_close_family_of = scope:recipient
+				}
+			}
+		}
+	}
+}

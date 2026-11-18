@@ -1,0 +1,151 @@
+﻿=== Lease Contracts ===
+
+Titles can be leased out by the holder to another character. (Only non-capital baronies, and the holder must be above baron rank.)
+Income and levies from the leased holdings can be split between the ruler, lessee,
+and (for hierarchical leases) a "lease liege" or "top lease liege"
+
+== Lease Hierarchies ==
+
+Built-in lease types can be used to automatically lease out holdings according to a specific hierarchy.
+In that case there is a lease vassal hierarchy in parallel to the normal vassal hierarchy.
+There are two supported Lease Hierarchies types, one that follows the regular title vassal structure, and one that
+follows the clerical region structure.
+
+= Vassal based Lease Hierarchy =
+--------|-------------------------------------------------------------
+Rulers  | Lease Hierarchy
+--------|-------------------------------------------------------------
+        | Head of Faith (if they exist)
+        |  ↑
+Emperor ─ Emperor's lessee
+↑       |  ↑
+King ──── King's lessee
+↑       |  ↑
+Duke ──── Duke's lessee
+↑       |  ↑
+Count ─── Count's lessee
+↑       |
+Baron ─── (there is no 'Baron' level Lessee, all are leased by Count+ level's lessees)
+
+- Taxes/Levies flow up through characters.
+- Rulers in the Vassal hierarchy can be skipped using another trigger.
+  E.g. for the theocratic lease the ruler and vassal must have the same faith.
+  The skipped rulers will be part of their own hierarchy with matching rulers in the same realm.
+- In this hierarchy the lessee must be a direct vassal of the ruler.
+- If the lessee is missing for a specific ruler the ruler is also skipped in the hierarchy.
+- Rulers can be excluded from participating in the automatic lease with a trigger, e.g. only rulers with a specific
+  faith property might take part in a theocratic lease.
+- Intermediate lessees with a different faith are skipped - if the Count's lessee is faith A, the Duke's is faith B
+  and the King's is faith A again, the Count's lessee's superior is the King's lessee
+
+= Clerical Region based Lease Hierarchy =
+--------|-------------------------------------------------------------
+Rulers  | Lease Hierarchy
+--------|-------------------------------------------------------------
+        | Head of Faith (if they exist)
+        |  ↑
+        | Clerical Region Title holder (if they exist)
+        |                   ↑ ↑ ↑ ↑
+Emperor ─ Emperor's lessee ─┘ │ │ │
+        |                     │ │ │
+King ──── King's lessee ──────┘ │ │
+        |                       │ │
+Duke ──── Duke's lessee ────────┘ │
+        |                         │
+Count ─── Count's lessee ─────────┘
+        |
+Baron ──── (there is no 'Baron' level Lessee, all are leased by Count+ level's lessees)
+
+- Instead of flowing through the vassal' structure, taxes & levies flow from lessees to the Clerical Region title holder.
+- The Clerical Region Title holder is determined by lessee's ruler's capital.
+- If there is no Clerical Region title holder, it flows onwards to the Head of Faith, if they exist.
+- Rulers can be excluded from participating in the automatic lease with a trigger, e.g. only rulers with a specific
+  faith property might take part in a theocratic lease.
+
+== Structure ==
+
+theocracy_lease = {
+	# Definition for automatic lease hierarchy. Required for some built-in lease contracts, not supported for the others.
+	hierarchy = {
+		# What type of hierarchy is followed. (see above)
+		# Default: vassal
+		type = vassal/clerical_region
+
+		# Does this ruler use the lease? root: character; default always
+		ruler_valid = { <triggers> } = yes
+
+		# The character leasing the titles from the ruler. root: character. Must be unique for a given ruler, and their liege must be the ruler
+		lessee = <event target>
+
+		# Is this ruler valid as a liege or vassal to the scope:target? If not, this ruler is skipped in the lease hierarchy and starts their own hierarchy.
+		# root and scope:target are characters; default always = yes
+		liege_or_vassal_valid = { <triggers> }
+
+		# Is this barony title automatically leased out? root: title default always = yes
+		barony_valid = { <triggers> }
+	}
+
+	# Government type associated with this lease. If it has the theocracy mechanic, the valid_holdings below
+	# are treated as theocratic lease holding types.
+	government = theocracy_government
+
+	# List of holding types that will not generate a wrong holding type penalty for the lessee
+	valid_holdings = { church_holding }
+
+	# Used in the UI to show why the ruler receives benefits from the leased titles. Make sure it corresponds to the values used below.
+	# Don't set if you don't use the same opinion value between levies and taxes or the conditions are different, so that the tooltip is not shown.
+	ruler_share_min_opinion_from_lessee = 42
+
+	# Used in the UI to show if a ruler should receive the benefits by having a hook even if they do not meet the opinion value. Make sure it gets used to apply based on the values below.
+	hook_strength_max_opinion = none/any/strong
+
+	# How income from leased holdings is split. By default everything goes to the lessee.
+	#
+	# The three shares below are one flat split of the whole value; the Lessee keeps whatever they do
+	# not claim. A share that evaluates below 0 is treated as 0. If the three together exceed 1.0 a
+	# content error is logged and they are truncated in the order lease_liege, top_lease_liege_direct,
+	# ruler until they fit.
+	#
+	# Each share takes an optional `<share>_max` ceiling (default: no ceiling). Put the ceiling there
+	# rather than as a `min`/`max` inside the share's own block: those are operations applied at their
+	# position in the sequence rather than bounds on the result, and they cannot be read back out for
+	# the 'up to' tooltips.
+	#
+	# Any of the dynamic weight-calculations below can put a `desc = LOC_KEY` inside an individual
+	# operand block (`add = { desc = MY_KEY  value = 0.1 }`) to have that term named in the split
+	# tooltip. Operands without a `desc` are not shown at all.
+	tax_split = {
+		# Share that goes to the lease liege (if existing). Requires hierarchy definition. Default: 0
+		# Top lease liege (head of faith) is excluded from this (use `top_lease_liege` or `top_lease_liege_direct` instead)
+		lease_liege = 0.0-1.0
+		# Or use dynamic weight-calculation
+		# Scopes:
+		# - lessee - character leasing or religious subordinate
+		# - lease_liege - character higher in the lease hierarchy (religious superior)
+		lease_liege = { ... }
+		lease_liege_max = 0.0-1.0
+
+		# Share that goes directly to the top lease liege (if existing). Requires hierarchy definition. Default: 0
+		# Will add to 'lease_liege' for the lessees under the top lease liege
+		top_lease_liege_direct = 0.0-1.0
+		# Or use dynamic weight-calculation
+		# Scopes:
+		# - lessee - character leasing or religious subordinate
+		# - lease_liege - highest single higher in the lease hierarchy (head of faith). Note: scoped as lease_liege, not top_lease_liege
+		top_lease_liege_direct = { ... }
+		top_lease_liege_direct_max = 0.0-1.0
+
+		# Share that goes to the ruler leasing the holding out.
+		# Scopes:
+		# - lessee - character leasing
+		# - ruler - character leasing out the holding
+		ruler = { ... }
+		# This one doubles as the figure the 'up to' tooltips quote.
+		ruler_max = 0.0-1.0
+	}
+
+	# How levies from leased holdings are assigned. By default everything goes to the lessee.
+	levy_split = { ... }	# See tax_split for syntax
+	# Note: Levies can only go to one character on each level. This means levies cannot be assigned in part to the ruler and in part to the lessee
+	# because they are considered to be on the same level. So you can use only 0 or 100 when splitting between ruler and lessee.
+}
