@@ -12,7 +12,7 @@
 		first_valid = {
 			triggered_desc = {
 				trigger = {
-					faction_target = { government_has_flag = government_is_administrative }
+					faction_target = { government_allows = state_faith }
 				}
 				desc = populist_faction_short_effect_desc_admin
 			}
@@ -96,20 +96,17 @@
 			highest_held_title_tier >= tier_county
 		}
 
-		# Must not be the same culture & faith as the faction target.
+		# A rite other than the Admin State Rite is a grievance even within the same faith
 		custom_tooltip = {
 			text = populist_faction_same_culture_faith_as_liege
 			OR = {
 				faith != scope:faction.faction_target.faith
 				culture != scope:faction.faction_target.culture
+				AND = {
+					exists = scope:faction.faction_target.primary_title.state_rite
+					rite != scope:faction.faction_target.primary_title.state_rite
+				}
 			}
-		}
-
-		trigger_if = { # Must have a different faith than state faith in Admin
-			limit = {
-				exists = scope:faction.faction_target.primary_title.state_faith
-			}
-			faith != scope:faction.faction_target.primary_title.state_faith
 		}
 
 		# Not forbidden from being in factions.
@@ -123,17 +120,15 @@
 		# Counties can only be in a faction against the top liege in their realm (who is inherently independent).
 		scope:faction.faction_target = holder.top_liege
 
-		# Counties must have a different faith or culture than the faction target.
+		# Counties must have a different faith or culture than the faction target;
+		# in Admin, a rite other than the State Rite also qualifies.
 		OR = {
 			faith != scope:faction.faction_target.faith
 			culture != scope:faction.faction_target.culture
-		}
-
-		trigger_if = { # Must have a different faith than state faith in Admin
-			limit = {
-				exists = scope:faction.faction_target.primary_title.state_faith
+			AND = {
+				exists = scope:faction.faction_target.primary_title.state_rite
+				rite != scope:faction.faction_target.primary_title.state_rite
 			}
-			faith != scope:faction.faction_target.primary_title.state_faith
 		}
 
 		# Counties must have the same faith as the faction
@@ -179,22 +174,17 @@
 	}
 
 	can_county_join = {
-		# Must share this faction's faith.
+		# In Admin, the faith-driven faction also needs a State Rite grievance
 		scope:faction = {
-			OR = {
-				NOT = {
-					has_variable = faction_faith
+			trigger_if = {
+				limit = { has_variable = faction_faith }
+				root.faith = var:faction_faith
+				trigger_if = {
+					limit = {
+						exists = scope:faction.faction_target.primary_title.state_rite
+					}
+					root.rite != scope:faction.faction_target.primary_title.state_rite
 				}
-				AND = {
-					has_variable = faction_faith
-					root.faith = var:faction_faith
-				}
-			}
-			trigger_if = { # Must have a different faith than state faith in Admin
-				limit = {
-					exists = scope:faction.faction_target.primary_title.state_faith
-				}
-				root.faith != scope:faction.faction_target.primary_title.state_faith
 			}
 		}
 
@@ -212,7 +202,8 @@
 		# Can only join factions against our top liege (not direct liege)
 		scope:target = holder.top_liege
 
-		# Must have a culture or faith different from the target's.
+		# Must have a culture or faith different from the target's;
+		# in Admin, a rite other than the State Rite also qualifies.
 		OR = {
 			#make sure you do not accept their faith
 			faith ?= {
@@ -222,13 +213,10 @@
 				}
 			}
 			culture != scope:target.culture
-		}
-
-		trigger_if = { # Must have a different faith than state faith in Admin
-			limit = {
-				exists = scope:faction.faction_target.primary_title.state_faith
+			AND = {
+				exists = scope:target.primary_title.state_rite
+				rite != scope:target.primary_title.state_rite
 			}
-			faith != scope:faction.faction_target.primary_title.state_faith
 		}
 
 		####
@@ -411,7 +399,7 @@
 				}
 			}
 		}
-
+	
 		# 10-year 'grace period' from populist factions forming after game start
 		modifier = {
 			years_from_game_start <= 10
@@ -740,6 +728,10 @@
 			SCORE_PER_DEBT_LEVEL = 10
 		}
 
+		tenet_divine_marriage_incestuous_liege_faction_modifier = {
+			TARGET = scope:faction.faction_target
+		}
+
 		# The AI is almost always unwilling to join a faction against their friends and lovers.
 		modifier = {
 			desc = "FACTION_REASON_TARGET_FRIEND_LOVER"
@@ -827,24 +819,26 @@
 			desc = "FACTION_REASON_NEIGHBORS"
 			factor = {
 				value = 1
-		    	every_faction_member = {
-		    		if = {
-		    			limit = {
-			    			any_neighboring_realm_same_rank_owner = {
-			    				this = root
-			    			}
+				scope:faction = {
+					every_faction_member = {
+						if = {
+							limit = {
+								any_neighboring_realm_same_rank_owner = {
+									this = root
+								}
+							}
+							add = 0.25
 						}
-		    			add = 0.25
-		    		}
-		    	}
-	    	}
-	    }
+					}
+				}
+			}
+		}
 
-	    modifier = {
+		modifier = {
 			desc = "FACTION_REASON_POWERFUL_VASSAL"
-	    	factor = 2
+			factor = 2
 			is_powerful_vassal_of = scope:faction.faction_target
-	    }
+		}
 		#EP3 admin legitimacy event
 		modifier = {
 			desc = "FACTION_REASON_LOW_LEGITIMACY_CHALLENGER"
@@ -892,9 +886,9 @@
 			special_character = {
 				if = {
 					limit = {
-						OR = {
-							has_character_flag =  peasant_faction_claimant_without_title
-							has_character_flag =  peasant_faction_random_peasant
+						has_variable = {
+							name = peasant_faction_claimant_without_title
+							name = peasant_faction_random_peasant
 						}
 						has_variable = peasant_title
 					}
@@ -906,6 +900,7 @@
 					}
 					if = {
 						limit = { # To make sure we aren't in debt
+							is_alive = yes
 							gold > 0
 						}
 						remove_long_term_gold = gold # Zero out our wallet since the revolt is over and we're going back to being unlanded.
@@ -939,11 +934,14 @@
 	demand = {
 		setup_populist_leader_effect = yes
 		# Faction leader is unhappy if they reach the point of needing to issue an ultimatim.
-		faction_leader = {
-			add_opinion = {
-				modifier = angry_opinion
-				target = root.faction_target
-				opinion = -20
+		if = {
+			limit = { exists = faction_leader }
+			faction_leader = {
+				add_opinion = {
+					modifier = angry_opinion
+					target = root.faction_target
+					opinion = -20
+				}
 			}
 		}
 
@@ -954,6 +952,7 @@
 		save_scope_as = faction
 		special_character = {
 			save_scope_as = peasant_leader
+			save_scope_as = faction_leader
 		}
 		special_title = {
 			save_scope_as = target_title
@@ -1079,6 +1078,7 @@
 				template = new_commander_character
 				location = scope:local_center_of_rebellion
 				faith = root.faction_leader.faith
+				rite = root.faction_leader.rite
 				culture = root.faction_leader.culture
 				save_scope_as = new_populist_commander
 				gender_female_chance = {
@@ -1096,6 +1096,7 @@
 				}
 			}
 			scope:new_populist_commander = {
+				set_character_rite = root.faction_leader.rite
 				set_employer = root.faction_leader
 			}
 		}
@@ -1116,12 +1117,15 @@
 					is_alive = no
 				}
 			}
-			faction_war = {
-				end_war = defender
+			if = {
+				limit = { exists = faction_war }
+				faction_war = {
+					end_war = defender
+				}
 			}
 			destroy_faction = yes
 		}
-		if = {
+		else_if = { # Not an if: the branch above destroys the faction, leaving this scope invalid
 			limit = {
 				NOT = { has_variable = peasant_destroying }
 				exists = faction_war
@@ -1431,8 +1435,7 @@ escalated_peasant_faction = {
 		modifier = {
 			desc = "FACTION_REASON_AT_WAR_WITH_TARGET"
 			add = 1000
-			exists = joined_faction
-			joined_faction = {
+			scope:faction = {
 				faction_is_at_war = yes
 			}
 		}
@@ -1453,8 +1456,8 @@ escalated_peasant_faction = {
 			add = 25
 			county_opinion < 0
 			faith != scope:faction.faction_target.faith
-			faith = {
-				has_doctrine_parameter = peasant_and_populist_factions_more_common
+			rite = {
+				rite_has_parameter = peasant_and_populist_factions_more_common
 			}
 		}
 		modifier = {
@@ -1525,9 +1528,9 @@ escalated_peasant_faction = {
 			special_character = {
 				if = {
 					limit = {
-						OR = {
-							has_character_flag =  peasant_faction_claimant_without_title
-							has_character_flag =  peasant_faction_random_peasant
+						has_variable = {
+							name = peasant_faction_claimant_without_title
+							name = peasant_faction_random_peasant
 						}
 						has_variable = peasant_title
 					}
@@ -1539,6 +1542,7 @@ escalated_peasant_faction = {
 					}
 					if = {
 						limit = { # To make sure we aren't in debt
+							is_alive = yes
 							gold > 0
 						}
 						remove_long_term_gold = gold # Zero out our wallet since the revolt is over and we're going back to being unlanded.
@@ -1574,11 +1578,14 @@ escalated_peasant_faction = {
 	demand = {
 		setup_populist_leader_effect = yes
 		# Faction leader is unhappy if they reach the point of needing to issue an ultimatim.
-		faction_leader = {
-			add_opinion = {
-				modifier = angry_opinion
-				target = root.faction_target
-				opinion = -20
+		if = {
+			limit = { exists = faction_leader }
+			faction_leader = {
+				add_opinion = {
+					modifier = angry_opinion
+					target = root.faction_target
+					opinion = -20
+				}
 			}
 		}
 
@@ -1724,6 +1731,7 @@ escalated_peasant_faction = {
 				template = new_commander_character
 				location = scope:local_center_of_rebellion
 				faith = root.faction_leader.faith
+				rite = root.faction_leader.rite
 				culture = root.faction_leader.culture
 				save_scope_as = new_populist_commander
 				gender_female_chance = {
@@ -1741,6 +1749,7 @@ escalated_peasant_faction = {
 				}
 			}
 			scope:new_populist_commander = {
+				set_character_rite = root.faction_leader.rite
 				set_employer = root.faction_leader
 			}
 		}
@@ -1757,14 +1766,14 @@ escalated_peasant_faction = {
 				men_at_arms = {
 					type = pikemen_militia
 					stacks = {
-					    value = root.faction_leader.location.county.county_levies_to_raise
-					    divide = 100
-					    multiply = {
-					        value = "root.faction_leader.has_trait_xp(peasant_leader)"
-					        multiply = 0.05
-					    }
+						value = root.faction_leader.location.county.county_levies_to_raise
+						divide = 100
+						multiply = {
+							value = "root.faction_leader.has_trait_xp(peasant_leader)"
+							multiply = 0.05
+						}
 						round = yes
-					    min = 1
+						min = 1
 					}
 				}
 				men_at_arms = {
@@ -1807,12 +1816,15 @@ escalated_peasant_faction = {
 					is_alive = no
 				}
 			}
-			faction_war = {
-				end_war = defender
+			if = {
+				limit = { exists = faction_war }
+				faction_war = {
+					end_war = defender
+				}
 			}
 			destroy_faction = yes
 		}
-		if = {
+		else_if = { # Not an if: the branch above destroys the faction, leaving this scope invalid
 			limit = {
 				NOT = { has_variable = peasant_destroying }
 				exists = faction_war

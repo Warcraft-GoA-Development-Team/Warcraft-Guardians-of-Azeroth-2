@@ -38,11 +38,17 @@ scripted_trigger tribute_mission_1000_available_receiver_trigger = {
 tribute_mission.0001 = {
 	hidden = yes
 	immediate = {
+		if = {
+			limit = { NOT = { has_variable = tribute_mission_target_scope } }
+			debug_log = "NO TRIBUTE MISSION TARGET"
+			var:tribute_mission_type = { save_scope_as = tribute_mission_type }
+			debug_log_scopes = yes
+		}
 		#Determine who is who
 		save_scope_as = tributary_scope
-		var:tribute_mission_target_scope ?= { save_scope_as = overlord_scope }
-		#Who is the receiving character?
-		scope:overlord_scope = {
+		var:tribute_mission_target_scope ?= {
+			save_scope_as = overlord_scope
+			#Who is the receiving character?
 			#Overlord
 			if = {
 				limit = {
@@ -106,20 +112,28 @@ tribute_mission.0001 = {
 			}
 			#Random attendant
 			else = {
-				create_character = {
-					template = servant_character
-					location = scope:overlord_scope.capital_province
-					culture = scope:overlord_scope.capital_province.culture
-					faith = scope:overlord_scope.capital_province.faith
-					dynasty = none
-					save_scope_as = receiving_character
-				}
-				scope:receiving_character = {
-					remove_character_flag = peasant_outfit
-					add_character_flag = created_attendant
-				}
-				scope:overlord_scope = {
-					hidden_effect = { add_courtier = scope:receiving_character }
+				if = {
+					limit = {
+						scope:overlord_scope = {
+							exists = capital_province
+						}
+					}
+					create_character = {
+						template = servant_character
+						location = scope:overlord_scope.capital_province
+						culture = scope:overlord_scope.capital_province.culture
+						faith = scope:overlord_scope.capital_province.faith
+						rite = scope:overlord_scope.capital_province.rite
+						dynasty = none
+						save_scope_as = receiving_character
+					}
+					scope:receiving_character = {
+						remove_character_flag = peasant_outfit
+						add_character_flag = created_attendant
+					}
+					scope:overlord_scope = {
+						hidden_effect = { add_courtier = scope:receiving_character }
+					}
 				}
 			}
 			# Save Overlord's opinion of the Tributary
@@ -173,7 +187,7 @@ tribute_mission.0001 = {
 		if = {
 			limit = {
 				is_ai = yes
-				scope:overlord_scope = {
+				scope:overlord_scope ?= {
 					government_has_flag = government_is_mandala
 					NOT = { has_variable = bunga_mas_cooldown }
 				}
@@ -325,6 +339,26 @@ tribute_mission.0002 = {
 	#Double-check the status of the human tribute
 	immediate = {
 		if = {
+			limit = { NOT = { has_variable = tribute_mission_target_scope } }
+			debug_log = "NO TRIBUTE MISSION TARGET 0002"
+			var:tribute_mission_type = { save_scope_as = tribute_mission_type }
+			if = {
+				limit = { scope:actor = { is_alive = no } }
+				debug_log = "ACTOR DIED"
+			}
+			debug_log_scopes = yes
+		}
+		if = {
+			limit = {
+				NOT = { has_variable = tribute_mission_target_scope }
+				exists = scope:tribute_mission_target
+			}
+			set_variable = {
+				name = tribute_mission_target_scope
+				value = scope:tribute_mission_target
+			}
+		}
+		if = {
 			limit = {
 				OR = {
 					AND = {
@@ -358,7 +392,7 @@ scripted_trigger tribute_mission_1000_gold_tributary_trigger = {
 }
 
 scripted_effect tribute_mission_1000_fork_over_gold_effect = {
-	scope:overlord_scope = { add_gold = scope:tributary_scope.var:offered_gold_value }
+	scope:overlord_scope ?= { add_gold = scope:tributary_scope.var:offered_gold_value }
 }
 
 #Herd
@@ -407,23 +441,7 @@ scripted_effect tribute_mission_1000_common_arrival_effect = {
 		limit = { scope:overlord_scope = { highest_held_title_tier = tier_hegemony } }
 		save_temporary_scope_value_as = {
 			name = legitimacy_gain
-			value = {
-				switch = {
-					trigger = scope:tributary_scope.primary_title.tier
-					tier_county = {
-						add = miniscule_legitimacy_gain
-					}
-					tier_duchy = {
-						add = minor_legitimacy_gain
-					}
-					tier_kingdom = {
-						add = medium_legitimacy_gain
-					}
-					tier_empire = {
-						add = major_legitimacy_gain
-					}
-				}
-			}
+			value = scope:tributary_scope.tier_scaled_legitimacy_value_low
 		}
 		scope:overlord_scope = {
 			send_interface_toast = {
@@ -441,6 +459,9 @@ scripted_effect tribute_mission_1000_make_concubine_effect = {
 	hidden_effect = {
 		scope:tributary_scope = {
 			current_travel_plan ?= { remove_character = scope:concubine_character }
+		}
+		scope:concubine_character = {
+			remove_variable = can_not_marry
 		}
 	}
 	make_concubine = scope:concubine_character # make_concubine inherently also adds them as a courtier first, for reference
@@ -740,6 +761,7 @@ scripted_effect tribute_mission_1000_eligible_smith_scope_effect = {
 			location = scope:overlord_scope.capital_province
 			culture = scope:overlord_scope.capital_province.culture
 			faith = scope:overlord_scope.capital_province.faith
+			rite = scope:overlord_scope.capital_province.rite
 			dynasty = none
 			save_scope_as = smith_character
 			after_creation = { set_variable = tribute_mission_1000_smith }
@@ -884,6 +906,8 @@ scripted_effect tribute_mission_1000_set_innovation_reward_effect = {
 
 #Development
 scripted_trigger tribute_mission_1000_eligible_development_trigger = {
+	exists = scope:overlord_scope.capital_province
+	exists = scope:tributary_scope.capital_province
 	scope:overlord_scope.capital_province != scope:tributary_scope.capital_province
 	scope:tributary_scope.capital_county = {
 		NOT = { has_county_modifier = suzerain_trade_post_modifier }
@@ -925,15 +949,15 @@ scripted_effect tribute_mission_1000_set_monk_reward_effect = {
 			template = monk_character_template
 			culture = scope:overlord_scope.culture
 			faith = scope:overlord_scope.faith
+			rite = scope:overlord_scope.rite
 			save_scope_as = new_monk
 			after_creation = {
 				add_character_flag = suzerains_missionary
 			}
 		}
 	}
-	save_scope_value_as = {
-		name = tribute_reward_type_monk
-		value = scope:new_monk
+	scope:new_monk ?= {
+		save_scope_as = tribute_reward_type_monk
 	}
 }
 
@@ -1062,7 +1086,7 @@ scripted_effect tribute_mission_1000_give_monk_effect = {
 	}
 	scope:overlord_scope.faith = {
 		change_fervor = {
-			value = 5
+			value = notable_fervor_gain
 			desc = fervor_gain_suzerain_missionaries
 		}
 	}
@@ -1091,7 +1115,10 @@ scripted_effect tribute_mission_1000_rejection_effect = {
 scripted_effect tribute_mission_1000_generic_reward_effect = {
 	scope:tributary_scope = {
 		if = {
-			limit = { is_ai = yes }
+			limit = {
+				is_ai = yes
+				exists = scope:overlord_scope
+			}
 			add_opinion = {
 				modifier = pleased_opinion
 				opinion = 40
@@ -1303,7 +1330,7 @@ scripted_effect tribute_mission_1000_duel_effect = {
 				right_icon = scope:receiving_character
 				custom_tooltip = tribute_mission.1000.failure.tt
 				#Ayy
-				stress_impact = { base = miniscule_stress_impact_gain }
+				stress_and_fulfillment_impact = { base = miniscule_stress_impact_gain }
 			}
 		}
 	}
@@ -1966,6 +1993,9 @@ tribute_mission.1002 = {
 		}
 	}
 	after = {
+		scope:concubine_character ?= {
+			remove_variable = can_not_marry
+		}
 		#Moving on
 		trigger_event = tribute_mission.1005
 	}
@@ -2411,6 +2441,7 @@ scripted_effect tribute_mission_1006_eligible_scribe_scope_effect = {
 				location = scope:overlord_scope.capital_province
 				culture = scope:overlord_scope.capital_province.culture
 				faith = scope:overlord_scope.capital_province.faith
+				rite = scope:overlord_scope.capital_province.rite
 				dynasty = none
 				save_scope_as = scribe_character
 				after_creation = { set_variable = tribute_mission_1006_scribe }
@@ -3917,6 +3948,7 @@ tribute_mission.3008 = {
 				desc = tribute_mission.new_tributary.desc
 			}
 		}
+		# Warcraft - wants_to_become_tributary_of_china is never set in GoA
 		#if = {
 		#	limit = { has_variable = wants_to_become_tributary_of_china } 
 		#	debug_log = "wants_to_become_tributary_of_china realized!"
@@ -3937,7 +3969,7 @@ tribute_mission.3008 = {
 					if = {
 						limit = {
 							OR = {
-								NOT = { scope:overlord_scope.primary_title = title:h_pandaria }
+								NOT = { scope:overlord_scope.primary_title = title:h_pandaria } # Warcraft
 								government_has_flag = government_is_meritocratic
 							}
 						}
@@ -4062,7 +4094,7 @@ tribute_mission.3008 = {
 					scope:tributary_scope = {
 						NOR = { # Of two different faiths AND the potential vassal's faith is not pluralistic.
 							faith = scope:overlord_scope.faith
-							faith = { has_doctrine = doctrine_pluralism_pluralistic }
+							rite = { rite_has_doctrine = doctrine_pluralism_pluralistic }
 						}
 					}
 				}
@@ -4413,6 +4445,12 @@ tribute_mission.9750 = {
 		animation = prisonhouse
 	}
 	immediate = {
+		if = {
+			limit = { NOT = { has_variable = tribute_mission_target_scope } }
+			debug_log = "NO TRIBUTE MISSION TARGET 9750"
+			var:tribute_mission_type = { save_scope_as = tribute_mission_type }
+			debug_log_scopes = yes
+		}
 		#Hol' up
 		current_travel_plan ?= { pause_travel_plan = yes }
 		#Save the concubine
@@ -4631,7 +4669,7 @@ tribute_mission.9760 = {
 						min = 5
 					}
 					desc = tribute_mission.9760.b.critical_failure
-					override_death_effect = { death_reason = death_fight }
+					override_death_effect = { death_reason = death_fight } # Warcraft
 					trigger_event = {
 						id = tribute_mission.9750
 						delayed = yes
