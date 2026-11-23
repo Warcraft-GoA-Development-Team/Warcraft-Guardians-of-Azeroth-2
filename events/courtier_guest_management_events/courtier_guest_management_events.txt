@@ -260,14 +260,9 @@ courtier_guest_management.0500 = {
 	immediate = {
 		if = { # Warning if they take your kids with them
 			limit = {
-				NOT = { has_character_flag = guest_has_given_warning_about_leaving }
-				#To double check that they actually can leave
-				is_pool_guest_of = scope:host
 				scope:host = { is_ai = no }
-				any_traveling_family_member = {
-					count = all
-					guest_allowed_to_leave_trigger = yes
-				}
+				NOT = { has_character_flag = guest_has_given_warning_about_leaving }
+				is_pool_guest_of = scope:host
 				OR = {
 					AND = {
 						OR = {
@@ -306,6 +301,11 @@ courtier_guest_management.0500 = {
 							}
 						}
 					}
+				}
+				#To double check that they actually can leave
+				any_traveling_family_member = {
+					count = all
+					guest_allowed_to_leave_trigger = yes
 				}
 			}
 			scope:host = {
@@ -357,10 +357,6 @@ courtier_guest_management.0999 = {
 ###################
 
 #Guest arriving, message if they're great
-scripted_trigger courtier_guest_management_1001_exceptional_claimant_trigger = {
-	any_claim = { neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host } }
-}
-
 scripted_trigger courtier_guest_management_1001_exceptional_marriage_candidate_trigger = {
 	save_temporary_scope_as = marriage_candidate
 	guest_marriage_candidate_trigger = yes
@@ -478,15 +474,16 @@ courtier_guest_management.1001 = {
 		every_in_list = {
 			list = guest_arrival_list
 			limit = {
-				inspiration ?= { has_inspiration_type = adventure_inspiration }
 				exists = var:adventure_destination #They know where they want to go
+				inspiration ?= { has_inspiration_type = adventure_inspiration }
 			}
 			get_adventure_inspiration_start_location = { ADVENTURER = this }
 			if = {
 				limit = {
-					scope:host = {
-						any_sub_realm_county = {
-							this = scope:location.county
+					scope:location.county.holder ?= {
+						OR = {
+							this = scope:host
+							is_vassal_or_below_of = scope:host
 						}
 					}
 				}
@@ -509,7 +506,7 @@ courtier_guest_management.1001 = {
 			}
 		}
 
-		###DEVELOPMENT EFFECT###
+		###PROSPERITY EFFECT###
 		#Because the characters spend so little time in the pool, we also run it now
 
 		every_in_list = { # Very performance-intensive, so we restrict it as much as possible at this step.
@@ -519,7 +516,7 @@ courtier_guest_management.1001 = {
 				is_lowborn = no
 				is_physically_able = yes
 			}
-			pool_character_development_effect = yes
+			pool_character_prosperity_effect = yes
 			if = {
 				limit = {
 					gold >= 1000
@@ -534,32 +531,31 @@ courtier_guest_management.1001 = {
 
 			every_in_list = {
 				list = guest_arrival_list
-				limit = {
-					courtier_guest_management_1001_exceptional_claimant_trigger = yes
-				}
 				save_scope_as = exceptional_guest
 
 				#CLAIMANT MESSAGE
-				if = {
-					limit = { courtier_guest_management_1001_exceptional_claimant_trigger = yes }
-					random_claim = {
-						limit = {
-							neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
-							tier = tier_kingdom
-							scope:host.highest_held_title_tier > tier_kingdom
-						}
-						alternative_limit = {
-							neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
-							tier = tier_duchy
-							scope:host.highest_held_title_tier > tier_duchy
-						}
-						alternative_limit = {
-							neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
-							tier = tier_county
-							scope:host.highest_held_title_tier > tier_county
-						}
-						save_scope_as = guest_claim
+				random_claim = {
+					limit = {
+						tier = tier_kingdom
+						neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
 					}
+					alternative_limit = {
+						tier = tier_duchy
+						neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
+					}
+					alternative_limit = {
+						tier = tier_county
+						neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
+					}
+					alternative_limit = {
+						NOR = {
+							tier = tier_kingdom
+							tier = tier_duchy
+							tier = tier_county
+						}
+						neighboring_useful_courtier_or_guest_claim_trigger = { RULER = scope:host }
+					}
+					save_scope_as = guest_claim
 					scope:host = {
 						send_interface_toast = {
 							type = msg_notable_guest
@@ -622,8 +618,8 @@ courtier_guest_management.2001 = {
 			limit = { is_alive = yes } #Because we might just have killed you and then 🎵nothing else matters🎵
 
 			#Develop
-			random = { # Very performance-intensive, so we restrict it as much as possible at this step.
-				chance = 50
+			random = { # Performance-intensive, so we restrict it here, and courtier_guest_management.1001 also develops guests on arrival
+				chance = 25
 				if = {
 					limit = {
 						static_group_filter = {
@@ -634,7 +630,7 @@ courtier_guest_management.2001 = {
 						is_lowborn = no
 						is_physically_able = yes
 					}
-					pool_character_development_effect = yes
+					pool_character_prosperity_effect = yes
 				}
 			}
 			if = {
@@ -732,6 +728,21 @@ scripted_trigger courtier_guest_management_3001_interesting_trigger = {
 		learning >= high_skill_rating
 		is_witch_trigger = yes
 		is_deviant_trigger = yes
+	}
+}
+
+scripted_trigger courtier_guest_management_3001_relation_candidate_trigger = {
+	trigger_if = {
+		limit = {
+			list_size = {
+				name = relation_candidates
+				value > 0
+			}
+		}
+		OR = {
+			is_in_list = relation_candidates
+			has_relation_potential_$RELATION$ = scope:current_character
+		}
 	}
 }
 
@@ -864,14 +875,43 @@ courtier_guest_management.3001 = {
 			list = courtiers_and_guests
 			limit = { NOT = { is_in_list = already_updated } } #If another character set a relation with you, you don't get to run your own update. (However, we don't want to block you from being selected by other characters if you are the best alternative.)
 
-			save_scope_as = current_character
-
 			random = {
 				chance = 5
 				modifier = { #More should happen in player's court!
 					root = { is_ai = no }
 					is_courtier_of = root
 					add = 15
+				}
+
+				save_scope_as = current_character
+
+				if = {
+					limit = {
+						NOT = { exists = scope:relation_candidates_checked }
+					}
+					save_temporary_scope_value_as = {
+						name = relation_candidates_checked
+						value = yes
+					}
+					if = {
+						limit = {
+							root = { is_ai = yes }
+							list_size = {
+								name = courtiers_and_guests
+								value > 10
+							}
+						}
+						while = {
+							count = 10
+							random_in_list = {
+								list = courtiers_and_guests
+								limit = {
+									NOT = { is_in_list = relation_candidates }
+								}
+								add_to_temporary_list = relation_candidates
+							}
+						}
+					}
 				}
 
 				random_list = {
@@ -891,6 +931,7 @@ courtier_guest_management.3001 = {
 
 						random_in_list = {
 							limit = {
+								courtier_guest_management_3001_relation_candidate_trigger = { RELATION = friend }
 								can_set_relation_friend_trigger = { CHARACTER = scope:current_character }
 							}
 							list = courtiers_and_guests
@@ -938,12 +979,16 @@ courtier_guest_management.3001 = {
 						trigger = {
 							is_married = no
 							is_concubine = no
-							might_cheat_on_every_partner_trigger = yes
 							NOR = {
 								has_trait = chaste
 								has_trait = celibate
 								has_sexuality = asexual
 							}
+							any_relation = {
+								type = lover
+								count < 1
+							}
+							might_cheat_on_every_partner_trigger = yes
 							trigger_if = {
 								limit = {
 									is_courtier = yes
@@ -954,17 +999,18 @@ courtier_guest_management.3001 = {
 									is_deviant_trigger = yes
 								}
 							}
-							any_relation = {
-								type = lover
-								count < 1
-							}
 						}
 
 						random_in_list = {
 							limit = {
+								this != scope:current_character
 								is_married = no
 								is_concubine = no
-								might_cheat_on_every_partner_trigger = yes
+								courtier_guest_management_3001_relation_candidate_trigger = { RELATION = lover }
+								age <= scope:current_character.age_plus_5
+								age >= scope:current_character.age_minus_10
+								is_attracted_to_gender_of = scope:current_character
+								scope:current_character = { is_attracted_to_gender_of = prev }
 								NOR = {
 									has_trait = chaste
 									has_trait = celibate
@@ -974,6 +1020,12 @@ courtier_guest_management.3001 = {
 									type = lover
 									count < 1
 								}
+								can_set_relation_lover_trigger = { CHARACTER = scope:current_character }
+								trait_compatibility = {
+									target = scope:current_character
+									value >= low_positive_trait_compatibility
+								}
+								might_cheat_on_every_partner_trigger = yes
 								trigger_if = {
 									limit = {
 										is_courtier = yes
@@ -988,16 +1040,6 @@ courtier_guest_management.3001 = {
 											value >= high_positive_trait_compatibility
 										}
 									}
-								}
-								this != scope:current_character
-								can_set_relation_lover_trigger = { CHARACTER = scope:current_character }
-								is_attracted_to_gender_of = scope:current_character
-								scope:current_character = { is_attracted_to_gender_of = prev }
-								age <= scope:current_character.age_plus_5
-								age >= scope:current_character.age_minus_10
-								trait_compatibility = {
-									target = scope:current_character
-									value >= low_positive_trait_compatibility
 								}
 								save_temporary_scope_as = incest_check
 								accepts_incest_with_each_other_trigger = {
@@ -1052,6 +1094,7 @@ courtier_guest_management.3001 = {
 
 						random_in_list = {
 							limit = {
+								courtier_guest_management_3001_relation_candidate_trigger = { RELATION = rival }
 								can_set_relation_rival_trigger = { CHARACTER = scope:current_character }
 							}
 							list = courtiers_and_guests
@@ -1144,10 +1187,9 @@ courtier_guest_management.3001 = {
 							}
 
 							add_to_list = already_updated
-							set_relation_nemesis = {
-								reason = nemesis_at_court
-								copy_reason = rival
-								target = scope:current_character
+							set_relation_nemesis_effect = {
+								TARGET = scope:current_character
+								REASON = nemesis_at_court
 							}
 						}
 					}
@@ -1174,7 +1216,7 @@ courtier_guest_management.3001 = {
 courtier_guest_management.4001 = {
 	hidden = yes
 	trigger = {
-		has_ep3_dlc_trigger = yes
+		has_playable_adventurer_dlc_trigger = yes
 		is_pool_character = yes # Can cease to be in the pool between it queuing and executing
 		ai_can_valid_to_create_laamp_trigger = yes
 		is_valid_for_laampdom = yes
