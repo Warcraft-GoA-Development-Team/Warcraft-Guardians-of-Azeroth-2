@@ -488,10 +488,10 @@ holy_order.0200 = {
 				}
 			}
 		}
-		add_character_flag = borrow_from_holy_order
-		set_up_loan_effect = {
+		set_up_new_loan_effect = {
 			LENDER = scope:recipient
 			AMOUNT = holy_order_gold_value
+			INSTRUMENT = flag:none
 		}
 		remove_variable = amount_to_loan
 	}
@@ -502,52 +502,6 @@ holy_order.0200 = {
 			piety_level < 1
 		}
 		show_as_unavailable = { piety_level < 1 }
-	}
-}
-
-#To handle inheritance of loans in a Military Order
-#by Linnéa Thimrén
-holy_order.0201 = {
-	hidden = yes
-	orphan = yes # deprecated
-
-	immediate = {
-		remove_variable = loan_holder
-		scope:order.leader = { save_scope_as = new_leader }
-		set_variable = {
-			name = loan_holder
-			value = scope:new_leader
-		}
-		scope:new_leader = {
-			set_variable = {
-				name = owes_me_money
-				value = root
-			}
-		}
-	}
-}
-
-#To increment years
-#by Linnéa Thimrén
-holy_order.0206 = {
-	hidden = yes
-
-	trigger = {
-		any_in_list = {
-			variable = owes_me_money
-			exists = var:years_since_loan
-		}
-	}
-
-	immediate = {
-		every_in_list = {
-			variable = owes_me_money
-			limit = { exists = var:years_since_loan }
-			change_variable = {
-				name = years_since_loan
-				add = 1
-			}
-		}
 	}
 }
 
@@ -581,25 +535,28 @@ holy_order.0202 = {
 	sender = scope:recipient
 
 	trigger = {
-		has_character_flag = borrow_from_holy_order
-		var:loan_holder ?= {
-			exists = var:years_since_loan
-			var:years_since_loan >= 10
+		any_owned_story = {
+			story_type = story_cycle_loan
+			exists = var:lender.holy_order
+			var:years_since >= 10
 		}
 	}
 
 	immediate = {
-		var:loan_holder = {
-			save_scope_as = recipient
-		}
-		faith = {
-			random_faith_holy_order = {
-				limit = {
-					leader = {
-						this = scope:recipient
-					}
-				}
-				save_scope_as = holy_order
+		random_owned_story = {
+			limit = {
+				story_type = story_cycle_loan
+				exists = var:lender.holy_order
+				var:years_since >= 10
+			}
+			save_scope_as = holy_order_loan
+			save_scope_value_as = {
+				name = amount_owed
+				value = var:amount_owed
+			}
+			var:lender = {
+				save_scope_as = recipient
+				holy_order = { save_scope_as = holy_order }
 			}
 		}
 	}
@@ -618,13 +575,7 @@ holy_order.0202 = {
 				desc = holy_order.0202.a._not.tt
 			}
 		}
-		show_as_tooltip = {
-			pay_treasury_or_gold = {
-				value = var:loan_amount_owed
-				target = scope:recipient
-			}
-		}
-		execute_decision = repay_loan_decision
+		scope:holy_order_loan = { repay_and_end_loan_story_effect = yes }
 		ai_chance = {
 			base = 1000
 		}
@@ -680,8 +631,21 @@ holy_order.0202 = {
 		if = {
 			limit = {
 				exists = faith.religious_head
+				NOT = { faith.religious_head = root }
 			}
 			faith.religious_head = {
+				add_opinion = {
+					modifier = not_repay_loan_opinion
+					target = root
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				exists = rite.head_of_rite
+				NOT = { rite.head_of_rite = root }
+			}
+			rite.head_of_rite = {
 				add_opinion = {
 					modifier = not_repay_loan_opinion
 					target = root
@@ -695,12 +659,10 @@ holy_order.0202 = {
 			}
 		}
 		if = { #are we still of the same faith?
-			limit = {
-				scope:recipient.faith = root.faith
-			}
+			limit = { scope:recipient.faith = root.faith }
 			add_piety_level = -1
 		}
-		remove_character_flag = borrow_from_holy_order
+		scope:holy_order_loan = { end_loan_story_effect = yes }
 		ai_chance = {
 			base = 25
 			ai_value_modifier = {
@@ -715,7 +677,10 @@ holy_order.0202 = {
 				25 = {
 					trigger = {
 						NOT = { exists = scope:asked_for_time }
-						has_character_flag = borrow_from_holy_order
+						any_owned_story = {
+							story_type = story_cycle_loan
+							var:lender ?= scope:recipient
+						}
 						scope:holy_order = {
 							num_leased_titles < holy_order_barony_number_soft_threshold
 						}
@@ -732,7 +697,10 @@ holy_order.0202 = {
 				75 = {
 					trigger = { #Has a fitting child
 						NOT = { exists = scope:asked_for_time }
-						has_character_flag = borrow_from_holy_order
+						any_owned_story = {
+							story_type = story_cycle_loan
+							var:lender ?= scope:recipient
+						}
 						any_child = {
 							holy_order_request_child_trigger = yes
 						}
@@ -758,9 +726,12 @@ holy_order.0203 = {
 	sender = scope:recipient
 
 	trigger = {
-		has_character_flag = borrow_from_holy_order
 		scope:holy_order ?= {
 			num_leased_titles < holy_order_barony_number_soft_threshold
+		}
+		any_owned_story = {
+			story_type = story_cycle_loan
+			var:lender ?= scope:recipient
 		}
 		any_held_title = {
 			title_tier = barony
@@ -771,7 +742,10 @@ holy_order.0203 = {
 	on_trigger_fail = { #If no available castle exists now
 		if = {
 			limit = {
-				has_character_flag = borrow_from_holy_order
+				any_owned_story = {
+					story_type = story_cycle_loan
+					var:lender ?= scope:recipient
+				}
 				any_child = {
 					holy_order_request_child_trigger = yes
 				}
@@ -791,15 +765,20 @@ holy_order.0203 = {
 			}
 			save_scope_as = province
 		}
+		random_owned_story = {
+			limit = {
+				story_type = story_cycle_loan
+				var:lender ?= scope:recipient
+			}
+			save_scope_as = holy_order_loan
+		}
 	}
 
-	option = {
+	option = { # Give lease to clear loan
 		name = holy_order.0203.a
+		scope:province = { lease_out_to_holy_order = scope:holy_order }
 		custom_tooltip = holy_order.0204.a.tt
-		remove_character_flag = borrow_from_holy_order
-		scope:province = {
-			lease_out_to_holy_order = scope:holy_order
-		}
+		scope:holy_order_loan = { end_loan_story_effect = yes }
 		ai_chance = {
 			base = 100
 		}
@@ -810,8 +789,21 @@ holy_order.0203 = {
 		if = {
 			limit = {
 				exists = scope:recipient.faith.religious_head
+				NOT = { scope:recipient.faith.religious_head = root }
 			}
 			scope:recipient.faith.religious_head = {
+				add_opinion = {
+					modifier = not_repay_loan_opinion
+					target = root
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				exists = scope:recipient.rite.head_of_rite
+				NOT = { scope:recipient.rite.head_of_rite = root }
+			}
+			scope:recipient.rite.head_of_rite ?= {
 				add_opinion = {
 					modifier = not_repay_loan_opinion
 					target = root
@@ -824,14 +816,12 @@ holy_order.0203 = {
 				target = root
 			}
 		}
-
 		if = { #are we still of the same faith?
-			limit = {
-				scope:recipient.faith = root.faith
-			}
+			limit = { scope:recipient.faith = root.faith }
 			add_piety_level = -1
-			remove_character_flag = borrow_from_holy_order
 		}
+		custom_tooltip = holy_order.0204.a.tt
+		scope:holy_order_loan = { end_loan_story_effect = yes }
 		ai_chance = {
 			base = 25
 		}
@@ -849,7 +839,10 @@ holy_order.0204 = {
 	sender = scope:recipient
 
 	trigger = {
-		has_character_flag = borrow_from_holy_order
+		any_owned_story = {
+			story_type = story_cycle_loan
+			var:lender ?= scope:recipient
+		}
 		any_child = {
 			holy_order_request_child_trigger = yes
 		}
@@ -858,7 +851,10 @@ holy_order.0204 = {
 	on_trigger_fail = { #If no available children exists now
 		if = {
 			limit = {
-				has_character_flag = borrow_from_holy_order
+				any_owned_story = {
+					story_type = story_cycle_loan
+					var:lender ?= scope:recipient
+				}
 				any_held_title = {
 					title_tier = barony
 					barony_is_valid_for_holy_order_lease_trigger = { CHARACTER = root }
@@ -872,6 +868,13 @@ holy_order.0204 = {
 	}
 
 	immediate = {
+		random_owned_story = {
+			limit = {
+				story_type = story_cycle_loan
+				var:lender ?= scope:recipient
+			}
+			save_scope_as = holy_order_loan
+		}
 		random_child = {
 			limit = {
 				holy_order_request_child_trigger = yes
@@ -882,8 +885,6 @@ holy_order.0204 = {
 
 	option = {
 		name = holy_order.0204.a
-		custom_tooltip = holy_order.0204.a.tt
-		remove_character_flag = borrow_from_holy_order
 		scope:child = {
 			add_trait = order_member
 			add_piety_level = 1
@@ -907,6 +908,8 @@ holy_order.0204 = {
 		dynasty = {
 			add_dynasty_prestige = medium_dynasty_prestige_gain
 		}
+		custom_tooltip = holy_order.0204.a.tt
+		scope:holy_order_loan = { end_loan_story_effect = yes }
 		ai_chance = {
 			base = 100
 		}
@@ -914,10 +917,28 @@ holy_order.0204 = {
 
 	option = { #refuse
 		name = holy_order.0203.b
-		scope:recipient.faith.religious_head = {
-			add_opinion = {
-				modifier = not_repay_loan_opinion
-				target = root
+		if = {
+			limit = {
+				exists = scope:recipient.faith.religious_head
+				NOT = { scope:recipient.faith.religious_head = root }
+			}
+			scope:recipient.faith.religious_head = {
+				add_opinion = {
+					modifier = not_repay_loan_opinion
+					target = root
+				}
+			}
+		}
+		else_if = {
+			limit = {
+				exists = scope:recipient.rite.head_of_rite
+				NOT = { scope:recipient.rite.head_of_rite = root }
+			}
+			scope:recipient.rite.head_of_rite ?= {
+				add_opinion = {
+					modifier = not_repay_loan_opinion
+					target = root
+				}
 			}
 		}
 		scope:recipient = {
@@ -927,12 +948,11 @@ holy_order.0204 = {
 			}
 		}
 		if = { #are we still of the same faith?
-			limit = {
-				scope:recipient.faith = root.faith
-			}
+			limit = { faith = scope:recipient.faith }
 			add_piety_level = -1
-			remove_character_flag = borrow_from_holy_order
 		}
+		custom_tooltip = holy_order.0204.a.tt
+		scope:holy_order_loan = { end_loan_story_effect = yes }
 		ai_chance = {
 			base = 25
 		}
@@ -968,7 +988,8 @@ holy_order.0205 = {
 			}
 		}
 		add_piety_level = -1
-		remove_character_flag = borrow_from_holy_order
+		custom_tooltip = holy_order.0204.a.tt
+		scope:holy_order_loan = { end_loan_story_effect = yes }
 	}
 }
 
@@ -1195,11 +1216,11 @@ holy_order.1001 = {
 		change_spiritual_fulfillment = minor_spiritual_fulfillment_value
 		
 		scope:target_barony = {
-			if = { #To make sure the effect works properly we have to have the title when we lease it out
-				limit = {
-					holder != root
+			hidden_effect = {
+				if = { #To make sure the effect works properly we have to have the title when we lease it out
+					limit = { holder != root }
+					root = { get_title = prev }
 				}
-				root = { get_title = prev }
 			}
 			lease_out_to_holy_order = scope:holy_order
 		}
@@ -1243,11 +1264,11 @@ holy_order.1001 = {
 		change_spiritual_fulfillment = minor_spiritual_fulfillment_value
 
 		scope:alternative_barony = {
-			if = { #To make sure the effect works properly we have to have the title when we lease it out
-				limit = {
-					holder != root
+			hidden_effect = {
+				if = { #To make sure the effect works properly we have to have the title when we lease it out
+					limit = { holder != root }
+					root = { get_title = prev }
 				}
-				root = { get_title = prev }
 			}
 			lease_out_to_holy_order = scope:holy_order
 		}

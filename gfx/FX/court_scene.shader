@@ -17,6 +17,7 @@
 	"constants.fxh"
 	"standardfuncsgfx.fxh"
 	"parallax.fxh"
+	"pdxmesh_vfx.fxh"
 	# MOD(godherja)
 	"GH_portrait_effects.fxh"
 	# END MOD
@@ -1392,6 +1393,8 @@ PixelShader =
 				float ColorMaskStrength = NormalSampleRaw.b;
 				Diffuse.rgb = GetColorMaskColorBLend( Diffuse.rgb, vPaletteColorHair.rgb, Input.InstanceIndex, ColorMaskStrength );
 
+				float3 Color = CommonPixelShader( Diffuse, Properties, NormalSample, Input, PortraitEffect, HoverMult );
+				
 				// MOD(godherja)
 				GH_SPortraitEffect PortraitEffect = GH_ScanMarkerDecals(DecalCount);
 				// END MOD
@@ -2800,7 +2803,31 @@ Effect snap_to_terrain_alpha_to_coverage_selection
 	PixelShader = "PS_noop"
 }
 
+Effect snap_to_terrain_alpha_cutout_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_alpha_terrain_blend_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
 Effect sine_flag_animation_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect boat_bob_atlas_selection
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect boat_bob_atlas_selection_mapobject
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"
@@ -3085,13 +3112,49 @@ Effect snap_to_terrain_alpha_to_coverage
 	PixelShader = "PS_noop"
 }
 
+Effect snap_to_terrain_alpha_cutout
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_alpha_terrain_blend
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
 Effect snap_to_terrain_alpha_to_coverage_mapobject
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"
 }
 
+Effect snap_to_terrain_alpha_cutout_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_alpha_terrain_blend_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
 Effect snap_to_terrain_alpha_to_coverage_selection_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_alpha_cutout_selection_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect snap_to_terrain_alpha_terrain_blend_selection_mapobject
 {
 	VertexShader = "VS_standard"
 	PixelShader = "PS_noop"
@@ -3127,6 +3190,29 @@ Effect sine_flag_animation
 	PixelShader = "PS_noop"
 }
 
+Effect boat_bob_atlas
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect boat_bob_atlasShadow
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect boat_bob_atlas_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
+
+Effect boat_bob_atlasShadow_mapobject
+{
+	VertexShader = "VS_standard"
+	PixelShader = "PS_noop"
+}
 
 Effect portrait_anisotropic_hair
 {
